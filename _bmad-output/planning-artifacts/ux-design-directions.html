@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BidWise 设计方向对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0a0a0a; color: #e0e0e0; }
+
+  /* Navigation */
+  .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: #111; border-bottom: 1px solid #333; padding: 16px 32px; display: flex; align-items: center; gap: 24px; }
+  .nav h1 { font-size: 18px; font-weight: 600; color: #fff; }
+  .nav-tabs { display: flex; gap: 8px; }
+  .nav-tab { padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; border: 1px solid #444; background: transparent; color: #aaa; transition: all 0.2s; }
+  .nav-tab:hover { border-color: #1677FF; color: #1677FF; }
+  .nav-tab.active { background: #1677FF; border-color: #1677FF; color: #fff; }
+  .nav-desc { margin-left: auto; font-size: 13px; color: #888; }
+
+  /* Content */
+  .content { margin-top: 64px; }
+  .direction { display: none; padding: 32px; }
+  .direction.active { display: block; }
+  .direction-header { text-align: center; margin-bottom: 32px; }
+  .direction-header h2 { font-size: 24px; color: #fff; margin-bottom: 8px; }
+  .direction-header p { font-size: 14px; color: #888; max-width: 600px; margin: 0 auto; }
+
+  /* Mockup Frame */
+  .mockup-frame { background: #1a1a1a; border-radius: 12px; overflow: hidden; border: 1px solid #333; max-width: 1200px; margin: 0 auto 32px; }
+  .mockup-label { padding: 12px 20px; font-size: 13px; color: #888; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+  .mockup-label span { color: #1677FF; }
+
+  /* ==================== Direction A: Command Center ==================== */
+  .da-app { height: 640px; display: flex; flex-direction: column; font-size: 13px; }
+  .da-sop { height: 52px; background: #0C1D3A; display: flex; align-items: center; padding: 0 24px; gap: 32px; border-bottom: 1px solid #1a3a6a; }
+  .da-sop-title { color: #5B8DEF; font-size: 12px; font-weight: 600; letter-spacing: 1px; }
+  .da-sop-steps { display: flex; gap: 8px; align-items: center; }
+  .da-step { display: flex; align-items: center; gap: 6px; }
+  .da-step-dot { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+  .da-step-dot.done { background: #52C41A; color: #fff; }
+  .da-step-dot.active { background: #1677FF; color: #fff; box-shadow: 0 0 12px rgba(22,119,255,0.5); }
+  .da-step-dot.pending { background: transparent; border: 2px solid #3a5a8a; color: #5a7a9a; }
+  .da-step-dot.warn { background: #FAAD14; color: #fff; }
+  .da-step-label { color: #8aaccc; font-size: 11px; }
+  .da-step-line { width: 24px; height: 2px; background: #1a3a6a; }
+  .da-step-line.done { background: #52C41A; }
+  .da-body { flex: 1; display: flex; background: #f8f9fa; }
+  .da-outline { width: 220px; background: #0f1b2d; padding: 16px; border-right: 1px solid #1a3a6a; overflow-y: auto; }
+  .da-outline-title { color: #5B8DEF; font-size: 11px; font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
+  .da-outline-item { padding: 6px 8px; color: #8aaccc; font-size: 12px; border-radius: 4px; cursor: pointer; margin-bottom: 2px; }
+  .da-outline-item:hover { background: rgba(22,119,255,0.1); }
+  .da-outline-item.active { background: rgba(22,119,255,0.2); color: #5B8DEF; }
+  .da-outline-item.sub { padding-left: 20px; font-size: 11px; color: #6a8aaa; }
+  .da-editor { flex: 1; padding: 32px 48px; overflow-y: auto; background: #fff; }
+  .da-editor h3 { font-size: 18px; font-weight: 600; color: #1a1a1a; margin-bottom: 16px; }
+  .da-editor p { font-size: 14px; line-height: 1.8; color: #333; margin-bottom: 12px; }
+  .da-editor .ai-source { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 4px; vertical-align: super; }
+  .da-editor .source-asset { background: #f0f5ff; color: #1677FF; }
+  .da-editor .source-ai { background: #fff7e6; color: #d48806; }
+  .da-annotations { width: 320px; background: #f5f5f5; border-left: 1px solid #e8e8e8; padding: 16px; overflow-y: auto; }
+  .da-ann-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .da-ann-title { font-size: 13px; font-weight: 600; color: #333; }
+  .da-ann-count { font-size: 11px; color: #888; background: #fff; padding: 2px 8px; border-radius: 10px; }
+  .da-ann-card { padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid; background: #fff; }
+  .da-ann-card.blue { border-left-color: #1677FF; }
+  .da-ann-card.green { border-left-color: #52C41A; }
+  .da-ann-card.orange { border-left-color: #FAAD14; }
+  .da-ann-card.red { border-left-color: #FF4D4F; }
+  .da-ann-card.purple { border-left-color: #722ED1; }
+  .da-ann-type { font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+  .da-ann-card.blue .da-ann-type { color: #1677FF; }
+  .da-ann-card.green .da-ann-type { color: #52C41A; }
+  .da-ann-card.orange .da-ann-type { color: #FAAD14; }
+  .da-ann-card.red .da-ann-type { color: #FF4D4F; }
+  .da-ann-card.purple .da-ann-type { color: #722ED1; }
+  .da-ann-text { font-size: 12px; color: #555; line-height: 1.6; }
+  .da-ann-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .da-ann-btn { font-size: 11px; padding: 3px 10px; border-radius: 4px; border: 1px solid #d9d9d9; background: #fff; color: #666; cursor: pointer; }
+  .da-ann-btn.primary { background: #1677FF; border-color: #1677FF; color: #fff; }
+  .da-statusbar { height: 32px; background: #0C1D3A; display: flex; align-items: center; padding: 0 16px; gap: 24px; font-size: 11px; color: #5a7a9a; border-top: 1px solid #1a3a6a; }
+  .da-status-item { display: flex; align-items: center; gap: 4px; }
+  .da-status-value { color: #52C41A; font-weight: 600; }
+  .da-status-value.warn { color: #FAAD14; }
+
+  /* Crossfire special */
+  .da-crossfire { background: #FFF1F0; border: 1px solid #FFA39E; border-radius: 8px; padding: 16px; margin-bottom: 8px; }
+  .da-crossfire-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #FF4D4F; margin-bottom: 10px; }
+  .da-crossfire-pair { display: flex; gap: 8px; margin-bottom: 10px; }
+  .da-crossfire-item { flex: 1; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #FFCCC7; font-size: 12px; color: #555; line-height: 1.5; }
+  .da-crossfire-item strong { color: #FF4D4F; display: block; font-size: 11px; margin-bottom: 4px; }
+  .da-crossfire-input { width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 12px; resize: none; font-family: inherit; }
+  .da-crossfire-input::placeholder { color: #bbb; }
+
+  /* ==================== Direction B: Clean Canvas ==================== */
+  .db-app { height: 640px; display: flex; flex-direction: column; font-size: 13px; background: #fff; }
+  .db-topbar { height: 44px; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid #f0f0f0; }
+  .db-logo { font-size: 15px; font-weight: 600; color: #333; }
+  .db-sop { display: flex; gap: 4px; margin-left: 32px; }
+  .db-sop-item { font-size: 12px; color: #bbb; padding: 4px 12px; border-radius: 20px; cursor: pointer; }
+  .db-sop-item.done { color: #52C41A; }
+  .db-sop-item.active { color: #1677FF; background: #F0F5FF; font-weight: 500; }
+  .db-sop-item.warn { color: #FAAD14; }
+  .db-body { flex: 1; display: flex; overflow: hidden; }
+  .db-outline { width: 200px; padding: 20px 16px; border-right: 1px solid #f5f5f5; }
+  .db-outline-item { padding: 5px 8px; font-size: 12px; color: #999; border-radius: 4px; margin-bottom: 1px; cursor: pointer; }
+  .db-outline-item:hover { color: #555; }
+  .db-outline-item.active { color: #1677FF; background: #F0F5FF; }
+  .db-outline-item.sub { padding-left: 20px; font-size: 11px; }
+  .db-editor { flex: 1; max-width: 800px; margin: 0 auto; padding: 40px 0; overflow-y: auto; }
+  .db-editor h3 { font-size: 20px; font-weight: 600; color: #1a1a1a; margin-bottom: 20px; }
+  .db-editor p { font-size: 14px; line-height: 2; color: #444; margin-bottom: 16px; }
+  .db-ann-float { position: relative; }
+  .db-ann-marker { position: absolute; right: -40px; top: 0; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; color: #fff; }
+  .db-ann-marker.blue { background: #1677FF; }
+  .db-ann-marker.red { background: #FF4D4F; }
+  .db-ann-marker.green { background: #52C41A; }
+  .db-statusbar { height: 28px; display: flex; align-items: center; justify-content: center; gap: 24px; font-size: 11px; color: #ccc; border-top: 1px solid #f5f5f5; }
+  .db-status-score { color: #52C41A; }
+
+  /* ==================== Direction C: Structured Workbench ==================== */
+  .dc-app { height: 640px; display: flex; flex-direction: column; font-size: 13px; background: #F5F5F5; }
+  .dc-topbar { height: 48px; display: flex; align-items: center; padding: 0 20px; background: #fff; border-bottom: 1px solid #e8e8e8; gap: 16px; }
+  .dc-logo { font-size: 15px; font-weight: 600; color: #333; }
+  .dc-project { font-size: 13px; color: #1677FF; background: #F0F5FF; padding: 4px 12px; border-radius: 4px; }
+  .dc-sop-bar { height: 56px; background: #fff; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; padding: 0 20px; gap: 4px; }
+  .dc-sop-step { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 12px; cursor: pointer; }
+  .dc-sop-step.done { background: #F6FFED; color: #52C41A; }
+  .dc-sop-step.active { background: #E6F4FF; color: #1677FF; font-weight: 600; box-shadow: 0 1px 4px rgba(22,119,255,0.15); }
+  .dc-sop-step.pending { color: #bbb; }
+  .dc-sop-step.warn { background: #FFFBE6; color: #FAAD14; }
+  .dc-sop-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dc-sop-step.done .dc-sop-dot { background: #52C41A; }
+  .dc-sop-step.active .dc-sop-dot { background: #1677FF; }
+  .dc-sop-step.pending .dc-sop-dot { background: #d9d9d9; }
+  .dc-sop-step.warn .dc-sop-dot { background: #FAAD14; }
+  .dc-sop-arrow { color: #d9d9d9; font-size: 14px; }
+  .dc-body { flex: 1; display: flex; gap: 12px; padding: 12px; overflow: hidden; }
+  .dc-panel { background: #fff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden; display: flex; flex-direction: column; }
+  .dc-panel-header { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 12px; font-weight: 600; color: #333; display: flex; justify-content: space-between; align-items: center; }
+  .dc-panel-badge { font-size: 10px; background: #FF4D4F; color: #fff; padding: 1px 6px; border-radius: 10px; }
+  .dc-panel-body { flex: 1; padding: 12px 16px; overflow-y: auto; }
+  .dc-outline-panel { width: 220px; }
+  .dc-editor-panel { flex: 1; }
+  .dc-ann-panel { width: 300px; }
+  .dc-editor-content h3 { font-size: 17px; font-weight: 600; color: #1a1a1a; margin-bottom: 14px; }
+  .dc-editor-content p { font-size: 14px; line-height: 1.8; color: #444; margin-bottom: 10px; }
+  .dc-ann-card { padding: 10px; border-radius: 6px; margin-bottom: 6px; border-left: 3px solid; background: #FAFAFA; }
+  .dc-ann-card.red { border-left-color: #FF4D4F; }
+  .dc-ann-card.blue { border-left-color: #1677FF; }
+  .dc-ann-card.orange { border-left-color: #FAAD14; }
+  .dc-ann-type { font-size: 10px; font-weight: 600; margin-bottom: 3px; }
+  .dc-ann-card.red .dc-ann-type { color: #FF4D4F; }
+  .dc-ann-card.blue .dc-ann-type { color: #1677FF; }
+  .dc-ann-card.orange .dc-ann-type { color: #FAAD14; }
+  .dc-ann-text { font-size: 11px; color: #666; line-height: 1.5; }
+  .dc-statusbar { height: 32px; background: #fff; display: flex; align-items: center; padding: 0 20px; gap: 20px; font-size: 11px; color: #999; border-top: 1px solid #e8e8e8; }
+  .dc-status-green { color: #52C41A; font-weight: 600; }
+
+  /* ==================== Comparison View ==================== */
+  .comparison { padding: 32px; max-width: 1200px; margin: 0 auto; }
+  .comparison h2 { text-align: center; font-size: 24px; color: #fff; margin-bottom: 8px; }
+  .comparison > p { text-align: center; font-size: 14px; color: #888; margin-bottom: 32px; }
+  .comp-table { width: 100%; border-collapse: collapse; }
+  .comp-table th { text-align: left; padding: 12px 16px; background: #1a1a1a; color: #888; font-size: 12px; font-weight: 600; border-bottom: 1px solid #333; }
+  .comp-table td { padding: 12px 16px; border-bottom: 1px solid #222; font-size: 13px; color: #ccc; vertical-align: top; }
+  .comp-table tr:hover td { background: #111; }
+  .comp-table .dim-label { color: #888; font-weight: 500; }
+  .comp-best { color: #52C41A; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <h1>BidWise 设计方向</h1>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="show('a')">A. 指挥中心</div>
+    <div class="nav-tab" onclick="show('b')">B. 纯净画布</div>
+    <div class="nav-tab" onclick="show('c')">C. 结构化工作台</div>
+    <div class="nav-tab" onclick="show('compare')">对比总览</div>
+  </div>
+  <div class="nav-desc" id="desc">深色导航 · 军工气质 · 数据密集</div>
+</div>
+
+<div class="content">
+
+  <!-- Direction A: Command Center -->
+  <div class="direction active" id="dir-a">
+    <div class="direction-header">
+      <h2>A. 指挥中心 Command Center</h2>
+      <p>深色导航框架 + 亮色内容区。军工气质，数据密集感强，深蓝顶部 SOP 进度条突出阶段感。适合信息密度高、需要强视觉层级区分的场景。</p>
+    </div>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">工作空间 — 阶段 4 方案撰写 <span>含交叉火力决策</span></div>
+      <div class="da-app">
+        <div class="da-sop">
+          <div class="da-sop-title">SOP 进度</div>
+          <div class="da-sop-steps">
+            <div class="da-step"><div class="da-step-dot done">✓</div><div class="da-step-label">需求分析</div></div>
+            <div class="da-step-line done"></div>
+            <div class="da-step"><div class="da-step-dot done">✓</div><div class="da-step-label">方案设计</div></div>
+            <div class="da-step-line done"></div>
+            <div class="da-step"><div class="da-step-dot active">4</div><div class="da-step-label">方案撰写</div></div>
+            <div class="da-step-line"></div>
+            <div class="da-step"><div class="da-step-dot pending">5</div><div class="da-step-label">成本评估</div></div>
+            <div class="da-step-line"></div>
+            <div class="da-step"><div class="da-step-dot warn">!</div><div class="da-step-label">评审打磨</div></div>
+            <div class="da-step-line"></div>
+            <div class="da-step"><div class="da-step-dot pending">6</div><div class="da-step-label">交付归档</div></div>
+          </div>
+        </div>
+        <div class="da-body">
+          <div class="da-outline">
+            <div class="da-outline-title">文档大纲</div>
+            <div class="da-outline-item">1. 项目概述</div>
+            <div class="da-outline-item">2. 需求分析</div>
+            <div class="da-outline-item">3. 总体设计</div>
+            <div class="da-outline-item active">4. 系统架构设计</div>
+            <div class="da-outline-item sub">4.1 技术架构</div>
+            <div class="da-outline-item sub">4.2 数据架构</div>
+            <div class="da-outline-item sub">4.3 部署架构</div>
+            <div class="da-outline-item">5. 功能详细设计</div>
+            <div class="da-outline-item">6. 实施方案</div>
+            <div class="da-outline-item">7. 安全设计</div>
+            <div class="da-outline-item">8. 团队与资质</div>
+          </div>
+          <div class="da-editor">
+            <h3>4. 系统架构设计</h3>
+            <p>本系统采用微服务架构设计<span class="ai-source source-asset">资产库</span>，基于 Spring Cloud 构建高可用分布式系统，充分考虑装备全寿命周期管理<span class="ai-source source-ai">AI 推理</span>的业务特点，实现各子系统间的松耦合和弹性扩展。</p>
+            <p>核心技术架构分为四层：接入层、服务层、数据层和基础设施层。接入层采用 Nginx 反向代理实现负载均衡和 SSL 终止；服务层基于 Spring Cloud Gateway 进行路由管控和流量治理...</p>
+          </div>
+          <div class="da-annotations">
+            <div class="da-ann-header">
+              <div class="da-ann-title">智能批注</div>
+              <div class="da-ann-count">7 条待处理</div>
+            </div>
+            <div class="da-ann-card blue">
+              <div class="da-ann-type">💡 AI 建议</div>
+              <div class="da-ann-text">建议使用"装备全寿命周期管理"替代"设备管理"——行业术语优化</div>
+              <div class="da-ann-actions"><button class="da-ann-btn primary">采纳</button><button class="da-ann-btn">驳回</button></div>
+            </div>
+            <div class="da-ann-card green">
+              <div class="da-ann-type">📦 资产推荐</div>
+              <div class="da-ann-text">匹配到相似架构图：2025 年某集团中标方案微服务架构图.drawio</div>
+              <div class="da-ann-actions"><button class="da-ann-btn primary">插入</button><button class="da-ann-btn">查看</button></div>
+            </div>
+            <div class="da-ann-card orange">
+              <div class="da-ann-type">⚠️ 评分预警</div>
+              <div class="da-ann-text">本章节评分权重 15%，当前内容覆盖度 62%，建议补充数据架构和安全设计内容</div>
+              <div class="da-ann-actions"><button class="da-ann-btn primary">处理</button><button class="da-ann-btn">稍后</button></div>
+            </div>
+            <div class="da-crossfire">
+              <div class="da-crossfire-label">⚡ 交叉火力 — 需要您的决策</div>
+              <div class="da-crossfire-pair">
+                <div class="da-crossfire-item"><strong>🎯 评标专家</strong>单体架构在可扩展性评分上会被竞对的微服务方案碾压</div>
+                <div class="da-crossfire-item"><strong>👤 最终用户</strong>运维团队只有 2 人，微服务需要 5 个中间件，运维复杂度太高</div>
+              </div>
+              <textarea class="da-crossfire-input" rows="2" placeholder="输入您的策略决策...（如：采用微服务，但提供一键运维工具包）"></textarea>
+              <div class="da-ann-actions" style="margin-top:8px"><button class="da-ann-btn primary">提交决策</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="da-statusbar">
+          <div class="da-status-item">合规分 <span class="da-status-value">92</span>/100</div>
+          <div class="da-status-item">质量分 <span class="da-status-value warn">68</span>/100</div>
+          <div class="da-status-item">*项覆盖 <span class="da-status-value">3/3</span></div>
+          <div class="da-status-item">字数 12,450</div>
+          <div class="da-status-item" style="margin-left:auto">截止日 2026-03-20 · 剩余 3 天</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Direction B: Clean Canvas -->
+  <div class="direction" id="dir-b">
+    <div class="direction-header">
+      <h2>B. 纯净画布 Clean Canvas</h2>
+      <p>全白极简，Claude/Notion 风格。界面元素几乎隐形，最大化留白。批注以浮动标记形式出现在内容右侧。适合深度沉浸式写作和阅读场景。</p>
+    </div>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">工作空间 — 阶段 4 方案撰写 <span>极简编辑模式</span></div>
+      <div class="db-app">
+        <div class="db-topbar">
+          <div class="db-logo">BidWise</div>
+          <div class="db-sop">
+            <div class="db-sop-item done">✓ 需求</div>
+            <div class="db-sop-item done">✓ 设计</div>
+            <div class="db-sop-item active">撰写</div>
+            <div class="db-sop-item">成本</div>
+            <div class="db-sop-item warn">⚠ 评审</div>
+            <div class="db-sop-item">交付</div>
+          </div>
+        </div>
+        <div class="db-body">
+          <div class="db-outline">
+            <div class="db-outline-item" style="color:#bbb;font-size:10px;margin-bottom:8px">大纲</div>
+            <div class="db-outline-item">项目概述</div>
+            <div class="db-outline-item">需求分析</div>
+            <div class="db-outline-item">总体设计</div>
+            <div class="db-outline-item active">系统架构设计</div>
+            <div class="db-outline-item sub">技术架构</div>
+            <div class="db-outline-item sub">数据架构</div>
+            <div class="db-outline-item">功能详细设计</div>
+            <div class="db-outline-item">实施方案</div>
+          </div>
+          <div class="db-editor">
+            <h3>系统架构设计</h3>
+            <p>本系统采用微服务架构设计，基于 Spring Cloud 构建高可用分布式系统，充分考虑装备全寿命周期管理的业务特点，实现各子系统间的松耦合和弹性扩展。</p>
+            <div class="db-ann-float" style="margin-bottom:16px">
+              <p>核心技术架构分为四层：接入层、服务层、数据层和基础设施层。接入层采用 Nginx 反向代理实现负载均衡和 SSL 终止。</p>
+              <div class="db-ann-marker blue" style="top:4px" title="AI 建议：行业术语优化">💡</div>
+            </div>
+            <div class="db-ann-float" style="margin-bottom:16px">
+              <p>服务层基于 Spring Cloud Gateway 进行路由管控和流量治理，各业务服务通过 Nacos 实现服务注册和配置管理，确保系统的高可用性和弹性伸缩能力。</p>
+              <div class="db-ann-marker red" style="top:4px" title="对抗攻击：竞对微服务方案对比">⚡</div>
+            </div>
+            <p>数据层采用 MySQL 主从复制实现读写分离，配合 Redis 缓存热点数据，确保在大并发场景下的数据访问性能。</p>
+            <div class="db-ann-float" style="margin-bottom:16px">
+              <p>基础设施层基于 Docker 容器化部署，通过 Kubernetes 实现自动化编排和运维管理。</p>
+              <div class="db-ann-marker green" style="top:4px" title="资产推荐：匹配架构图">📦</div>
+            </div>
+          </div>
+        </div>
+        <div class="db-statusbar">
+          <span>合规 <span class="db-status-score">92</span></span>
+          <span>质量 68</span>
+          <span>*项 3/3</span>
+          <span>12,450 字</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Direction C: Structured Workbench -->
+  <div class="direction" id="dir-c">
+    <div class="direction-header">
+      <h2>C. 结构化工作台 Structured Workbench</h2>
+      <p>卡片式分区布局，每个功能区有清晰的视觉容器边界。Linear/Notion Database 风格。适合需要同时关注多个信息面板、快速在区域间切换的场景。</p>
+    </div>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">工作空间 — 阶段 4 方案撰写 <span>卡片式分区</span></div>
+      <div class="dc-app">
+        <div class="dc-topbar">
+          <div class="dc-logo">BidWise</div>
+          <div class="dc-project">某研究院装备管理平台</div>
+          <div style="margin-left:auto;font-size:12px;color:#999">截止 2026-03-20 · 剩余 3 天</div>
+        </div>
+        <div class="dc-sop-bar">
+          <div class="dc-sop-step done"><div class="dc-sop-dot"></div>需求分析</div>
+          <div class="dc-sop-arrow">›</div>
+          <div class="dc-sop-step done"><div class="dc-sop-dot"></div>方案设计</div>
+          <div class="dc-sop-arrow">›</div>
+          <div class="dc-sop-step active"><div class="dc-sop-dot"></div>方案撰写</div>
+          <div class="dc-sop-arrow">›</div>
+          <div class="dc-sop-step pending"><div class="dc-sop-dot"></div>成本评估</div>
+          <div class="dc-sop-arrow">›</div>
+          <div class="dc-sop-step warn"><div class="dc-sop-dot"></div>评审打磨</div>
+          <div class="dc-sop-arrow">›</div>
+          <div class="dc-sop-step pending"><div class="dc-sop-dot"></div>交付归档</div>
+        </div>
+        <div class="dc-body">
+          <div class="dc-panel dc-outline-panel">
+            <div class="dc-panel-header">文档大纲</div>
+            <div class="dc-panel-body">
+              <div class="db-outline-item">1. 项目概述</div>
+              <div class="db-outline-item">2. 需求分析</div>
+              <div class="db-outline-item">3. 总体设计</div>
+              <div class="db-outline-item active">4. 系统架构设计</div>
+              <div class="db-outline-item sub">4.1 技术架构</div>
+              <div class="db-outline-item sub">4.2 数据架构</div>
+              <div class="db-outline-item">5. 功能详细设计</div>
+              <div class="db-outline-item">6. 实施方案</div>
+            </div>
+          </div>
+          <div class="dc-panel dc-editor-panel">
+            <div class="dc-panel-header">编辑器 <span style="font-weight:400;color:#999;font-size:11px">第 4 章 · 系统架构设计</span></div>
+            <div class="dc-panel-body dc-editor-content">
+              <h3>系统架构设计</h3>
+              <p>本系统采用微服务架构设计，基于 Spring Cloud 构建高可用分布式系统，充分考虑装备全寿命周期管理的业务特点。</p>
+              <p>核心技术架构分为四层：接入层、服务层、数据层和基础设施层。</p>
+            </div>
+          </div>
+          <div class="dc-panel dc-ann-panel">
+            <div class="dc-panel-header">批注 <div class="dc-panel-badge">7</div></div>
+            <div class="dc-panel-body">
+              <div class="dc-ann-card red">
+                <div class="dc-ann-type">⚡ 对抗攻击</div>
+                <div class="dc-ann-text">竞对微服务+容器化方案会在可扩展性评分上碾压</div>
+              </div>
+              <div class="dc-ann-card orange">
+                <div class="dc-ann-type">⚠️ 评分预警</div>
+                <div class="dc-ann-text">本章评分权重 15%，覆盖度 62%</div>
+              </div>
+              <div class="dc-ann-card blue">
+                <div class="dc-ann-type">💡 AI 建议</div>
+                <div class="dc-ann-text">建议使用"装备全寿命周期管理"替代"设备管理"</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dc-statusbar">
+          <span>合规 <span class="dc-status-green">92/100</span></span>
+          <span>质量 68/100</span>
+          <span>*项 3/3 ✓</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison -->
+  <div class="direction" id="dir-compare">
+    <div class="comparison">
+      <h2>设计方向对比总览</h2>
+      <p>从 8 个维度对比三个方向，找到最适合 BidWise 的视觉策略</p>
+      <table class="comp-table">
+        <tr><th>维度</th><th>A. 指挥中心</th><th>B. 纯净画布</th><th>C. 结构化工作台</th></tr>
+        <tr><td class="dim-label">整体调性</td><td>军工气质，专业有力</td><td>极简优雅，沉浸写作</td><td>结构清晰，功能分明</td></tr>
+        <tr><td class="dim-label">信息密度</td><td class="comp-best">高密度，三栏+深色导航同时展示大量信息</td><td>低密度，大量留白，信息按需展示</td><td>中密度，卡片容器组织信息</td></tr>
+        <tr><td class="dim-label">批注体验</td><td class="comp-best">独立侧边栏，交叉火力有专属视觉区域</td><td>浮动标记，悬停展开，不占空间</td><td>卡片面板，清晰但空间较紧</td></tr>
+        <tr><td class="dim-label">SOP 进度条</td><td class="comp-best">深色背景突出，阶段感最强</td><td>轻量标签式，融入顶栏</td><td>独立行，卡片式阶段按钮</td></tr>
+        <tr><td class="dim-label">编辑沉浸度</td><td>中——三栏共存，注意力分散</td><td class="comp-best">最高——极简 chrome，内容绝对至上</td><td>中——面板边界清晰但视觉切割多</td></tr>
+        <tr><td class="dim-label">学习成本</td><td>中——深色导航有"专业工具"门槛感</td><td class="comp-best">低——类似 Notion/Claude，用户熟悉</td><td>低——卡片布局直觉易懂</td></tr>
+        <tr><td class="dim-label">品牌辨识度</td><td class="comp-best">最高——深色+蓝色组合有独特军工感</td><td>低——与太多工具相似</td><td>中——结构化但不独特</td></tr>
+        <tr><td class="dim-label">开发成本</td><td>较高——深色主题需额外适配</td><td class="comp-best">最低——全白+Ant Design 默认最接近</td><td>中——卡片布局需要额外容器层</td></tr>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.direction').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('dir-' + id).classList.add('active');
+  const descs = { a: '深色导航 · 军工气质 · 数据密集', b: '全白极简 · 内容至上 · 沉浸写作', c: '卡片分区 · 结构清晰 · 功能分明', compare: '8 维度对比 · 选择最佳方向' };
+  document.getElementById('desc').textContent = descs[id];
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

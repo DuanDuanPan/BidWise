@@ -1,0 +1,150 @@
+# generated: 2026-03-18
+# last_updated: 2026-03-18
+# project: 5-方案助手
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
+
+generated: 2026-03-18
+last_updated: 2026-03-18
+project: 5-方案助手
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ── Epic 1: 应用基座与投标项目管理 (10 stories) ──
+  epic-1: backlog
+  1-1-enabler-project-init: backlog
+  1-2-enabler-data-persistence: backlog
+  1-3-enabler-ipc-security: backlog
+  1-4-ui-framework-design-system: backlog
+  1-5-project-crud-kanban: backlog
+  1-6-sop-navigation: backlog
+  1-7-workspace-layout-shell: backlog
+  1-8-smart-todo-priority: backlog
+  1-9-command-palette: backlog
+  1-10-accessibility: backlog
+  epic-1-retrospective: optional
+
+  # ── Epic 2: 招标文件分析与需求智能 (9 stories) ──
+  epic-2: backlog
+  2-1-enabler-ai-proxy-desensitization: backlog
+  2-2-enabler-agent-orchestrator-task-queue: backlog
+  2-3-tender-import-async-parsing: backlog
+  2-4-ocr-recognition-correction: backlog
+  2-5-requirement-extraction-scoring-model: backlog
+  2-6-mandatory-item-detection: backlog
+  2-7-strategy-seed-generation: backlog
+  2-8-traceability-matrix: backlog
+  2-9-fog-map: backlog
+  epic-2-retrospective: optional
+
+  # ── Epic 3: AI 方案生成与富文本编辑 (8 stories) ──
+  epic-3: backlog
+  3-1-plate-editor-markdown-serialization: backlog
+  3-2-editor-workspace-doc-outline: backlog
+  3-3-template-driven-proposal-skeleton: backlog
+  3-4-ai-chapter-generation: backlog
+  3-5-source-attribution-baseline-validation: backlog
+  3-6-writing-style-template: backlog
+  3-7-drawio-embedded-editing: backlog
+  3-8-mermaid-diagram-generation: backlog
+  epic-3-retrospective: optional
+
+  # ── Epic 4: 批注式人机协作 (4 stories) ──
+  epic-4: backlog
+  4-1-enabler-annotation-service: backlog
+  4-2-annotation-card-color-coding: backlog
+  4-3-smart-annotation-panel: backlog
+  4-4-pending-decision-cross-role-notification: backlog
+  epic-4-retrospective: optional
+
+  # ── Epic 5: 资产与知识管理 (6 stories) ──
+  epic-5: backlog
+  5-1-asset-search-tag-management: backlog
+  5-2-asset-recommendation-one-click-import: backlog
+  5-3-terminology-library: backlog
+  5-4-batch-import-cold-start: backlog
+  5-5-capability-baseline-import: backlog
+  5-6-template-registration-wizard: backlog
+  epic-5-retrospective: optional
+
+  # ── Epic 6: 成本评估与 GAP 模拟 (4 stories) ──
+  epic-6: backlog
+  6-1-gap-identification: backlog
+  6-2-cost-estimation-4号文: backlog
+  6-3-whatif-cost-only-simulator: backlog
+  6-4-cost-annotation-proposal-linkage: backlog
+  epic-6-retrospective: optional
+
+  # ── Epic 7: 质量保障、对抗评审与合规 (9 stories) ──
+  epic-7: backlog
+  7-1-mandatory-item-compliance-engine: backlog
+  7-2-dynamic-adversarial-role-generation: backlog
+  7-3-adversarial-review-execution: backlog
+  7-4-crossfire-conflict-detection-decision: backlog
+  7-5-pre-review-attack-checklist: backlog
+  7-6-similarity-detection-anti-collusion: backlog
+  7-7-template-compliance-check: backlog
+  7-8-realtime-scoring-dashboard: backlog
+  7-9-whatif-score-impact-integration: backlog
+  epic-7-retrospective: optional
+
+  # ── Epic 8: 文档导出与交付 (5 stories) ──
+  epic-8: backlog
+  8-1-enabler-python-docx-engine: backlog
+  8-2-export-preview: backlog
+  8-3-one-click-docx-export: backlog
+  8-4-drawio-png-auto-numbering: backlog
+  8-5-format-degradation-compliance-report: backlog
+  epic-8-retrospective: optional
+
+  # ── Epic 9: 系统管理与部署运维 (7 stories) ──
+  epic-9: backlog
+  9-1-silent-install-batch-deploy: backlog
+  9-2-admin-init-wizard: backlog
+  9-3-git-company-data-sync: backlog
+  9-4-version-update-push: backlog
+  9-5-auto-verify-rollback: backlog
+  9-6-api-key-expiry-alert: backlog
+  9-7-local-data-backup: backlog
+  epic-9-retrospective: optional
+
+  # ── Epic 10: 经验沉淀飞轮 (4 stories) ──
+  epic-10: backlog
+  10-1-enabler-graphiti-kuzu-knowledge-graph: backlog
+  10-2-experience-auto-capture: backlog
+  10-3-experience-injection-anti-repeat: backlog
+  10-4-changelog-experience-traceability: backlog
+  epic-10-retrospective: optional
