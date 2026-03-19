@@ -389,8 +389,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <!-- After each merge, run regression (Step 8) before merging next story -->
   <action>After each successful merge, goto step 8 for regression before merging next story in queue</action>
 
-  <!-- Cleanup after all merges + regressions pass -->
-  <action>Run: `./scripts/worktree.sh cleanup`</action>
+  <!-- Cleanup after all merges + regressions pass → handled in Step 9 -->
 
   <output level="L1">✅ **Batch 完成**
 
@@ -479,7 +478,35 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <action>Set story.phase = "done"</action>
   <action>Close codex pane</action>
   <output level="L1">✅ Story {{story_id}} 三层回归测试同一轮全部通过（第 {{regression_cycle}} 轮），状态已更新为 done</output>
-  <action>Continue merging next story in queue (return to step 7), or proceed to cleanup if queue empty</action>
+  <action>Continue merging next story in queue (return to step 7), or proceed to step 9 cleanup if queue empty</action>
+</step>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- STEP 9: CLEANUP (after all regressions pass)                      -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+
+<step n="9" goal="Clean up merged worktrees and branches" level="L0">
+  <action>For each merged story in batch:
+    1. `./scripts/worktree.sh remove {{story_id}}`
+       (removes worktree directory + deletes local branch)
+    2. Verify removal: `./scripts/worktree.sh list` should not show the story</action>
+
+  <output level="L1">🧹 Cleanup 完成 — {{cleaned_count}} 个 worktree 已清理
+
+  {{remaining_worktrees_if_any}}</output>
+
+  <!-- Check for next batch -->
+  <action>Re-read sprint-status.yaml</action>
+  <check if="more ready stories exist">
+    <output>📋 还有可开发的 Story，是否继续下一个 batch？</output>
+    <ask level="L2">继续？输入 "是" 开始下一轮，或 "否" 结束。</ask>
+    <check if="user confirms">
+      <goto step="1">Start next batch</goto>
+    </check>
+  </check>
+
+  <output>🏁 所有已选 Story 处理完毕。</output>
 </step>
 
 </workflow>
@@ -518,6 +545,13 @@ Use `tmux capture-pane -t {pane_id} -p` and check the last few lines for:
 ---
 
 ## TMUX COMMANDS REFERENCE
+
+**Codex 提交命令注意事项：** codex 的输入框在 `send-keys` 发送长文本后可能不会自动提交。发送命令后需要额外发一次 `Enter`：
+```bash
+tmux send-keys -t {pane_id} '命令内容' Enter
+sleep 1
+tmux send-keys -t {pane_id} Enter   # 额外 Enter 确保提交
+```
 
 ```bash
 # Open sub-pane with claude (Create Story, Prototype, Dev)
