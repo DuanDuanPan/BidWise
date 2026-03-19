@@ -67,7 +67,7 @@ so that 开发团队可以在规范化的工程基础上开始构建功能。
 
 - [ ] **Task 4: Tailwind CSS v4 + Ant Design 5.x 集成** (AC: #1, #5)
   - [ ] 4.1 安装 Tailwind CSS v4：`pnpm add -D tailwindcss @tailwindcss/postcss`
-  - [ ] 4.2 安装 Ant Design 5.x：`pnpm add antd@5.27.6 @ant-design/icons@^5.6.1 @ant-design/cssinjs@^1.23.0`
+  - [ ] 4.2 安装 Ant Design 5.x：`pnpm add antd@5.29.3 @ant-design/icons@^5.6.1 @ant-design/cssinjs@^1.23.0`
   - [ ] 4.3 配置 PostCSS（`postcss.config.js`）：使用 `@tailwindcss/postcss` 插件
   - [ ] 4.4 配置 `globals.css`：CSS 层级顺序解决 Ant Design + Tailwind 优先级冲突（见 Dev Notes 中的关键代码片段）
   - [ ] 4.5 在 `App.tsx` 中用 `<StyleProvider layer>` 包裹应用（Ant Design CSS 层级兼容）
@@ -116,7 +116,8 @@ so that 开发团队可以在规范化的工程基础上开始构建功能。
 | better-sqlite3 | ≥12.8.0 | **必须** 12.8.0+ 才兼容 Electron 41 的 V8 变更 |
 | Kysely | 0.28.x | 稳定，CamelCasePlugin 和 Migrator 无 breaking change |
 | Tailwind CSS | 4.x | **重大变更**：CSS 配置代替 `tailwind.config.ts`，详见下方 |
-| Ant Design | 5.27.x | 5.x 维护模式但稳定；6.x 已发布但架构文档指定 5.x |
+| Node.js | ^20.19.0 \|\| >=22.12.0 | electron-vite@5.0.0 和 vitest@4.1.0 要求此最低版本 |
+| Ant Design | 5.29.x | 5.x 维护模式但稳定；6.x 已发布但架构文档指定 5.x |
 | Vitest | 4.x | 无内置 Electron 环境，主进程用 `node`，渲染进程用 `jsdom` |
 | Playwright | 1.58.x | Electron 支持仍为 experimental，使用 `_electron.launch()` |
 | Zustand | 5.x | `subscribeWithSelector` 无变化；`create` 不再支持自定义 equality（需要时用 `createWithEqualityFn`） |
@@ -606,3 +607,4 @@ bidwise/
 
 - 2026-03-19: Story 文件创建，comprehensive context engine 分析完成
 - 2026-03-19: 修复 AC-3/5/6 可测试性，补齐 scripts/Husky/lint-staged/Testing Library/Playwright Electron harness 任务，替换为 typed preload API，锁定 Ant Design 5.27.6 依赖，补充目录结构与架构反模式要求
+- 2026-03-19: Ant Design 版本从 5.27.x 更新至 5.29.x（npm 最新 5.29.3）；版本锁定表增加 Node.js ^20.19.0 || >=22.12.0 前置条件
