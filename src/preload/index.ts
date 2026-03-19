@@ -1,42 +1,34 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type {
-  ApiResponse,
-  CreateProjectInput,
-  ProjectListItem,
-  ProjectRecord,
-  UpdateProjectInput,
-} from '@shared/ipc-types'
+import type { ApiResponse, IpcChannelMap, PreloadApi } from '@shared/ipc-types'
 import { IPC_CHANNELS } from '@shared/ipc-types'
 
-type ProjectApi = {
-  projectCreate: (input: CreateProjectInput) => Promise<ApiResponse<ProjectRecord>>
-  projectList: () => Promise<ApiResponse<ProjectListItem[]>>
-  projectGet: (projectId: string) => Promise<ApiResponse<ProjectRecord>>
-  projectUpdate: (
-    projectId: string,
-    input: UpdateProjectInput
-  ) => Promise<ApiResponse<ProjectRecord>>
-  projectDelete: (projectId: string) => Promise<ApiResponse<void>>
-  projectArchive: (projectId: string) => Promise<ApiResponse<ProjectRecord>>
+// 类型安全的 IPC invoke 包装（内部使用，不暴露给 renderer）
+function typedInvoke<C extends keyof IpcChannelMap>(
+  channel: C,
+  ...args: IpcChannelMap[C]['input'] extends void ? [] : [IpcChannelMap[C]['input']]
+): Promise<ApiResponse<IpcChannelMap[C]['output']>> {
+  return ipcRenderer.invoke(channel, ...args) as Promise<ApiResponse<IpcChannelMap[C]['output']>>
 }
 
-const api: ProjectApi = {
-  projectCreate: (input) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_CREATE, input) as Promise<ApiResponse<ProjectRecord>>,
-  projectList: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_LIST) as Promise<ApiResponse<ProjectListItem[]>>,
-  projectGet: (projectId) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_GET, projectId) as Promise<ApiResponse<ProjectRecord>>,
-  projectUpdate: (projectId, input) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_UPDATE, { projectId, input }) as Promise<
-      ApiResponse<ProjectRecord>
-    >,
-  projectDelete: (projectId) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_DELETE, projectId) as Promise<ApiResponse<void>>,
-  projectArchive: (projectId) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_ARCHIVE, projectId) as Promise<
-      ApiResponse<ProjectRecord>
-    >,
-}
+// Exhaustive whitelist API — satisfies PreloadApi ensures every IpcChannel has a method.
+// Adding a channel to IpcChannelMap without implementing it in preload will cause a compile error.
+const api = {
+  projectCreate: (input: IpcChannelMap['project:create']['input']) =>
+    typedInvoke(IPC_CHANNELS.PROJECT_CREATE, input),
+
+  projectList: () => typedInvoke(IPC_CHANNELS.PROJECT_LIST),
+
+  projectGet: (projectId: IpcChannelMap['project:get']['input']) =>
+    typedInvoke(IPC_CHANNELS.PROJECT_GET, projectId),
+
+  projectUpdate: (input: IpcChannelMap['project:update']['input']) =>
+    typedInvoke(IPC_CHANNELS.PROJECT_UPDATE, input),
+
+  projectDelete: (projectId: IpcChannelMap['project:delete']['input']) =>
+    typedInvoke(IPC_CHANNELS.PROJECT_DELETE, projectId),
+
+  projectArchive: (projectId: IpcChannelMap['project:archive']['input']) =>
+    typedInvoke(IPC_CHANNELS.PROJECT_ARCHIVE, projectId),
+} satisfies PreloadApi
 
 contextBridge.exposeInMainWorld('api', api)

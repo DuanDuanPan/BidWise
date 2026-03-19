@@ -5,7 +5,7 @@ import type { CreateProjectInput, UpdateProjectInput } from '@shared/ipc-types'
 
 const repo = new ProjectRepository()
 
-export class ProjectService {
+export const projectService = {
   async create(input: CreateProjectInput): Promise<ProjectTable> {
     if (!input.name || input.name.trim().length === 0) {
       throw new ValidationError('项目名称不能为空')
@@ -17,16 +17,16 @@ export class ProjectService {
       proposalType: input.proposalType,
       rootPath: input.rootPath,
     })
-  }
+  },
 
-  async findById(id: string): Promise<ProjectTable> {
+  async get(id: string): Promise<ProjectTable> {
     if (!id) throw new ValidationError('项目 ID 不能为空')
     return repo.findById(id)
-  }
+  },
 
-  async findAll(): Promise<ProjectTable[]> {
+  async list(): Promise<ProjectTable[]> {
     return repo.findAll()
-  }
+  },
 
   async update(id: string, input: UpdateProjectInput): Promise<ProjectTable> {
     if (!id) throw new ValidationError('项目 ID 不能为空')
@@ -36,15 +36,15 @@ export class ProjectService {
     const updateData = { ...input }
     if (updateData.name) updateData.name = updateData.name.trim()
     return repo.update(id, updateData)
-  }
+  },
 
   async delete(id: string): Promise<void> {
     if (!id) throw new ValidationError('项目 ID 不能为空')
     return repo.delete(id)
-  }
+  },
 
   async archive(id: string): Promise<ProjectTable> {
     if (!id) throw new ValidationError('项目 ID 不能为空')
     return repo.archive(id)
-  }
+  },
 }
