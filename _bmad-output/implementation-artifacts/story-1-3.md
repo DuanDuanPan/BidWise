@@ -1,6 +1,6 @@
 # Story 1.3: [Enabler] IPC 通信骨架与安全隔离
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -39,34 +39,34 @@ So that 渲染进程与主进程可以安全通信，遵循一致的模式，后
 
 ## Tasks / Subtasks (任务分解)
 
-- [ ] **Task 1: IPC 类型体系重构** (AC: #3)
-  - [ ] 1.1 重构 `src/shared/ipc-types.ts`：建立 `IpcChannelMap` 类型映射（频道名 → `{ input, output }` 类型对），替代当前松散的 `IPC_CHANNELS` 常量
-  - [ ] 1.2 定义泛型 `IpcHandler<C extends keyof IpcChannelMap>` 类型，约束 handler 的参数和返回值与 `IpcChannelMap` 一致
-  - [ ] 1.3 保留现有 `ApiResponse<T>`、`ProjectRecord`、`CreateProjectInput` 等类型不变（Story 1.1 已建立的契约）
-  - [ ] 1.4 新增 `IpcError` 类型导出（`{ code: string, message: string }`），供 renderer 端消费
+- [x] **Task 1: IPC 类型体系重构** (AC: #3)
+  - [x] 1.1 重构 `src/shared/ipc-types.ts`：建立 `IpcChannelMap` 类型映射（频道名 → `{ input, output }` 类型对），替代当前松散的 `IPC_CHANNELS` 常量
+  - [x] 1.2 定义泛型 `IpcHandler<C extends keyof IpcChannelMap>` 类型，约束 handler 的参数和返回值与 `IpcChannelMap` 一致
+  - [x] 1.3 保留现有 `ApiResponse<T>`、`ProjectRecord`、`CreateProjectInput` 等类型不变（Story 1.1 已建立的契约）
+  - [x] 1.4 新增 `IpcError` 类型导出（`{ code: string, message: string }`），供 renderer 端消费
 
-- [ ] **Task 2: IPC Handler 分域拆分与 Service 分发** (AC: #1, #4)
-  - [ ] 2.1 创建 `src/main/ipc/project-handlers.ts`：将 project 域 6 个频道从 `index.ts` 中拆出，每个 handler 接收参数 → 调用 service → 包装响应
-  - [ ] 2.2 创建 `src/main/ipc/create-handler.ts`：`createIpcHandler<C>(channel, serviceFn)` 工厂函数，统一处理 try/catch → BidWiseError 识别 → ApiResponse 包装 → 未知错误兜底
-  - [ ] 2.3 重构 `src/main/ipc/index.ts`：`registerIpcHandlers()` 改为调用各域的 `registerXxxHandlers()` 函数
-  - [ ] 2.4 创建 `src/main/services/project-service.ts`：placeholder service（方法签名匹配 IpcChannelMap 定义，实现为 `throw new NotFoundError('Not implemented')`），为 Story 1.2 数据层接入预留接口
+- [x] **Task 2: IPC Handler 分域拆分与 Service 分发** (AC: #1, #4)
+  - [x] 2.1 创建 `src/main/ipc/project-handlers.ts`：将 project 域 6 个频道从 `index.ts` 中拆出，每个 handler 接收参数 → 调用 service → 包装响应
+  - [x] 2.2 创建 `src/main/ipc/create-handler.ts`：`createIpcHandler<C>(channel, serviceFn)` 工厂函数，统一处理 try/catch → BidWiseError 识别 → ApiResponse 包装 → 未知错误兜底
+  - [x] 2.3 重构 `src/main/ipc/index.ts`：`registerIpcHandlers()` 改为调用各域的 `registerXxxHandlers()` 函数
+  - [x] 2.4 创建 `src/main/services/project-service.ts`：placeholder service（方法签名匹配 IpcChannelMap 定义，实现为 `throw new NotFoundError('Not implemented')`），为 Story 1.2 数据层接入预留接口
 
-- [ ] **Task 3: 渲染进程安全加固** (AC: #2)
-  - [ ] 3.1 在 `src/main/index.ts` 的 `BrowserWindow` webPreferences 中显式设置 `sandbox: true`
-  - [ ] 3.2 验证 preload 脚本在 sandbox 模式下正常工作（contextBridge + ipcRenderer.invoke 仍可用）
-  - [ ] 3.3 审查 `src/renderer/index.html` CSP 策略，确认 `script-src 'self'` 阻止内联脚本注入
-  - [ ] 3.4 确认 preload 中**不暴露**泛型 `ipcRenderer.invoke` / `ipcRenderer.send` / `ipcRenderer.on`，仅暴露白名单方法
+- [x] **Task 3: 渲染进程安全加固** (AC: #2)
+  - [x] 3.1 在 `src/main/index.ts` 的 `BrowserWindow` webPreferences 中显式设置 `sandbox: true`
+  - [x] 3.2 验证 preload 脚本在 sandbox 模式下正常工作（contextBridge + ipcRenderer.invoke 仍可用）
+  - [x] 3.3 审查 `src/renderer/index.html` CSP 策略，确认 `script-src 'self'` 阻止内联脚本注入
+  - [x] 3.4 确认 preload 中**不暴露**泛型 `ipcRenderer.invoke` / `ipcRenderer.send` / `ipcRenderer.on`，仅暴露白名单方法
 
-- [ ] **Task 4: Preload API 可扩展重构** (AC: #3)
-  - [ ] 4.1 重构 `src/preload/index.ts`：基于 `IpcChannelMap` 自动或手动生成类型安全的 API 方法，保持每个频道对应独立方法的白名单模式
-  - [ ] 4.2 同步更新 `src/preload/index.d.ts`：`Window.api` 类型声明与 preload 实现保持一致
-  - [ ] 4.3 确保新增域时只需在 `ipc-types.ts` 加频道定义 + 在 preload 加方法 + 在 handler 文件注册——三步完成
+- [x] **Task 4: Preload API 可扩展重构** (AC: #3)
+  - [x] 4.1 重构 `src/preload/index.ts`：基于 `IpcChannelMap` 自动或手动生成类型安全的 API 方法，保持每个频道对应独立方法的白名单模式
+  - [x] 4.2 同步更新 `src/preload/index.d.ts`：`Window.api` 类型声明与 preload 实现保持一致
+  - [x] 4.3 确保新增域时只需在 `ipc-types.ts` 加频道定义 + 在 preload 加方法 + 在 handler 文件注册——三步完成
 
-- [ ] **Task 5: 测试** (AC: #5)
-  - [ ] 5.1 创建 `tests/unit/main/ipc/create-handler.test.ts`：测试 `createIpcHandler` 工厂函数——成功路径返回 `{ success: true, data }`、BidWiseError 路径返回 `{ success: false, error: { code, message } }`、未知错误返回 UNKNOWN 错误码
-  - [ ] 5.2 创建 `tests/unit/main/ipc/project-handlers.test.ts`：mock service 验证 handler 分发调用和响应包装
-  - [ ] 5.3 确保 `pnpm test:unit` 全部通过（包括 Story 1.1 已有测试）
-  - [ ] 5.4 确保 `pnpm lint` 和 `pnpm typecheck` 通过
+- [x] **Task 5: 测试** (AC: #5)
+  - [x] 5.1 创建 `tests/unit/main/ipc/create-handler.test.ts`：测试 `createIpcHandler` 工厂函数——成功路径返回 `{ success: true, data }`、BidWiseError 路径返回 `{ success: false, error: { code, message } }`、未知错误返回 UNKNOWN 错误码
+  - [x] 5.2 创建 `tests/unit/main/ipc/project-handlers.test.ts`：mock service 验证 handler 分发调用和响应包装
+  - [x] 5.3 确保 `pnpm test:unit` 全部通过（包括 Story 1.1 已有测试）
+  - [x] 5.4 确保 `pnpm lint` 和 `pnpm typecheck` 通过
 
 ## Dev Notes (开发指南)
 
@@ -299,16 +299,42 @@ tests/
 - [Source: src/main/utils/errors.ts — 现有 BidWiseError 层次结构]
 - [Source: _bmad-output/implementation-artifacts/story-1-1.md — Story 1.1 产出与代码模式]
 
+## File List
+
+### 新增文件
+- `src/main/ipc/create-handler.ts` — IPC handler 工厂函数，统一 try/catch + BidWiseError 识别 + ApiResponse 包装
+- `src/main/ipc/project-handlers.ts` — project 域 6 个频道的 handler 注册，薄分发到 projectService
+- `src/main/services/project-service.ts` — placeholder service（6 个方法接口定义，均 throw NotFoundError 待 Story 1.2 接入）
+- `tests/unit/main/ipc/create-handler.test.ts` — createIpcHandler 工厂函数 8 个单元测试
+- `tests/unit/main/ipc/project-handlers.test.ts` — project-handlers 分发 8 个单元测试
+
+### 修改文件
+- `src/shared/ipc-types.ts` — 新增 IpcChannelMap、IpcChannel、IpcHandler、IpcError 类型，保留现有类型
+- `src/main/ipc/index.ts` — 重构为域注册调度器模式
+- `src/main/index.ts` — BrowserWindow webPreferences 添加 sandbox: true
+- `src/preload/index.ts` — 重构为基于 IpcChannelMap 的类型安全白名单 API
+- `src/preload/index.d.ts` — Window.api 类型声明与 IpcChannelMap 对齐
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-(待开发时填写)
+Claude Opus 4.6 (1M context)
 
 ### Debug Log References
 
+- prettier 格式化修复：preload/index.ts、preload/index.d.ts、project-handlers.test.ts
+- vi.mock 提升问题：project-handlers.test.ts 使用 vi.hoisted() 解决 mockProjectService 初始化顺序
+
 ### Completion Notes List
+
+- Task 1: 在 ipc-types.ts 新增 IpcChannelMap（6 个 project 域频道的 input/output 类型对）、IpcChannel（keyof 联合类型）、IpcHandler（泛型约束）、IpcError（renderer 端消费的错误类型）。保留所有现有类型。
+- Task 2: 创建 createIpcHandler 工厂函数实现统一错误处理（BidWiseError → 结构化错误码，非 BidWiseError → UNKNOWN）。拆分 project-handlers.ts 薄分发到 projectService。重构 ipc/index.ts 为域注册调度器。创建 placeholder projectService（6 个方法签名，throw NotFoundError）。
+- Task 3: BrowserWindow 添加 sandbox: true。CSP 已有 script-src 'self'。preload 不暴露泛型 ipcRenderer API。
+- Task 4: preload 重构为 typedInvoke 内部辅助函数 + 白名单 API 模式。index.d.ts 与 IpcChannelMap 类型完全对齐。新增域只需三步：ipc-types 加频道 + preload 加方法 + handler 文件注册。
+- Task 5: 16 个新单元测试（create-handler 8 个 + project-handlers 8 个）。全部 26 个测试通过，lint 0 warnings，typecheck node+web 通过。
 
 ### Change Log
 
 - 2026-03-19: Story 文件创建，comprehensive context engine 分析完成
+- 2026-03-19: 全部 5 个 Task 实现完成，26 tests passed，lint/typecheck 通过，Status → review

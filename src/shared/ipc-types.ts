@@ -51,3 +51,47 @@ export const IPC_CHANNELS = {
   PROJECT_DELETE: 'project:delete',
   PROJECT_ARCHIVE: 'project:archive',
 } as const
+
+// --- IPC Channel Map: 频道名 → { input, output } 类型对 ---
+
+export type IpcChannelMap = {
+  'project:create': { input: CreateProjectInput; output: ProjectRecord }
+  'project:list': { input: void; output: ProjectListItem[] }
+  'project:get': { input: string; output: ProjectRecord }
+  'project:update': {
+    input: { projectId: string; input: UpdateProjectInput }
+    output: ProjectRecord
+  }
+  'project:delete': { input: string; output: void }
+  'project:archive': { input: string; output: void }
+}
+
+export type IpcChannel = keyof IpcChannelMap
+
+// --- Channel name → camelCase method name (e.g. 'project:create' → 'projectCreate') ---
+
+type ChannelToMethodName<S extends string> = S extends `${infer Domain}:${infer Action}`
+  ? `${Domain}${Capitalize<Action>}`
+  : S
+
+// --- Exhaustive preload API type — derived from IpcChannelMap ---
+// Adding a channel to IpcChannelMap without implementing it in preload will cause a compile error.
+
+export type PreloadApi = {
+  [C in IpcChannel as ChannelToMethodName<C>]: IpcChannelMap[C]['input'] extends void
+    ? () => Promise<ApiResponse<IpcChannelMap[C]['output']>>
+    : (input: IpcChannelMap[C]['input']) => Promise<ApiResponse<IpcChannelMap[C]['output']>>
+}
+
+// --- IPC Handler 泛型约束 ---
+
+export type IpcHandler<C extends IpcChannel> = (
+  input: IpcChannelMap[C]['input']
+) => Promise<IpcChannelMap[C]['output']>
+
+// --- IPC Error 类型（供 renderer 端消费） ---
+
+export type IpcError = {
+  code: string
+  message: string
+}
