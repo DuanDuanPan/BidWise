@@ -9,7 +9,7 @@ import { registerIpcHandlers } from '@main/ipc'
 
 function ensureDataDirectories(): void {
   const dataRoot = join(app.getPath('userData'), 'data')
-  const subdirs = ['db', 'assets', 'exports', 'logs', 'temp']
+  const subdirs = ['db', 'projects', 'config', 'logs/ai-trace', 'backups']
   for (const dir of [dataRoot, ...subdirs.map((s) => join(dataRoot, s))]) {
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
