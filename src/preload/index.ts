@@ -17,7 +17,7 @@ type ProjectApi = {
     input: UpdateProjectInput
   ) => Promise<ApiResponse<ProjectRecord>>
   projectDelete: (projectId: string) => Promise<ApiResponse<void>>
-  projectArchive: (projectId: string) => Promise<ApiResponse<void>>
+  projectArchive: (projectId: string) => Promise<ApiResponse<ProjectRecord>>
 }
 
 const api: ProjectApi = {
@@ -34,7 +34,9 @@ const api: ProjectApi = {
   projectDelete: (projectId) =>
     ipcRenderer.invoke(IPC_CHANNELS.PROJECT_DELETE, projectId) as Promise<ApiResponse<void>>,
   projectArchive: (projectId) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_ARCHIVE, projectId) as Promise<ApiResponse<void>>,
+    ipcRenderer.invoke(IPC_CHANNELS.PROJECT_ARCHIVE, projectId) as Promise<
+      ApiResponse<ProjectRecord>
+    >,
 }
 
 contextBridge.exposeInMainWorld('api', api)

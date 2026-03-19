@@ -1,2 +1,1 @@
-// Business services placeholder
-// Services will be added as features are implemented
+export { ProjectService } from './project-service'
