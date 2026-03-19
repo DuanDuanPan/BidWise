@@ -1,5 +1,5 @@
 # generated: 2026-03-18
-# last_updated: 2026-03-18
+# last_updated: 2026-03-19
 # project: 5-方案助手
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-03-18
+last_updated: 2026-03-19
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -44,8 +44,8 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # ── Epic 1: 应用基座与投标项目管理 (10 stories) ──
-  epic-1: backlog
-  1-1-enabler-project-init: backlog
+  epic-1: in-progress
+  1-1-enabler-project-init: done
   1-2-enabler-data-persistence: backlog
   1-3-enabler-ipc-security: backlog
   1-4-ui-framework-design-system: backlog
