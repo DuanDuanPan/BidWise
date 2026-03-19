@@ -9,7 +9,7 @@ export default defineConfig({
         test: {
           name: 'main',
           environment: 'node',
-          include: ['tests/unit/main/**/*.test.ts'],
+          include: ['tests/unit/main/**/*.test.ts', 'tests/integration/**/*.test.ts'],
         },
         resolve: {
           alias: {

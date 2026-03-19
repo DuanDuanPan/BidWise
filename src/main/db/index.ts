@@ -1,2 +1,5 @@
-// Database module placeholder
-export {} from './client'
+export { getDb, initDb, destroyDb } from './client'
+export { runMigrations } from './migrator'
+export type { DB, ProjectTable } from './schema'
+export { ProjectRepository } from './repositories'
+export type { CreateProjectRepoInput, UpdateProjectRepoInput } from './repositories'

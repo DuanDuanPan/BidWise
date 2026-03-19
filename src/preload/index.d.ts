@@ -17,7 +17,7 @@ declare global {
         input: UpdateProjectInput
       ) => Promise<ApiResponse<ProjectRecord>>
       projectDelete: (projectId: string) => Promise<ApiResponse<void>>
-      projectArchive: (projectId: string) => Promise<ApiResponse<void>>
+      projectArchive: (projectId: string) => Promise<ApiResponse<ProjectRecord>>
     }
   }
 }
