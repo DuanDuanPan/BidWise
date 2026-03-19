@@ -2,8 +2,20 @@ console.time('cold-start')
 
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
+import { existsSync, mkdirSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import icon from '@resources/icon.png?asset'
+import { registerIpcHandlers } from '@main/ipc'
+
+function ensureDataDirectories(): void {
+  const dataRoot = join(app.getPath('userData'), 'data')
+  const subdirs = ['db', 'assets', 'exports', 'logs', 'temp']
+  for (const dir of [dataRoot, ...subdirs.map((s) => join(dataRoot, s))]) {
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+    }
+  }
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -14,7 +26,6 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
     },
   })
 
@@ -37,6 +48,9 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.bidwise')
+
+  ensureDataDirectories()
+  registerIpcHandlers()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

@@ -17,6 +17,7 @@
     "test": "pnpm test:unit && pnpm test:e2e",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "test:cold-start": "node scripts/cold-start-check.mjs",
     "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "pnpm build && electron-builder --dir",
@@ -65,11 +66,8 @@
     "@vitest/ui": "^4.1.0"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --max-warnings=0",
-      "prettier --check"
-    ],
-    "*.{js,mjs,cjs}": [
+    "*.{ts,tsx,js,mjs,cjs}": [
+      "eslint --max-warnings=0 --no-warn-ignored",
       "prettier --check"
     ],
     "*.{css,json,md}": [
