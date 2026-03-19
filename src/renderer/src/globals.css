@@ -5,8 +5,8 @@
 @import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
-/* Design Token */
-@theme {
+/* Design Token — SSoT 定义在 theme/tokens.ts，此处 CSS 值须与之同步 */
+@theme inline {
   --color-brand: #1677ff;
   --color-brand-light: #f0f5ff;
   --color-success: #52c41a;
@@ -18,6 +18,19 @@
   --color-bg-content: #ffffff;
   --color-bg-sidebar: #f5f5f5;
 
+  /* 批注五色 */
+  --color-annotation-ai: #1677ff;
+  --color-annotation-asset: #52c41a;
+  --color-annotation-score: #faad14;
+  --color-annotation-attack: #ff4d4f;
+  --color-annotation-human: #722ed1;
+
+  /* SOP 阶段状态色 */
+  --color-sop-idle: #d9d9d9;
+  --color-sop-active: #1677ff;
+  --color-sop-done: #52c41a;
+  --color-sop-warning: #faad14;
+
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
@@ -25,6 +38,91 @@
   --spacing-xl: 32px;
   --spacing-2xl: 48px;
 
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* 阴影（极简） */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
+
+  /* 动效时长 */
+  --duration-micro: 150ms;
+  --duration-panel: 300ms;
+  --duration-content: 350ms;
+  --duration-complex: 500ms;
+
   --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* JetBrains Mono 本地字体（Electron 桌面应用离线可用） */
+@layer base {
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('./assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: url('./assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+}
+
+/* 缓动曲线（@theme 不支持 transition-timing-function） */
+@layer base {
+  :root {
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* 排版层级 */
+@layer components {
+  .text-h1 {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .text-h2 {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .text-h3 {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .text-h4 {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .text-body {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.8;
+  }
+  .text-body-proposal {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.8;
+  }
+  .text-body-small {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+  .text-caption {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+  }
 }

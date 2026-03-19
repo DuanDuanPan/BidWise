@@ -13,8 +13,8 @@ describe('App component', () => {
     expect(root).toBeInTheDocument()
   })
 
-  it('should display BidWise title', () => {
+  it('should render the design system demo', () => {
     render(<App />)
-    expect(screen.getByText('BidWise')).toBeInTheDocument()
+    expect(screen.getByTestId('design-system-demo')).toBeInTheDocument()
   })
 })

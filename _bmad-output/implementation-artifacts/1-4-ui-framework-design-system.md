@@ -1,6 +1,6 @@
 # Story 1.4: UI 框架与设计系统基础
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -70,48 +70,48 @@ so that 我可以在长时间工作中保持舒适，信息层级清晰。
 
 ## Tasks / Subtasks (任务分解)
 
-- [ ] **Task 1: 扩展 Design Token 系统** (AC: #1, #2, #4, #8)
-  - [ ] 1.1 扩展 `globals.css` 中 `@theme` 块：添加批注五色（`--color-annotation-ai`, `--color-annotation-asset`, `--color-annotation-score`, `--color-annotation-attack`, `--color-annotation-human`）、SOP 状态四色（`--color-sop-idle`, `--color-sop-active`, `--color-sop-done`, `--color-sop-warning`）、品牌辅色 `--color-brand-light: #F0F5FF`
-  - [ ] 1.2 添加动效时长 token 到 `@theme`：`--duration-micro: 150ms`、`--duration-panel: 300ms`、`--duration-content: 350ms`、`--duration-complex: 500ms`
-  - [ ] 1.3 添加缓动曲线 CSS 变量（`@theme` 不支持 transition-timing-function，放 `@layer base` 里的 `:root`）：`--ease-out`、`--ease-in-out`
-  - [ ] 1.4 添加圆角 token：`--radius-sm: 4px`、`--radius-md: 6px`、`--radius-lg: 8px`
-  - [ ] 1.5 添加阴影 token（极简风格）：`--shadow-sm`、`--shadow-md`
+- [x] **Task 1: 扩展 Design Token 系统** (AC: #1, #2, #4, #8)
+  - [x] 1.1 扩展 `globals.css` 中 `@theme` 块：添加批注五色（`--color-annotation-ai`, `--color-annotation-asset`, `--color-annotation-score`, `--color-annotation-attack`, `--color-annotation-human`）、SOP 状态四色（`--color-sop-idle`, `--color-sop-active`, `--color-sop-done`, `--color-sop-warning`）、品牌辅色 `--color-brand-light: #F0F5FF`
+  - [x] 1.2 添加动效时长 token 到 `@theme`：`--duration-micro: 150ms`、`--duration-panel: 300ms`、`--duration-content: 350ms`、`--duration-complex: 500ms`
+  - [x] 1.3 添加缓动曲线 CSS 变量（`@theme` 不支持 transition-timing-function，放 `@layer base` 里的 `:root`）：`--ease-out`、`--ease-in-out`
+  - [x] 1.4 添加圆角 token：`--radius-sm: 4px`、`--radius-md: 6px`、`--radius-lg: 8px`
+  - [x] 1.5 添加阴影 token（极简风格）：`--shadow-sm`、`--shadow-md`
 
-- [ ] **Task 2: 完善 Ant Design 主题配置** (AC: #1, #2, #3, #4)
-  - [ ] 2.1 在 `App.tsx` 中扩展 ConfigProvider theme 的 `token` 字段：补齐 colorSuccess/colorWarning/colorError/colorInfo、controlHeight、padding/margin 相关 token、wireframe: false
-  - [ ] 2.2 添加 `components` 级 token 覆盖（Ant Design 5.x Component Token）：Button（减少阴影）、Card（减少边框、增大内间距）、Steps（后续 Story 1.6 使用）
-  - [ ] 2.3 将主题配置提取为独立文件 `src/renderer/src/theme/antdTheme.ts`，导出 `ThemeConfig` 对象
-  - [ ] 2.4 确认 Ant Design token 数值与 Tailwind `@theme` 数值对齐（单一事实源）
+- [x] **Task 2: 完善 Ant Design 主题配置** (AC: #1, #2, #3, #4)
+  - [x] 2.1 在 `App.tsx` 中扩展 ConfigProvider theme 的 `token` 字段：补齐 colorSuccess/colorWarning/colorError/colorInfo、controlHeight、padding/margin 相关 token、wireframe: false
+  - [x] 2.2 添加 `components` 级 token 覆盖（Ant Design 5.x Component Token）：Button（减少阴影）、Card（减少边框、增大内间距）、Steps（后续 Story 1.6 使用）
+  - [x] 2.3 将主题配置提取为独立文件 `src/renderer/src/theme/antdTheme.ts`，导出 `ThemeConfig` 对象
+  - [x] 2.4 确认 Ant Design token 数值与 Tailwind `@theme` 数值对齐（单一事实源）
 
-- [ ] **Task 3: 排版系统** (AC: #3)
-  - [ ] 3.1 在 `globals.css` 的 `@layer components` 中定义排版 utility classes：`.text-h1` 到 `.text-caption`，每个 class 包含 font-size、font-weight、line-height
-  - [ ] 3.2 确保方案正文行高 1.8（区别于常规 UI 的 1.5）——创建 `.text-body-proposal` class
-  - [ ] 3.3 JetBrains Mono 字体加载方式：在 `index.html` 添加 Google Fonts `<link>` 或本地字体文件（推荐本地，因为 Electron 桌面应用可能离线）
-  - [ ] 3.4 在 `resources/fonts/` 放置 JetBrains Mono woff2 文件，`globals.css` 中 `@font-face` 声明
+- [x] **Task 3: 排版系统** (AC: #3)
+  - [x] 3.1 在 `globals.css` 的 `@layer components` 中定义排版 utility classes：`.text-h1` 到 `.text-caption`，每个 class 包含 font-size、font-weight、line-height
+  - [x] 3.2 确保方案正文行高 1.8（区别于常规 UI 的 1.5）——创建 `.text-body-proposal` class
+  - [x] 3.3 JetBrains Mono 字体加载方式：在 `index.html` 添加 Google Fonts `<link>` 或本地字体文件（推荐本地，因为 Electron 桌面应用可能离线）
+  - [x] 3.4 在 `resources/fonts/` 放置 JetBrains Mono woff2 文件，`globals.css` 中 `@font-face` 声明
 
-- [ ] **Task 4: 自定义图标组件** (AC: #7)
-  - [ ] 4.1 创建 `src/renderer/src/shared/components/icons/` 目录
-  - [ ] 4.2 创建 5 个批注类型 SVG 图标 React 组件：`AnnotationAiIcon`、`AnnotationAssetIcon`、`AnnotationScoreIcon`、`AnnotationAttackIcon`、`AnnotationHumanIcon`
-  - [ ] 4.3 创建 6 个 SOP 阶段 SVG 图标 React 组件：`SopAnalysisIcon`（放大镜）、`SopDesignIcon`（画笔）、`SopWritingIcon`（钢笔）、`SopCostIcon`（计算器）、`SopReviewIcon`（盾牌）、`SopDeliveryIcon`（发送）
-  - [ ] 4.4 创建交叉火力图标：`CrossfireIcon`（双箭头交叉或闪电）
-  - [ ] 4.5 创建 3 个来源类型图标：`SourceAssetIcon`、`SourceKnowledgeIcon`、`SourceAiIcon`
-  - [ ] 4.6 所有图标统一 props 接口：`{ size?: 16 | 20; className?: string; color?: string }`，默认 `currentColor`
-  - [ ] 4.7 创建 `src/renderer/src/shared/components/icons/index.ts` barrel 导出
+- [x] **Task 4: 自定义图标组件** (AC: #7)
+  - [x] 4.1 创建 `src/renderer/src/shared/components/icons/` 目录
+  - [x] 4.2 创建 5 个批注类型 SVG 图标 React 组件：`AnnotationAiIcon`、`AnnotationAssetIcon`、`AnnotationScoreIcon`、`AnnotationAttackIcon`、`AnnotationHumanIcon`
+  - [x] 4.3 创建 6 个 SOP 阶段 SVG 图标 React 组件：`SopAnalysisIcon`（放大镜）、`SopDesignIcon`（画笔）、`SopWritingIcon`（钢笔）、`SopCostIcon`（计算器）、`SopReviewIcon`（盾牌）、`SopDeliveryIcon`（发送）
+  - [x] 4.4 创建交叉火力图标：`CrossfireIcon`（双箭头交叉或闪电）
+  - [x] 4.5 创建 3 个来源类型图标：`SourceAssetIcon`、`SourceKnowledgeIcon`、`SourceAiIcon`
+  - [x] 4.6 所有图标统一 props 接口：`{ size?: 16 | 20; className?: string; color?: string }`，默认 `currentColor`
+  - [x] 4.7 创建 `src/renderer/src/shared/components/icons/index.ts` barrel 导出
 
-- [ ] **Task 5: 跨平台工具** (AC: #6)
-  - [ ] 5.1 创建 `src/renderer/src/shared/lib/platform.ts`：导出 `isMac: boolean`、`modKey: 'Cmd' | 'Ctrl'`、`formatShortcut(key: string): string`（自动 Ctrl↔Cmd 转换显示文本）
-  - [ ] 5.2 确保 SVG 图标使用 `em` 或固定 px + `viewBox` 实现高 DPI 适配
+- [x] **Task 5: 跨平台工具** (AC: #6)
+  - [x] 5.1 创建 `src/renderer/src/shared/lib/platform.ts`：导出 `isMac: boolean`、`modKey: 'Cmd' | 'Ctrl'`、`formatShortcut(key: string): string`（自动 Ctrl↔Cmd 转换显示文本）
+  - [x] 5.2 确保 SVG 图标使用 `em` 或固定 px + `viewBox` 实现高 DPI 适配
 
-- [ ] **Task 6: Demo 验证页面** (AC: #5, #1, #2, #3, #7, #8)
-  - [ ] 6.1 创建 `src/renderer/src/shared/components/DesignSystemDemo.tsx`：展示所有 Design Token 效果
-  - [ ] 6.2 Demo 内容包含：色彩面板（品牌色+语义色+批注色+SOP色+底色）、排版层级展示、间距可视化、Ant Design 组件（Button/Card/Tag/Steps/Table 各一个）+ Tailwind 自定义样式共存、所有自定义图标展示
-  - [ ] 6.3 在 `App.tsx` 中临时挂载 `<DesignSystemDemo />` 供视觉验收
-  - [ ] 6.4 验证 Ant Design 和 Tailwind 样式无冲突
+- [x] **Task 6: Demo 验证页面** (AC: #5, #1, #2, #3, #7, #8)
+  - [x] 6.1 创建 `src/renderer/src/shared/components/DesignSystemDemo.tsx`：展示所有 Design Token 效果
+  - [x] 6.2 Demo 内容包含：色彩面板（品牌色+语义色+批注色+SOP色+底色）、排版层级展示、间距可视化、Ant Design 组件（Button/Card/Tag/Steps/Table 各一个）+ Tailwind 自定义样式共存、所有自定义图标展示
+  - [x] 6.3 在 `App.tsx` 中临时挂载 `<DesignSystemDemo />` 供视觉验收
+  - [x] 6.4 验证 Ant Design 和 Tailwind 样式无冲突
 
-- [ ] **Task 7: 测试** (AC: #1-#8)
-  - [ ] 7.1 单元测试：`platform.ts` 的 `formatShortcut` 函数
-  - [ ] 7.2 组件测试：至少一个 Icon 组件可渲染、支持 size 和 className prop
-  - [ ] 7.3 组件测试：`DesignSystemDemo` 可渲染且包含关键 DOM 节点
+- [x] **Task 7: 测试** (AC: #1-#8)
+  - [x] 7.1 单元测试：`platform.ts` 的 `formatShortcut` 函数
+  - [x] 7.2 组件测试：至少一个 Icon 组件可渲染、支持 size 和 className prop
+  - [x] 7.3 组件测试：`DesignSystemDemo` 可渲染且包含关键 DOM 节点
 
 ## Dev Notes (开发指南)
 
@@ -497,12 +497,58 @@ src/renderer/src/
 
 ### Agent Model Used
 
-(待开发时填写)
+Claude Opus 4.6 (1M context)
 
 ### Debug Log References
 
+- jsdom 缺少 `window.getComputedStyle` 和 `window.matchMedia`，通过测试 setup 文件 mock 解决
+
 ### Completion Notes List
+
+- Task 1: 扩展 globals.css @theme 块，添加批注五色、SOP 四色、圆角、阴影、动效时长 token，缓动曲线放 @layer base :root
+- Task 2: 创建 antdTheme.ts 独立主题文件，包含完整 token（品牌色/语义色/圆角/阴影/字体/间距/尺寸）+ 组件级覆盖（Button/Card），App.tsx 改为 import 引用
+- Task 3: 添加 8 个排版 utility class（text-h1 ~ text-caption + text-body-proposal），本地 JetBrains Mono woff2 字体 @font-face 声明
+- Task 4: 创建 15 个 SVG 图标 React 组件（5 批注 + 6 SOP + 1 交叉火力 + 3 来源），统一 IconProps 接口，barrel 导出
+- Task 5: platform.ts 跨平台工具（isMac/modKey/formatShortcut），图标使用固定 px + viewBox 高 DPI 适配
+- Task 6: DesignSystemDemo 完整展示所有 Design Token、排版、间距、图标、Ant Design 组件 + Tailwind 共存、动效 token、跨平台工具
+- Task 7: 34 个测试全部通过（platform 9 个、icons 7 个、DesignSystemDemo 8 个、App 2 个 + 既有 8 个）
+
+### File List
+
+**新增文件：**
+- `src/renderer/src/theme/antdTheme.ts`
+- `src/renderer/src/assets/fonts/JetBrainsMono-Regular.woff2`
+- `src/renderer/src/assets/fonts/JetBrainsMono-Bold.woff2`
+- `src/renderer/src/shared/components/icons/types.ts`
+- `src/renderer/src/shared/components/icons/AnnotationAiIcon.tsx`
+- `src/renderer/src/shared/components/icons/AnnotationAssetIcon.tsx`
+- `src/renderer/src/shared/components/icons/AnnotationScoreIcon.tsx`
+- `src/renderer/src/shared/components/icons/AnnotationAttackIcon.tsx`
+- `src/renderer/src/shared/components/icons/AnnotationHumanIcon.tsx`
+- `src/renderer/src/shared/components/icons/SopAnalysisIcon.tsx`
+- `src/renderer/src/shared/components/icons/SopDesignIcon.tsx`
+- `src/renderer/src/shared/components/icons/SopWritingIcon.tsx`
+- `src/renderer/src/shared/components/icons/SopCostIcon.tsx`
+- `src/renderer/src/shared/components/icons/SopReviewIcon.tsx`
+- `src/renderer/src/shared/components/icons/SopDeliveryIcon.tsx`
+- `src/renderer/src/shared/components/icons/CrossfireIcon.tsx`
+- `src/renderer/src/shared/components/icons/SourceAssetIcon.tsx`
+- `src/renderer/src/shared/components/icons/SourceKnowledgeIcon.tsx`
+- `src/renderer/src/shared/components/icons/SourceAiIcon.tsx`
+- `src/renderer/src/shared/components/icons/index.ts`
+- `src/renderer/src/shared/components/DesignSystemDemo.tsx`
+- `src/renderer/src/shared/lib/platform.ts`
+- `tests/unit/renderer/platform.test.ts`
+- `tests/unit/renderer/icons.test.tsx`
+- `tests/unit/renderer/DesignSystemDemo.test.tsx`
+
+**修改文件：**
+- `src/renderer/src/globals.css` — 扩展 @theme token + @font-face + 排版 classes + 缓动曲线
+- `src/renderer/src/App.tsx` — import antdTheme 替代内联主题 + 挂载 DesignSystemDemo
+- `tests/unit/renderer/setup.ts` — 添加 matchMedia/getComputedStyle mock
+- `tests/unit/renderer/App.test.tsx` — 适配新的 App 内容
 
 ### Change Log
 
 - 2026-03-19: Story 文件创建，comprehensive context engine 分析完成
+- 2026-03-19: 全部 7 个 Task 实现完成，34 个测试通过，ESLint 和 TypeScript 检查通过
