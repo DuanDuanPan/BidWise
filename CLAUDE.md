@@ -157,28 +157,68 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 每个 Story 从 backlog 到 done 必须经过完整闭环，指挥官（master control）在每个节点有明确行为：
 
 ```
-Create Story ──► [Prototype] ──► Validate ──► Dev ──► Code Review ──► UAT ──► Merge
+Create Story ──► [Prototype] ──► Validate ──► Dev ──► Code Review ──► UAT ──► Merge ──► Regression ──► Cleanup
 ```
 
-| Phase | 执行者 | 工具/Skill | 指挥官行为 |
-|-------|--------|-----------|-----------|
-| **1. Create Story** | 子窗格 claude | `/bmad-create-story` | 派发子窗格，轮询完成 |
-| **2. Prototype（按需）** | 子窗格 claude | Pencil MCP 原型设计 | 含 UI 的 Story 必须先出原型；纯后端/Enabler Story 可跳过。指挥官判断是否需要，派发子窗格执行 |
-| **3. Validate** | 同一子窗格 | 检查 AC 完整性、与 architecture/PRD/原型对齐 | 轮询验证结果，未通过则要求子窗格修正后重新验证 |
-| **4. Dev** | 子窗格 claude（worktree） | `/bmad-dev-story <story-file>` | 创建 worktree，派发开发，轮询进度 |
-| **5. Code Review** | **新**子窗格 claude（fresh context） | `/bmad-code-review` | 开新窗格保证 fresh context（建议用不同 LLM）。review 不通过 → 回 dev 窗格修复 → 再次 review，循环直到通过 |
-| **6. UAT** | **用户** | 手动验收（启动 app、跑测试、检查代码） | **暂停并通知用户**："Story X.Y 开发完成，code review 已通过，请进行 UAT 验收。" 等待用户确认 |
-| **7. Merge** | 指挥官（通过子窗格） | `worktree.sh merge` + 更新 `sprint-status.yaml` | 用户确认 UAT 通过后执行合并，更新状态为 done |
+| Phase                    | 执行者                                  | 工具/Skill                                      | 指挥官行为                                                                                   |
+| ------------------------ | --------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **1. Create Story**      | 子窗格 **claude**                       | `/bmad-create-story`                            | 派发子窗格，轮询完成                                                                         |
+| **2. Prototype（按需）** | 子窗格 **claude**                       | Pencil MCP 原型设计                             | 含 UI 的 Story 必须先出原型；纯后端/Enabler Story 可跳过。指挥官判断是否需要，派发子窗格执行 |
+| **3. Validate**          | 子窗格 **codex**                        | 检查 AC 完整性、与 architecture/PRD/原型对齐    | 派发 codex 子窗格验证，轮询结果，未通过则要求修正后重新验证                                  |
+| **4. Dev**               | 子窗格 **claude**（worktree）           | `/bmad-dev-story <story-file>`                  | 创建 worktree，派发开发，轮询进度                                                            |
+| **5. Code Review**       | **新**子窗格 **codex**（fresh context） | `/bmad-code-review`                             | 必须用 codex（不同 LLM 视角）。review 不通过 → 回 dev 窗格修复 → 再次 review，循环直到通过   |
+| **6. UAT**               | **用户**                                | 手动验收（启动 app、跑测试、检查代码）          | **暂停并通知用户**："Story X.Y 开发完成，code review 已通过，请进行 UAT 验收。" 等待用户确认 |
+| **7. Merge**             | 指挥官（通过子窗格）                    | `worktree.sh merge` + 更新 `sprint-status.yaml` | 用户确认 UAT 通过后执行合并，更新状态为 done                                                 |
+| **8. Regression**        | 子窗格 **codex**                        | main 分支完整回归测试                           | 每次合并后在 main 上执行三层回归（见下方详细说明）。失败 → L0 自动派发修复                   |
+| **9. Cleanup**           | 指挥官（L0 自动）                       | `worktree.sh remove` + 删除远程分支             | Regression PASS 后自动清理已合并 story 的 worktree 和分支，释放磁盘空间                      |
+
+**Regression 三层回归测试（Phase 8 详细说明）：**
+
+每次 merge 到 main 后必须在 main 分支上执行，尤其是有冲突 resolve 或多 story batch 合并时：
+
+| 层级                 | 内容                                                          | 执行方式                                                      | 通过标准         |
+| -------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- | ---------------- |
+| **L1 基础自动化**    | `pnpm test:unit && pnpm lint && pnpm typecheck && pnpm build` | 直接运行                                                      | 全绿，零 warning |
+| **L2 Story AC 回归** | 逐个检查本次合并的所有 story 的 AC 在 main 上仍然满足         | 读取每个 story 的 AC，逐项验证代码/测试/行为                  | 所有 AC 仍满足   |
+| **L3 集成验证**      | 验证合并后的 story 之间的交叉功能正常工作                     | 检查跨层调用链路（如 UI→IPC→Service→DB），启动 app 验证无报错 | 端到端链路畅通   |
+
+**执行顺序与成功标准：**
+
+- L1 → L2 → L3 **严格顺序执行**，前一层未全绿不得进入下一层
+- L1 失败 → 修复 → **重跑 L1**（不是跳到 L2）
+- L2 失败 → 修复 → **从 L1 重新开始**（修复可能引入新问题）
+- L3 失败 → 修复 → **从 L1 重新开始**
+- 批量合并多个 story 时，L2 需覆盖**所有**已合并 story 的 AC，不只是最新一个
+- **Regression PASS 的唯一标准：L1 + L2 + L3 在同一次运行中全部通过**。分次通过不算（修复可能破坏之前通过的层）
+- 环境问题（如 native module 版本）单独标注，不阻塞 Regression PASS，但必须记录到已知问题清单
+
+**LLM 分工规则：**
+
+- **claude** — Create Story、Prototype、Dev（主力开发）
+- **codex** — Validate Story、Code Review、顽固 bug 修复（不同 LLM 视角 + 审查/验证角色）
+- 子窗格启动命令：`claude --dangerously-skip-permissions` 或 `codex`，按角色选择
 
 **Prototype 判断规则：**
+
 - 含 UI/交互的 Story（如 1.4 设计系统、1.5 看板、1.6 SOP 导航等）→ 必须先用 Pencil MCP 出原型
 - 纯后端/Enabler Story（如 1.2 数据层、1.3 IPC 骨架）→ 跳过 Prototype，直接 Validate
 
-**关键约束：**
+**不变约束（与授权无关）：**
+
 - 指挥官绝不直接编辑文件、跑构建、执行 skill — 一切通过 tmux 子窗格派发
 - Story 文件必须在 main 分支创建并提交后，才能创建 worktree
 - Code review 必须在新窗格（fresh context）中执行，避免开发上下文偏见
-- 合并前必须经过用户 UAT 确认，指挥官不得自行合并
+
+**指挥官授权分级（Authority Levels）：**
+
+判断"问不问用户"的唯一依据。新场景按条件归类，不需要逐条加规则。
+
+| Level  | 名称      | 触发条件                                   | 指挥官行为           | 示例                                                         |
+| ------ | --------- | ------------------------------------------ | -------------------- | ------------------------------------------------------------ |
+| **L0** | FULL AUTO | 可逆 + 流水线标准流转 + 无破坏性           | 直接执行，不通知     | review→修复→再review、validate重试、创建worktree、派发子窗格 |
+| **L1** | NOTIFY    | 里程碑完成 / 用户可能关注的状态变化        | 输出状态信息，不等待 | batch准备完成、story进入dev、review全部通过                  |
+| **L2** | CONFIRM   | 不可逆 OR 影响共享状态 OR 多选项需用户决策 | 暂停等待用户确认     | UAT验收、合并到main、batch选择、恢复/放弃进行中的story       |
+| **L3** | HALT      | 超出能力 OR 重大风险 OR 重复失败           | 完全停止并说明原因   | 3轮review不通过、merge冲突无法解决、无可用story              |
 
 ## Planning Artifacts
 

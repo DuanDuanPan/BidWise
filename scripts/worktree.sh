@@ -21,7 +21,6 @@ BidWise Worktree 管理工具
   merge <story-id>                  将 story 分支合并回 main
   remove <story-id> [story-id...]   移除 worktree 和分支
   open <story-id>                   打印 cd 命令和 claude 启动命令
-  batch-create <story-ids-file>     从文件批量创建 worktree
   cleanup                           移除所有已合并的 worktree
 
 示例:
@@ -63,6 +62,12 @@ cmd_create() {
 
         echo "创建 worktree: story/${story_id} → ${wt_path}"
         git -C "$REPO_ROOT" worktree add "$wt_path" -b "$branch"
+
+        # 安装依赖
+        if [ -f "$wt_path/pnpm-lock.yaml" ]; then
+            echo "  安装依赖 (pnpm install)..."
+            (cd "$wt_path" && pnpm install --frozen-lockfile 2>&1 | tail -1) || echo "  ⚠ pnpm install 失败，请手动执行"
+        fi
         echo "  完成"
     done
 
@@ -144,17 +149,44 @@ cmd_merge() {
 
     echo "合并 ${branch} → main ..."
 
+    # 检查 .pen 文件是否被修改（应只在 main 的 Phase 1 修改）
+    if [ -d "$wt_path" ]; then
+        local pen_changes
+        pen_changes=$(git -C "$wt_path" diff main --name-only 2>/dev/null | grep '\.pen$' || true)
+        if [ -n "$pen_changes" ]; then
+            echo "⚠ 警告: 检测到 .pen 文件在 worktree 中被修改（应只在 main 分支修改）:"
+            echo "$pen_changes" | sed 's/^/    /'
+            echo ""
+        fi
+    fi
+
     # 先 rebase story 分支到最新 main
     if [ -d "$wt_path" ]; then
         echo "  Rebase ${branch} onto main..."
-        git -C "$wt_path" rebase main
+        if ! git -C "$wt_path" rebase main; then
+            echo "错误: rebase 失败，存在冲突。请手动解决:"
+            echo "  cd ${wt_path}"
+            echo "  # 解决冲突后: git rebase --continue"
+            echo "  # 放弃 rebase: git rebase --abort"
+            exit 1
+        fi
     fi
 
     # 合并
     git -C "$REPO_ROOT" merge "$branch" --no-ff -m "feat: merge ${branch} into main"
     echo "  合并完成"
-    echo ""
-    echo "提示: 合并后请更新 sprint-status.yaml 中对应 story 的状态"
+
+    # 自动更新 sprint-status.yaml
+    local sprint_status="${REPO_ROOT}/_bmad-output/implementation-artifacts/sprint-status.yaml"
+    if [ -f "$sprint_status" ]; then
+        sed -i '' "s/^\(  ${story_id}-[^:]*:\) .*/\1 done/" "$sprint_status"
+        sed -i '' "s/^last_updated: .*/last_updated: $(date +%Y-%m-%d)/" "$sprint_status"
+        git -C "$REPO_ROOT" add "$sprint_status"
+        git -C "$REPO_ROOT" commit -m "chore: update sprint-status — story ${story_id} done"
+        echo "  已自动更新 sprint-status.yaml (story ${story_id} → done)"
+    else
+        echo "  ⚠ 未找到 sprint-status.yaml，请手动更新状态"
+    fi
 }
 
 cmd_remove() {
