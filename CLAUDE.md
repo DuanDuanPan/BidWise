@@ -120,6 +120,11 @@ AI Agent calls, OCR parsing, bulk imports, docx export, Git sync, asset semantic
 
 This project uses **BMad** (Blueprint for Modern Application Development) methodology with Claude Code skills.
 
+### tmux 规范
+- **必须用 `split-window -h`（分屏 pane）**，禁止用 `new-window`（切换 tab）
+- 所有并行任务（codex 验证、code-review、第二个 claude 会话）都在旁边分屏打开，保证用户同时可见
+- 管理脚本：`scripts/pipeline.sh`（validate/dev/review/fix/parallel/monitor）
+
 ### Master Control Pattern (tmux orchestration)
 - One **master control** Claude Code session acts as the orchestrator — it does NOT edit files, run builds, or do any implementation work directly
 - All concrete work is dispatched to **sub-windows** via tmux (split-pane or new-window), each running its own independent `claude` session
@@ -128,17 +133,41 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 - Workflow: master reads status/reports → decides next action → opens tmux pane → sends claude command → **actively polls sub-window via `tmux capture-pane`** → detects completion → auto-proceeds to next step
 - After dispatching work to a sub-window, the master MUST periodically check the pane output. When the sub-window claude returns to idle prompt or signals completion, immediately proceed — never wait for the user to report back
 
+### tmux Pane 健康监控
+
+主控必须对所有子窗口 pane 进行健康监控，参数如下：
+
+| 参数 | 值 |
+|------|-----|
+| 卡死超时 | 10 分钟（无输出变化） |
+| 重启策略 | 自动杀掉并重启，无需用户确认 |
+| 检查频率 | 每 30 秒 |
+| 最大重试 | 3 次/pane，超过后停止并通知用户 |
+
+检测优先级：
+1. **进程存活** — 检查 pane 前台进程（codex/claude）是否存在，不存在则判定崩溃
+2. **输出变化** — 对比 pane 内容 hash，连续 10 分钟无变化则判定卡死
+3. **模式匹配** — 检测 shell 提示符（进程已退出）、error/timeout 关键字、trust prompt 阻塞
+
+异常处理流程：检测到异常 → 杀掉 pane → 用相同命令重建 pane → 记录重启日志 → 超过 3 次重试则停止并通知用户介入。
+
 ### Worktree-Based Parallel Development
 - Stories are developed in isolated git worktrees (`../BidWise-story-{id}`)
 - Worktree management: `./scripts/worktree.sh create|list|status|merge|remove|open|cleanup`
 - Only update `sprint-status.yaml` on the main branch, never in worktrees
 - Story files are created and committed to main before worktree creation
 
-### Key BMad Skills
-- `/bmad-create-story` — Create story file with full context
-- `/bmad-dev-story <story-file>` — Implement a story
-- `/bmad-code-review` — Adversarial code review
-- `/bmad-sprint-status` — Check sprint status
+### LLM Role Assignment (strict, do not mix)
+| Task | LLM | Tool |
+|------|-----|------|
+| Story creation (interactive) | Claude Code | `/bmad-create-story` |
+| Story fix / refinement | Claude Code | direct editing |
+| Story validation | **Codex** | validate against arch/prd/epics |
+| Story development | Claude Code | `/bmad-dev-story <story-file>` |
+| Code review | **Codex** | `/bmad-code-review` |
+| Sprint status | Claude Code | `/bmad-sprint-status` |
+
+Validation and review MUST use Codex for independent perspective. Never let Claude both write and validate the same artifact.
 
 ## Planning Artifacts
 
