@@ -1,0 +1,30 @@
+/* Tailwind v4: CSS-based config, no tailwind.config.ts */
+@layer theme, base, antd, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Design Token */
+@theme {
+  --color-brand: #1677ff;
+  --color-brand-light: #f0f5ff;
+  --color-success: #52c41a;
+  --color-warning: #faad14;
+  --color-danger: #ff4d4f;
+  --color-info: #1677ff;
+
+  --color-bg-global: #fafafa;
+  --color-bg-content: #ffffff;
+  --color-bg-sidebar: #f5f5f5;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+
+  --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}

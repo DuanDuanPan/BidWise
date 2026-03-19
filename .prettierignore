@@ -1,0 +1,11 @@
+node_modules
+dist
+out
+data
+pnpm-lock.yaml
+_bmad
+_bmad-output
+.agent
+.agents
+.claude
+test-results

@@ -1,4 +1,23 @@
-node_modules/
+node_modules
+dist
+out
 .DS_Store
-*.log
+.eslintcache
+*.log*
+
+# Runtime data
+data/
+*.sqlite
+bidwise.config.enc
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+test-results/
+
+# Environment
 .env
+.env.*

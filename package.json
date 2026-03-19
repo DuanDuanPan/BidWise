@@ -1,0 +1,85 @@
+{
+  "name": "bidwise",
+  "version": "0.1.0",
+  "description": "BidWise (标智) — AI-powered desktop application for pre-sales bidding workflow automation",
+  "main": "./out/main/index.js",
+  "author": "BidWise Team",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify:structure": "node scripts/verify-structure.mjs",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "pnpm test:unit && pnpm test:e2e",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
+    "postinstall": "electron-builder install-app-deps",
+    "build:unpack": "pnpm build && electron-builder --dir",
+    "build:win": "pnpm build && electron-builder --win",
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@ant-design/cssinjs": "^1.23.0",
+    "@ant-design/icons": "^5.6.1",
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "antd": "5.29.3"
+  },
+  "devDependencies": {
+    "@electron-toolkit/eslint-config-prettier": "^3.0.0",
+    "@electron-toolkit/eslint-config-ts": "^3.1.0",
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@playwright/test": "^1.52.0",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.19.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "husky": "^9.1.7",
+    "jsdom": "^26.1.0",
+    "lint-staged": "^16.1.0",
+    "prettier": "^3.7.4",
+    "prettier-plugin-tailwindcss": "^0.6.12",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6",
+    "vitest": "^4.1.0",
+    "@vitest/ui": "^4.1.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --max-warnings=0",
+      "prettier --check"
+    ],
+    "*.{js,mjs,cjs}": [
+      "prettier --check"
+    ],
+    "*.{css,json,md}": [
+      "prettier --check"
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}
