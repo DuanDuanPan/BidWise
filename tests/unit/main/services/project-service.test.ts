@@ -3,7 +3,6 @@ import Database from 'better-sqlite3'
 import { CamelCasePlugin, Kysely, Migrator, SqliteDialect, type Migration } from 'kysely'
 import type { DB } from '@main/db/schema'
 import * as migration001 from '@main/db/migrations/001_initial_schema'
-import { ValidationError, NotFoundError } from '@main/utils/errors'
 
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
@@ -17,6 +16,8 @@ vi.mock('@main/db/client', () => ({
 
 describe('projectService', () => {
   let projectService: typeof import('@main/services/project-service').projectService
+  let ValidationError: typeof import('@main/utils/errors').ValidationError
+  let NotFoundError: typeof import('@main/utils/errors').NotFoundError
 
   beforeEach(async () => {
     testDb = new Kysely<DB>({
@@ -31,6 +32,9 @@ describe('projectService', () => {
     vi.resetModules()
     const mod = await import('@main/services/project-service')
     projectService = mod.projectService
+    const errors = await import('@main/utils/errors')
+    ValidationError = errors.ValidationError
+    NotFoundError = errors.NotFoundError
   })
 
   afterEach(async () => {

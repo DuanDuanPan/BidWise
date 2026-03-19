@@ -63,7 +63,7 @@ export type IpcChannelMap = {
     output: ProjectRecord
   }
   'project:delete': { input: string; output: void }
-  'project:archive': { input: string; output: void }
+  'project:archive': { input: string; output: ProjectRecord }
 }
 
 export type IpcChannel = keyof IpcChannelMap
