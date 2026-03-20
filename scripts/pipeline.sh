@@ -106,17 +106,26 @@ cmd_review() {
 cmd_fix() {
     local story_id="$1"
     local review_file="${2:-}"
+    # LLM 分工遵循 constitution.md C2:
+    #   默认: 修复 = claude
+    #   升级: 加 --escalate 使用 codex（仅当 claude 连续 2 次失败时）
+    local llm="claude"
+    local llm_cmd="claude --dangerously-skip-permissions"
+    if [ "${3:-}" = "--escalate" ]; then
+        llm="codex"
+        llm_cmd="codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+    fi
 
     if [ -n "$review_file" ]; then
-        echo "在右侧 pane 启动 codex 修复..."
-        open_right_pane "codex:fix-${story_id}" \
-            "codex \"根据 ${review_file} 中的审查意见修复代码\""
+        echo "在右侧 pane 启动 ${llm} 修复..."
+        open_right_pane "${llm}:fix-${story_id}" \
+            "${llm_cmd} \"根据 ${review_file} 中的审查意见修复代码\""
     else
-        echo "在右侧 pane 启动 codex 修复..."
-        open_right_pane "codex:fix-${story_id}" \
-            "codex \"修复上一轮 code-review 中的问题\""
+        echo "在右侧 pane 启动 ${llm} 修复..."
+        open_right_pane "${llm}:fix-${story_id}" \
+            "${llm_cmd} \"修复上一轮 code-review 中的问题\""
     fi
-    echo "codex 修复已启动"
+    echo "${llm} 修复已启动"
 }
 
 # 四格并行布局：两个 story 各有 claude + codex pane
