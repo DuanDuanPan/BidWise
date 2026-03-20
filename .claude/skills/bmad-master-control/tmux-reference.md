@@ -11,8 +11,13 @@
 └──────┴───────┴──────────────┴──────┘
 ```
 
-- Inspector 从 commander 右侧 `-h` 分割（`-l 30%`）
-- 动态窗格从 commander 下方 `-v` 分割（`-l 40%`），然后横向扩展
+**创建顺序（F12 强制）：**
+1. 先 Inspector: `-t {commander_pane} -h -l 30%`（commander 右侧）
+2. 再 Utility: `-t {commander_pane} -v -l 40%`（commander 下方）
+3. Dev panes: `-t {utility_pane} -h`（底部行横向扩展）
+
+**关键：所有 split 的 `-t` 目标必须是具体 pane ID（如 `%74`），禁止用 session 名。**
+用 session 名时 tmux 会 split 当前活跃 pane，一旦焦点变化布局就错。
 
 按需查阅。指挥官在需要具体 tmux 命令语法时 Read 此文件。
 
@@ -20,12 +25,10 @@
 
 ```bash
 # Claude pane (Create Story, Prototype, Dev, Fix)
-tmux split-window -t {current_session} -h "cd {path} && claude --dangerously-skip-permissions"
-tmux split-window -t {current_session} -v "cd {path} && claude --dangerously-skip-permissions"
+tmux split-window -t {utility_pane} -h "cd {path} && claude --dangerously-skip-permissions"
 
 # Codex pane (Validate, Code Review, 顽固 bug 修复, Regression)
-tmux split-window -t {current_session} -h "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
-tmux split-window -t {current_session} -v "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+tmux split-window -t {utility_pane} -h "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
 ```
 
 ## 消息发送

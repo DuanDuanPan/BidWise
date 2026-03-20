@@ -97,21 +97,34 @@ Load from `{project-root}/_bmad/bmm/config.yaml`:
 - `{planning_artifacts}` → planning docs path
 - `{implementation_artifacts}` → story files and sprint-status path
 
-### 5. Utility Pane Initialization
+### 5. Pane Creation（顺序和目标不可变）
 
-```bash
-tmux split-window -t {current_session} -v "cd {project_root} && zsh"
+**布局目标（F12 强制）：**
 ```
-Wait for shell prompt. Record `utility_pane`.
+┌──────────────────────┬─────────────┐
+│   Commander (指挥官)  │  Inspector  │
+├──────┬───────┬───────┴──────┬──────┤
+│ Util │ Dev-1 │    Dev-2     │Dev-3 │
+└──────┴───────┴──────────────┴──────┘
+```
 
-### 6. Inspector Initialization
+Record commander pane ID: `tmux display-message -p '#{pane_id}'` → set `commander_pane`
+
+**Step 5a: Inspector（先创建，占据 commander 右侧）**
 
 See `./inspector-protocol.md` for full standing order.
 
 ```bash
-tmux split-window -t {current_session} -v "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+tmux split-window -t {commander_pane} -h -l 30% "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
 ```
-Send standing order. Wait for `INSPECTOR READY`. Record `inspector_pane`.
+Record `inspector_pane`. Send standing order. Wait for `INSPECTOR READY`.
+
+**Step 5b: Utility（从 commander 下方分割）**
+
+```bash
+tmux split-window -t {commander_pane} -v -l 40% "cd {project_root} && zsh"
+```
+Wait for shell prompt. Record `utility_pane`.
 
 Wait for baseline audit result (`BASELINE AUDIT: COMPLIANT` or `BASELINE AUDIT: VIOLATION`).
 If VIOLATION → ask user (L2): "Inspector 基线审计发现问题: {details}。继续还是先处理？"
