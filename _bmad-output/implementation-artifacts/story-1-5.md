@@ -68,7 +68,7 @@ So that 我可以一目了然地管理所有投标工作。
   - [ ] 3.3 验证项目创建时自动在 `data/projects/{id}/` 下创建目录结构
 - [ ] Task 4: 项目看板页面 (AC: 1, 2, 3)
   - [ ] 4.1 创建 `modules/project/components/ProjectKanban.tsx` — 看板主页面容器
-  - [ ] 4.2 创建 `modules/project/components/ProjectCard.tsx` — 项目卡片组件（与 prototype.pen 卡片版式对齐）
+  - [ ] 4.2 创建 `modules/project/components/ProjectCard.tsx` — 项目卡片组件（与 `prototypes/story-1-5.pen` 卡片版式对齐）
   - [ ] 4.2a 实现最近活动展示：clock 图标 + 相对时间 + 活动摘要（AC2）
   - [ ] 4.3 创建 `modules/project/components/ProjectCreateModal.tsx` — 新建项目模态表单
   - [ ] 4.4 创建 `modules/project/components/ProjectFilter.tsx` — 筛选栏组件（快速标签 + 高级筛选面板）
@@ -223,7 +223,19 @@ interface ProjectStore {
 **设计方向：** 项目看板使用 B（纯净画布）方向 — 白色背景 `#FFFFFF`，卡片式项目列表，留白舒适
 - [Source: ux-design-specification.md 设计方向综合]
 
-**项目卡片内容（与 prototype.pen 对齐）：**
+**Prototype References（开发查找顺序）：**
+- 项目级标准母版: `_bmad-output/implementation-artifacts/prototypes/prototype.pen`
+- Manifest: `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml`
+- Story-bound `.pen`: `_bmad-output/implementation-artifacts/prototypes/story-1-5.pen`
+- Reference PNG 目录: `_bmad-output/implementation-artifacts/prototypes/story-1-5/`
+- Reference PNG 文件:
+  - `pD0Gs.png` — 项目看板页面
+  - `cQWId.png` — 新建项目表单
+  - `xTWbW.png` — 项目卡片组件
+- 全局风格基线: `story-1-4-color-system.png` / `story-1-4-typography.png` / `story-1-4-spacing-grid.png` / `story-1-4-icon-set.png`
+- 还原原则：先看 reference PNG 做像素级静态还原，再打开 story-bound `.pen` 查看结构和交互细节；若需要确认共享标准组件/节奏，再回看 `prototype.pen`；若局部与全局风格基线冲突，以全局风格基线为准，除非 story 明确说明偏离
+
+**项目卡片内容（与 `prototypes/story-1-5.pen` / 对应 reference PNG 对齐）：**
 - 卡片头部：项目名称（16px, 600 weight）+ 右上角操作菜单（⋯ ellipsis 图标，编辑/归档/删除）
 - 方案类型副标题（11px, text-secondary，如"售前技术方案"）
 - SOP 阶段标签（圆点 8px + 文字 12px 500 weight，使用 SOP 状态色：灰/蓝/绿/橙）
@@ -240,7 +252,7 @@ interface ProjectStore {
 - 模态对话框（Modal），主操作按钮在右下
 - [Source: ux-design-specification.md 表单布局与验证策略]
 
-**筛选功能（与 prototype.pen 对齐）：**
+**筛选功能（与 `prototypes/story-1-5.pen` / 对应 reference PNG 对齐）：**
 - 快速筛选：顶部水平标签（全部 / 进行中 / 已归档），圆角背景 `$bg-global`，选中态白色背景 `$bg-content`
 - 高级筛选：下拉面板按客户/行业/状态/截止日组合筛选（FR7 完整维度，需补充原型设计）
 - 排序：默认按更新时间降序（arrow-up-down 图标 + "按更新时间"标签, 13px, text-secondary）
@@ -400,6 +412,6 @@ tests/unit/renderer/
 ### Change Log
 
 - 2026-03-19 — Story 文件创建，包含完整开发上下文
-- 2026-03-19 — 修复 codex 验证问题：AC3 补充行业筛选维度、DB 补充 industry 字段、AC4 补充数据隔离分层描述、补充过滤/活动/一致性任务、卡片和筛选 UI 描述与 prototype.pen 对齐
+- 2026-03-19 — 修复 codex 验证问题：AC3 补充行业筛选维度、DB 补充 industry 字段、AC4 补充数据隔离分层描述、补充过滤/活动/一致性任务、卡片和筛选 UI 描述与 story-bound prototype 对齐
 
 ### File List

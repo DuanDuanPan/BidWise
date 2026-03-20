@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import { resolve } from 'path'
 
-test('should launch Electron app and show main window', async () => {
+test('@smoke should launch Electron app and show main window', async () => {
   const electronApp = await electron.launch({
     args: [resolve(__dirname, '../../../out/main/index.js')],
   })

@@ -133,7 +133,8 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 - One **master control** Claude Code session acts as the orchestrator — it does NOT edit files, run builds, or do any implementation work directly
 - All concrete work is dispatched to **sub窗格** via tmux `split-window`（水平或垂直分割），each running its own independent `claude` session
 - 子窗格必须与指挥官窗格**并排显示在同一屏幕**（使用 `split-window`，禁止 `new-window` 创建独立标签页）——指挥官需要随时目视子窗格状态
-- 子窗格启动 claude 时**必须**加 `--dangerously-skip-permissions` 标志，避免权限确认弹窗阻塞自动化流程。命令格式：`tmux split-window -h "cd /project/path && claude --dangerously-skip-permissions"`
+- 子窗格启动 claude 时**必须**加 `--dangerously-skip-permissions` 标志。命令格式：`tmux split-window -h "cd /project/path && claude --dangerously-skip-permissions"`
+- 子窗格启动 codex 时必须显式传 config.toml 中未配置的 flag（tmux 子窗格不加载 shell alias）。命令格式：`tmux split-window -h "cd /project/path && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"`
 - The master control makes autonomous decisions; it only pauses to ask the user when there is genuine ambiguity or significant risk
 - Workflow: master reads status/reports → decides next action → opens tmux pane → sends claude command → **actively polls sub-window via `tmux capture-pane`** → detects completion → auto-proceeds to next step
 - After dispatching work to a sub-window, the master MUST periodically check the pane output. When the sub-window claude returns to idle prompt or signals completion, immediately proceed — never wait for the user to report back
@@ -154,23 +155,28 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 
 ### Story Lifecycle Pipeline
 
-每个 Story 从 backlog 到 done 必须经过完整闭环，指挥官（master control）在每个节点有明确行为：
+每个 Story 从 backlog 到 done 必须经过完整闭环，但 **指挥官以 batch 推进，不是选中一个 story 就先单独跑完整闭环**：
 
 ```
-Create Story ──► [Prototype] ──► Validate ──► Dev ──► Code Review ──► UAT ──► Merge ──► Regression ──► Cleanup
+Create Story ──► [Prototype] ──► Validate ──► Dev ──► Code Review ──► Auto QA ──► UAT ──► Merge ──► Regression ──► Cleanup
 ```
+
+- Phase 1-3 在 `main` 上按 **批处理** 推进：先补齐 batch 内需要创建的 story，再补齐 UI 原型，再统一验证，再统一提交
+- 已经是 `ready-for-dev` 的 story 直接纳入 batch，**跳过 Create Story**，只执行缺失的准备步骤和验证
+- 真正的并行从 worktree 开发阶段开始；人工 UAT、Merge、Regression 仍保持顺序裁决
 
 | Phase                    | 执行者                                  | 工具/Skill                                      | 指挥官行为                                                                                   |
 | ------------------------ | --------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **1. Create Story**      | 子窗格 **claude**                       | `/bmad-create-story`                            | 派发子窗格，轮询完成                                                                         |
-| **2. Prototype（按需）** | 子窗格 **claude**                       | Pencil MCP 原型设计                             | 含 UI 的 Story 必须先出原型；纯后端/Enabler Story 可跳过。指挥官判断是否需要，派发子窗格执行 |
-| **3. Validate**          | 子窗格 **codex**                        | 检查 AC 完整性、与 architecture/PRD/原型对齐    | 派发 codex 子窗格验证，轮询结果，未通过则要求修正后重新验证                                  |
+| **1. Create Story**      | 子窗格 **claude**                       | `/bmad-create-story`                            | 仅对 batch 中仍是 `backlog` 的 story 执行；该步骤交互式，按最小必要串行推进                  |
+| **2. Prototype（按需）** | 子窗格 **claude**                       | Pencil MCP 原型设计                             | 含 UI 的 Story 仅在缺少当前原型时补齐；每个 Story 使用独立 `.pen` + reference PNG + manifest |
+| **3. Validate**          | 子窗格 **codex**                        | 检查 AC 完整性、与 architecture/PRD/原型对齐    | 对 batch 中全部 story 统一复核；未通过则修正后重新验证，全部通过后再统一提交到 main          |
 | **4. Dev**               | 子窗格 **claude**（worktree）           | `/bmad-dev-story <story-file>`                  | 创建 worktree，派发开发，轮询进度                                                            |
 | **5. Code Review**       | **新**子窗格 **codex**（fresh context） | `/bmad-code-review`                             | 必须用 codex（不同 LLM 视角）。review 不通过 → 回 dev 窗格修复 → 再次 review，循环直到通过   |
-| **6. UAT**               | **用户**                                | 手动验收（启动 app、跑测试、检查代码）          | **暂停并通知用户**："Story X.Y 开发完成，code review 已通过，请进行 UAT 验收。" 等待用户确认 |
-| **7. Merge**             | 指挥官（通过子窗格）                    | `worktree.sh merge` + 更新 `sprint-status.yaml` | 用户确认 UAT 通过后执行合并，更新状态为 done                                                 |
-| **8. Regression**        | 子窗格 **codex**                        | main 分支完整回归测试                           | 每次合并后在 main 上执行三层回归（见下方详细说明）。失败 → L0 自动派发修复                   |
-| **9. Cleanup**           | 指挥官（L0 自动）                       | `worktree.sh remove` + 删除远程分支             | Regression PASS 后自动清理已合并 story 的 worktree 和分支，释放磁盘空间                      |
+| **6. Auto QA**           | 子窗格 **codex** / **claude**           | Playwright smoke + Story 级 E2E + 测试摘要      | 进入人工 UAT 前自动生成/更新 E2E（如缺失）并执行；失败先回修复，成功后把报告交给用户         |
+| **7. UAT**               | **用户**                                | 手动验收（基于自动化报告做高价值检查）          | **暂停并通知用户**："Story X.Y 自动化 QA 已通过，请结合报告进行 UAT 验收。" 等待用户确认     |
+| **8. Merge**             | 指挥官（通过子窗格）                    | `worktree.sh merge` + 更新 `sprint-status.yaml` | 用户确认 UAT 通过后执行合并，更新状态为 done                                                 |
+| **9. Regression**        | 子窗格 **codex**                        | main 分支完整回归测试                           | 每次合并后在 main 上执行三层回归（见下方详细说明）。失败 → L0 自动派发修复                   |
+| **10. Cleanup**          | 指挥官（L0 自动）                       | `worktree.sh remove` + 删除远程分支             | Regression PASS 后自动清理已合并 story 的 worktree 和分支，释放磁盘空间                      |
 
 **Regression 三层回归测试（Phase 8 详细说明）：**
 
@@ -195,18 +201,64 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 **LLM 分工规则：**
 
 - **claude** — Create Story、Prototype、Dev（主力开发）
-- **codex** — Validate Story、Code Review、顽固 bug 修复（不同 LLM 视角 + 审查/验证角色）
+- **codex** — Validate Story、Code Review、Automated QA、顽固 bug 修复（不同 LLM 视角 + 审查/验证角色）
 - 子窗格启动命令：`claude --dangerously-skip-permissions` 或 `codex`，按角色选择
 
 **Prototype 判断规则：**
 
 - 含 UI/交互的 Story（如 1.4 设计系统、1.5 看板、1.6 SOP 导航等）→ 必须先用 Pencil MCP 出原型
 - 纯后端/Enabler Story（如 1.2 数据层、1.3 IPC 骨架）→ 跳过 Prototype，直接 Validate
+- `_bmad-output/implementation-artifacts/prototypes/prototype.pen` 是项目级标准母版，只读使用
+- 每个 UI story 的原型固定落盘到 `_bmad-output/implementation-artifacts/prototypes/story-<id>.pen`
+- 每个 UI story 还必须导出 reference PNG 到 `_bmad-output/implementation-artifacts/prototypes/story-<id>/`
+- 全局索引文件是 `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml`
+- 结束 Prototype 步骤前必须验证 `.pen`、reference PNG、manifest entry 都已写入磁盘；不能只停留在临时 editor 状态
+
+**Prototype Style Contract：**
+
+- 全项目风格一致性的源头不是共享一个 `.pen`，而是共享同一套风格基线
+- 工作流上采用“母版 + 派生”模式：先从 `prototype.pen` 拷贝相关标准 frame / 组件到 `story-<id>.pen`，再在派生文件里做 story 定制
+- 风格基线来源固定为：
+  - `_bmad-output/implementation-artifacts/prototypes/prototype.pen`
+  - `_bmad-output/planning-artifacts/ux-design-specification.md`
+  - `_bmad-output/implementation-artifacts/1-4-ui-framework-design-system.md`
+  - `_bmad-output/implementation-artifacts/prototypes/story-1-4-*.png`
+- story-bound `.pen` 只承载该 Story 的页面/组件构图，不得私自创造新的全局 token；如确需偏离，必须先更新母版/风格基线再继续
+
+**Prototype Lookup / Pixel Fidelity 规则：**
+
+- Dev 不应只靠 `.pen` 找设计，而是按三层来源查找：
+  - 1. story 文件中的 Prototype References
+  - 2. `prototype-manifest.yaml` 的 story 条目
+  - 3. story-bound `.pen` + exported PNG
+  - 4. 如需确认通用样式标准，再回看 `prototype.pen`
+- 像素级还原时，以 exported reference PNG 作为静态视觉基准，以 `.pen` 作为结构和交互细节来源，以 `prototype.pen` 作为共享标准回退来源
+- manifest 必须记录 primary frame 名称、viewport、导出 PNG 路径，以及从 `prototype.pen` 继承了哪些标准片段，避免开发找错画板
+
+**Batch Preparation 规则：**
+
+- batch 候选包含两类：`backlog` 且依赖已满足的 story，以及已存在 story 文件的 `ready-for-dev` story
+- `ready-for-dev` story 不允许被 `/bmad-create-story` 重建；只补缺失原型、执行验证、必要时修正文档
+- Step 2 必须采用 **按阶段批处理**：Create（仅 backlog）→ Prototype（仅缺原型的 UI story）→ Validate（batch 全量）→ 单次 batch commit
+- 不再允许对 batch 内每个 story 执行 `create → prototype → validate → commit` 的单独闭环后再处理下一个
+
+**Automated QA 规则：**
+
+- Code Review 通过后，不直接进入人工 UAT，而是先进入 `Auto QA`
+- UI / cross-layer story 默认要求 Playwright 自动化：至少跑全局 smoke，加 Story 级关键路径 E2E
+- Story 级 E2E 建议放在 `tests/e2e/stories/story-<id>.spec.ts`，并用 `@story-<id>` 标记，便于单 Story 执行
+- 关键路径测试建议额外打 `@p0`，重要但非阻塞流程打 `@p1`
+- Auto QA 摘要必须包含 AC 覆盖矩阵：每条 AC 标记为 `automated` / `manual-only` / `not-covered`
+- 避免重复覆盖：E2E 只保留关键链路，边界条件优先下沉到 API / component / unit
+- 若 `tests/support/fixtures`、`tests/support/factories` 已存在，应优先复用；非 trivial Story 可按需补最小 fixtures/factories
+- 每个 story 的自动化结果要保存到 `_bmad-output/implementation-artifacts/tests/auto-qa-story-<id>.md`
+- 对 UI story，自动化 QA 摘要中应记录使用了哪个 prototype manifest 条目、哪个 reference PNG 作为视觉对照
+- 自动化 QA 的职责是先发现可重复问题、提供 trace/screenshot/video 证据；人工 UAT 再聚焦业务正确性、体验与视觉判断
 
 **不变约束（与授权无关）：**
 
 - 指挥官绝不直接编辑文件、跑构建、执行 skill — 一切通过 tmux 子窗格派发
-- Story 文件必须在 main 分支创建并提交后，才能创建 worktree
+- Story 文件必须在 main 分支创建并提交后，才能创建 worktree；batch commit 允许一次提交多个 story 的准备产物
 - Code review 必须在新窗格（fresh context）中执行，避免开发上下文偏见
 
 **指挥官授权分级（Authority Levels）：**

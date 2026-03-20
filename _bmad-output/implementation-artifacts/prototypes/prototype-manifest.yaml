@@ -1,0 +1,44 @@
+style_baseline:
+  canonical_template_pen: "_bmad-output/implementation-artifacts/prototypes/prototype.pen"
+  source_story: "1-4"
+  source_artifacts:
+    - "_bmad-output/implementation-artifacts/prototypes/prototype.pen"
+    - "_bmad-output/planning-artifacts/ux-design-specification.md"
+    - "_bmad-output/implementation-artifacts/1-4-ui-framework-design-system.md"
+    - "_bmad-output/implementation-artifacts/prototypes/story-1-4-color-system.png"
+    - "_bmad-output/implementation-artifacts/prototypes/story-1-4-typography.png"
+    - "_bmad-output/implementation-artifacts/prototypes/story-1-4-spacing-grid.png"
+    - "_bmad-output/implementation-artifacts/prototypes/story-1-4-icon-set.png"
+  style_contract:
+    spacing: "8px grid"
+    typography: "reuse Story 1.4 classes and token scale"
+    colors: "reuse Story 1.4 and ux-design-specification tokens"
+    components: "prefer existing Ant Design + Story 1.4 component language"
+
+stories:
+  "1-5":
+    derived_from_template: "_bmad-output/implementation-artifacts/prototypes/prototype.pen"
+    standard_frames_seeded_from_template:
+      - "Story 1.4 token and spacing standards"
+      - "Story 1.4 typography hierarchy"
+      - "Story 1.4 card and icon style language"
+    pen_file: "_bmad-output/implementation-artifacts/prototypes/story-1-5.pen"
+    reference_exports_dir: "_bmad-output/implementation-artifacts/prototypes/story-1-5/"
+    reference_exports:
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-5/pD0Gs.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-5/cQWId.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-5/xTWbW.png"
+    primary_frames:
+      - "Story 1.5 — 项目看板页面"
+      - "Story 1.5 — 新建项目表单"
+      - "Story 1.5 — 项目卡片组件"
+    viewports:
+      - name: "desktop"
+        width: 1440
+        height: 1024
+    dev_lookup_order:
+      - "Read story file prototype notes"
+      - "Read this manifest entry"
+      - "Open reference PNG first for visual fidelity"
+      - "Open .pen for structure and interaction detail"
+    notes: "Reference PNGs should be exported before DEV starts. If style deviates from baseline, update style_baseline sources first."
