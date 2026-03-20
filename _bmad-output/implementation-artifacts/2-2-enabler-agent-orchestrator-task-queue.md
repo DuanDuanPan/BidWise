@@ -27,7 +27,7 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
 ### AC3: Agent 注册表——可插拔 Agent 类型
 
 - **Given** ParseAgent 已注册
-- **When** 调用 `registerAgent('parse', handler)` 后通过 `executeAgent('parse', context)` 执行
+- **When** 调用 `registerAgent('parse', handler)` 后通过 `execute({ agentType: 'parse', context })` 执行
 - **Then** Agent 类型可通过统一接口调用，支持 `getAgentStatus(taskId)` 查询任务状态/进度
 - [Source: epics.md Story 2.2 AC3, architecture.md Alpha 注册 ParseAgent/GenerateAgent]
 
@@ -44,9 +44,12 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
   - [ ] 1.1 在 `src/shared/ai-types.ts` 新增 Agent 编排层类型：
     - `AgentType = 'parse' | 'generate'`（Alpha 阶段，后续 Beta 扩展 `'seed' | 'adversarial' | 'scoring' | 'gap'`）
     - `AgentExecuteRequest = { agentType: AgentType; context: Record<string, unknown>; options?: AgentExecuteOptions }`
-    - `AgentExecuteOptions = { timeout?: number; retries?: number; priority?: TaskPriority }`
+    - `AgentExecuteOptions = { priority?: TaskPriority }`（注意：timeout/retries 由 task-queue 控制，不暴露给调用方——见 retry 归属说明）
     - `AgentExecuteResult = { taskId: string; content: string; usage: TokenUsage; latencyMs: number }`
     - `AgentStatus = { taskId: string; status: TaskStatus; progress: number; agentType: AgentType; createdAt: string; updatedAt: string; result?: AgentExecuteResult; error?: { code: string; message: string } }`
+  - [ ] 1.1b 扩展 `AiProxyRequest` 新增可选字段（cancel 传播链基础）：
+    - `signal?: AbortSignal` — 外部取消信号，传播到 Provider SDK 调用层
+    - `timeoutMs?: number` — 单次调用超时（默认 `900_000` ms / 15 分钟，覆盖 provider-adapter 的 30s 硬编码值）
   - [ ] 1.2 在 `src/shared/ai-types.ts` 新增 task-queue 类型：
     - `TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'`
     - `TaskPriority = 'low' | 'normal' | 'high'`
@@ -57,6 +60,7 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - `IPC_CHANNELS` 常量新增：`AGENT_EXECUTE: 'agent:execute'`, `AGENT_STATUS: 'agent:status'`, `TASK_LIST: 'task:list'`, `TASK_CANCEL: 'task:cancel'`
     - `IpcChannelMap` 新增四个通道的 input/output 类型对
     - 新增 `TASK_PROGRESS_EVENT: 'task:progress'` 常量（用于 webContents.send 单向推送，不加入 IpcChannelMap）
+    - 新增 `IpcEventPayloadMap = { 'task:progress': TaskProgressEvent }` 事件通道类型映射（与请求式 `IpcChannelMap` 分离，专供 `webContents.send` / `ipcRenderer.on` 单向推送的类型安全）
   - [ ] 1.4 在 `src/shared/constants.ts` ErrorCode 枚举新增：
     - `AGENT_NOT_FOUND = 'AGENT_NOT_FOUND'`
     - `AGENT_EXECUTE = 'AGENT_EXECUTE'`
@@ -105,14 +109,14 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
   - [ ] 4.1 创建 `src/main/services/task-queue/queue.ts`
   - [ ] 4.2 实现 `TaskQueueService` 类：
     - `enqueue(request: EnqueueRequest): Promise<string>` — 创建任务记录，返回 taskId；EnqueueRequest = `{ category, agentType?, input, priority?, maxRetries? }`
-    - `execute(taskId: string, executor: TaskExecutor): Promise<TaskRecord>` — 更新状态为 running → 执行 executor → 成功则 completed，失败则根据 retryCount 判断重试或 failed
-    - `cancel(taskId: string): Promise<void>` — 将状态更新为 cancelled，通过 AbortController 取消正在执行的任务
+    - `execute(taskId: string, executor: TaskExecutor): Promise<TaskRecord>` — 更新状态为 running → 执行 executor → 成功则 completed，失败时按 retry 归属策略处理（见下方"Retry 归属与 Abort 传播"说明）
+    - `cancel(taskId: string): Promise<void>` — 将状态更新为 cancelled，触发该任务的 AbortController.abort()，信号沿 executor → orchestrator → `aiProxy.call({ signal })` → Provider SDK 逐层传播，确保 in-flight HTTP 请求被中止
     - `retry(taskId: string): Promise<string>` — 重置 status 为 pending，retryCount+1
     - `getStatus(taskId: string): Promise<TaskRecord>` — 查询任务当前状态
     - `listTasks(filter?: TaskFilter): Promise<TaskRecord[]>` — 列出任务（支持过滤）
     - `updateProgress(taskId: string, progress: number, message?: string): Promise<void>` — 更新进度并通过 progress-emitter 推送
     - `recoverPendingTasks(): Promise<void>` — 启动时调用，将崩溃前 running 状态的任务重置为 pending（断点恢复基础）
-  - [ ] 4.3 `TaskExecutor` 类型：`(context: { taskId: string; input: unknown; signal: AbortSignal; updateProgress: (progress: number, message?: string) => void; checkpoint?: unknown }) => Promise<unknown>`
+  - [ ] 4.3 `TaskExecutor` 类型：`(context: { taskId: string; input: unknown; signal: AbortSignal; updateProgress: (progress: number, message?: string) => void; setCheckpoint: (data: unknown) => Promise<void>; checkpoint?: unknown }) => Promise<unknown>` — `setCheckpoint` 将断点数据持久化到 tasks 表 checkpoint 字段（通过 `TaskRepository.update()`），断点恢复时上次写入的 checkpoint 通过 `checkpoint` 参数回传
   - [ ] 4.4 内部使用 `Map<string, AbortController>` 管理活跃任务的取消控制器
   - [ ] 4.5 并发限制：Alpha 阶段默认最大并发 3 个任务（可配置），超出排队等待
 
@@ -136,13 +140,18 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - `execute(request: AgentExecuteRequest): Promise<AgentExecuteResult>` — 核心编排流程：
       1. 查找已注册 Agent handler（未找到抛 `BidWiseError(AGENT_NOT_FOUND)`）
       2. 通过 task-queue 入队（category='ai-agent', agentType=request.agentType）
-      3. 执行 Agent handler（handler 负责构建 prompt + 调用 `aiProxy.call()`）
-      4. Alpha 阶段：handler 直接调用 ai-proxy；Beta 阶段扩展点：handler 调用前注入经验图谱上下文
-      5. 返回 `AgentExecuteResult`
+      3. task-queue executor 内部流程：
+         a. 调用 handler(context, { signal, updateProgress }) → handler 返回 `AiRequestParams`（messages + model config）
+         b. orchestrator 构造 `AiProxyRequest`：将 handler 返回的参数 + caller 字段 (`{agentType}-agent`) + signal（来自 task-queue 的 AbortController）合并
+         c. 调用 `aiProxy.call(proxyRequest)` 完成 脱敏→调用→日志→还原
+         d. Alpha 阶段：handler 纯粹构建 prompt；Beta 阶段扩展点：orchestrator 在步骤 b 前注入经验图谱上下文
+      4. 返回 `AgentExecuteResult`
     - `getAgentStatus(taskId: string): Promise<AgentStatus>` — 通过 task-queue 查询任务状态
     - `cancelAgent(taskId: string): Promise<void>` — 通过 task-queue 取消任务
-  - [ ] 7.3 `AgentHandler` 类型：`(context: Record<string, unknown>, options: { signal: AbortSignal; updateProgress: (progress: number, message?: string) => void }) => Promise<{ messages: AiChatMessage[]; model?: string; maxTokens?: number; temperature?: number }>`
-  - [ ] 7.4 handler 返回准备好的 AI 请求参数，orchestrator 负责调用 `aiProxy.call()`——保证所有 AI 调用统一经过 ai-proxy
+  - [ ] 7.3 类型定义：
+    - `AiRequestParams = { messages: AiChatMessage[]; model?: string; maxTokens?: number; temperature?: number }` — handler 返回的 AI 请求参数（不含 caller/signal，由 orchestrator 补充）
+    - `AgentHandler = (context: Record<string, unknown>, options: { signal: AbortSignal; updateProgress: (progress: number, message?: string) => void }) => Promise<AiRequestParams>` — handler **只负责构建 prompt 和模型参数**，不调用 ai-proxy
+  - [ ] 7.4 职责边界（强制规则）：handler 返回 `AiRequestParams` → orchestrator 合并 `{ ...params, caller: '{agentType}-agent', signal }` 构造 `AiProxyRequest` → 调用 `aiProxy.call()` —— 保证所有 AI 调用统一经过 ai-proxy。handler 内禁止导入或调用 aiProxy
   - [ ] 7.5 caller 字段格式：`${agentType}-agent`（如 `parse-agent`、`generate-agent`），传入 `aiProxy.call({ caller })`
 
 - [ ] Task 8: Alpha Agent 骨架注册 (AC: 3)
@@ -176,13 +185,13 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - `agent:status` → `agentOrchestrator.getAgentStatus(input)` — 返回 `AgentStatus`
     - `task:list` → `taskQueue.listTasks(input)` — 返回 `TaskRecord[]`
     - `task:cancel` → `taskQueue.cancel(input)` — 返回 `void`
-  - [ ] 10.3 在 `src/main/ipc/index.ts` 中导入并注册 `agent-handlers.ts`
+  - [ ] 10.3 在 `src/main/ipc/index.ts` 中导入并注册 `agent-handlers.ts`（新增 `import './agent-handlers'`，确保四个通道在 app ready 时注册）
   - [ ] 10.4 handler 只做参数解析和结果包装——业务逻辑在 service 层
 
 - [ ] Task 11: Preload 扩展 (AC: 1, 2, 3)
   - [ ] 11.1 更新 `src/preload/index.ts`：新增 `agentExecute`、`agentStatus`、`taskList`、`taskCancel` 方法
-  - [ ] 11.2 新增 `onTaskProgress(callback)` 监听器——使用 `ipcRenderer.on('task:progress', callback)` 接收单向进度推送
-  - [ ] 11.3 更新 `src/preload/index.d.ts` 类型声明
+  - [ ] 11.2 新增 `onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void` 监听器——使用 `ipcRenderer.on('task:progress', callback)` 接收单向进度推送，返回 unlisten 函数（调用 `ipcRenderer.removeListener`），类型从 `IpcEventPayloadMap` 派生
+  - [ ] 11.3 更新 `src/preload/index.d.ts` 类型声明——包含 `onTaskProgress` 方法签名
   - [ ] 11.4 确保编译时类型安全——新增通道未实现会触发编译错误
 
 - [ ] Task 12: 错误类型扩展 (AC: 1, 2)
@@ -203,12 +212,14 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - 执行更新状态 pending → running → completed
     - 失败任务自动重试（retryCount < maxRetries）
     - 超过最大重试次数标记为 failed
-    - 取消正在执行的任务（AbortController 触发）
+    - 取消正在执行的任务（AbortController 触发，signal.aborted=true → 状态 cancelled，不重试）
+    - 真实超时（signal.aborted=false + AI_PROXY_TIMEOUT → 按 retryCount 决定重试或 failed）
     - 取消已完成/已取消的任务抛出 TaskQueueError
     - 进度更新触发 progressEmitter
     - 并发限制：第 4 个任务排队等待
     - recoverPendingTasks 将 running 状态重置为 pending
-    - 断点数据（checkpoint）在更新时正确持久化
+    - executor 调用 `setCheckpoint(data)` 时断点数据持久化到 tasks 表
+    - 断点恢复时 checkpoint 通过 executor context 回传
     - Mock TaskRepository（不依赖真实 SQLite）
   - [ ] 14.2 `tests/unit/main/services/task-queue/progress-emitter.test.ts`：
     - 通过 webContents.send 推送到所有窗口
@@ -226,11 +237,11 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - Mock aiProxy 和 taskQueue
   - [ ] 14.4 `tests/unit/main/services/agent-orchestrator/agents/parse-agent.test.ts`：
     - 接收 rfpContent 上下文
-    - 返回包含 messages 的 AI 请求参数
-    - caller 为 'parse-agent'
+    - 返回 `AiRequestParams`（含 messages + maxTokens），不含 caller 字段（caller 由 orchestrator 设置，不是 handler 职责）
+    - 返回的 messages 使用 `parseRfpPrompt()` 生成的内容
   - [ ] 14.5 `tests/unit/main/services/agent-orchestrator/agents/generate-agent.test.ts`：
     - 接收 chapterTitle + requirements 上下文
-    - 返回包含 messages 的 AI 请求参数
+    - 返回 `AiRequestParams`（含 messages + maxTokens），不含 caller 字段
   - [ ] 14.6 `tests/unit/main/db/repositories/task-repo.test.ts`：
     - CRUD 完整生命周期
     - findAll 过滤条件组合
@@ -266,16 +277,21 @@ Renderer ←── IPC 事件推送(task:progress) ←── task-queue(本 Stor
                                                 └── index.ts（单例入口）
 ```
 
-**调用链路：**
+**调用链路（含 signal 传播）：**
 ```
 renderer.agentExecute(request)
   → IPC agent:execute
     → agentOrchestrator.execute(request)
       → taskQueue.enqueue(category='ai-agent', agentType, input)
-      → taskQueue.execute(taskId, executor)
-        → handler(context, { signal, updateProgress })  // Agent 构建 prompt
-        → aiProxy.call({ messages, caller: '{agentType}-agent' })  // 脱敏→调用→日志→还原
+      → taskQueue.execute(taskId, executor)          // AbortController 创建于此
+        → handler(context, { signal, updateProgress })  // handler 构建 AiRequestParams
+        → aiProxy.call({ ...params, caller, signal })   // signal 传递到 ai-proxy
+          → provider.chat(request, { signal })           // signal 传递到 Provider SDK HTTP 层
       → return AgentExecuteResult
+
+取消链路（反向）：
+renderer.taskCancel(taskId) → IPC task:cancel → taskQueue.cancel(taskId)
+  → abortController.abort() → signal 触发 → Provider SDK HTTP 请求中止 → handler Promise reject → executor catch → 检查 signal.aborted=true → task status='cancelled'（不重试）
 ```
 
 **关键架构决策：**
@@ -284,6 +300,29 @@ renderer.agentExecute(request)
 - handler 只负责构建 AI 请求参数（messages/model/maxTokens），orchestrator 负责编排和 ai-proxy 调用
 - Alpha 阶段无经验图谱注入——handler 直接返回 prompt；Beta 阶段在 orchestrator 层添加经验查询+注入
 - 进度推送使用 `webContents.send()`（单向推送），不走 request-response IPC
+
+**Retry 归属与 Abort 传播（BLOCKER 修正）：**
+
+三层各自的职责明确分离，禁止嵌套重试：
+
+| 层                     | 重试策略                                                                                     | 备注                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Provider Adapter**   | 指数退避重试 3 次（仅 retryable 错误：timeout/aborted/429/5xx）                              | 已有实现（`provider-adapter.ts` `withRetry`），本 Story 不修改     |
+| **ai-proxy**           | 无额外重试——透传 Provider Adapter 的结果或异常                                               | 不变                                                               |
+| **task-queue**         | **业务级**重试：executor 抛出非 retryable 错误（如 AGENT_EXECUTE）时，根据 `retryCount < maxRetries` 决定是否重新入队 | task-queue 重试的是整个 executor（含 handler + aiProxy.call），不是单个 HTTP 请求 |
+| **Agent handler**      | **禁止重试**——handler 抛出异常，由 task-queue 决定是否重新执行                               | handler 只构建参数，不包含 try/catch 重试逻辑                      |
+
+重试归类规则：
+- **瞬态故障**（网络超时、429、5xx）→ Provider Adapter 层自动重试（3 次指数退避），对上层透明
+- **Provider 重试耗尽后仍失败** → 抛 `AiProxyError` → task-queue 捕获 → 根据 `retryCount` 决定整体重新入队（整个 executor 重跑）或标记 `failed`
+- **非瞬态故障**（401 认证、prompt 过大、handler 逻辑错误）→ Provider Adapter 不重试 → `AiProxyError` / `AgentOrchestratorError` 直接传播 → task-queue 标记 `failed`，不重试
+
+Abort/Signal 传播链实现要求：
+1. `AiProxyRequest` 新增 `signal?: AbortSignal`（Task 1.1b）
+2. `AiProxyService.call()` 将 `request.signal` 传递给 `provider.chat()` 的 SDK 调用选项（如 Anthropic SDK 的 `{ signal }`, OpenAI SDK 的 `{ signal }`）
+3. `AiProxyRequest` 新增 `timeoutMs?: number`（默认 `900_000`），传递给 Provider SDK 的 `timeout` 参数，覆盖 provider-adapter 当前硬编码的 `30_000`
+4. `taskQueue.cancel()` → `abortController.abort()` → signal 传播到 Provider SDK → HTTP 请求中止
+5. Cancel 与 Timeout 区分：task-queue 的 `execute()` 在 catch 中检查 `signal.aborted`——若为 `true`，标记任务状态为 `cancelled`（错误码 `TASK_CANCELLED`），不触发重试；若 `signal.aborted` 为 `false` 但错误类型为 `AI_PROXY_TIMEOUT`，则视为真实超时，按正常重试逻辑处理。Provider Adapter 层的 `AbortError` 仍分类为 `AI_PROXY_TIMEOUT`，cancel 语义由 task-queue 层根据 signal 状态覆盖判定
 
 ### 已有代码资产（禁止重复创建）
 
@@ -306,6 +345,7 @@ renderer.agentExecute(request)
 **关键提醒：**
 - `aiProxy.call()` 已包含完整的脱敏→调用→日志→还原流程——orchestrator **不需要**再实现脱敏/日志逻辑
 - orchestrator 的 caller 字段（如 `parse-agent`）会传入 `aiProxy.call()`，ai-trace-logger 自动记录
+- 本 Story 需扩展 `AiProxyService.call()` 以支持 `signal` 和 `timeoutMs` 字段传递到 Provider SDK 层（`provider.chat()` 的 SDK 调用选项）——这是 cancel 传播链的关键桥梁
 - `createIpcHandler<C>()` 自动包装 try/catch → ApiResponse 格式——agent-handlers 直接使用
 - DB 迁移必须注册到 `migrator.ts` 的 `migrations` 对象中（内联 Provider 模式）
 - IPC 通道新增后必须同步更新 `IpcChannelMap`、`IPC_CHANNELS`、`preload/index.ts`、`preload/index.d.ts`——编译器会强制检查
@@ -391,9 +431,11 @@ tests/unit/main/
 ```
 
 **修改文件预期：**
-- `src/shared/ai-types.ts` — 新增 Agent/Task 类型定义
+- `src/shared/ai-types.ts` — 新增 Agent/Task 类型定义 + `AiProxyRequest` 扩展 `signal`/`timeoutMs` 字段
 - `src/shared/constants.ts` — ErrorCode 枚举扩展 AGENT/TASK 错误码
-- `src/shared/ipc-types.ts` — IPC 通道新增 4 个 + 1 个事件常量
+- `src/shared/ipc-types.ts` — IPC 通道新增 4 个 + 1 个事件常量 + `IpcEventPayloadMap` 事件类型映射
+- `src/main/services/ai-proxy/index.ts` — `call()` 将 `signal`/`timeoutMs` 传递给 `provider.chat()`
+- `src/main/services/ai-proxy/provider-adapter.ts` — `AiProvider.chat()` 接口新增可选 `options?: { signal?: AbortSignal; timeoutMs?: number }` 参数，各 Provider 实现传递到 SDK 调用层
 - `src/main/utils/errors.ts` — 新增 AgentOrchestratorError / TaskQueueError
 - `src/main/db/schema.ts` — DB 接口新增 tasks 表
 - `src/main/db/migrator.ts` — 注册 003 迁移
@@ -407,7 +449,7 @@ tests/unit/main/
 **Story 2.1 关键经验（直接上游依赖）：**
 - `aiProxy.call()` 接受 `AiProxyRequest { messages, model?, temperature?, maxTokens?, caller }`
 - caller 字段用于追溯日志——orchestrator 传入 `{agentType}-agent` 格式
-- ai-proxy 内部处理重试（指数退避 3 次）——orchestrator **不需要**对 ai-proxy 调用做额外重试
+- ai-proxy 的 Provider Adapter 层处理瞬态重试（指数退避 3 次）——orchestrator / handler **不需要**对 ai-proxy 调用做额外重试；task-queue 只做业务级整体重新入队
 - ai-proxy 返回 `AiProxyResponse { content, usage, model, provider, latencyMs }`
 - Provider 不可用时抛 `AiProxyError`——orchestrator catch 并转为 `AgentOrchestratorError`
 
@@ -443,9 +485,12 @@ tests/unit/main/
 
 - ❌ orchestrator 直接调用 Provider SDK（必须经 `aiProxy.call()`）
 - ❌ orchestrator 自行实现脱敏/还原/日志（ai-proxy 已包含完整流程）
-- ❌ handler 内直接调用 `aiProxy.call()`（handler 只返回请求参数，orchestrator 调用 ai-proxy）
+- ❌ handler 内直接调用 `aiProxy.call()`（handler 只返回 `AiRequestParams`，orchestrator 调用 ai-proxy）
+- ❌ handler 内实现 try/catch 重试逻辑（handler 抛出异常，重试由 task-queue 决策）
+- ❌ task-queue 和 Provider Adapter 都对同一个 HTTP 失败做重试，形成嵌套重试循环
 - ❌ 白名单操作（AI/OCR/导入/导出/Git同步/语义检索）绕过 task-queue 直接执行
 - ❌ IPC handler 中写业务逻辑（handler 只做参数解析 → 调用 service → 包装结果）
+- ❌ 调用 `aiProxy.call()` 时不传递 signal（取消无法中止 in-flight 请求）
 - ❌ 渲染进程直接 import agent-orchestrator 或 task-queue（必须经 IPC）
 - ❌ throw 裸字符串（使用 AgentOrchestratorError / TaskQueueError）
 - ❌ 相对路径 import 超过 1 层（禁止 `../../`）

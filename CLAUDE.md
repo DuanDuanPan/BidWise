@@ -132,9 +132,25 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 
 - One **master control** Claude Code session acts as the orchestrator — it does NOT edit files, run builds, or do any implementation work directly
 - All concrete work is dispatched to **sub窗格** via tmux `split-window`（水平或垂直分割），each running its own independent `claude` session
-- 子窗格必须与指挥官窗格**并排显示在同一屏幕**（使用 `split-window`，禁止 `new-window` 创建独立标签页）——指挥官需要随时目视子窗格状态
-- 子窗格启动 claude 时**必须**加 `--dangerously-skip-permissions` 标志。命令格式：`tmux split-window -h "cd /project/path && claude --dangerously-skip-permissions"`
-- 子窗格启动 codex 时必须显式传 config.toml 中未配置的 flag（tmux 子窗格不加载 shell alias）。命令格式：`tmux split-window -h "cd /project/path && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"`
+- 子窗格必须与指挥官窗格**并排显示在同一屏幕**（使用 `split-window`，禁止 `new-window`）
+- 子窗格启动 claude 时**必须**加 `--dangerously-skip-permissions`
+- 子窗格启动 codex 时必须显式传 flag（tmux 子窗格不加载 shell alias）
+
+**tmux 标准布局：**
+
+```
+┌──────────────────────┬─────────────┐
+│   Commander (指挥官)  │  Inspector  │
+│                      │  (监察官)    │
+├──────┬───────┬───────┴──────┬──────┤
+│ Util │ Dev-1 │    Dev-2     │Dev-3 │
+└──────┴───────┴──────────────┴──────┘
+```
+
+Inspector 从 commander 右侧 `-h` 分割（等高）。动态窗格从 commander 下方 `-v` 分割后横向扩展（全宽）。
+
+**子窗格通讯三层协议：** Signal (`-S -5` 检测 MC_DONE) → Full (`-S - -E -` 完整 scrollback) → Log (`pipe-pane` 日志文件)。每个子窗格创建后立即 `tmux pipe-pane -t {pane_id} -o 'cat >> {mc_log_dir}/pane-{pane_id}.log'`。
+
 - The master control makes autonomous decisions; it only pauses to ask the user when there is genuine ambiguity or significant risk
 - Workflow: master reads status/reports → decides next action → opens tmux pane → sends claude command → **actively polls sub-window via `tmux capture-pane`** → detects completion → auto-proceeds to next step
 - After dispatching work to a sub-window, the master MUST periodically check the pane output. When the sub-window claude returns to idle prompt or signals completion, immediately proceed — never wait for the user to report back
@@ -379,6 +395,8 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 2. **即时基线审计** — 确认就绪后立即执行初始审计（git status、sprint-status、gate-state），输出 BASELINE AUDIT: COMPLIANT/VIOLATION
 3. **主动巡查（自主 + 指挥官触发双轨）** — 监察官在空闲时应自主定期巡查，不需要等待指挥官指令；指挥官在 Step 4 每 3 轮轮询额外触发一次作为双重保障
 
+**授权凭据：** gate-state.yaml 中 PASS 的 gate = 该阶段之前的 main 变更已被授权。驻场令中注入 batch 上下文（batch_id、stories、current_phase），避免监察官对 batch 准备阶段的正常中间状态误报。
+
 **互斥锁：** 同一时刻只能处理一个请求。Gate 审查（高优先级，阻塞）不可跳过；主动巡查（低优先级）在监察官忙时跳过。
 
 **VIOLATION = HALT：** 任何输出包含 VIOLATION 时，指挥官按 HALT 级别处理。
@@ -389,18 +407,20 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 
 **当前禁忌（F1-F8）摘要：**
 
-| #   | 禁忌                                                  | 正确做法                               |
-| --- | ----------------------------------------------------- | -------------------------------------- |
-| F1  | 禁止逐 story 做完整闭环                               | 分阶段批处理                           |
-| F2  | 禁止逐 story 单独 commit                              | 全 batch 一次 commit                   |
-| F3  | 禁止直接修改 prototype.pen（母版）                    | 派生到 story-{id}.pen                  |
-| F4  | 禁止验证 FAIL 修复后跳过重新验证                      | 修复后重新提交验证                     |
-| F5  | 禁止在 L0 转换时询问用户"继续？"                      | L0 直接执行                            |
-| F6  | 禁止依赖 create-story 自动选 story                    | 必须明确指定 story ID                  |
-| F7  | 禁止在独立 tmux session 创建子窗格                    | 在用户当前 attach session split-window |
-| F8  | 禁止指挥官在自身上下文执行构建/测试/写文件/git commit | 通过 tmux 子窗格派发                   |
+| #   | 禁忌                                                  | 正确做法                                            |
+| --- | ----------------------------------------------------- | --------------------------------------------------- |
+| F1  | 禁止逐 story 做完整闭环                               | 分阶段批处理                                        |
+| F2  | 禁止逐 story 单独 commit                              | 全 batch 一次 commit                                |
+| F3  | 禁止直接修改 prototype.pen（母版）                    | 派生到 story-{id}.pen                               |
+| F4  | 禁止验证 FAIL 修复后跳过重新验证                      | 修复后重新提交验证                                  |
+| F5  | 禁止在 L0 转换时询问用户"继续？"                      | L0 直接执行                                         |
+| F6  | 禁止依赖 create-story 自动选 story                    | 必须明确指定 story ID                               |
+| F7  | 禁止在独立 tmux session 创建子窗格                    | 在用户当前 attach session split-window              |
+| F8  | 禁止指挥官在自身上下文执行构建/测试/写文件/git commit | 通过 tmux 子窗格派发                                |
+| F9  | 禁止用 `capture-pane -S -N` 固定行数读完整结果        | Signal `-S -5` / Full `-S - -E -` / Log `pipe-pane` |
 
 **自动更新：** Inspector VIOLATION、Gate FAIL、用户纠正均可触发新条目。Batch 结束时批量回顾。
+**持久性：** 完整 Forbidden List 维护在 `workflow.md`（随 git），不依赖本地 memory。
 
 ## Planning Artifacts
 

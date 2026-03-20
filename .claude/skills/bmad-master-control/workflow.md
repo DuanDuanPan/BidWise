@@ -6,8 +6,36 @@
 - 绝不直接编辑文件、跑构建、执行 skill — 一切通过 tmux 子窗格派发
 - 你**可以读取文件**（cat/grep/read）来获取信息和做决策，但**不可写入/执行**
 - 子窗格使用 `tmux split-window`（禁止 `new-window`），与你并排显示
-- 子窗格启动 claude 时**必须**加 `--dangerously-skip-permissions`，命令格式：`tmux split-window -t {current_session} -h "cd /path && claude --dangerously-skip-permissions"`
-- 子窗格启动 codex 时**必须**加 `--dangerously-bypass-approvals-and-sandbox`（tmux 子窗格不加载 shell alias，必须显式传 flag）。命令格式：`tmux split-window -t {current_session} -h "cd /path && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"`
+- 子窗格启动 claude 时**必须**加 `--dangerously-skip-permissions`
+- 子窗格启动 codex 时**必须**加 `--dangerously-bypass-approvals-and-sandbox`（tmux 子窗格不加载 shell alias，必须显式传 flag）
+
+**tmux 标准布局：**
+
+```
+┌──────────────────────┬─────────────┐
+│   Commander (指挥官)  │  Inspector  │
+│    {commander_pane}  │  (监察官)    │
+├──────┬───────┬───────┴──────┬──────┤
+│ Util │ Pane1 │    Pane2     │Pane3 │
+│{util}│       │              │      │
+└──────┴───────┴──────────────┴──────┘
+```
+
+- **Inspector（commander 右侧，等高）：** 从 commander 水平分割 `-h`，与 commander 同行
+- **Utility + 动态窗格（下方全宽）：** 先从 commander 垂直分割 `-v` 创建 utility（此时 utility 在 commander+inspector 下方全宽），再横向 `-h` 扩展更多动态窗格
+- 动态窗格数量由指挥官根据并行需求决定
+
+**分割命令模板：**
+```bash
+# Step 1: Inspector（commander 右侧，等高）
+tmux split-window -t {commander_pane} -h -l 40% "cd {project_root} && codex ..."
+
+# Step 2: Utility（commander 下方，自动占全宽）
+tmux split-window -t {commander_pane} -v -l 30% "zsh"
+
+# Step 3+: 动态窗格（从 utility 横向扩展）
+tmux split-window -t {utility_pane} -h "cd {path} && claude --dangerously-skip-permissions"
+```
 
 **授权分级（Authority Levels）— 判断"问不问用户"的唯一依据：**
 
@@ -71,7 +99,23 @@
 - 所有文件路径优先使用绝对路径
 - 一次只派发一个目标，避免在同一消息里混入多个阶段
 - 期望输出必须带固定哨兵，便于 `capture-pane` 识别，例如 `MC_DONE REVIEW 1-5 PASS`
-- 除非任务本身要求对话式澄清，否则在 `Constraints` 中写明“仅在输入无效时提问”
+- 除非任务本身要求对话式澄清，否则在 `Constraints` 中写明”仅在输入无效时提问”
+
+**子窗格通讯三层协议（signal → full → log）：**
+
+指挥官与子窗格之间的输出读取采用分层策略，解决 capture-pane 受窗格尺寸限制的问题：
+
+| 层级 | 方法 | 用途 | 何时使用 |
+|------|------|------|---------|
+| **Signal** | `tmux capture-pane -t {pane_id} -p -S -5` | 检测 MC_DONE 哨兵（仅状态） | 轮询循环中的快速检查 |
+| **Full** | `tmux capture-pane -t {pane_id} -p -S - -E -` | 获取完整 scrollback | 检测到 MC_DONE 后读取完整结果 |
+| **Log** | 读取 `{mc_log_dir}/pane-{pane_id}.log` | 永久审计日志，不受 scrollback 限制 | 结果需要审计/回溯时 |
+
+**pipe-pane 日志自动设置：** 每个子窗格创建后，立即执行：
+```bash
+tmux pipe-pane -t {pane_id} -o 'cat >> {mc_log_dir}/pane-{pane_id}.log'
+```
+此操作在 utility pane 或指挥官 shell 中执行（不影响子窗格内部状态）。
 
 **推荐模板：**
 
@@ -144,6 +188,17 @@ tmux split-window -t {current_session} -v "cd {project_root} && codex -c model_r
 
 驻场令（首条消息）：
 "你是本次 batch 的独立监察官（御史台）。你将驻场监督整个 batch 生命周期。
+
+**当前 batch 上下文（指挥官在发送驻场令时填入实际值）：**
+- batch_id: {batch_id}
+- batch_stories: {batch_stories}
+- current_phase: {current_phase}（如 Step 2a create / Step 2b prototype / Step 3 dev 等）
+
+**授权凭据规则：**
+- `gate-state.yaml` 中 PASS 的 gate 条目 = 该阶段之前的 main 变更已被授权
+- batch 准备阶段（Step 2）的 main 本地 commit 在 G5 inspector 审查前不要求已 push
+- 当前阶段的工作产物（如 prototype 阶段的 .pen 文件）允许以 untracked 状态存在
+- 超出当前 batch_stories 范围的 main 变更 → VIOLATION
 
 你的三项职责：
 1. **Gate 审查（被动）** — 收到"请审查 Gate G{N}"时，读取 _bmad-output/implementation-artifacts/gate-report-G{N}.md，然后独立验证磁盘/git 状态，输出 APPROVE 或 REJECT
@@ -252,6 +307,8 @@ inspector_state: idle | busy_gate | busy_audit
 | F6 | **禁止依赖 `bmad-create-story` 自动选 story** | 必须在指令中明确指定 story ID（如"请创建 Story 2-1"） | 2026-03-19: 未指定 ID，skill 自动选了 1-6 而非 batch 中的 2-1 |
 | F7 | **禁止在独立 tmux session 创建子窗格** | 子窗格必须在用户当前 attach 的 session 中 split-window | 2026-03-19: 在 "mc" session 创建 dev pane，用户在 session "1"，看不到窗格 |
 | F8 | **禁止指挥官在自身上下文执行构建/测试/写文件/git commit** | 所有构建、测试、文件写入、git 操作必须通过 tmux 子窗格派发；指挥官上下文仅允许读取文件和 tmux 管理命令 | 2026-03-20: 指挥官直接执行 pnpm test:unit、electron-builder rebuild、Write 工具创建文件、git commit |
+
+| F9 | **禁止用 `capture-pane -S -N`（固定行数）读取子窗格完整结果** | 检测哨兵用 `-S -5`，读完整结果用 `-S - -E -`（全量 scrollback）或读 pipe-pane 日志文件。固定行数在小窗格下会截断 findings | 2026-03-20: cycle 3 验证 codex 输出 FAIL 但 findings 被截断，指挥官误判为"无可操作 findings" |
 
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 
@@ -362,6 +419,9 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 
 <action>Record current tmux session: `tmux display-message -p '#{session_name}'`</action>
 <action>Set current_session = result. All sub-pane split-window commands MUST target this session.</action>
+<action>Generate commander instance ID: `mc_instance = "{current_session}-$(date +%s)"`。此 ID 用于日志目录隔离，防止多指挥官冲突。</action>
+<action>Set mc_log_dir = "/tmp/mc-logs/{mc_instance}/"</action>
+<action>创建日志目录（通过 shell 或后续 utility pane）：`mkdir -p {mc_log_dir}`</action>
 
 <action>Verify codex available: `which codex`</action>
 <check if="codex not found" level="L3">
@@ -1295,9 +1355,12 @@ Use `tmux capture-pane -t {pane_id} -p` and check the last few lines for:
 
 ### Tips for reliable detection
 
-- Capture the last 5 lines: `tmux capture-pane -t {pane_id} -p | tail -5`
+- **Signal check** (快速): `tmux capture-pane -t {pane_id} -p -S -5` — 只看最后 5 行找 MC_DONE
+- **Full read** (完整结果): `tmux capture-pane -t {pane_id} -p -S - -E -` — 完整 scrollback，用于提取 findings
+- **Log read** (审计): `cat {mc_log_dir}/pane-{pane_id}.log` — 不受 scrollback 限制的永久日志
 - Strip ANSI codes for clean matching: `... | sed 's/\x1b\[[0-9;]*m//g'`
 - Check if Claude process is still running: `tmux list-panes -t {current_session} -F '#{pane_id} #{pane_current_command}'`
+- **重要：** 不要用 `capture-pane -S -N`（固定行数回看），它在小窗格下会丢失内容。始终用 `-S - -E -` 获取完整输出。
 
 ### Timeout thresholds (warn user, do NOT auto-kill)
 
@@ -1343,11 +1406,17 @@ tmux split-window -t {current_session} -v "cd /project/path && codex -c model_re
 # Send task packet to running claude in pane
 tmux send-keys -t {pane_id} "Skill: bmad-dev-story" Enter
 
-# Capture pane output (last screen)
-tmux capture-pane -t {pane_id} -p
+# [Signal] Quick check — last 5 lines for MC_DONE detection
+tmux capture-pane -t {pane_id} -p -S -5
 
-# Capture with scrollback history
-tmux capture-pane -t {pane_id} -p -S -50
+# [Full] Complete scrollback — all output since pane creation
+tmux capture-pane -t {pane_id} -p -S - -E -
+
+# [Log] Enable real-time log for a pane (run once after pane creation)
+tmux pipe-pane -t {pane_id} -o 'cat >> {mc_log_dir}/pane-{pane_id}.log'
+
+# [Log] Read full log file (no scrollback limit)
+cat {mc_log_dir}/pane-{pane_id}.log
 
 # List all panes with their IDs and running commands
 tmux list-panes -t {current_session} -F '#{pane_id} #{pane_current_command} #{pane_width}x#{pane_height}'
@@ -1405,6 +1474,8 @@ utility_pane: "%8"               // shell pane，用于文件写入/归档
 inspector_state: idle            // idle | busy_gate | busy_audit
 poll_count: 0                    // Step 4 循环计数器，用于主动监察触发
 current_session: "1"             // 用户 attach 的 tmux session name
+mc_instance: "1-1742486400"      // commander instance ID = {session_name}-{epoch}，防止多指挥官冲突
+mc_log_dir: "/tmp/mc-logs/1-1742486400/"  // 子窗格日志目录
 current_merge_story_id: null     // Step 7/8 正在 merge 和回归的 story
 
 # Story 注册表（静态/跨阶段路径）

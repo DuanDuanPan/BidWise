@@ -1,7 +1,8 @@
-last_updated: "2026-03-20T06:30:00.000Z"
+last_updated: "2026-03-20T05:56:06.000Z"
 batch_id: "batch-2026-03-20-2"
 batch_stories: ["1-6", "2-2"]
 gates:
   G1: { status: PASS, timestamp: "2026-03-20T06:15:00.000Z", verified_by: commander, details: "User confirmed batch [1-6, 2-2]" }
-  G2: { status: PASS, timestamp: "2026-03-20T06:30:00.000Z", verified_by: commander, details: "Both story files exist: story-1-6-sop-navigation.md, 2-2-enabler-agent-orchestrator-task-queue.md" }
+  G2: { status: PASS, timestamp: "2026-03-20T06:30:00.000Z", verified_by: commander, details: "Both story files exist" }
+  G3: { status: PASS, timestamp: "2026-03-20T05:56:06.000Z", verified_by: commander, details: "1-6 has .pen+3 PNG+manifest; 2-2 backend skip" }
 story_gates: {}

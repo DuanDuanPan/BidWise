@@ -67,8 +67,9 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
 - [ ] Task 1: 项目工作空间壳层组件 (AC: 1, 2)
   - [ ] 1.1 创建 `src/renderer/src/modules/project/components/ProjectWorkspace.tsx` — 工作空间顶层容器，加载项目数据并渲染 SOP 进度条 + 主内容区占位
   - [ ] 1.2 修改 `src/renderer/src/App.tsx` — 将 `/project/:id` 路由从占位 div 替换为 `<ProjectWorkspace />`
-  - [ ] 1.3 在 `projectStore` 中添加 `loadProject(id)` action（调用 `window.api.projectGet(id)` 加载当前项目完整数据到 `currentProject`）
-  - [ ] 1.4 创建 `src/renderer/src/modules/project/hooks/useCurrentProject.ts` — 封装从路由 param 获取 id → 加载 project → 返回 currentProject + loading/error 的 hook
+  - [ ] 1.3 激活 `ProjectKanban.tsx` 的 `handleCardClick`：引入 `useNavigate`，将占位符替换为 `navigate(\`/project/${id}\`)`，使卡片点击真正导航到项目工作空间
+  - [ ] 1.4 在 `projectStore` 中添加 `loadProject(id)` action（调用 `window.api.projectGet(id)` 加载当前项目完整数据到 `currentProject`）
+  - [ ] 1.5 创建 `src/renderer/src/modules/project/hooks/useCurrentProject.ts` — 封装从路由 param 获取 id → 加载 project → 返回 currentProject + loading/error 的 hook
 
 - [ ] Task 2: SOP 进度条组件 (AC: 1, 3, 7)
   - [ ] 2.1 创建 `src/renderer/src/modules/project/components/SopProgressBar.tsx` — SOP 6 阶段进度条组件
@@ -90,7 +91,7 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
     - 定义 `SopStageInfo` 接口（key, label, status, description, ctaLabel）
   - [ ] 3.2 扩展 `UpdateProjectInput`（`@shared/ipc-types.ts`）：确认已包含 `sopStage` 字段（**注意：当前 `UpdateProjectInput` 的 Pick 不包含 `sopStage`**，需要添加）
   - [ ] 3.3 创建 `src/renderer/src/modules/project/hooks/useSopNavigation.ts` — 封装 SOP 导航逻辑：
-    - `currentStageKey`: 当前激活阶段 key（本地 UI 状态，初始值从 `currentProject.sopStage` 读取）
+    - `currentStageKey`: 当前激活阶段 key（本地 UI 状态，初始值从 `currentProject.sopStage` 读取）。**归一化规则：当 `sopStage` 为 `'not-started'` 时，视为阶段 1（`'requirements-analysis'`）激活** — 用户首次进入工作空间即自动处于需求分析阶段，并通过 `project:update` IPC 将 `sopStage` 持久化为 `'requirements-analysis'`
     - `stageStatuses`: 6 个阶段的状态映射（派生计算）
     - `navigateToStage(key)`: 跳转阶段 + 约束检查 + 自动更新"未开始"→"进行中"
     - `updateStageInDb(key)`: 通过 `project:update` IPC 持久化 sopStage 变更
@@ -108,10 +109,10 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
   - [ ] 4.4 CTA 按钮 Alpha 阶段仅展示，click 事件暂不跳转到实际功能（后续 Story 接入）
 
 - [ ] Task 5: 快捷键绑定 (AC: 4)
-  - [ ] 5.1 创建 `src/renderer/src/modules/project/hooks/useSopKeyboardNav.ts` — 监听 `Alt+2` ~ `Alt+6` 全局键盘事件
+  - [ ] 5.1 创建 `src/renderer/src/modules/project/hooks/useSopKeyboardNav.ts` — 监听 `Alt+2` ~ `Alt+6` 全局键盘事件（Alt+N 跳转阶段 N，即 Alt+2=方案设计 … Alt+6=交付归档）
   - [ ] 5.2 在 `ProjectWorkspace` 中挂载此 hook，确保仅在 `/project/:id` 路由下激活
   - [ ] 5.3 快捷键触发时调用 `useSopNavigation.navigateToStage(key)` 跳转对应阶段
-  - [ ] 5.4 `Alt+2` = 需求分析，`Alt+3` = 方案设计，`Alt+4` = 方案撰写，`Alt+5` = 成本评估，`Alt+6` = 评审打磨（交付阶段无快捷键，需显式点击）
+  - [ ] 5.4 `Alt+N` 跳转到 SOP 阶段 N（与 AC4 对齐）：`Alt+2` = 方案设计（阶段2），`Alt+3` = 方案撰写（阶段3），`Alt+4` = 成本评估（阶段4），`Alt+5` = 评审打磨（阶段5），`Alt+6` = 交付归档（阶段6）。阶段 1（需求分析）为进入工作空间时的默认激活阶段，无快捷键
 
 - [ ] Task 6: 阶段间约束与跳转提示 (AC: 3)
   - [ ] 6.1 在 `useSopNavigation` 的 `navigateToStage` 中实现约束检查：
@@ -201,13 +202,14 @@ export type UpdateProjectInput = Partial<
 **已有的 `SOP_STAGE_CONFIG`（`modules/project/types.ts`）需要扩展**。当前只有 label + color，本 Story 需要添加 description、ctaLabel、icon 映射。建议新建 `SOP_STAGES` 常量数组保持有序：
 
 ```typescript
+// Alt+N = stage N (AC4). Stage 1 is default on workspace entry, no shortcut needed.
 export const SOP_STAGES = [
-  { key: 'requirements-analysis', label: '需求分析', shortLabel: '需求', altKey: 2 },
-  { key: 'solution-design', label: '方案设计', shortLabel: '设计', altKey: 3 },
-  { key: 'proposal-writing', label: '方案撰写', shortLabel: '撰写', altKey: 4 },
-  { key: 'cost-estimation', label: '成本评估', shortLabel: '成本', altKey: 5 },
-  { key: 'compliance-review', label: '评审打磨', shortLabel: '评审', altKey: 6 },
-  { key: 'delivery', label: '交付归档', shortLabel: '交付', altKey: null },
+  { key: 'requirements-analysis', label: '需求分析', shortLabel: '需求', stageNumber: 1, altKey: null },
+  { key: 'solution-design', label: '方案设计', shortLabel: '设计', stageNumber: 2, altKey: 2 },
+  { key: 'proposal-writing', label: '方案撰写', shortLabel: '撰写', stageNumber: 3, altKey: 3 },
+  { key: 'cost-estimation', label: '成本评估', shortLabel: '成本', stageNumber: 4, altKey: 4 },
+  { key: 'compliance-review', label: '评审打磨', shortLabel: '评审', stageNumber: 5, altKey: 5 },
+  { key: 'delivery', label: '交付归档', shortLabel: '交付', stageNumber: 6, altKey: 6 },
 ] as const
 ```
 
@@ -243,7 +245,7 @@ export const SOP_STAGES = [
 
 ### ProjectCard onClick 导航
 
-**已有代码**（`ProjectKanban.tsx`）在卡片点击时使用 `useNavigate()` 跳转到 `/project/${id}`。确认此导航链路不需要修改。
+**已有代码**（`ProjectKanban.tsx`）的 `handleCardClick` 当前是占位符（导航代码被注释掉）。**本 Story 需要在 Task 1 中激活此导航**：取消注释 `navigate(\`/project/${id}\`)` 并引入 `useNavigate`，使卡片点击真正跳转到 `/project/:id` 工作空间路由。
 
 ### 路由返回
 
@@ -307,6 +309,7 @@ tests/unit/renderer/
 
 **修改文件预期：**
 - `src/renderer/src/App.tsx` — `/project/:id` 路由替换为 `<ProjectWorkspace />`
+- `src/renderer/src/modules/project/components/ProjectKanban.tsx` — 激活 `handleCardClick` 导航到 `/project/:id`
 - `src/shared/ipc-types.ts` — `UpdateProjectInput` 的 Pick 添加 `'sopStage'`
 - `src/renderer/src/modules/project/types.ts` — 添加 `SOP_STAGES` 常量、`SopStageStatus` 类型
 - `src/renderer/src/stores/projectStore.ts` — 添加 `loadProject(id)` action
@@ -316,7 +319,7 @@ tests/unit/renderer/
 
 **Story 1.5 关键经验：**
 - `useProjectStore` 已实现完整 CRUD 和 filter/sort，本 Story 在其基础上添加 `loadProject` 不改变已有接口
-- `ProjectCard` 的 `onClick` 已导航到 `/project/:id`，无需修改
+- `ProjectCard` 的 `onClick` 导航逻辑需要本 Story 在 Task 1.3 中激活（1.5 仅预留了 handler stub）
 - HashRouter 路由在 Electron `file://` 协议下工作正常
 - Ant Design + Tailwind CSS 层叠顺序：`@layer theme, base, antd, components, utilities`
 - React 19.2.1 兼容性——所有组件必须 React 19 兼容
@@ -367,7 +370,7 @@ tests/unit/renderer/
 - [Source: _bmad-output/planning-artifacts/ux-design-specification.md#引导式占位符]
 - [Source: _bmad-output/planning-artifacts/ux-design-specification.md#模态策略原则]
 - [Source: _bmad-output/planning-artifacts/prd.md#FR5 SOP 6 阶段引导]
-- [Source: _bmad-output/implementation-artifacts/story-1-5-project-crud-kanban.md]
+- [Source: _bmad-output/implementation-artifacts/story-1-5.md]
 
 ## Dev Agent Record
 
@@ -380,5 +383,6 @@ tests/unit/renderer/
 ### Change Log
 
 - 2026-03-20 — Story 文件创建，包含完整开发上下文
+- 2026-03-20 — 修复 3 个 CRITICAL 验证发现：(1) Task 5.4 Alt+N 映射对齐 AC4（Alt+N=阶段N，非阶段名称偏移）；(2) useSopNavigation 添加 sopStage='not-started' 归一化规则（首次进入视为阶段1激活）；(3) 新增 Task 1.3 激活 ProjectKanban handleCardClick 导航
 
 ### File List
