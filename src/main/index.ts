@@ -2,7 +2,7 @@ console.time('cold-start')
 
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { promises as fs } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '@resources/icon.png?asset'
 import { registerIpcHandlers } from '@main/ipc'
@@ -12,13 +12,11 @@ import { createLogger } from '@main/utils/logger'
 
 const logger = createLogger('main')
 
-function ensureDataDirectories(): void {
+async function ensureDataDirectories(): Promise<void> {
   const dataRoot = join(app.getPath('userData'), 'data')
-  const subdirs = ['db', 'projects', 'config', 'logs/ai-trace', 'backups']
+  const subdirs = ['db', 'projects', 'config', 'desensitize-mappings', 'logs/ai-trace', 'backups']
   for (const dir of [dataRoot, ...subdirs.map((s) => join(dataRoot, s))]) {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
+    await fs.mkdir(dir, { recursive: true })
   }
 }
 
@@ -55,7 +53,7 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.bidwise')
 
-  ensureDataDirectories()
+  await ensureDataDirectories()
 
   const dbPath = join(app.getPath('userData'), 'data', 'db', 'bidwise.sqlite')
   initDb(dbPath)
