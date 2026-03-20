@@ -22,3 +22,4 @@ playwright-report/
 # Environment
 .env
 .env.*
+_bmad-output/evolution/
