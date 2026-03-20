@@ -17,6 +17,8 @@
   --color-bg-global: #fafafa;
   --color-bg-content: #ffffff;
   --color-bg-sidebar: #f5f5f5;
+  --color-text-tertiary: #8c8c8c;
+  --color-border: #e8e8e8;
 
   /* 批注五色 */
   --color-annotation-ai: #1677ff;
@@ -80,6 +82,29 @@
   :root {
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* SOP 脉冲动画（进行中状态） */
+@layer components {
+  @keyframes sop-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(22, 119, 255, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgba(22, 119, 255, 0);
+    }
+  }
+
+  .sop-pulse {
+    animation: sop-pulse 1.5s infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sop-pulse {
+      animation: none;
+    }
   }
 }
 

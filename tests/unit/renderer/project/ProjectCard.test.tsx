@@ -61,6 +61,11 @@ describe('ProjectCard', () => {
     expect(screen.getByText('合规状态')).toBeInTheDocument()
   })
 
+  it('should expose an accessible label for the actions button', () => {
+    render(<ProjectCard {...defaultProps} />, { wrapper: Wrapper })
+    expect(screen.getByRole('button', { name: '更多操作' })).toBeInTheDocument()
+  })
+
   it('should show -- for missing customer', () => {
     render(<ProjectCard {...defaultProps} project={{ ...mockProject, customerName: null }} />, {
       wrapper: Wrapper,

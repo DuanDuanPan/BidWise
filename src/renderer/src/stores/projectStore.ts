@@ -28,6 +28,7 @@ export interface ProjectState {
 
 export interface ProjectActions {
   loadProjects: () => Promise<void>
+  loadProject: (id: string) => Promise<void>
   createProject: (data: CreateProjectInput) => Promise<ProjectRecord>
   updateProject: (id: string, data: UpdateProjectInput) => Promise<ProjectRecord>
   deleteProject: (id: string) => Promise<void>
@@ -63,6 +64,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const res = await window.api.projectList()
       if (res.success) {
         set({ projects: res.data, loading: false })
+      } else {
+        set({ error: res.error.message, loading: false })
+      }
+    } catch (err) {
+      set({ error: (err as Error).message, loading: false })
+    }
+  },
+
+  loadProject: async (id: string) => {
+    set({ loading: true, error: null })
+    try {
+      const res = await window.api.projectGet(id)
+      if (res.success) {
+        set({ currentProject: res.data, loading: false })
       } else {
         set({ error: res.error.message, loading: false })
       }

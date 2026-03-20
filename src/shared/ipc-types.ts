@@ -55,7 +55,7 @@ export type CreateProjectInput = {
 export type UpdateProjectInput = Partial<
   Pick<
     ProjectRecord,
-    'name' | 'customerName' | 'industry' | 'deadline' | 'proposalType' | 'rootPath'
+    'name' | 'customerName' | 'industry' | 'deadline' | 'proposalType' | 'rootPath' | 'sopStage'
   >
 >
 

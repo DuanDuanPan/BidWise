@@ -1,6 +1,7 @@
 import { Button, Spin, Modal, message } from 'antd'
 import { PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
 import { useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useProjectStore } from '@renderer/stores'
 import { useProjects } from '../hooks/useProjects'
 import { ProjectCard } from './ProjectCard'
@@ -69,20 +70,20 @@ export function ProjectKanban(): React.JSX.Element {
     [deleteProject]
   )
 
-  const handleCardClick = useCallback((_id: string) => {
-    // Navigate to project workspace — placeholder for now
-    // Future: navigate(`/project/${id}`)
-  }, [])
+  const navigateTo = useNavigate()
+  const handleCardClick = useCallback(
+    (id: string) => {
+      navigateTo(`/project/${id}`)
+    },
+    [navigateTo]
+  )
 
   return (
-    <div
-      className="flex h-screen flex-col bg-[var(--color-bg-global)]"
-      data-testid="project-kanban"
-    >
+    <div className="bg-bg-global flex h-screen flex-col" data-testid="project-kanban">
       {/* Top nav bar */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-100 bg-[var(--color-bg-content)] px-6">
+      <header className="border-border bg-bg-content flex h-14 shrink-0 items-center justify-between border-b px-6">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-brand)] text-sm font-semibold text-white">
+          <div className="bg-brand flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white">
             标
           </div>
           <span className="text-h4">BidWise 标智</span>
@@ -91,16 +92,18 @@ export function ProjectKanban(): React.JSX.Element {
           <Button
             type="text"
             icon={<SearchOutlined />}
-            className="text-gray-400"
+            className="text-text-tertiary"
             disabled
             title="全局搜索（即将推出）"
+            aria-label="全局搜索（即将推出）"
           />
           <Button
             type="text"
             icon={<SettingOutlined />}
-            className="text-gray-400"
+            className="text-text-tertiary"
             disabled
             title="设置（即将推出）"
+            aria-label="设置（即将推出）"
           />
         </div>
       </header>
@@ -111,7 +114,9 @@ export function ProjectKanban(): React.JSX.Element {
         <div className="mb-2 flex items-center justify-between">
           <div>
             <h1 className="text-h1 m-0">项目看板</h1>
-            <p className="text-body-small mt-1 text-gray-400">管理所有投标项目，一目了然掌控进度</p>
+            <p className="text-body-small text-text-tertiary mt-1">
+              管理所有投标项目，一目了然掌控进度
+            </p>
           </div>
           <Button
             type="primary"
