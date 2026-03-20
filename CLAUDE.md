@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BidWise (标智) is an AI-powered desktop application for pre-sales bidding workflow automation, targeting industrial software pre-sales engineers in China. It is an Electron + React + TypeScript application with a Python subprocess for document rendering.
 
-**Current status:** Planning complete, implementation starting. Story 1.1 (project initialization) is the first development task.
+**Current status:** See `_bmad-output/implementation-artifacts/sprint-status.yaml` for live progress.
 
 ## Architecture
 
@@ -139,6 +139,57 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 - Workflow: master reads status/reports → decides next action → opens tmux pane → sends claude command → **actively polls sub-window via `tmux capture-pane`** → detects completion → auto-proceeds to next step
 - After dispatching work to a sub-window, the master MUST periodically check the pane output. When the sub-window claude returns to idle prompt or signals completion, immediately proceed — never wait for the user to report back
 
+### INITIALIZATION（指挥官启动必须步骤）
+
+指挥官启动时按以下顺序完成初始化，任何步骤失败则 HALT：
+
+1. **Skill Preflight** — 验证必需 skill 存在于 `.claude/skills/`
+2. **Configuration Loading** — 从 `_bmad/bmm/config.yaml` 读取项目配置
+3. **Environment Verification** — 确认 tmux 会话、codex 可用、worktree.sh 可执行、git 工作区干净、node_modules 存在
+4. **Utility Pane** — 创建 shell 子窗格用于文件写入（gate-state、gate-report 等）
+5. **Inspector (监察官) 启动** — 创建 codex 子窗格，发送驻场令，等待 `INSPECTOR READY` 确认（详见"Phase Gate Protocol"）
+6. **Gate State Resumption** — 检查 `gate-state.yaml` 是否存在，有则从断点恢复
+7. **Forbidden List Loading** — 逐条确认已理解禁忌清单
+
+### Task Packet（子窗格任务包格式）
+
+指挥官向任何 claude/codex 子窗格派发任务时，必须发送紧凑、结构化的任务包，固定 4 段：
+
+```text
+Skill: bmad-dev-story                    # 1. 明确 skill / role
+Goal: Implement story 1-6 in worktree    # 2. 唯一目标
+Inputs:                                  # 3. 可验证输入（绝对路径）
+- story id: 1-6
+- worktree: /abs/path/to/BidWise-story-1-6
+- story file: /abs/path/to/story-1-6.md
+Constraints:                             # 4. 边界条件 + 期望输出
+- modify files only inside this worktree
+Expected Output:
+- MC_DONE DEV 1-6 REVIEW_READY|HALT
+```
+
+规则：一次只派发一个目标；期望输出带固定哨兵（`MC_DONE`）便于 `capture-pane` 识别。
+
+### Completion Detection
+
+| 信号                                    | 含义           |
+| --------------------------------------- | -------------- |
+| Claude idle `❯`                         | 子窗格完成     |
+| Codex shell prompt `$`/`%` 或 pane 消失 | codex 完成     |
+| 输出含 `HALT`                           | 子窗格主动停止 |
+| Stack traces / `Error:` / `FATAL:`      | 崩溃           |
+
+超时阈值（仅 warn，不 auto-kill）：Create 10min, Prototype 15min, Validate 5min, Dev 60min, Review 15min, QA 20min, Regression 10min。
+
+### API Fault Recovery
+
+| 故障              | 恢复                         |
+| ----------------- | ---------------------------- |
+| Rate limit        | 暂停派发新任务，等待限流重置 |
+| Content filter    | 关闭 pane，用不同措辞重发    |
+| API timeout       | Warn 用户，不 auto-kill      |
+| Codex/Claude 崩溃 | 重建 pane + 重发指令         |
+
 ### Worktree-Based Parallel Development
 
 - Stories are developed in isolated git worktrees (`../BidWise-story-{id}`)
@@ -146,12 +197,23 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 - Only update `sprint-status.yaml` on the main branch, never in worktrees
 - Story files are created and committed to main before worktree creation
 
-### Key BMad Skills
+### Skill Dependency Map（阶段必需 Skill）
 
-- `/bmad-create-story` — Create story file with full context
-- `/bmad-dev-story <story-file>` — Implement a story
-- `/bmad-code-review` — Adversarial code review
-- `/bmad-sprint-status` — Check sprint status
+指挥官派发子窗格时**必须明确指定 skill 名称**，不得依赖 LLM 自动匹配。
+
+| 阶段             | 必需 Skill                                              | 备注                         |
+| ---------------- | ------------------------------------------------------- | ---------------------------- |
+| Create Story     | `bmad-create-story`                                     | 创建 story 文件              |
+| Prototype        | Pencil MCP tools                                        | 派生到 story-bound `.pen`    |
+| Validate         | _(codex 直接验证，无需 skill)_                          | 读取 checklist.md 后验证     |
+| Dev              | `bmad-dev-story`                                        | Story 实现                   |
+| Dev (UI Story)   | `bmad-dev-story` + `frontend-design` 或 `ui-ux-pro-max` | UI 实现需额外加载设计 skill  |
+| Code Review      | `bmad-code-review`                                      | 对抗性代码审查               |
+| Code Review (UI) | `bmad-code-review` + `web-design-guidelines`            | UI story 额外 UX 审查        |
+| Automated QA     | `bmad-qa-generate-e2e-tests`                            | 生成/更新 Story 级自动化测试 |
+| Bug Fix          | `debugging-strategies`                                  | 系统性调试定位               |
+
+可选增强：`tailwind-design-system`（组件库）、`react-best-practices`（React 优化）、`react-state-management`（Zustand）、`architecture-patterns`（后端架构）
 
 ### Story Lifecycle Pipeline
 
@@ -165,18 +227,18 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 - 已经是 `ready-for-dev` 的 story 直接纳入 batch，**跳过 Create Story**，只执行缺失的准备步骤和验证
 - 真正的并行从 worktree 开发阶段开始；人工 UAT、Merge、Regression 仍保持顺序裁决
 
-| Phase                    | 执行者                                  | 工具/Skill                                      | 指挥官行为                                                                                   |
-| ------------------------ | --------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **1. Create Story**      | 子窗格 **claude**                       | `/bmad-create-story`                            | 仅对 batch 中仍是 `backlog` 的 story 执行；该步骤交互式，按最小必要串行推进                  |
-| **2. Prototype（按需）** | 子窗格 **claude**                       | Pencil MCP 原型设计                             | 含 UI 的 Story 仅在缺少当前原型时补齐；每个 Story 使用独立 `.pen` + reference PNG + manifest |
-| **3. Validate**          | 子窗格 **codex**                        | 检查 AC 完整性、与 architecture/PRD/原型对齐    | 对 batch 中全部 story 统一复核；未通过则修正后重新验证，全部通过后再统一提交到 main          |
-| **4. Dev**               | 子窗格 **claude**（worktree）           | `/bmad-dev-story <story-file>`                  | 创建 worktree，派发开发，轮询进度                                                            |
-| **5. Code Review**       | **新**子窗格 **codex**（fresh context） | `/bmad-code-review`                             | 必须用 codex（不同 LLM 视角）。review 不通过 → 回 dev 窗格修复 → 再次 review，循环直到通过   |
-| **6. Auto QA**           | 子窗格 **codex** / **claude**           | Playwright smoke + Story 级 E2E + 测试摘要      | 进入人工 UAT 前自动生成/更新 E2E（如缺失）并执行；失败先回修复，成功后把报告交给用户         |
-| **7. UAT**               | **用户**                                | 手动验收（基于自动化报告做高价值检查）          | **暂停并通知用户**："Story X.Y 自动化 QA 已通过，请结合报告进行 UAT 验收。" 等待用户确认     |
-| **8. Merge**             | 指挥官（通过子窗格）                    | `worktree.sh merge` + 更新 `sprint-status.yaml` | 用户确认 UAT 通过后执行合并，更新状态为 done                                                 |
-| **9. Regression**        | 子窗格 **codex**                        | main 分支完整回归测试                           | 每次合并后在 main 上执行三层回归（见下方详细说明）。失败 → L0 自动派发修复                   |
-| **10. Cleanup**          | 指挥官（L0 自动）                       | `worktree.sh remove` + 删除远程分支             | Regression PASS 后自动清理已合并 story 的 worktree 和分支，释放磁盘空间                      |
+| Phase                    | 执行者                                           | 工具/Skill                                      | 指挥官行为                                                                                     |
+| ------------------------ | ------------------------------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **1. Create Story**      | 子窗格 **claude**                                | `/bmad-create-story`                            | 仅对 batch 中仍是 `backlog` 的 story 执行；该步骤交互式，按最小必要串行推进                    |
+| **2. Prototype（按需）** | 子窗格 **claude**                                | Pencil MCP 原型设计                             | 含 UI 的 Story 仅在缺少当前原型时补齐；每个 Story 使用独立 `.pen` + reference PNG + manifest   |
+| **3. Validate**          | 子窗格 **codex**（**并行**，每 story 独立 pane） | 检查 AC 完整性、与 architecture/PRD/原型对齐    | 每个 story **同时**开独立 codex pane 验证；未通过则修正后重新验证，全部通过后再统一提交到 main |
+| **4. Dev**               | 子窗格 **claude**（worktree）                    | `/bmad-dev-story <story-file>`                  | 创建 worktree，派发开发，轮询进度                                                              |
+| **5. Code Review**       | **新**子窗格 **codex**（fresh context）          | `/bmad-code-review`                             | 必须用 codex（不同 LLM 视角）。review 不通过 → 回 dev 窗格修复 → 再次 review，循环直到通过     |
+| **6. Auto QA**           | 子窗格 **codex** / **claude**                    | Playwright smoke + Story 级 E2E + 测试摘要      | 进入人工 UAT 前自动生成/更新 E2E（如缺失）并执行；失败先回修复，成功后把报告交给用户           |
+| **7. UAT**               | **用户**                                         | 手动验收（基于自动化报告做高价值检查）          | **暂停并通知用户**："Story X.Y 自动化 QA 已通过，请结合报告进行 UAT 验收。" 等待用户确认       |
+| **8. Merge**             | 指挥官（通过子窗格）                             | `worktree.sh merge` + 更新 `sprint-status.yaml` | 用户确认 UAT 通过后执行合并，更新状态为 done                                                   |
+| **9. Regression**        | 子窗格 **codex**                                 | main 分支完整回归测试                           | 每次合并后在 main 上执行三层回归（见下方详细说明）。失败 → L0 自动派发修复                     |
+| **10. Cleanup**          | 指挥官（L0 自动）                                | `worktree.sh remove` + 删除远程分支             | Regression PASS 后自动清理已合并 story 的 worktree 和分支，释放磁盘空间                        |
 
 **Regression 三层回归测试（Phase 8 详细说明）：**
 
@@ -271,6 +333,73 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 | **L1** | NOTIFY    | 里程碑完成 / 用户可能关注的状态变化        | 输出状态信息，不等待 | batch准备完成、story进入dev、review全部通过                  |
 | **L2** | CONFIRM   | 不可逆 OR 影响共享状态 OR 多选项需用户决策 | 暂停等待用户确认     | UAT验收、合并到main、batch选择、恢复/放弃进行中的story       |
 | **L3** | HALT      | 超出能力 OR 重大风险 OR 重复失败           | 完全停止并说明原因   | 3轮review不通过、merge冲突无法解决、无可用story              |
+
+### Phase Gate Protocol（御史台制度）
+
+**核心原则：** 不靠觉悟（advisory checks），而靠制度（mandatory gates with state persistence）。每个阶段转换必须通过对应 Gate，跳过 gate 等同于 L3 HALT 级别的协议违规。
+
+**两级强制执行：**
+
+| 级别                   | 机制                        | 执行者     | 适用场景            |
+| ---------------------- | --------------------------- | ---------- | ------------------- |
+| **Self-Check**         | 指挥官读取磁盘/git 状态验证 | 指挥官     | 每次转换            |
+| **Inspector (御史台)** | 独立 codex session 验证     | 驻场监察官 | 高风险转换：G5, G10 |
+
+**Gate 全景图：**
+
+| Gate    | 转换               | 级别                      | 检查要点                                                        |
+| ------- | ------------------ | ------------------------- | --------------------------------------------------------------- |
+| G1      | Step 1→2           | Self-check                | 用户已确认 batch                                                |
+| G2      | 2a→2b              | Self-check                | 所有 story 文件存在于磁盘                                       |
+| G3      | 2b→2c              | Self-check                | UI story 有 .pen + PNG + manifest                               |
+| G4      | 2c→2d              | Self-check                | 所有 story validation == PASS                                   |
+| **G5**  | **Step 2→3**       | **Inspector**             | **Batch commit 在 git log 中；story 文件/原型完整；工作区干净** |
+| G6      | Step 3→4           | Self-check                | Worktree 已创建，dev pane 存活                                  |
+| G7      | dev→review         | Self-check (per story)    | Dev pane 完成，源文件存在                                       |
+| G8      | review→auto_qa     | Self-check (per story)    | Code review PASS                                                |
+| G9      | auto_qa→uat        | Self-check (per story)    | QA 报告存在且 PASS                                              |
+| **G10** | **UAT→merge**      | **Inspector (per story)** | **用户明确确认 ✅；前置 gate 链完整；review/QA 全 PASS**        |
+| G11     | regression→cleanup | Self-check (per story)    | 三层回归同一轮全部通过                                          |
+
+**强制规则：**
+
+1. 每个 gate 必须执行 — 跳过 = 协议违规
+2. Gate 结果持久化到 `_bmad-output/implementation-artifacts/gate-state.yaml`（兼作审计日志和断点恢复检查点）
+3. REJECT = 不可前进 — 修复后重新执行整个 gate
+4. Inspector gate 不可自我认证 — G5/G10 必须由独立 codex session 验证
+5. Gate 状态跨会话存活 — 会话重启后读取 gate-state.yaml 确定恢复点
+
+### Inspector（监察官 / 御史台）
+
+**生命周期：** 在 INITIALIZATION 阶段创建，与指挥官共存直到 batch 结束。不是用完即抛。
+
+**两项职责：**
+
+1. **Gate 审查（被动）** — 收到 "请审查 Gate G{N}" 时，读取 gate-report，独立验证磁盘/git 状态，输出 APPROVE 或 REJECT
+2. **主动监察（周期性）** — Step 4 监控循环中每 3 轮轮询触发一次，检查 gate-state 无间隙、pane 与 phase 一致、无未授权 main 变更、工作流顺序合规
+
+**互斥锁：** 同一时刻只能处理一个请求。Gate 审查（高优先级，阻塞）不可跳过；主动监察（低优先级）在监察官忙时跳过。
+
+**VIOLATION = HALT：** 主动监察发现违规时，指挥官按 HALT 级别处理。
+
+### Forbidden List（禁忌清单）
+
+完整清单维护在 `.claude/skills/bmad-master-control/workflow.md` 的 "禁忌清单" 章节。指挥官在 INITIALIZATION 阶段 MUST 读取。每条来自真实执行偏差，不是理论推演。
+
+**当前禁忌（F1-F8）摘要：**
+
+| #   | 禁忌                                                  | 正确做法                               |
+| --- | ----------------------------------------------------- | -------------------------------------- |
+| F1  | 禁止逐 story 做完整闭环                               | 分阶段批处理                           |
+| F2  | 禁止逐 story 单独 commit                              | 全 batch 一次 commit                   |
+| F3  | 禁止直接修改 prototype.pen（母版）                    | 派生到 story-{id}.pen                  |
+| F4  | 禁止验证 FAIL 修复后跳过重新验证                      | 修复后重新提交验证                     |
+| F5  | 禁止在 L0 转换时询问用户"继续？"                      | L0 直接执行                            |
+| F6  | 禁止依赖 create-story 自动选 story                    | 必须明确指定 story ID                  |
+| F7  | 禁止在独立 tmux session 创建子窗格                    | 在用户当前 attach session split-window |
+| F8  | 禁止指挥官在自身上下文执行构建/测试/写文件/git commit | 通过 tmux 子窗格派发                   |
+
+**自动更新：** Inspector VIOLATION、Gate FAIL、用户纠正均可触发新条目。Batch 结束时批量回顾。
 
 ## Planning Artifacts
 
