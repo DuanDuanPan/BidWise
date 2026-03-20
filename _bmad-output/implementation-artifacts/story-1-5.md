@@ -38,6 +38,8 @@ So that 我可以一目了然地管理所有投标工作。
 - **Given** 多个项目同时进行
 - **When** 数据存储
 - **Then** 项目数据严格隔离（独立 SQLite 记录 + 独立项目文件目录 `data/projects/{id}/`），公司级数据（资产库/术语库/模板/基线）跨项目共享，项目级数据（方案/批注/对抗结果/GAP）项目内隔离，两层数据分层管理
+- **Then** 项目 `rootPath` 在创建时持久化到 SQLite（值为 `data/projects/{id}/` 的绝对路径），后续通过 `ProjectRecord.rootPath` 查找项目目录
+- **Then** DB 与文件系统的一致性有补偿保障：若 DB insert 成功但 mkdir 失败，service 层必须回滚 DB 记录（delete by id）并向调用方返回错误；若 DB insert 失败则不创建目录
 - [Source: epics.md Story 1.5 AC4, FR6, FR8]
 
 ### AC5: 状态管理与 UI 同步
@@ -49,14 +51,23 @@ So that 我可以一目了然地管理所有投标工作。
 ## Tasks / Subtasks
 
 - [ ] Task 1: 路由系统搭建 (AC: 全部)
-  - [ ] 1.1 安装 react-router-dom，配置 HashRouter（Electron 兼容）
+  - [ ] 1.1 安装依赖：`pnpm add react-router-dom zustand`（两者当前均未安装），配置 HashRouter（Electron 兼容）
   - [ ] 1.2 创建根路由：`/` → 项目看板页，`/project/:id` → 项目工作空间（占位）
   - [ ] 1.3 创建 `src/renderer/src/App.tsx` 路由挂载，移除临时 DesignSystemDemo 首页展示
 - [ ] Task 1.5: 数据库 Schema 扩展 — industry 字段 (AC: 3)
   - [ ] 1.5.1 创建 `src/main/db/migrations/002_add_industry.ts`，添加 `industry TEXT` 列
-  - [ ] 1.5.2 更新 `src/main/db/schema.ts`（ProjectTable 接口添加 industry）
-  - [ ] 1.5.3 更新 `CreateProjectInput` 类型，添加 industry 可选字段
-  - [ ] 1.5.4 确认 project-repo.ts / project-service.ts CRUD 兼容新字段（Kysely 自动映射）
+  - [ ] 1.5.2 更新 `src/main/db/schema.ts`（ProjectTable 接口添加 `industry: string | null`）
+  - [ ] 1.5.2a 在 `src/main/db/migrator.ts` 的 `migrations` 对象中注册新迁移：`import * as migration002 from './migrations/002_add_industry'`，并在 Record 中添加 `'002_add_industry': migration002`（参照 001 的内联注册模式）
+  - [ ] 1.5.3 更新 `src/shared/ipc-types.ts` 中的类型定义，添加 industry 字段：
+    - `ProjectRecord`：添加 `industry: string | null`
+    - `ProjectListItem`：Pick 字段列表中添加 `'industry'`
+    - `CreateProjectInput`：添加 `industry?: string`
+    - `UpdateProjectInput`：Pick 字段列表中添加 `'industry'`
+  - [ ] 1.5.4 手动更新 project-repo.ts 和 project-service.ts 的类型以支持 industry 字段（NOT auto-handled by Kysely — 必须手动修改）：
+    - `project-repo.ts` line 6 `CreateProjectRepoInput`：添加 `industry?: string`
+    - `project-repo.ts` line 14 `UpdateProjectRepoInput`：添加 `industry?: string | null`
+    - `project-repo.ts` line 25 `create()` 方法内的 project 对象：添加 `industry: input.industry ?? null`
+    - `project-service.ts` line 13 `create()` 方法内的 `repo.create({...})` 调用：在传参对象中添加 `industry: input.industry`
 - [ ] Task 2: Zustand projectStore 实现 (AC: 5)
   - [ ] 2.1 创建 `src/renderer/src/stores/projectStore.ts`，定义 ProjectState 接口
   - [ ] 2.2 实现 actions：loadProjects / createProject / updateProject / deleteProject / archiveProject / setFilter
@@ -71,8 +82,9 @@ So that 我可以一目了然地管理所有投标工作。
   - [ ] 4.2 创建 `modules/project/components/ProjectCard.tsx` — 项目卡片组件（与 `prototypes/story-1-5.pen` 卡片版式对齐）
   - [ ] 4.2a 实现最近活动展示：clock 图标 + 相对时间 + 活动摘要（AC2）
   - [ ] 4.3 创建 `modules/project/components/ProjectCreateModal.tsx` — 新建项目模态表单
-  - [ ] 4.4 创建 `modules/project/components/ProjectFilter.tsx` — 筛选栏组件（快速标签 + 高级筛选面板）
+  - [ ] 4.4 创建 `modules/project/components/ProjectFilter.tsx` — 筛选栏组件（快速标签：全部/进行中/本周截止/有警告 + 高级筛选面板）
   - [ ] 4.4a 实现完整筛选维度：客户、行业、状态、截止日组合筛选（AC3/FR7）
+  - [ ] 4.4b 实现智能排序：默认按截止日紧急度 + SOP 阶段权重排序，支持手动切换为按更新时间降序
   - [ ] 4.5 创建 `modules/project/components/ProjectEmptyState.tsx` — 空状态引导
   - [ ] 4.6 创建 `modules/project/hooks/useProjects.ts` — 项目数据消费 hook
   - [ ] 4.7 创建 `modules/project/types.ts` — 模块内类型定义
@@ -82,10 +94,11 @@ So that 我可以一目了然地管理所有投标工作。
   - [ ] 5.2 项目卡片右上角添加操作菜单（编辑/归档/删除）
   - [ ] 5.3 删除操作使用 Modal.confirm 二次确认（不可逆操作）
   - [ ] 5.4 归档操作使用 Modal.confirm 确认
-- [ ] Task 6: 项目文件目录初始化 (AC: 4)
-  - [ ] 6.1 在 project-service.ts 的 create 方法中，创建成功后初始化 `data/projects/{id}/` 目录
+- [ ] Task 6: 项目文件目录初始化与 DB/FS 一致性 (AC: 4)
+  - [ ] 6.1 在 project-service.ts 的 create 方法中，DB insert 成功后计算 rootPath（`data/projects/{id}/` 绝对路径）并写入 DB（update rootPath），然后初始化目录
   - [ ] 6.2 创建子目录：`assets/`，初始化空 `proposal.md` 和 `proposal.meta.json`
-  - [ ] 6.3 project-service.ts 的 delete 方法中清理项目目录
+  - [ ] 6.3 实现 DB/FS 补偿逻辑：若 mkdir 或子文件创建失败，catch 中回滚 DB 记录（delete by id），向调用方抛出错误（BidWiseError），确保不出现"DB 有记录但目录不存在"的不一致状态
+  - [ ] 6.4 project-service.ts 的 delete 方法中清理项目目录（先删目录再删 DB；若目录删除失败仅 log warning，不阻塞 DB 删除）
 - [ ] Task 7: 单元测试 (AC: 全部)
   - [ ] 7.1 projectStore 测试：loadProjects / createProject / updateProject / deleteProject / archiveProject / filter
   - [ ] 7.2 ProjectKanban 组件渲染测试
@@ -168,7 +181,7 @@ interface ProjectStore {
 **关键提醒：**
 - `project-service.ts` 和 `project-repo.ts` 已有完整 CRUD，本 Story 在其基础上扩展文件目录创建逻辑
 - `projectStore.ts` 尚未实现（`stores/index.ts` 为空占位），本 Story 首次创建
-- **新增 industry 字段**：需创建 `002_add_industry.ts` 迁移文件，在 projects 表中添加 `industry TEXT` 列；同步更新 `schema.ts`（ProjectTable）、`CreateProjectInput`、`project-repo.ts`、`project-service.ts`
+- **新增 industry 字段**：需创建 `002_add_industry.ts` 迁移文件，在 projects 表中添加 `industry TEXT` 列；同步更新 `schema.ts`（ProjectTable）、`ipc-types.ts`（ProjectRecord/ProjectListItem/CreateProjectInput/UpdateProjectInput）、`migrator.ts`（注册到内联 migrations Record）、`project-repo.ts`、`project-service.ts`
 - Tailwind v4 不使用 `tailwind.config.ts`，所有配置在 CSS `@theme` 块中
 - Ant Design 5.29.3，层叠顺序 `@layer theme, base, antd, components, utilities`
 - React 19.2.1，所有组件必须 React 19 兼容
@@ -182,7 +195,6 @@ interface ProjectStore {
 | id | id | TEXT PK | UUID v4 |
 | name | name | TEXT NOT NULL | 项目名称 |
 | customer_name | customerName | TEXT | 客户名称 |
-| industry | industry | TEXT | 行业领域（如军工、医疗、能源等，用于 FR7 筛选） |
 | deadline | deadline | TEXT | 截止日期 ISO-8601 |
 | proposal_type | proposalType | TEXT DEFAULT 'presale-technical' | 方案类型 |
 | sop_stage | sopStage | TEXT DEFAULT 'not-started' | SOP 阶段 |
@@ -190,6 +202,12 @@ interface ProjectStore {
 | root_path | rootPath | TEXT | 项目文件根路径 |
 | created_at | createdAt | TEXT NOT NULL | 创建时间 |
 | updated_at | updatedAt | TEXT NOT NULL | 更新时间 |
+
+**⚠️ 以下字段当前不存在，由本 Story 通过 002_add_industry 迁移添加：**
+
+| 列名 (DB) | TS 属性 | 类型 | 说明 |
+|-----------|---------|------|------|
+| industry | industry | TEXT | 行业领域（如军工、医疗、能源等，用于 FR7 筛选） |
 
 **DB↔TS 映射由 Kysely CamelCasePlugin 自动完成，禁止手动转换。**
 
@@ -253,9 +271,10 @@ interface ProjectStore {
 - [Source: ux-design-specification.md 表单布局与验证策略]
 
 **筛选功能（与 `prototypes/story-1-5.pen` / 对应 reference PNG 对齐）：**
-- 快速筛选：顶部水平标签（全部 / 进行中 / 已归档），圆角背景 `$bg-global`，选中态白色背景 `$bg-content`
+- 快速筛选：顶部水平标签（全部 / 进行中 / 本周截止 / 有警告），圆角背景 `$bg-global`，选中态白色背景 `$bg-content`
 - 高级筛选：下拉面板按客户/行业/状态/截止日组合筛选（FR7 完整维度，需补充原型设计）
-- 排序：默认按更新时间降序（arrow-up-down 图标 + "按更新时间"标签, 13px, text-secondary）
+- 排序：默认智能排序（截止日紧急度 + SOP 阶段权重），可手动切换为按更新时间降序（arrow-up-down 图标 + 排序标签, 13px, text-secondary）
+- [Source: ux-design-specification.md 项目看板筛选 — 快速筛选标签与智能排序]
 - [Source: ux-design-specification.md 项目看板筛选, epics.md AC3]
 
 **空状态设计：**
@@ -326,8 +345,11 @@ tests/unit/renderer/
 
 **修改文件预期：**
 - `src/renderer/src/App.tsx` — 添加路由配置，移除 DesignSystemDemo 首页
-- `src/main/services/project-service.ts` — 添加文件目录创建/清理逻辑
-- `package.json` — 添加 react-router-dom 依赖
+- `src/main/services/project-service.ts` — 添加文件目录创建/清理逻辑 + DB/FS 补偿
+- `src/main/db/schema.ts` — ProjectTable 添加 industry 字段
+- `src/main/db/migrator.ts` — 注册 002_add_industry 迁移
+- `src/shared/ipc-types.ts` — ProjectRecord/ProjectListItem/CreateProjectInput/UpdateProjectInput 添加 industry
+- `package.json` — 添加 react-router-dom + zustand 依赖
 - `src/renderer/src/stores/index.ts` — 导出 projectStore
 
 ### 技术决策记录
@@ -413,5 +435,6 @@ tests/unit/renderer/
 
 - 2026-03-19 — Story 文件创建，包含完整开发上下文
 - 2026-03-19 — 修复 codex 验证问题：AC3 补充行业筛选维度、DB 补充 industry 字段、AC4 补充数据隔离分层描述、补充过滤/活动/一致性任务、卡片和筛选 UI 描述与 story-bound prototype 对齐
+- 2026-03-20 — 修复 6 项验证发现：①industry 字段补全到 ProjectRecord/ProjectListItem/UpdateProjectInput 类型 ②002_add_industry 需注册到 migrator.ts 内联 migrations Record ③Task 1 补充 zustand 依赖安装 ④快速筛选标签对齐 UX 规范（全部/进行中/本周截止/有警告 + 智能排序）⑤AC4 增加 rootPath 持久化策略和 DB/FS 部分失败补偿逻辑 ⑥Schema 表拆分为现有列和待添加列，明确 industry 由 002 迁移新增
 
 ### File List

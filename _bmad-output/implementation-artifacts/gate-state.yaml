@@ -1,0 +1,8 @@
+last_updated: "2026-03-20T01:14:02.000Z"
+batch_id: "batch-2026-03-20-1"
+batch_stories: ["1-5", "2-1"]
+gates:
+  G1: { status: PASS, timestamp: "2026-03-20T01:14:02.000Z", verified_by: commander, details: "User confirmed batch [1-5, 2-1] recovery" }
+  G2: { status: PASS, timestamp: "2026-03-20T01:14:02.000Z", verified_by: commander, details: "Both story files exist on disk" }
+  G3: { status: PASS, timestamp: "2026-03-20T01:14:02.000Z", verified_by: commander, details: "1-5 has .pen+3 PNG+manifest; 2-1 backend-only skip" }
+story_gates: {}

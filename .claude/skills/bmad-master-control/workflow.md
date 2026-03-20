@@ -578,11 +578,12 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     <on_pass>更新 gate-state.yaml 记录 G3 PASS</on_pass>
   </gate>
 
-  <!-- ── 2c: Validate entire batch before dev ── -->
+  <!-- ── 2c: Validate entire batch before dev (PARALLEL) ── -->
   <critical>Validate 必须使用 codex（不同 LLM 视角），对 batch 中每个 story 执行标准化验证；`ready-for-dev` story 不能重建，但应在进入 Dev 前复核。</critical>
-  <action>Open ONE codex sub-pane on main:
-    `tmux split-window -t {current_session} -h "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"`</action>
-  <action>For each story in the batch, sequentially send validation instructions in the SAME codex pane:
+  <critical>**并行验证：** 每个 story 使用独立的 codex pane 同时验证，最大化吞吐量。codex 单实例同时只能处理一个请求，因此并行必须开多个 pane。</critical>
+  <action>For each story in the batch, **simultaneously** open a separate codex sub-pane on main:
+    `tmux split-window -t {current_session} -h "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"`
+    Wait for codex ready, then send task packet:
     `Role: story validation`
     `Goal: Validate the prepared story contract before development`
     `Inputs:`
@@ -594,13 +595,13 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     `- do not modify files`
     `Expected Output:`
     `- MC_DONE VALIDATE {{story_id}} PASS|FAIL`
-    `- concrete findings`</action>
-  <action>Collect PASS/FAIL per story. Keep the codex pane open until the whole batch has been assessed.</action>
+    `- concrete findings`
+    Record validate_pane[story_id] = pane_id</action>
+  <action>Poll all validate panes in round-robin until every story has returned MC_DONE VALIDATE. Collect PASS/FAIL per story. Close each codex pane after its result is captured.</action>
 
   <check if="any story in batch fails validation">
-    <action>Close codex pane after extracting findings</action>
     <action>For each failed story, open a claude pane on main and fix the story file / prototype according to the captured findings. Close the pane after each fix.</action>
-    <action>Re-open ONE codex pane and re-validate only the failed stories.</action>
+    <action>Re-validate only the failed stories — again in parallel (one codex pane per failed story).</action>
     <action>Max 3 validation cycles per story.</action>
     <action if="any story fails validation 3 times">HALT: "One or more stories in batch failed validation 3 times"</action>
   </check>
