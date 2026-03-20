@@ -24,4 +24,4 @@ playwright-report/
 .env.*
 _bmad-output/evolution/
 .serena/
-.serena/
+nohup.out
