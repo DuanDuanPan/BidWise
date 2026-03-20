@@ -60,7 +60,7 @@ development_status:
   # ── Epic 2: 招标文件分析与需求智能 (9 stories) ──
   epic-2: in-progress
   2-1-enabler-ai-proxy-desensitization: done
-  2-2-enabler-agent-orchestrator-task-queue: backlog
+  2-2-enabler-agent-orchestrator-task-queue: ready-for-dev
   2-3-tender-import-async-parsing: backlog
   2-4-ocr-recognition-correction: backlog
   2-5-requirement-extraction-scoring-model: backlog

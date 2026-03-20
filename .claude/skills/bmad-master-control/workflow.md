@@ -145,17 +145,23 @@ tmux split-window -t {current_session} -v "cd {project_root} && codex -c model_r
 驻场令（首条消息）：
 "你是本次 batch 的独立监察官（御史台）。你将驻场监督整个 batch 生命周期。
 
-你的两项职责：
-1. **Gate 审查** — 收到"请审查 Gate G{N}"时，读取 _bmad-output/implementation-artifacts/gate-report-G{N}.md，然后独立验证磁盘/git 状态，输出 APPROVE 或 REJECT
-2. **主动监察** — 收到"请执行主动监察"时，检查整体合规状态
+你的三项职责：
+1. **Gate 审查（被动）** — 收到"请审查 Gate G{N}"时，读取 _bmad-output/implementation-artifacts/gate-report-G{N}.md，然后独立验证磁盘/git 状态，输出 APPROVE 或 REJECT
+2. **即时基线审计** — 确认就绪后，立即执行一次初始审计：检查 git status、sprint-status.yaml、gate-state.yaml（如存在），输出 BASELINE AUDIT: COMPLIANT 或 VIOLATION
+3. **主动巡查（自主）** — 你不需要等待指挥官指令。在空闲时（无 Gate 审查任务），你应当主动定期执行巡查。巡查内容：
+   - gate-state.yaml 无间隙（已通过的 gate 按顺序连续）
+   - 无未授权的 main 分支变更（git log 未出现非 batch 相关 commit）
+   - 活跃 tmux panes 与当前阶段一致
+   - 工作流顺序合规（未跳过 gate）
+   每次巡查输出 PATROL: COMPLIANT 或 PATROL: VIOLATION: {details}
 
 你的原则：
 - 不信任指挥官的文字描述，只信任磁盘文件和 git 状态
 - 每次审查都独立读取实际状态
-- 发现违规必须立即 REJECT，不做妥协
+- 发现违规必须立即输出 VIOLATION，不做妥协
 - 你不参与任何执行工作
 
-请确认就绪，输出 'INSPECTOR READY' 开始驻场。"
+请确认就绪，输出 'INSPECTOR READY' 后立即执行基线审计。"
 ```
 
 **Gate 审查协议（被动）：**
@@ -185,9 +191,13 @@ gate-report 文件格式（`_bmad-output/implementation-artifacts/gate-report-G{
 - [ ] {assertion_2}
 ```
 
-**主动监察协议（周期性）：**
+**主动巡查协议（自主 + 指挥官触发双轨）：**
 
-指挥官在 Step 4 监控循环中，每 **3 轮轮询** 向监察官发送一次主动监察请求：
+监察官具备两种巡查触发模式：
+
+1. **自主巡查（驻场令已授权）：** 监察官在空闲时（无 Gate 审查任务）应自主执行巡查，无需等待指挥官指令。驻场令中已明确授权此行为。监察官输出 `PATROL: COMPLIANT` 或 `PATROL: VIOLATION: {details}`。
+
+2. **指挥官触发巡查（补充）：** 指挥官在 Step 4 监控循环中，每 **3 轮轮询** 额外向监察官发送一次主动监察请求（作为双重保障，而非唯一触发源）：
 
 ```
 tmux send-keys -t {inspector_pane} "请执行主动监察。当前状态：
@@ -197,9 +207,13 @@ tmux send-keys -t {inspector_pane} "请执行主动监察。当前状态：
 请检查：1) gate-state.yaml 无间隙 2) 活跃 pane 与 story phase 一致 3) 无未授权的 main 分支变更 4) 工作流顺序合规" Enter
 ```
 
-监察官输出 `COMPLIANT` 或 `VIOLATION: {details}`。指挥官 capture-pane 读取结论。
+**巡查输出约定：**
+- 被动 Gate 审查 → `APPROVE` / `REJECT`
+- 自主巡查 → `PATROL: COMPLIANT` / `PATROL: VIOLATION: {details}`
+- 指挥官触发巡查 → `COMPLIANT` / `VIOLATION: {details}`
+- 即时基线审计 → `BASELINE AUDIT: COMPLIANT` / `BASELINE AUDIT: VIOLATION: {details}`
 
-若 `VIOLATION` → 指挥官按 HALT 级别处理，输出违规详情给用户。
+若任何输出包含 `VIOLATION` → 指挥官按 HALT 级别处理，输出违规详情给用户。
 
 **监察官 pane ID 追踪：** `inspector_pane` 记录在 `story_states` 同级的 `inspector` 字段中。
 
@@ -401,6 +415,11 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   `tmux split-window -t {current_session} -v "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"`</action>
 <action>等待 codex 就绪，发送驻场令（见 PHASE GATE PROTOCOL 中的"监察官协作机制"）</action>
 <action>等待监察官确认就绪：capture-pane 检查输出包含 "INSPECTOR READY"</action>
+<action>等待监察官执行即时基线审计：capture-pane 检查输出包含 "BASELINE AUDIT: COMPLIANT" 或 "BASELINE AUDIT: VIOLATION"</action>
+<check if="BASELINE AUDIT: VIOLATION">
+  <output level="L2">⚠️ 监察官基线审计发现违规：{{violation_details}}</output>
+  <ask>处理违规后继续？</ask>
+</check>
 <action>记录 inspector_pane = {pane_id}</action>
 <action>Set inspector_state = idle</action>
 
@@ -409,7 +428,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <action>HALT: "Inspector initialization failed"</action>
 </check>
 
-<output level="L1">🏛️ 御史台就绪 — 监察官已驻场，pane {{inspector_pane}}</output>
+<output level="L1">🏛️ 御史台就绪 — 监察官已驻场（pane {{inspector_pane}}），基线审计 COMPLIANT，自主巡查已启动</output>
 
 ### Gate State Resumption (断点恢复)
 
@@ -546,25 +565,53 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   <critical>`prototype.pen` 是只读的项目级标准母版；所有 story 原型必须派生到各自的 `story-{{story_id}}.pen`。禁止多个 Story 并行编辑同一个工作 `.pen`。</critical>
   <action>For each story in `ui_stories`, check whether current batch artifacts already include a usable prototype for the current story scope.</action>
   <check if="UI story lacks current prototype artifact">
-    <action>Open claude sub-pane and instruct it to:
-      1. Open the canonical master prototype in read-only mindset: `{project_root}/_bmad-output/implementation-artifacts/prototypes/prototype.pen`
-      2. Copy the relevant standard frames/components/tokens from `prototype.pen` into the story-bound working file `{project_root}/_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}.pen`
-      3. Reuse project-wide style baseline from:
-         - `_bmad-output/planning-artifacts/ux-design-specification.md`
-         - `_bmad-output/implementation-artifacts/1-4-ui-framework-design-system.md`
-         - existing reference exports under `_bmad-output/implementation-artifacts/prototypes/story-1-4-*.png`
-      4. Create or update story-specific frames using names prefixed with `Story {{story_id}} —`
-      5. Export primary reference PNGs to `_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}/`
-      6. Save the `.pen` document to disk before exiting the pane
-      7. Update `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml` with story id, `.pen` path, exported PNG paths, viewport(s), style baseline references, and which standard frames/components were copied from `prototype.pen`
-      8. Report the saved file path, copied baseline sources, updated frame names, and exported reference PNG paths</action>
+    <critical>Pencil MCP 没有显式 save-as 工具。`open_document("new")` 会创建临时 `pencil-new.pen`，设计内容无法保存到目标路径。
+    正确流程：先在磁盘创建目标 .pen 文件，再用 `open_document` 打开它，这样 Pencil MCP 的自动保存会写回同一路径。</critical>
+
+    <action>**Pre-step（指挥官通过 utility_pane 执行）：** 在磁盘上创建目标 .pen 文件
+      ```bash
+      # 从母版复制，创建 story-bound .pen（Pencil MCP 要求 open_document 接收已存在的文件路径）
+      cp {project_root}/_bmad-output/implementation-artifacts/prototypes/prototype.pen \
+         {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}.pen
+      # 创建 PNG 导出目录
+      mkdir -p {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}/
+      ```
+    </action>
+
+    <action>Open claude sub-pane and send Task Packet:
+      ```text
+      Skill: Pencil MCP tools
+      Goal: Design story-bound prototype for Story {{story_id}}
+      Inputs:
+      - story id: {{story_id}}
+      - story file: {{story_registry[story_id].story_file_main}}
+      - target .pen (ALREADY ON DISK, open this): {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}.pen
+      - style baselines:
+        - {project_root}/_bmad-output/planning-artifacts/ux-design-specification.md
+        - {project_root}/_bmad-output/implementation-artifacts/1-4-ui-framework-design-system.md
+        - {project_root}/_bmad-output/implementation-artifacts/prototypes/story-1-4-*.png
+      - PNG export dir: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}/
+      - manifest: {project_root}/_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml
+      Constraints:
+      - CRITICAL: 使用 open_document 打开目标 .pen 文件（已从母版复制到磁盘），不要用 open_document("new")
+      - 打开后用 batch_design 清除母版中不需要的内容，再创建 story 专属 frame
+      - batch_design 和 export_nodes 调用时始终传 filePath 参数指向目标 .pen
+      - frame 名称前缀 "Story {{story_id}} —"
+      - 设计完成后用 export_nodes(filePath=...) 导出 PNG
+      - 更新 prototype-manifest.yaml
+      - 最后用 ls 验证 .pen 文件大小已变化（确认设计内容已写入）
+      Expected Output:
+      - MC_DONE PROTOTYPE {{story_id}}
+      - .pen path, PNG paths, manifest updated
+      ```
+    </action>
+
     <action>After the pane finishes, verify prototype persistence on disk:
-      - file exists: `_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}.pen`
-      - manifest entry exists in `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml`
-      - at least one reference PNG exists under `_bmad-output/implementation-artifacts/prototypes/story-{{story_id}}/`
-      - manifest indicates the story prototype was seeded from `prototype.pen`
+      - .pen file exists AND size > template size: `ls -la _bmad-output/implementation-artifacts/prototypes/story-{{story_id}}.pen`
+      - manifest entry exists: `grep '{{story_id}}' _bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml`
+      - at least one reference PNG: `ls _bmad-output/implementation-artifacts/prototypes/story-{{story_id}}/*.png 2>/dev/null | wc -l`
       - `git status --short` shows expected file creation/modification</action>
-    <action if="story-bound prototype, manifest entry, or reference PNG missing">Re-open the prototype pane, explicitly request save-to-disk + manifest update + PNG export, then re-check once. If still missing, HALT: "Story-bound prototype contract not fully persisted"</action>
+    <action if="story-bound prototype, manifest entry, or reference PNG missing">Re-open the prototype pane with the same instructions, then re-check once. If still missing, HALT: "Story-bound prototype contract not fully persisted"</action>
   </check>
   <check if="story is in `backend_only_stories` or already has current prototype">
     <action>Skip prototype work for that story.</action>

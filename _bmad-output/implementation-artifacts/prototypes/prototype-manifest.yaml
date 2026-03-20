@@ -42,3 +42,59 @@ stories:
       - "Open reference PNG first for visual fidelity"
       - "Open .pen for structure and interaction detail"
     notes: "Reference PNGs should be exported before DEV starts. If style deviates from baseline, update style_baseline sources first."
+
+  "1-6":
+    derived_from_template: "_bmad-output/implementation-artifacts/prototypes/prototype.pen"
+    standard_frames_seeded_from_template:
+      - "Story 1.4 color system (SOP state colors)"
+      - "Story 1.4 typography hierarchy"
+      - "Story 1.5 TopNav and card style language"
+    pen_file: "_bmad-output/implementation-artifacts/prototypes/story-1-6.pen"
+    reference_exports_dir: "_bmad-output/implementation-artifacts/prototypes/story-1-6/"
+    reference_exports:
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-6/xoXCm.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-6/FeydO.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-6/bvJVU.png"
+    primary_frames:
+      - "Story 1-6 — 项目工作空间（需求分析阶段）"
+      - "Story 1-6 — SOP 进度条状态参考"
+      - "Story 1-6 — 阶段跳转约束提示"
+    viewports:
+      - name: "desktop"
+        width: 1440
+        height: 900
+    dev_lookup_order:
+      - "Read story file Prototype References section"
+      - "Read this manifest entry"
+      - "Open reference PNG first for visual fidelity"
+      - "Open .pen for structure and interaction detail"
+      - "Check prototype.pen for shared style standards"
+    design_notes:
+      sop_progress_bar:
+        height: "48px fixed"
+        background: "#FFFFFF (Alpha phase)"
+        border_bottom: "1px solid #E8E8E8"
+        stage_circle: "28px diameter"
+        stage_icon: "14px lucide icons inside circle"
+        stage_label: "12px Inter below/beside circle"
+        connecting_lines: "120px × 2px, color follows left stage state"
+        states:
+          not_started: "hollow circle, 2px border #D9D9D9, gray icon, gray label"
+          in_progress: "solid fill #1677FF, white icon, blue label, outer glow ring rgba(22,119,255,0.25) 4px"
+          completed: "solid fill #52C41A, white check icon, green label"
+          warning: "solid fill #FAAD14, white alert icon, orange label"
+        pulse_animation: "@keyframes sop-pulse { box-shadow 0 0 0 6px rgba(22,119,255,0) }"
+      guide_placeholder:
+        layout: "centered vertical, 400px width"
+        icon: "64px circle bg #FAFAFA, 32px gray lucide icon"
+        title: "20px Inter semibold"
+        description: "14px Inter normal, #8C8C8C, line-height 1.8, 360px max-width"
+        cta: "Ant Design Button primary with lucide icon"
+        shortcut_hint: "12px #D9D9D9"
+      constraint_toast:
+        style: "Ant Design message.warning pattern"
+        background: "#FFFBE6"
+        border: "1px solid #FFE58F"
+        icon: "triangle-alert 18px #FAAD14"
+        text: "13px #8B6914"
+    notes: "Three frames cover: (1) default workspace with stage 1 active + guide placeholder, (2) all 4 SOP states reference (done/active/warning/idle), (3) skip-stage constraint warning toast. Alpha uses white background; Beta upgrades SOP bar to dark #0C1D3A."

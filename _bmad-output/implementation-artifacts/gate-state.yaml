@@ -1,11 +1,7 @@
-last_updated: "2026-03-20T02:05:19.000Z"
-batch_id: "batch-2026-03-20-1"
-batch_stories: ["1-5", "2-1"]
+last_updated: "2026-03-20T06:30:00.000Z"
+batch_id: "batch-2026-03-20-2"
+batch_stories: ["1-6", "2-2"]
 gates:
-  G1: { status: PASS, timestamp: "2026-03-20T01:14:02.000Z", verified_by: commander, details: "User confirmed batch [1-5, 2-1] recovery" }
-  G2: { status: PASS, timestamp: "2026-03-20T01:14:02.000Z", verified_by: commander, details: "Both story files exist on disk" }
-  G3: { status: PASS, timestamp: "2026-03-20T01:14:02.000Z", verified_by: commander, details: "1-5 has .pen+3 PNG+manifest; 2-1 backend-only skip" }
-  G4: { status: PASS, timestamp: "2026-03-20T01:58:41.000Z", verified_by: commander, details: "Both 1-5 and 2-1 validation PASS on cycle 3" }
-  G5: { status: PASS, timestamp: "2026-03-20T02:03:02.000Z", verified_by: inspector, details: "Inspector APPROVE after assertion-1 correction" }
-  G6: { status: PASS, timestamp: "2026-03-20T02:05:19.000Z", verified_by: commander, details: "Worktrees created, dev panes %16 (1-5) and %17 (2-1) alive" }
+  G1: { status: PASS, timestamp: "2026-03-20T06:15:00.000Z", verified_by: commander, details: "User confirmed batch [1-6, 2-2]" }
+  G2: { status: PASS, timestamp: "2026-03-20T06:30:00.000Z", verified_by: commander, details: "Both story files exist: story-1-6-sop-navigation.md, 2-2-enabler-agent-orchestrator-task-queue.md" }
 story_gates: {}

@@ -279,7 +279,7 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 **Prototype Style Contract：**
 
 - 全项目风格一致性的源头不是共享一个 `.pen`，而是共享同一套风格基线
-- 工作流上采用“母版 + 派生”模式：先从 `prototype.pen` 拷贝相关标准 frame / 组件到 `story-<id>.pen`，再在派生文件里做 story 定制
+- 工作流上采用”母版 + 派生”模式：先通过 shell 将 `prototype.pen` 复制到 `story-<id>.pen`（磁盘上创建文件），再用 `open_document` 打开该文件进行设计（Pencil MCP 没有 save-as，必须先在目标路径创建文件再打开）
 - 风格基线来源固定为：
   - `_bmad-output/implementation-artifacts/prototypes/prototype.pen`
   - `_bmad-output/planning-artifacts/ux-design-specification.md`
@@ -373,14 +373,15 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 
 **生命周期：** 在 INITIALIZATION 阶段创建，与指挥官共存直到 batch 结束。不是用完即抛。
 
-**两项职责：**
+**三项职责：**
 
 1. **Gate 审查（被动）** — 收到 "请审查 Gate G{N}" 时，读取 gate-report，独立验证磁盘/git 状态，输出 APPROVE 或 REJECT
-2. **主动监察（周期性）** — Step 4 监控循环中每 3 轮轮询触发一次，检查 gate-state 无间隙、pane 与 phase 一致、无未授权 main 变更、工作流顺序合规
+2. **即时基线审计** — 确认就绪后立即执行初始审计（git status、sprint-status、gate-state），输出 BASELINE AUDIT: COMPLIANT/VIOLATION
+3. **主动巡查（自主 + 指挥官触发双轨）** — 监察官在空闲时应自主定期巡查，不需要等待指挥官指令；指挥官在 Step 4 每 3 轮轮询额外触发一次作为双重保障
 
-**互斥锁：** 同一时刻只能处理一个请求。Gate 审查（高优先级，阻塞）不可跳过；主动监察（低优先级）在监察官忙时跳过。
+**互斥锁：** 同一时刻只能处理一个请求。Gate 审查（高优先级，阻塞）不可跳过；主动巡查（低优先级）在监察官忙时跳过。
 
-**VIOLATION = HALT：** 主动监察发现违规时，指挥官按 HALT 级别处理。
+**VIOLATION = HALT：** 任何输出包含 VIOLATION 时，指挥官按 HALT 级别处理。
 
 ### Forbidden List（禁忌清单）
 
