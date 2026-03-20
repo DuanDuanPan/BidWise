@@ -198,7 +198,8 @@ tmux split-window -t {current_session} -v "cd {project_root} && codex -c model_r
 - `gate-state.yaml` 中 PASS 的 gate 条目 = 该阶段之前的 main 变更已被授权
 - batch 准备阶段（Step 2）的 main 本地 commit 在 G5 inspector 审查前不要求已 push
 - 当前阶段的工作产物（如 prototype 阶段的 .pen 文件）允许以 untracked 状态存在
-- 超出当前 batch_stories 范围的 main 变更 → VIOLATION
+- **运营改进文件**（workflow.md、CLAUDE.md、skill 文件、gate-state.yaml）的变更由用户在指挥官会话中直接授权，不属于 story 产物范畴，不触发 VIOLATION
+- 超出以上范围的 main 变更 → VIOLATION
 
 你的三项职责：
 1. **Gate 审查（被动）** — 收到"请审查 Gate G{N}"时，读取 _bmad-output/implementation-artifacts/gate-report-G{N}.md，然后独立验证磁盘/git 状态，输出 APPROVE 或 REJECT
