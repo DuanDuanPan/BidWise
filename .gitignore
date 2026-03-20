@@ -17,6 +17,7 @@ bidwise.config.enc
 
 # Test artifacts
 test-results/
+playwright-report/
 
 # Environment
 .env
