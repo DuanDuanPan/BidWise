@@ -9,8 +9,8 @@
 指挥官在 Step 1 之前通过 tmux 创建监察官窗格（codex），发送"驻场令"，监察官确认就绪。
 
 ```
-启动命令：
-tmux split-window -t {current_session} -v "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+启动命令（由 workflow.md Step 5b 执行，从 commander_pane 横向分割）：
+tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
 ```
 
 ## 驻场令（首条消息）

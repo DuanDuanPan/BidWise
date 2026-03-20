@@ -4,6 +4,7 @@ story_states: {}
 story_registry: {}
 current_session: ''
 utility_pane: ''
+bottom_anchor: ''
 ---
 
 # Step 5: Code Review & Fix Cycle
@@ -34,8 +35,9 @@ utility_pane: ''
    - LLM = codex ✓ (C2: 审查 = codex)
    - AUTH = L0 ✓
    - PANE = new ✓ (fresh context)
-5. Open NEW codex sub-pane:
-   `tmux split-window -t {current_session} -h "cd ../BidWise-story-{story_id} && codex ..."`
+5. Open NEW codex sub-pane (from bottom_anchor):
+   `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
+   Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
 6. Send task packet:
    ```
    Skill: bmad-code-review
@@ -101,8 +103,9 @@ utility_pane: ''
    - LLM = **codex** ✓ (C2 升级: claude 2次失败 → codex)
    - PANE = **new** ✓ (C2 不变量: 不能是 review pane)
 10. Close existing dev pane if alive
-11. Open NEW codex sub-pane (NOT the review pane):
-    `tmux split-window -t {current_session} -h "cd ../BidWise-story-{story_id} && codex ..."`
+11. Open NEW codex sub-pane (from bottom_anchor, NOT the review pane):
+    `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
+    Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
 12. Send task packet:
     ```
     Skill: debugging-strategies

@@ -4,6 +4,7 @@ merged_story_files_list: []
 regression_cycle: 0
 current_session: ''
 utility_pane: ''
+bottom_anchor: ''
 ---
 
 # Step 8: Three-Layer Regression on Main
@@ -29,8 +30,9 @@ utility_pane: ''
 2. Execute pre-dispatch: LLM = codex, AUTH = L0, PANE = new
 
 ### Launch Regression Pane
-3. Open codex sub-pane on main:
-   `tmux split-window -t {current_session} -h "cd {project_root} && codex ..."`
+3. Open codex sub-pane on main (from bottom_anchor):
+   `tmux split-window -t {bottom_anchor} -h "cd {project_root} && codex ..."`
+   Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
 4. Set regression_cycle = 0
 
 ### Regression Loop (max 3 cycles)

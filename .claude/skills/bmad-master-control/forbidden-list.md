@@ -18,7 +18,7 @@
 | F10 | **禁止让 codex 执行文件编辑/修复**（codex 只做验证和审查，除非 C2 升级条件满足） | 验证 FAIL → 派发 claude 子窗格修复；仅 review_cycle >= 2 时 codex 可接手修复（C2 升级） | 2026-03-20: codex 验证发现问题后直接在同一 pane 中修复文件 |
 | F11 | **禁止让执行过修复的窗格重新验证自己的修改（自我认证）** | 关闭旧窗格，开新 codex 窗格（fresh context）重新验证 | 2026-03-20: claude 修复后在同一窗格发送验证指令，失去独立性 |
 
-| F12 | **禁止 `split-window -t {session}` 创建子窗格**（session 名会 split 当前活跃 pane，焦点变化后布局错乱） | 所有 `split-window` 必须用具体 pane ID 作为 `-t` 目标：Inspector → `-t {commander_pane} -h -l 30%`；Utility → `-t {commander_pane} -v -l 40%`；Dev panes → `-t {utility_pane} -h` | 2026-03-20: Inspector 从 utility pane 右侧分割，而非 commander 右侧，布局与约定不符 |
+| F12 | **禁止 `split-window -t {session}` 创建子窗格**（session 名会 split 当前活跃 pane，焦点变化后布局错乱） | 所有 `split-window` 必须用具体 pane ID 作为 `-t` 目标。创建顺序（先纵后横）：Bottom Anchor → `-t {commander_pane} -v -l 40%`；Inspector → `-t {commander_pane} -h -l 55%`；Utility → `-t {inspector_pane} -h -l 45%`；Dev/Review panes → `-t {bottom_anchor} -h` | 2026-03-20: Inspector 从 utility pane 右侧分割，而非 commander 右侧，布局与约定不符 |
 
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 

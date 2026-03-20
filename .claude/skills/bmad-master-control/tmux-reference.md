@@ -1,34 +1,39 @@
 # TMUX Commands Reference
 
-## 标准布局
+## 标准布局（上下两区）
 
 ```
-┌──────────────────────┬─────────────┐
-│   Commander (指挥官)  │  Inspector  │
-│                      │  (监察官)    │
-├──────┬───────┬───────┴──────┬──────┤
-│ Util │ Dev-1 │    Dev-2     │Dev-3 │
-└──────┴───────┴──────────────┴──────┘
+┌──────────────┬─────────────┬──────────┐
+│  Commander   │  Inspector  │   Util   │  ← 上半区（指挥控制层）
+├──────────────┴─────────────┴──────────┤
+│      Dev / Review panes（按需开启）    │  ← 下半区（工作层，灵活创建）
+└────────────────────────────────────────┘
 ```
 
-**创建顺序（F12 强制）：**
-1. 先 Inspector: `-t {commander_pane} -h -l 30%`（commander 右侧）
-2. 再 Utility: `-t {commander_pane} -v -l 40%`（commander 下方）
-3. Dev panes: `-t {utility_pane} -h`（底部行横向扩展）
+**创建顺序（F12 强制 — 先纵后横）：**
+1. 先 Bottom Anchor: `-t {commander_pane} -v -l 40%`（预留全宽底部区域）
+2. 再 Inspector: `-t {commander_pane} -h -l 55%`（上半区 commander 右侧）
+3. 再 Utility: `-t {inspector_pane} -h -l 45%`（上半区 inspector 右侧）
+4. Dev/Review panes: `-t {bottom_anchor} -h`（下半区横向扩展）
 
 **关键：所有 split 的 `-t` 目标必须是具体 pane ID（如 `%74`），禁止用 session 名。**
 用 session 名时 tmux 会 split 当前活跃 pane，一旦焦点变化布局就错。
 
 按需查阅。指挥官在需要具体 tmux 命令语法时 Read 此文件。
 
-## Sub-Pane 创建
+## Sub-Pane 创建（均从 bottom_anchor 分割）
 
 ```bash
 # Claude pane (Create Story, Prototype, Dev, Fix)
-tmux split-window -t {utility_pane} -h "cd {path} && claude --dangerously-skip-permissions"
+tmux split-window -t {bottom_anchor} -h "cd {path} && claude --dangerously-skip-permissions"
 
 # Codex pane (Validate, Code Review, 顽固 bug 修复, Regression)
-tmux split-window -t {utility_pane} -h "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+tmux split-window -t {bottom_anchor} -h "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+```
+
+**每个新建 pane 创建后必须立即启用 pipe-pane 日志：**
+```bash
+tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'
 ```
 
 ## 消息发送
@@ -80,6 +85,7 @@ story_states: {}
 panes:
   utility: \"{{utility_pane}}\"
   inspector: \"{{inspector_pane}}\"
+  bottom_anchor: \"{{bottom_anchor}}\"
   inspector_state: idle
 GATE_EOF" Enter
 

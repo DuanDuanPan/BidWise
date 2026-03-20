@@ -99,35 +99,55 @@ Load from `{project-root}/_bmad/bmm/config.yaml`:
 
 ### 5. Pane Creation（顺序和目标不可变）
 
-**布局目标（F12 强制）：**
+**布局目标（F12 强制）— 上下两区：**
 ```
-┌──────────────────────┬─────────────┐
-│   Commander (指挥官)  │  Inspector  │
-├──────┬───────┬───────┴──────┬──────┤
-│ Util │ Dev-1 │    Dev-2     │Dev-3 │
-└──────┴───────┴──────────────┴──────┘
+┌──────────────┬─────────────┬──────────┐
+│  Commander   │  Inspector  │   Util   │  ← 上半区（指挥控制层）
+├──────────────┴─────────────┴──────────┤
+│      Dev / Review panes（按需开启）    │  ← 下半区（工作层，灵活创建）
+└────────────────────────────────────────┘
 ```
 
 Record commander pane ID: `tmux display-message -p '#{pane_id}'` → set `commander_pane`
 
-**Step 5a: Inspector（先创建，占据 commander 右侧）**
+**创建顺序：先纵后横（确保下半区全宽）**
+
+**Step 5a: Bottom Anchor（先纵向分割，预留全宽底部区域）**
+
+```bash
+tmux split-window -t {commander_pane} -v -l 40% "cd {project_root} && zsh"
+```
+Record `bottom_anchor`. Wait for shell prompt.
+
+**Step 5b: Inspector（从 commander 横向分割，上半区中部）**
 
 See `./inspector-protocol.md` for full standing order.
 
 ```bash
-tmux split-window -t {commander_pane} -h -l 30% "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
 ```
 Record `inspector_pane`. Send standing order. Wait for `INSPECTOR READY`.
 
-**Step 5b: Utility（从 commander 下方分割）**
+**Step 5c: Utility（从 inspector 横向分割，上半区最右）**
 
 ```bash
-tmux split-window -t {commander_pane} -v -l 40% "cd {project_root} && zsh"
+tmux split-window -t {inspector_pane} -h -l 45% "cd {project_root} && zsh"
 ```
 Wait for shell prompt. Record `utility_pane`.
 
 Wait for baseline audit result (`BASELINE AUDIT: COMPLIANT` or `BASELINE AUDIT: VIOLATION`).
 If VIOLATION → ask user (L2): "Inspector 基线审计发现问题: {details}。继续还是先处理？"
+
+### 6. Pipe-Pane Logging（三层通讯保障）
+
+为所有已创建 pane 启用日志捕获（确保 Log 层可用）：
+
+```bash
+tmux pipe-pane -t {commander_pane} -o 'cat >> {mc_log_dir}/pane-{commander_pane}.log'
+tmux pipe-pane -t {bottom_anchor} -o 'cat >> {mc_log_dir}/pane-{bottom_anchor}.log'
+tmux pipe-pane -t {inspector_pane} -o 'cat >> {mc_log_dir}/pane-{inspector_pane}.log'
+tmux pipe-pane -t {utility_pane} -o 'cat >> {mc_log_dir}/pane-{utility_pane}.log'
+```
 
 ### 7. Watchdog Startup
 

@@ -5,6 +5,7 @@ story_states: {}
 current_session: ''
 inspector_pane: ''
 utility_pane: ''
+bottom_anchor: ''
 ---
 
 # Step 3: Create Worktrees & Launch Parallel Dev
@@ -38,9 +39,9 @@ utility_pane: ''
 5. For each story:
    - Execute pre-dispatch (Read `../pre-dispatch-checklist.md`):
      LLM = claude, AUTH = L0, EXECUTOR = sub-pane, PANE = new
-   - Open claude sub-pane:
-     `tmux split-window -t {current_session} -h "cd ../BidWise-story-{story_id} && claude --dangerously-skip-permissions"`
-     (alternate -h/-v for layout balance)
+   - Open claude sub-pane (from bottom_anchor):
+     `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && claude --dangerously-skip-permissions"`
+   - Enable pipe-pane logging: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
    - Wait for Claude prompt (❯)
    - Send task packet:
      ```
