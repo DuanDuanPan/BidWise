@@ -237,6 +237,7 @@ inspector_state: idle | busy_gate | busy_audit
 | F5 | **禁止在 L0 转换时询问用户"继续？"** | L0 级别直接执行，不通知不等待 | 2026-03-19: Step 2→3 转换时输出"继续？"等待确认 |
 | F6 | **禁止依赖 `bmad-create-story` 自动选 story** | 必须在指令中明确指定 story ID（如"请创建 Story 2-1"） | 2026-03-19: 未指定 ID，skill 自动选了 1-6 而非 batch 中的 2-1 |
 | F7 | **禁止在独立 tmux session 创建子窗格** | 子窗格必须在用户当前 attach 的 session 中 split-window | 2026-03-19: 在 "mc" session 创建 dev pane，用户在 session "1"，看不到窗格 |
+| F8 | **禁止指挥官在自身上下文执行构建/测试/写文件/git commit** | 所有构建、测试、文件写入、git 操作必须通过 tmux 子窗格派发；指挥官上下文仅允许读取文件和 tmux 管理命令 | 2026-03-20: 指挥官直接执行 pnpm test:unit、electron-builder rebuild、Write 工具创建文件、git commit |
 
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 
