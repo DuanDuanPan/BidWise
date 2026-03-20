@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "verify:structure": "node scripts/verify-structure.mjs",
+    "setup:ai-config": "electron ./scripts/setup-ai-config.mjs",
     "test:unit": "vitest run",
     "test:e2e:smoke": "playwright test -g @smoke",
     "test:e2e": "playwright test",
@@ -32,11 +33,13 @@
   "dependencies": {
     "@ant-design/cssinjs": "^1.23.0",
     "@ant-design/icons": "^5.6.1",
+    "@anthropic-ai/sdk": "^0.80.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "antd": "5.29.3",
     "better-sqlite3": "^12.8.0",
     "kysely": "^0.28.13",
+    "openai": "^6.32.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

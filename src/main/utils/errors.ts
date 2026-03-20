@@ -31,3 +31,10 @@ export class DatabaseError extends BidWiseError {
     this.name = 'DatabaseError'
   }
 }
+
+export class AiProxyError extends BidWiseError {
+  constructor(code: string, message: string, cause?: unknown) {
+    super(code, message, cause)
+    this.name = 'AiProxyError'
+  }
+}
