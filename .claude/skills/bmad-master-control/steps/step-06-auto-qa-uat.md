@@ -23,10 +23,13 @@ utility_pane: ''
 
 ## INSTRUCTIONS
 
-### Automated QA (per story, sequential)
+### Automated QA (parallel dispatch, aggregate results)
 1. Read gate-state.yaml → 恢复 story_states
 2. Create directory if missing: `{project_root}/_bmad-output/implementation-artifacts/tests/`
-3. For each story with phase == `auto_qa_pending`:
+
+#### Phase A: Parallel Dispatch
+3. Collect all stories with phase == `auto_qa_pending`
+4. For **each** story, **simultaneously** open a codex sub-pane:
    - **Execute pre-dispatch:** LLM = codex, AUTH = L0, PANE = new
    - Open codex sub-pane in story worktree
    - Check if story-scoped Playwright tests exist: `tests/e2e/stories/story-{story_id}*.spec.ts`
@@ -49,12 +52,15 @@ utility_pane: ''
      - MC_DONE QA {story_id} PASS|FAIL
      - report path
      ```
-   - Close QA pane after completion
+   - Each pane runs independently; do NOT wait for one to finish before launching the next
 
-4. Check results:
-   - If any story FAIL:
+#### Phase B: Aggregate Results
+5. Wait for **all** QA panes to report `MC_DONE`; close each pane as it completes
+6. Collect all results, then **batch-update** gate-state.yaml once (avoid concurrent writes)
+7. For each FAIL story:
      - Write findings to `../BidWise-story-{story_id}/auto-qa-findings-cycle-{N}.md`
      - Set story.phase = "fixing"
+8. If any story FAIL:
      - Output (L1): "⚠️ 自动化 QA 发现阻塞问题，已回流修复"
      - **Read `./step-04-monitoring.md`** to re-enter monitoring loop
 
