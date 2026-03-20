@@ -63,10 +63,26 @@ cmd_create() {
         echo "创建 worktree: story/${story_id} → ${wt_path}"
         git -C "$REPO_ROOT" worktree add "$wt_path" -b "$branch"
 
-        # 安装依赖
+        # 安装依赖并重建 native modules for Electron
         if [ -f "$wt_path/pnpm-lock.yaml" ]; then
             echo "  安装依赖 (pnpm install)..."
-            (cd "$wt_path" && pnpm install --frozen-lockfile 2>&1 | tail -1) || echo "  ⚠ pnpm install 失败，请手动执行"
+            (cd "$wt_path" && pnpm install --frozen-lockfile 2>&1 | tail -1) || { echo "  ⚠ pnpm install 失败，请手动执行"; continue; }
+
+            echo "  重建 native modules for Electron..."
+            (cd "$wt_path" && pnpm exec electron-builder install-app-deps 2>&1 | tail -3) || { echo "  ⚠ electron-builder install-app-deps 失败，请手动执行"; continue; }
+
+            # 验证 better-sqlite3 已为 Electron ABI 编译
+            local electron_abi
+            electron_abi=$(cd "$wt_path" && node -e "console.log(require('electron/package.json').version)" 2>/dev/null || echo "")
+            if [ -n "$electron_abi" ]; then
+                local sqlite_binding
+                sqlite_binding=$(find "$wt_path/node_modules/better-sqlite3/build" -name "*.node" 2>/dev/null | head -1)
+                if [ -n "$sqlite_binding" ] && file "$sqlite_binding" | grep -q "Mach-O\|ELF"; then
+                    echo "  ✓ better-sqlite3 native module rebuilt (Electron ${electron_abi})"
+                else
+                    echo "  ⚠ better-sqlite3 native binding 未找到或格式异常，请手动验证: cd ${wt_path} && pnpm exec electron-builder install-app-deps"
+                fi
+            fi
         fi
         echo "  完成"
     done
