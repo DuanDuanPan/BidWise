@@ -10,11 +10,11 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
 
 ## Acceptance Criteria
 
-### AC1: 编排层统一调度——脱敏→调用→还原→日志→重试/降级
+### AC1: 编排层统一调度——脱敏→调用→日志→还原→重试/降级
 
 - **Given** Agent 编排层已初始化
 - **When** 调用 `agentOrchestrator.execute({ agentType, context, options })`
-- **Then** 编排层统一处理：task-queue 入队 → 脱敏 → ai-proxy 调用 → 还原 → 日志 → 重试/降级，全流程对调用者透明
+- **Then** 编排层同步返回 `{ taskId }`，并在后台统一处理：task-queue 入队 → 脱敏 → ai-proxy 调用 → 日志 → 还原 → 重试/降级；最终结果通过 `getAgentStatus(taskId)` 查询或 `task:progress` 事件感知，全流程对调用者透明
 - [Source: epics.md Story 2.2 AC1, architecture.md Agent 编排层设计原则]
 
 ### AC2: 任务队列——持久化/进度推送/取消/重试/断点恢复
@@ -28,7 +28,7 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
 
 - **Given** ParseAgent 已注册
 - **When** 调用 `registerAgent('parse', handler)` 后通过 `execute({ agentType: 'parse', context })` 执行
-- **Then** Agent 类型可通过统一接口调用，支持 `getAgentStatus(taskId)` 查询任务状态/进度
+- **Then** Agent 类型可通过统一接口调用，`execute()` 入队即返回 `{ taskId }`，支持 `getAgentStatus(taskId)` 查询任务状态/进度/最终结果
 - [Source: epics.md Story 2.2 AC3, architecture.md Alpha 注册 ParseAgent/GenerateAgent]
 
 ### AC4: AI 调用链日志——追溯每次 Agent 调用
@@ -44,12 +44,21 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
   - [ ] 1.1 在 `src/shared/ai-types.ts` 新增 Agent 编排层类型：
     - `AgentType = 'parse' | 'generate'`（Alpha 阶段，后续 Beta 扩展 `'seed' | 'adversarial' | 'scoring' | 'gap'`）
     - `AgentExecuteRequest = { agentType: AgentType; context: Record<string, unknown>; options?: AgentExecuteOptions }`
-    - `AgentExecuteOptions = { priority?: TaskPriority }`（注意：timeout/retries 由 task-queue 控制，不暴露给调用方——见 retry 归属说明）
-    - `AgentExecuteResult = { taskId: string; content: string; usage: TokenUsage; latencyMs: number }`
+    - `AgentExecuteOptions = { priority?: TaskPriority; timeoutMs?: number }`（默认超时由 task-queue 控制，调用方可按请求可选覆盖；retry 次数仍由 task-queue 控制，不暴露给调用方——见 retry 归属说明）
+    - `AgentExecuteResponse = { taskId: string }`（`execute()` 直接返回类型，入队即返回）
+    - `AgentExecuteResult = { content: string; usage: TokenUsage; latencyMs: number }`（任务最终完成后的结果类型）
     - `AgentStatus = { taskId: string; status: TaskStatus; progress: number; agentType: AgentType; createdAt: string; updatedAt: string; result?: AgentExecuteResult; error?: { code: string; message: string } }`
   - [ ] 1.1b 扩展 `AiProxyRequest` 新增可选字段（cancel 传播链基础）：
     - `signal?: AbortSignal` — 外部取消信号，传播到 Provider SDK 调用层
-    - `timeoutMs?: number` — 单次调用超时（默认 `900_000` ms / 15 分钟，覆盖 provider-adapter 的 30s 硬编码值）
+    - `timeoutMs?: number` — 单次调用超时，由上游传入（task-queue 创建任务时默认 `900_000` ms / 15 分钟）；ai-proxy / provider-adapter 自身不设默认值，仅透传
+  - [ ] 1.1c 在 `src/main/services/ai-proxy/index.ts` 提升 signal/timeoutMs 传播改造为本 Story 正式 Task（AC: 1, 2 前置）：
+    - `aiProxy.call()` 调用 Provider 时传递 `{ signal, timeoutMs }`
+    - `timeoutMs` 透传 `request.timeoutMs`（不设本地默认值；默认 900_000 由 task-queue 在入队时设定）
+    - 这是 task-queue 取消链路和长任务超时控制的前置，不得仅停留在 Dev Notes
+  - [ ] 1.1d 在 `src/main/services/ai-proxy/provider-adapter.ts` 提升 signal/timeoutMs 传播改造为本 Story 正式 Task（AC: 1, 2 前置）：
+    - `AiProvider.chat(request, options?: { signal?: AbortSignal; timeoutMs?: number })`
+    - Claude/OpenAI SDK 调用显式接收 `signal` + `timeout: options.timeoutMs`（移除硬编码 `30_000` 默认值；超时完全由上游 task-queue 控制）
+    - 替换现有硬编码 `30_000` 的调用路径，provider-adapter 自身不再设默认超时
   - [ ] 1.2 在 `src/shared/ai-types.ts` 新增 task-queue 类型：
     - `TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'`
     - `TaskPriority = 'low' | 'normal' | 'high'`
@@ -58,7 +67,7 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - `TaskRecord = { id: string; category: TaskCategory; agentType?: AgentType; status: TaskStatus; priority: TaskPriority; progress: number; input: string; output?: string; error?: string; retryCount: number; maxRetries: number; checkpoint?: string; createdAt: string; updatedAt: string; completedAt?: string }`
   - [ ] 1.3 在 `src/shared/ipc-types.ts` 扩展 IPC 通道：
     - `IPC_CHANNELS` 常量新增：`AGENT_EXECUTE: 'agent:execute'`, `AGENT_STATUS: 'agent:status'`, `TASK_LIST: 'task:list'`, `TASK_CANCEL: 'task:cancel'`
-    - `IpcChannelMap` 新增四个通道的 input/output 类型对
+    - `IpcChannelMap` 新增四个通道的 input/output 类型对，其中 `agent:execute` 输出类型为 `AgentExecuteResponse`
     - 新增 `TASK_PROGRESS_EVENT: 'task:progress'` 常量（用于 webContents.send 单向推送，不加入 IpcChannelMap）
     - 新增 `IpcEventPayloadMap = { 'task:progress': TaskProgressEvent }` 事件通道类型映射（与请求式 `IpcChannelMap` 分离，专供 `webContents.send` / `ipcRenderer.on` 单向推送的类型安全）
   - [ ] 1.4 在 `src/shared/constants.ts` ErrorCode 枚举新增：
@@ -137,21 +146,23 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
   - [ ] 7.1 创建 `src/main/services/agent-orchestrator/orchestrator.ts`
   - [ ] 7.2 实现 `AgentOrchestrator` 类：
     - `registerAgent(type: AgentType, handler: AgentHandler): void` — 注册 Agent 处理器到内部 Map
-    - `execute(request: AgentExecuteRequest): Promise<AgentExecuteResult>` — 核心编排流程：
+    - `execute(request: AgentExecuteRequest): Promise<AgentExecuteResponse>` — 两阶段编排入口，入队即返回：
       1. 查找已注册 Agent handler（未找到抛 `BidWiseError(AGENT_NOT_FOUND)`）
-      2. 通过 task-queue 入队（category='ai-agent', agentType=request.agentType）
-      3. task-queue executor 内部流程：
+      2. 通过 task-queue 入队（`taskQueue.enqueue({ category: 'ai-agent', agentType: request.agentType, input: request.context, priority: request.options?.priority ?? 'normal' })`）并获取 `taskId`
+      3. 以 fire-and-forget 方式启动 `taskQueue.execute(taskId, executor)` 后台执行
+      4. task-queue executor 内部流程：
          a. 调用 handler(context, { signal, updateProgress }) → handler 返回 `AiRequestParams`（messages + model config）
-         b. orchestrator 构造 `AiProxyRequest`：将 handler 返回的参数 + caller 字段 (`{agentType}-agent`) + signal（来自 task-queue 的 AbortController）合并
+         b. orchestrator 构造 `AiProxyRequest`：将 handler 返回的参数 + caller 字段 (`{agentType}-agent`) + signal（来自 task-queue 的 AbortController）+ timeoutMs（来自 `request.options?.timeoutMs` 或 task-queue 默认值）合并
          c. 调用 `aiProxy.call(proxyRequest)` 完成 脱敏→调用→日志→还原
-         d. Alpha 阶段：handler 纯粹构建 prompt；Beta 阶段扩展点：orchestrator 在步骤 b 前注入经验图谱上下文
-      4. 返回 `AgentExecuteResult`
+         d. 将最终结果写回任务记录，供 `getAgentStatus(taskId)` 返回
+         e. Alpha 阶段：handler 纯粹构建 prompt；Beta 阶段扩展点：orchestrator 在步骤 b 前注入经验图谱上下文
+      5. 同步返回 `AgentExecuteResponse = { taskId }`
     - `getAgentStatus(taskId: string): Promise<AgentStatus>` — 通过 task-queue 查询任务状态
     - `cancelAgent(taskId: string): Promise<void>` — 通过 task-queue 取消任务
   - [ ] 7.3 类型定义：
     - `AiRequestParams = { messages: AiChatMessage[]; model?: string; maxTokens?: number; temperature?: number }` — handler 返回的 AI 请求参数（不含 caller/signal，由 orchestrator 补充）
     - `AgentHandler = (context: Record<string, unknown>, options: { signal: AbortSignal; updateProgress: (progress: number, message?: string) => void }) => Promise<AiRequestParams>` — handler **只负责构建 prompt 和模型参数**，不调用 ai-proxy
-  - [ ] 7.4 职责边界（强制规则）：handler 返回 `AiRequestParams` → orchestrator 合并 `{ ...params, caller: '{agentType}-agent', signal }` 构造 `AiProxyRequest` → 调用 `aiProxy.call()` —— 保证所有 AI 调用统一经过 ai-proxy。handler 内禁止导入或调用 aiProxy
+  - [ ] 7.4 职责边界（强制规则）：handler 返回 `AiRequestParams` → orchestrator 合并 `{ ...params, caller: '{agentType}-agent', signal, timeoutMs }` 构造 `AiProxyRequest` → 调用 `aiProxy.call()` —— 保证所有 AI 调用统一经过 ai-proxy。handler 内禁止导入或调用 aiProxy
   - [ ] 7.5 caller 字段格式：`${agentType}-agent`（如 `parse-agent`、`generate-agent`），传入 `aiProxy.call({ caller })`
 
 - [ ] Task 8: Alpha Agent 骨架注册 (AC: 3)
@@ -180,24 +191,26 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
 
 - [ ] Task 10: IPC Handler 层 (AC: 1, 2, 3)
   - [ ] 10.1 创建 `src/main/ipc/agent-handlers.ts`
-  - [ ] 10.2 注册四个通道（使用 `createIpcHandler` 工厂）：
-    - `agent:execute` → `agentOrchestrator.execute(input)` — 返回 `AgentExecuteResult`
+  - [ ] 10.2 导出 `registerAgentHandlers()` + `RegisteredAgentChannels`，注册两个 agent 通道（使用 `createIpcHandler` 工厂）：
+    - `agent:execute` → `agentOrchestrator.execute(input)` — 返回 `AgentExecuteResponse`
     - `agent:status` → `agentOrchestrator.getAgentStatus(input)` — 返回 `AgentStatus`
+  - [ ] 10.3 创建 `src/main/ipc/task-handlers.ts`
+  - [ ] 10.4 导出 `registerTaskHandlers()` + `RegisteredTaskChannels`，注册两个 task 通道（使用 `createIpcHandler` 工厂）：
     - `task:list` → `taskQueue.listTasks(input)` — 返回 `TaskRecord[]`
     - `task:cancel` → `taskQueue.cancel(input)` — 返回 `void`
-  - [ ] 10.3 在 `src/main/ipc/index.ts` 中导入并注册 `agent-handlers.ts`（新增 `import './agent-handlers'`，确保四个通道在 app ready 时注册）
-  - [ ] 10.4 handler 只做参数解析和结果包装——业务逻辑在 service 层
+  - [ ] 10.5 在 `src/main/ipc/index.ts` 中显式调用 `registerAgentHandlers()` 和 `registerTaskHandlers()`，并将 `_AllRegistered` 扩展为 `RegisteredProjectChannels | RegisteredAgentChannels | RegisteredTaskChannels`，保持现有类型穷举校验模式
+  - [ ] 10.6 handler 只做参数解析和结果包装——业务逻辑在 service 层
 
 - [ ] Task 11: Preload 扩展 (AC: 1, 2, 3)
-  - [ ] 11.1 更新 `src/preload/index.ts`：新增 `agentExecute`、`agentStatus`、`taskList`、`taskCancel` 方法
+  - [ ] 11.1 更新 `src/preload/index.ts`：新增 `agentExecute`、`agentStatus`、`taskList`、`taskCancel` 方法，其中 `agentExecute` 返回 `AgentExecuteResponse`
   - [ ] 11.2 新增 `onTaskProgress(callback: (event: TaskProgressEvent) => void): () => void` 监听器——使用 `ipcRenderer.on('task:progress', callback)` 接收单向进度推送，返回 unlisten 函数（调用 `ipcRenderer.removeListener`），类型从 `IpcEventPayloadMap` 派生
   - [ ] 11.3 更新 `src/preload/index.d.ts` 类型声明——包含 `onTaskProgress` 方法签名
   - [ ] 11.4 确保编译时类型安全——新增通道未实现会触发编译错误
 
 - [ ] Task 12: 错误类型扩展 (AC: 1, 2)
   - [ ] 12.1 在 `src/main/utils/errors.ts` 新增：
-    - `AgentOrchestratorError extends BidWiseError` — 构造函数 `(code: string, message: string, cause?: unknown)`
     - `TaskQueueError extends BidWiseError` — 构造函数 `(code: string, message: string, cause?: unknown)`
+    - Agent 编排层错误直接使用 `BidWiseError`（搭配 `AGENT_NOT_FOUND` / `AGENT_EXECUTE` / `AGENT_TIMEOUT` 错误码），不创建独立子类
 
 - [ ] Task 13: 启动集成 (AC: 1, 2)
   - [ ] 13.1 在 `src/main/index.ts` 启动流程中：
@@ -227,13 +240,14 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - Mock BrowserWindow.getAllWindows
   - [ ] 14.3 `tests/unit/main/services/agent-orchestrator/orchestrator.test.ts`：
     - 注册 Agent 后可通过 execute 调用
-    - 未注册 Agent 类型抛出 `AgentOrchestratorError(AGENT_NOT_FOUND)`
-    - execute 通过 task-queue 入队并执行
-    - execute 调用 handler 获取 AI 请求 → 调用 `aiProxy.call()` → 返回结果
+    - 未注册 Agent 类型抛出 `BidWiseError(AGENT_NOT_FOUND)`
+    - execute 通过 task-queue 入队后**立即返回** `AgentExecuteResponse { taskId }`
+    - execute 以后台方式触发 `taskQueue.execute(taskId, executor)`
+    - executor 调用 handler 获取 AI 请求 → 调用 `aiProxy.call()` → 最终结果写回任务状态
     - caller 字段格式为 `{agentType}-agent`
     - getAgentStatus 返回任务状态
     - cancelAgent 触发 task-queue 取消
-    - handler 抛出异常时包装为 `AgentOrchestratorError(AGENT_EXECUTE)`
+    - handler 抛出异常时包装为 `BidWiseError(AGENT_EXECUTE)`
     - Mock aiProxy 和 taskQueue
   - [ ] 14.4 `tests/unit/main/services/agent-orchestrator/agents/parse-agent.test.ts`：
     - 接收 rfpContent 上下文
@@ -249,9 +263,16 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
     - 未找到任务抛出 NotFoundError
     - Mock Kysely 查询构建器
   - [ ] 14.7 `tests/unit/main/ipc/agent-handlers.test.ts`：
-    - 四个通道正确派发到对应 service
+    - `agent:execute` / `agent:status` 两个通道正确派发到对应 service
     - 异常包装为 ApiResponse error 格式
     - 使用 `createIpcHandler` 工厂
+  - [ ] 14.8 `tests/unit/main/ipc/task-handlers.test.ts`：
+    - `task:list` / `task:cancel` 两个通道正确派发到对应 service
+    - 异常包装为 ApiResponse error 格式
+    - 使用 `createIpcHandler` 工厂
+  - [ ] 14.9 补充既有 ai-proxy 测试（AC: 1, 2 前置改造）：
+    - `tests/unit/main/services/ai-proxy/ai-proxy.test.ts` 断言 `signal` / `timeoutMs` 从 `AiProxyRequest` 传递到 Provider 调用
+    - `tests/unit/main/services/ai-proxy/provider-adapter.test.ts` 断言 Anthropic/OpenAI SDK 调用接收 `signal` + `timeout`，且不再有硬编码 30 秒默认值（超时完全由上游传入）
 
 - [ ] Task 15: 集成验证 (AC: 全部)
   - [ ] 15.1 `pnpm lint && pnpm typecheck && pnpm build` 全部通过
@@ -265,7 +286,7 @@ So that 所有 AI Agent 按一致模式调度，长时间任务不阻塞 UI。
 
 **本 Story 在架构中的位置：**
 ```
-Renderer → IPC(agent-handlers.ts) → agent-orchestrator(本 Story) → ai-proxy(Story 2.1) → Claude/OpenAI API
+Renderer → IPC(agent-handlers.ts / task-handlers.ts) → agent-orchestrator(本 Story) → ai-proxy(Story 2.1) → Claude/OpenAI API
                                           ├── orchestrator.ts（编排核心：注册/执行/状态）
                                           ├── agents/parse-agent.ts（招标解析 Agent 骨架）
                                           ├── agents/generate-agent.ts（章节生成 Agent 骨架）
@@ -282,12 +303,16 @@ Renderer ←── IPC 事件推送(task:progress) ←── task-queue(本 Stor
 renderer.agentExecute(request)
   → IPC agent:execute
     → agentOrchestrator.execute(request)
-      → taskQueue.enqueue(category='ai-agent', agentType, input)
-      → taskQueue.execute(taskId, executor)          // AbortController 创建于此
-        → handler(context, { signal, updateProgress })  // handler 构建 AiRequestParams
-        → aiProxy.call({ ...params, caller, signal })   // signal 传递到 ai-proxy
-          → provider.chat(request, { signal })           // signal 传递到 Provider SDK HTTP 层
-      → return AgentExecuteResult
+      → taskQueue.enqueue({ category='ai-agent', agentType, input, priority }) => taskId
+      → void taskQueue.execute(taskId, executor)     // AbortController 创建于此，后台执行
+      → return { taskId }
+
+后台执行链路：
+taskQueue.execute(taskId, executor)
+  → handler(context, { signal, updateProgress })          // handler 构建 AiRequestParams
+  → aiProxy.call({ ...params, caller, signal, timeoutMs }) // signal + timeoutMs 传递到 ai-proxy
+    → provider.chat(request, { signal, timeoutMs })        // signal + timeoutMs 传递到 Provider SDK HTTP 层
+  → result 持久化到 tasks.output / AgentStatus.result
 
 取消链路（反向）：
 renderer.taskCancel(taskId) → IPC task:cancel → taskQueue.cancel(taskId)
@@ -296,7 +321,7 @@ renderer.taskCancel(taskId) → IPC task:cancel → taskQueue.cancel(taskId)
 
 **关键架构决策：**
 - agent-orchestrator 不直接调用 SDK——所有 AI 调用必须经过 `aiProxy.call()`（架构强制规则 #1）
-- task-queue 管理任务生命周期和状态持久化——orchestrator 委托 task-queue 执行实际任务
+- task-queue 管理任务生命周期和状态持久化——orchestrator 委托 task-queue 执行实际任务，`execute()` 自身只负责入队并返回 `taskId`
 - handler 只负责构建 AI 请求参数（messages/model/maxTokens），orchestrator 负责编排和 ai-proxy 调用
 - Alpha 阶段无经验图谱注入——handler 直接返回 prompt；Beta 阶段在 orchestrator 层添加经验查询+注入
 - 进度推送使用 `webContents.send()`（单向推送），不走 request-response IPC
@@ -315,12 +340,12 @@ renderer.taskCancel(taskId) → IPC task:cancel → taskQueue.cancel(taskId)
 重试归类规则：
 - **瞬态故障**（网络超时、429、5xx）→ Provider Adapter 层自动重试（3 次指数退避），对上层透明
 - **Provider 重试耗尽后仍失败** → 抛 `AiProxyError` → task-queue 捕获 → 根据 `retryCount` 决定整体重新入队（整个 executor 重跑）或标记 `failed`
-- **非瞬态故障**（401 认证、prompt 过大、handler 逻辑错误）→ Provider Adapter 不重试 → `AiProxyError` / `AgentOrchestratorError` 直接传播 → task-queue 标记 `failed`，不重试
+- **非瞬态故障**（401 认证、prompt 过大、handler 逻辑错误）→ Provider Adapter 不重试 → `AiProxyError` / `BidWiseError` 直接传播 → task-queue 标记 `failed`，不重试
 
 Abort/Signal 传播链实现要求：
 1. `AiProxyRequest` 新增 `signal?: AbortSignal`（Task 1.1b）
 2. `AiProxyService.call()` 将 `request.signal` 传递给 `provider.chat()` 的 SDK 调用选项（如 Anthropic SDK 的 `{ signal }`, OpenAI SDK 的 `{ signal }`）
-3. `AiProxyRequest` 新增 `timeoutMs?: number`（默认 `900_000`），传递给 Provider SDK 的 `timeout` 参数，覆盖 provider-adapter 当前硬编码的 `30_000`
+3. `AiProxyRequest` 新增 `timeoutMs?: number`，透传给 Provider SDK 的 `timeout` 参数；默认值 `900_000` 由 task-queue 在入队时设定，ai-proxy / provider-adapter 自身不设默认值（移除原硬编码 `30_000`）
 4. `taskQueue.cancel()` → `abortController.abort()` → signal 传播到 Provider SDK → HTTP 请求中止
 5. Cancel 与 Timeout 区分：task-queue 的 `execute()` 在 catch 中检查 `signal.aborted`——若为 `true`，标记任务状态为 `cancelled`（错误码 `TASK_CANCELLED`），不触发重试；若 `signal.aborted` 为 `false` 但错误类型为 `AI_PROXY_TIMEOUT`，则视为真实超时，按正常重试逻辑处理。Provider Adapter 层的 `AbortError` 仍分类为 `AI_PROXY_TIMEOUT`，cancel 语义由 task-queue 层根据 signal 状态覆盖判定
 
@@ -331,7 +356,7 @@ Abort/Signal 传播链实现要求：
 | `src/main/services/ai-proxy/index.ts` | `aiProxy` 单例——`call(request)` 编排脱敏→调用→日志→还原 | 2.1 |
 | `src/shared/ai-types.ts` | `AiProxyRequest`/`AiProxyResponse`/`AiChatMessage` 等类型（本 Story 扩展） | 2.1 |
 | `src/shared/constants.ts` | `ErrorCode` 枚举（含 `AI_PROXY*` 系列，本 Story 扩展 AGENT/TASK 系列） | 1.1/2.1 |
-| `src/main/utils/errors.ts` | `BidWiseError`/`AiProxyError` 错误体系（本 Story 扩展 AgentOrchestratorError/TaskQueueError） | 1.1/2.1 |
+| `src/main/utils/errors.ts` | `BidWiseError`/`AiProxyError` 错误体系（本 Story 扩展 TaskQueueError） | 1.1/2.1 |
 | `src/main/utils/logger.ts` | `createLogger(module)` 工厂函数 | 1.1 |
 | `src/main/ipc/create-handler.ts` | `createIpcHandler<C>()` 工厂（本 Story 用于注册 agent/task 通道） | 1.3 |
 | `src/shared/ipc-types.ts` | `IpcChannelMap`/`PreloadApi`/`ApiResponse`（本 Story 扩展 4 个通道） | 1.3 |
@@ -345,10 +370,10 @@ Abort/Signal 传播链实现要求：
 **关键提醒：**
 - `aiProxy.call()` 已包含完整的脱敏→调用→日志→还原流程——orchestrator **不需要**再实现脱敏/日志逻辑
 - orchestrator 的 caller 字段（如 `parse-agent`）会传入 `aiProxy.call()`，ai-trace-logger 自动记录
-- 本 Story 需扩展 `AiProxyService.call()` 以支持 `signal` 和 `timeoutMs` 字段传递到 Provider SDK 层（`provider.chat()` 的 SDK 调用选项）——这是 cancel 传播链的关键桥梁
-- `createIpcHandler<C>()` 自动包装 try/catch → ApiResponse 格式——agent-handlers 直接使用
+- 本 Story 需扩展 `AiProxyService.call()` 以支持 `signal` 和 `timeoutMs` 字段传递到 Provider SDK 层（`provider.chat()` 的 SDK 调用选项）——这是 cancel 传播链的关键桥梁，且必须体现在正式 Task 中
+- `createIpcHandler<C>()` 自动包装 try/catch → ApiResponse 格式——agent-handlers / task-handlers 直接使用
 - DB 迁移必须注册到 `migrator.ts` 的 `migrations` 对象中（内联 Provider 模式）
-- IPC 通道新增后必须同步更新 `IpcChannelMap`、`IPC_CHANNELS`、`preload/index.ts`、`preload/index.d.ts`——编译器会强制检查
+- IPC 通道新增后必须同步更新 `IpcChannelMap`、`IPC_CHANNELS`、`preload/index.ts`、`preload/index.d.ts`，并在 `ipc/index.ts` 中扩展 `Registered*Channels` 穷举校验——编译器会强制检查
 
 ### task-queue 设计细节
 
@@ -378,6 +403,7 @@ pending ──→ running ──→ completed
 - 通道名称：`task:progress`（常量定义在 `IPC_CHANNELS`）
 - 方向：主进程 → 渲染进程（单向 `webContents.send`，不走 `ipcMain.handle`）
 - 渲染进程通过 `window.api.onTaskProgress(callback)` 监听
+- `agent:execute` 不等待最终结果，仅返回 `{ taskId }`
 - 节流：同一 taskId 200ms 内最多推送一次
 
 ### Provider 适配说明
@@ -403,7 +429,8 @@ src/main/services/task-queue/
 └── index.ts                     ← 新建：单例入口
 
 src/main/ipc/
-└── agent-handlers.ts            ← 新建：agent:execute/agent:status/task:list/task:cancel
+├── agent-handlers.ts            ← 新建：registerAgentHandlers() + RegisteredAgentChannels
+└── task-handlers.ts             ← 新建：registerTaskHandlers() + RegisteredTaskChannels
 
 src/main/db/
 ├── migrations/
@@ -427,7 +454,8 @@ tests/unit/main/
 ├── db/repositories/
 │   └── task-repo.test.ts        ← 新建
 └── ipc/
-    └── agent-handlers.test.ts   ← 新建
+    ├── agent-handlers.test.ts   ← 新建
+    └── task-handlers.test.ts    ← 新建
 ```
 
 **修改文件预期：**
@@ -436,10 +464,10 @@ tests/unit/main/
 - `src/shared/ipc-types.ts` — IPC 通道新增 4 个 + 1 个事件常量 + `IpcEventPayloadMap` 事件类型映射
 - `src/main/services/ai-proxy/index.ts` — `call()` 将 `signal`/`timeoutMs` 传递给 `provider.chat()`
 - `src/main/services/ai-proxy/provider-adapter.ts` — `AiProvider.chat()` 接口新增可选 `options?: { signal?: AbortSignal; timeoutMs?: number }` 参数，各 Provider 实现传递到 SDK 调用层
-- `src/main/utils/errors.ts` — 新增 AgentOrchestratorError / TaskQueueError
+- `src/main/utils/errors.ts` — 新增 TaskQueueError（Agent 编排层直接使用 BidWiseError + 错误码）
 - `src/main/db/schema.ts` — DB 接口新增 tasks 表
 - `src/main/db/migrator.ts` — 注册 003 迁移
-- `src/main/ipc/index.ts` — 导入并注册 agent-handlers
+- `src/main/ipc/index.ts` — 显式调用 `registerAgentHandlers()` / `registerTaskHandlers()` 并扩展 RegisteredChannels 穷举校验
 - `src/main/index.ts` — 启动流程加入 task 恢复
 - `src/preload/index.ts` — 新增 4 个方法 + 1 个事件监听
 - `src/preload/index.d.ts` — 类型声明同步
@@ -447,15 +475,15 @@ tests/unit/main/
 ### 前序 Story 开发经验
 
 **Story 2.1 关键经验（直接上游依赖）：**
-- `aiProxy.call()` 接受 `AiProxyRequest { messages, model?, temperature?, maxTokens?, caller }`
+- `aiProxy.call()` 当前接受 `AiProxyRequest { messages, model?, temperature?, maxTokens?, caller }`，本 Story 需扩展为支持 `signal?` / `timeoutMs?`
 - caller 字段用于追溯日志——orchestrator 传入 `{agentType}-agent` 格式
 - ai-proxy 的 Provider Adapter 层处理瞬态重试（指数退避 3 次）——orchestrator / handler **不需要**对 ai-proxy 调用做额外重试；task-queue 只做业务级整体重新入队
 - ai-proxy 返回 `AiProxyResponse { content, usage, model, provider, latencyMs }`
-- Provider 不可用时抛 `AiProxyError`——orchestrator catch 并转为 `AgentOrchestratorError`
+- Provider 不可用时抛 `AiProxyError`——orchestrator catch 并转为 `BidWiseError`
 
 **Story 1.3 关键经验（IPC 模式参考）：**
 - `createIpcHandler<C>()` 自动包装 try/catch + ApiResponse，handler 只需返回数据或抛 BidWiseError
-- IPC 通道新增流程：`IpcChannelMap` → `IPC_CHANNELS` → `preload/index.ts` → `preload/index.d.ts` → `ipc/index.ts` → handler 实现
+- IPC 通道新增流程：`IpcChannelMap` → `IPC_CHANNELS` → `preload/index.ts` → `preload/index.d.ts` → `registerXHandlers()` 实现 → `ipc/index.ts` 显式注册 + 穷举校验
 - 编译器穷举检查保证通道一致性——遗漏任何一处会报编译错误
 
 **Story 1.2 关键经验（DB 模式参考）：**
@@ -492,7 +520,7 @@ tests/unit/main/
 - ❌ IPC handler 中写业务逻辑（handler 只做参数解析 → 调用 service → 包装结果）
 - ❌ 调用 `aiProxy.call()` 时不传递 signal（取消无法中止 in-flight 请求）
 - ❌ 渲染进程直接 import agent-orchestrator 或 task-queue（必须经 IPC）
-- ❌ throw 裸字符串（使用 AgentOrchestratorError / TaskQueueError）
+- ❌ throw 裸字符串（使用 BidWiseError / TaskQueueError）
 - ❌ 相对路径 import 超过 1 层（禁止 `../../`）
 - ❌ 同步 I/O 操作阻塞主进程
 - ❌ 手动 snake_case ↔ camelCase 转换（Kysely CamelCasePlugin 自动处理）
@@ -506,20 +534,22 @@ tests/unit/main/
 **Story 2.3（招标文件导入与异步解析）将消费 orchestrator：**
 ```typescript
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
-const result = await agentOrchestrator.execute({
+const { taskId } = await agentOrchestrator.execute({
   agentType: 'parse',
   context: { rfpContent: '...' },
-  options: { timeout: 900000 }  // 15 分钟，NFR2
+  options: { timeoutMs: 900000 }  // 15 分钟，NFR2
 })
+const status = await agentOrchestrator.getAgentStatus(taskId)
 ```
 
 **Story 3.4（AI 章节生成）将消费 orchestrator：**
 ```typescript
-const result = await agentOrchestrator.execute({
+const { taskId } = await agentOrchestrator.execute({
   agentType: 'generate',
   context: { chapterTitle: '技术方案', requirements: '...' },
-  options: { timeout: 120000 }  // 2 分钟，NFR3
+  options: { timeoutMs: 120000 }  // 2 分钟，NFR3
 })
+const status = await agentOrchestrator.getAgentStatus(taskId)
 ```
 
 **Beta 阶段扩展——经验图谱注入（Story 10.x）：**

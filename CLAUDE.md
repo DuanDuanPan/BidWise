@@ -405,19 +405,21 @@ Create Story ──► [Prototype] ──► Validate ──► Dev ──► Co
 
 完整清单维护在 `.claude/skills/bmad-master-control/workflow.md` 的 "禁忌清单" 章节。指挥官在 INITIALIZATION 阶段 MUST 读取。每条来自真实执行偏差，不是理论推演。
 
-**当前禁忌（F1-F8）摘要：**
+**当前禁忌（F1-F11）摘要：**
 
-| #   | 禁忌                                                  | 正确做法                                            |
-| --- | ----------------------------------------------------- | --------------------------------------------------- |
-| F1  | 禁止逐 story 做完整闭环                               | 分阶段批处理                                        |
-| F2  | 禁止逐 story 单独 commit                              | 全 batch 一次 commit                                |
-| F3  | 禁止直接修改 prototype.pen（母版）                    | 派生到 story-{id}.pen                               |
-| F4  | 禁止验证 FAIL 修复后跳过重新验证                      | 修复后重新提交验证                                  |
-| F5  | 禁止在 L0 转换时询问用户"继续？"                      | L0 直接执行                                         |
-| F6  | 禁止依赖 create-story 自动选 story                    | 必须明确指定 story ID                               |
-| F7  | 禁止在独立 tmux session 创建子窗格                    | 在用户当前 attach session split-window              |
-| F8  | 禁止指挥官在自身上下文执行构建/测试/写文件/git commit | 通过 tmux 子窗格派发                                |
-| F9  | 禁止用 `capture-pane -S -N` 固定行数读完整结果        | Signal `-S -5` / Full `-S - -E -` / Log `pipe-pane` |
+| #   | 禁忌                                                  | 正确做法                                             |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- |
+| F1  | 禁止逐 story 做完整闭环                               | 分阶段批处理                                         |
+| F2  | 禁止逐 story 单独 commit                              | 全 batch 一次 commit                                 |
+| F3  | 禁止直接修改 prototype.pen（母版）                    | 派生到 story-{id}.pen                                |
+| F4  | 禁止验证 FAIL 修复后跳过重新验证                      | 修复后重新提交验证                                   |
+| F5  | 禁止在 L0 转换时询问用户"继续？"                      | L0 直接执行                                          |
+| F6  | 禁止依赖 create-story 自动选 story                    | 必须明确指定 story ID                                |
+| F7  | 禁止在独立 tmux session 创建子窗格                    | 在用户当前 attach session split-window               |
+| F8  | 禁止指挥官在自身上下文执行构建/测试/写文件/git commit | 通过 tmux 子窗格派发                                 |
+| F9  | 禁止用 `capture-pane -S -N` 固定行数读完整结果        | Signal `-S -5` / Full `-S - -E -` / Log `pipe-pane`  |
+| F10 | 禁止让 codex 执行文件编辑/修复（codex 只做验证审查）  | 验证 FAIL → 派发 claude 子窗格修复                   |
+| F11 | 禁止让执行过修复的窗格重新验证自己的修改（自我认证）  | 关闭旧窗格，开新 codex 窗格（fresh context）重新验证 |
 
 **自动更新：** Inspector VIOLATION、Gate FAIL、用户纠正均可触发新条目。Batch 结束时批量回顾。
 **持久性：** 完整 Forbidden List 维护在 `workflow.md`（随 git），不依赖本地 memory。

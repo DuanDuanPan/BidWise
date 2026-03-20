@@ -311,6 +311,8 @@ inspector_state: idle | busy_gate | busy_audit
 
 | F9 | **禁止用 `capture-pane -S -N`（固定行数）读取子窗格完整结果** | 检测哨兵用 `-S -5`，读完整结果用 `-S - -E -`（全量 scrollback）或读 pipe-pane 日志文件。固定行数在小窗格下会截断 findings | 2026-03-20: cycle 3 验证 codex 输出 FAIL 但 findings 被截断，指挥官误判为"无可操作 findings" |
 
+| F10 | **禁止让 codex 执行文件编辑/修复**（codex 只做验证和审查） | 验证 FAIL 后，派发 **claude 子窗格**执行修复；codex 窗格只接收验证/审查任务 | 2026-03-20: G4 验证 FAIL 后直接让同一个 codex 窗格修复 story 文件，违反 LLM 分工（claude=开发编辑, codex=验证审查） |
+| F11 | **禁止让执行过修复的窗格重新验证自己的修改**（自我认证） | 修复完成后关闭旧验证窗格，开 **新的 codex 窗格**（fresh context）重新验证 | 2026-03-20: codex 窗格先执行了修复，再被要求验证同一文件，丧失独立视角 |
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 
 **自动更新机制：**

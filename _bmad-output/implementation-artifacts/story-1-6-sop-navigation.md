@@ -47,6 +47,7 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
 - **When** 用户首次导航到某个"未开始"阶段
 - **Then** 该阶段自动更新为"进行中"，通过 `project:update` IPC 持久化到 SQLite
 - **Then** 页面刷新或重新进入项目时，SOP 状态从数据库恢复
+- [Source: ux-design-specification.md 上下文恢复设计（切换项目时自动恢复 SOP 阶段）]
 
 ### AC6: 模态策略合规
 
@@ -70,16 +71,17 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
   - [ ] 1.3 激活 `ProjectKanban.tsx` 的 `handleCardClick`：引入 `useNavigate`，将占位符替换为 `navigate(\`/project/${id}\`)`，使卡片点击真正导航到项目工作空间
   - [ ] 1.4 在 `projectStore` 中添加 `loadProject(id)` action（调用 `window.api.projectGet(id)` 加载当前项目完整数据到 `currentProject`）
   - [ ] 1.5 创建 `src/renderer/src/modules/project/hooks/useCurrentProject.ts` — 封装从路由 param 获取 id → 加载 project → 返回 currentProject + loading/error 的 hook
+  - [ ] 1.6 在 `ProjectWorkspace` 顶部添加返回看板的导航入口（面包屑或返回按钮），调用 `useNavigate()` 跳转回 `/`，与原型中的工作空间顶部导航语义保持一致
 
 - [ ] Task 2: SOP 进度条组件 (AC: 1, 3, 7)
   - [ ] 2.1 创建 `src/renderer/src/modules/project/components/SopProgressBar.tsx` — SOP 6 阶段进度条组件
   - [ ] 2.2 每个阶段节点包含：SOP 图标（复用 `SopAnalysisIcon` 等 6 个图标）+ 阶段名称 + 状态指示
   - [ ] 2.3 实现 4 种状态视觉：
     - 未开始：灰色空心圆（`--color-sop-idle`），图标灰色
-    - 进行中：蓝色实心圆（`--color-sop-active`）+ CSS 脉冲动画，图标蓝色
-    - 已完成：绿色实心勾选（`--color-sop-done`），图标绿色
-    - 有警告：橙色实心感叹号（`--color-sop-warning`），图标橙色
-  - [ ] 2.4 阶段之间使用连接线，线色跟随左侧阶段状态色（已完成→绿色线，其余→灰色线）
+    - 进行中：蓝色实心圆（`--color-sop-active` `#1677FF`）+ CSS 脉冲动画，**白色**图标
+    - 已完成：绿色实心勾选（`--color-sop-done` `#52C41A`），**白色**勾选图标
+    - 有警告：橙色实心感叹号（`--color-sop-warning` `#FAAD14`），**白色**感叹号图标
+  - [ ] 2.4 阶段之间使用连接线，线色跟随**左侧阶段状态颜色**（蓝色/绿色/橙色/灰色，与左侧圆形容器同色）
   - [ ] 2.5 固定在工作空间顶部 48px 高度，白色背景（Alpha），水平排列 6 个阶段节点
   - [ ] 2.6 点击阶段节点触发导航（可跳转），如果跳过中间阶段则弹出 message.warning 提示
   - [ ] 2.7 无障碍：`role="navigation"` + `aria-label="SOP 进度条"` + 各节点 `aria-current="step"`（当前活跃阶段）
@@ -105,7 +107,7 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
     - 成本评估："本阶段目标：识别 GAP 并估算成本。对比方案需求与产品基线。" / CTA: "启动 GAP 分析"
     - 评审打磨："本阶段目标：多维对抗评审，发现方案薄弱点。" / CTA: "启动对抗评审"
     - 交付归档："本阶段目标：合规校验后一键导出 docx。" / CTA: "检查合规状态"
-  - [ ] 4.3 视觉设计：居中布局，SOP 阶段图标（48px 灰色）+ 阶段名称（text-h2）+ 目标说明（text-body, text-secondary）+ CTA 按钮（Ant Design Button type="primary"）
+  - [ ] 4.3 视觉设计：居中布局，**64px 灰底圆容器（`#FAFAFA`）+ 32px 灰色 SOP 阶段图标** + 阶段名称（text-h2）+ 目标说明（text-body, text-secondary）+ CTA 按钮（Ant Design Button type="primary"），与 `prototype-manifest.yaml` 的 `guide_placeholder` 规格对齐
   - [ ] 4.4 CTA 按钮 Alpha 阶段仅展示，click 事件暂不跳转到实际功能（后续 Story 接入）
 
 - [ ] Task 5: 快捷键绑定 (AC: 4)
@@ -128,6 +130,7 @@ So that 我始终知道自己在哪个阶段、下一步该做什么。
   - [ ] 7.4 `useSopKeyboardNav` hook 测试：Alt+2~6 键盘事件正确触发对应阶段导航
   - [ ] 7.5 `ProjectWorkspace` 组件测试：加载项目数据、渲染 SOP 进度条和阶段内容
   - [ ] 7.6 `useCurrentProject` hook 测试：路由 param 获取 id → 加载数据 → 返回正确状态
+  - [ ] 7.7 `ProjectWorkspace` 返回导航测试：顶部返回入口可见，点击后跳转回 `/`
 
 - [ ] Task 8: 集成验证 (AC: 全部)
   - [ ] 8.1 验证全链路：项目看板卡片点击 → 导航到 `/project/:id` → 加载项目 → SOP 进度条渲染正确状态
@@ -221,9 +224,9 @@ export const SOP_STAGES = [
 │  ○ 需求分析 ─── ○ 方案设计 ─── ○ 方案撰写 ─── ○ 成本估算 ─── ○ 评审打磨 ─── ○ 交付  │  48px
 └──────────────────────────────────────────────────────────────────────┘
 ```
-- 高度固定 48px，白色背景 `#FFFFFF`，底部 1px border `#F0F0F0`
+- 高度固定 48px，白色背景 `#FFFFFF`，底部 1px border `#E8E8E8`
 - 6 个阶段节点水平均匀分布，`display: flex; justify-content: space-between`
-- 节点：圆形图标容器（32px）+ 阶段名称（12px, font-medium）
+- 节点：圆形图标容器（28px）+ 图标（14px）+ 阶段名称（12px, font-medium）
 - 节点间连接线：实线，2px 宽，色跟随左节点状态
 
 **脉冲动画（进行中状态）：**
@@ -273,7 +276,9 @@ export const SOP_STAGES = [
 | Spin | 项目数据加载状态 | 低 |
 | Result | 项目加载失败状态 | 低 |
 
-**不使用 Ant Design Steps 组件**：Steps 组件的定制成本高（自定义图标+连接线+脉冲动画），且 Beta 深色主题改造困难。自定义实现更可控。
+### 实现策略签署偏离：SOP 进度条不使用 Ant Design Steps
+
+UX 规范原文写的是“基于 Ant Design Steps 深度定制”，但结合本 Story 的原型要求（自定义阶段图标、独立连接线、脉冲动画、Beta 深色主题切换）评估后，采用自定义实现更轻量且可控，能降低深度覆盖 Ant Design 内部样式的成本，并避免后续主题升级受限。**此偏离已签署，视为本 Story 的正式实现策略**。
 
 ### Prototype References（开发查找顺序）
 
@@ -344,7 +349,7 @@ tests/unit/renderer/
 
 ### 反模式清单（禁止）
 
-- ❌ 使用 Ant Design `Steps` 组件做 SOP 进度条（定制成本太高，Beta 深色改造困难）
+- ❌ 使用或回退为 Ant Design `Steps` 组件实现 SOP 进度条（本 Story 已签署采用自定义实现）
 - ❌ 渲染进程直接 import Node.js 模块
 - ❌ 相对路径 import 超过 1 层（禁止 `../../`）
 - ❌ throw 裸字符串（必须用 BidWiseError）
