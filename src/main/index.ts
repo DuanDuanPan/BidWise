@@ -8,6 +8,8 @@ import icon from '@resources/icon.png?asset'
 import { registerIpcHandlers } from '@main/ipc'
 import { initDb, destroyDb } from '@main/db/client'
 import { runMigrations } from '@main/db/migrator'
+import { taskQueue } from '@main/services/task-queue'
+import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { createLogger } from '@main/utils/logger'
 
 const logger = createLogger('main')
@@ -58,6 +60,9 @@ app.whenReady().then(async () => {
   const dbPath = join(app.getPath('userData'), 'data', 'db', 'bidwise.sqlite')
   initDb(dbPath)
   await runMigrations()
+  // Ensure singleton side effects run before recovered tasks are re-dispatched.
+  void agentOrchestrator
+  await taskQueue.recoverPendingTasks()
   logger.info('数据库初始化完成')
 
   registerIpcHandlers()

@@ -97,12 +97,18 @@ class AiProxyService {
       }
 
       // Step 2: Provider call
-      const response = await provider.chat({
-        messages: messagesToSend,
-        model,
-        temperature: request.temperature,
-        maxTokens: request.maxTokens ?? 4096,
-      })
+      const response = await provider.chat(
+        {
+          messages: messagesToSend,
+          model,
+          temperature: request.temperature,
+          maxTokens: request.maxTokens ?? 4096,
+        },
+        {
+          signal: request.signal,
+          timeoutMs: request.timeoutMs,
+        }
+      )
 
       const latencyMs = Date.now() - start
 

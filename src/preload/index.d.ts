@@ -1,7 +1,7 @@
-import type { PreloadApi } from '@shared/ipc-types'
+import type { FullPreloadApi } from '@shared/ipc-types'
 
 declare global {
   interface Window {
-    api: PreloadApi
+    api: FullPreloadApi
   }
 }
