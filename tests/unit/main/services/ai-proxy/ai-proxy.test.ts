@@ -410,6 +410,56 @@ describe('aiProxy', () => {
       }
     })
 
+    it('passes signal and timeoutMs from AiProxyRequest to provider.chat()', async () => {
+      mockGetConfig.mockResolvedValue({
+        provider: 'claude',
+        anthropicApiKey: 'test-key',
+        desensitizeEnabled: false,
+        defaultModel: 'claude-sonnet-4-20250514',
+      })
+      aiProxy.reset()
+
+      const controller = new AbortController()
+
+      await aiProxy.call({
+        caller: 'test-agent',
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 1024,
+        signal: controller.signal,
+        timeoutMs: 90000,
+      })
+
+      expect(mockChat).toHaveBeenCalledTimes(1)
+      const [, options] = mockChat.mock.calls[0]
+      expect(options).toEqual(
+        expect.objectContaining({
+          signal: controller.signal,
+          timeoutMs: 90000,
+        })
+      )
+    })
+
+    it('passes undefined signal/timeoutMs when not provided in request', async () => {
+      mockGetConfig.mockResolvedValue({
+        provider: 'claude',
+        anthropicApiKey: 'test-key',
+        desensitizeEnabled: false,
+        defaultModel: 'claude-sonnet-4-20250514',
+      })
+      aiProxy.reset()
+
+      await aiProxy.call({
+        caller: 'test-agent',
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 1024,
+      })
+
+      expect(mockChat).toHaveBeenCalledTimes(1)
+      const [, options] = mockChat.mock.calls[0]
+      expect(options.signal).toBeUndefined()
+      expect(options.timeoutMs).toBeUndefined()
+    })
+
     it('throws AiProxyError when API key is missing', async () => {
       mockGetConfig.mockResolvedValue({
         provider: 'claude',

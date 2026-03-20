@@ -2,6 +2,7 @@ import { Migrator, type Migration } from 'kysely'
 import { getDb } from './client'
 import * as migration001 from './migrations/001_initial_schema'
 import * as migration002 from './migrations/002_add_industry'
+import * as migration003 from './migrations/003_create_tasks'
 import { createLogger } from '@main/utils/logger'
 
 const logger = createLogger('db:migrator')
@@ -10,6 +11,7 @@ const logger = createLogger('db:migrator')
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
   '002_add_industry': migration002,
+  '003_create_tasks': migration003,
 }
 
 export async function runMigrations(): Promise<void> {

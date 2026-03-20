@@ -38,3 +38,10 @@ export class AiProxyError extends BidWiseError {
     this.name = 'AiProxyError'
   }
 }
+
+export class TaskQueueError extends BidWiseError {
+  constructor(code: string, message: string, cause?: unknown) {
+    super(code, message, cause)
+    this.name = 'TaskQueueError'
+  }
+}

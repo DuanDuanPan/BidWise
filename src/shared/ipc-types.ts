@@ -1,3 +1,14 @@
+import type {
+  AgentExecuteRequest,
+  AgentExecuteResponse,
+  AgentStatus,
+  TaskRecord,
+  TaskProgressEvent,
+  TaskStatus,
+  TaskCategory,
+  AgentType,
+} from './ai-types'
+
 export type SuccessResponse<T> = {
   success: true
   data: T
@@ -55,7 +66,19 @@ export const IPC_CHANNELS = {
   PROJECT_UPDATE: 'project:update',
   PROJECT_DELETE: 'project:delete',
   PROJECT_ARCHIVE: 'project:archive',
+  AGENT_EXECUTE: 'agent:execute',
+  AGENT_STATUS: 'agent:status',
+  TASK_LIST: 'task:list',
+  TASK_CANCEL: 'task:cancel',
+  TASK_PROGRESS_EVENT: 'task:progress',
 } as const
+
+/** Filter for task:list queries */
+export type TaskFilter = {
+  status?: TaskStatus
+  category?: TaskCategory
+  agentType?: AgentType
+}
 
 // --- IPC Channel Map: 频道名 → { input, output } 类型对 ---
 
@@ -69,6 +92,17 @@ export type IpcChannelMap = {
   }
   'project:delete': { input: string; output: void }
   'project:archive': { input: string; output: ProjectRecord }
+  'agent:execute': { input: AgentExecuteRequest; output: AgentExecuteResponse }
+  'agent:status': { input: string; output: AgentStatus }
+  'task:list': { input: TaskFilter | void; output: TaskRecord[] }
+  'task:cancel': { input: string; output: void }
+}
+
+// --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
+// webContents.send / ipcRenderer.on 专用，不进 IpcChannelMap
+
+export type IpcEventPayloadMap = {
+  'task:progress': TaskProgressEvent
 }
 
 export type IpcChannel = keyof IpcChannelMap
@@ -93,6 +127,16 @@ export type PreloadApi = {
 export type IpcHandler<C extends IpcChannel> = (
   input: IpcChannelMap[C]['input']
 ) => Promise<IpcChannelMap[C]['output']>
+
+// --- Preload Event API: event listener methods exposed to renderer ---
+
+export type PreloadEventApi = {
+  onTaskProgress: (callback: (event: TaskProgressEvent) => void) => () => void
+}
+
+// --- Combined API type: request-response + event listeners ---
+
+export type FullPreloadApi = PreloadApi & PreloadEventApi
 
 // --- IPC Error 类型（供 renderer 端消费） ---
 

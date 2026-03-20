@@ -8,13 +8,20 @@ import { ErrorCode } from '@shared/constants'
 import { AiProxyError } from '@main/utils/errors'
 import type { AiChatRequest, AiChatResponse, AiChatMessage, ProviderConfig } from '@shared/ai-types'
 
-const TIMEOUT_MS = 30_000
+// No default timeout — upstream (task-queue) controls timeout via options.timeoutMs
+
+// ─── Provider call options ───
+
+export interface AiProviderCallOptions {
+  signal?: AbortSignal
+  timeoutMs?: number
+}
 
 // ─── Provider interface ───
 
 export interface AiProvider {
   readonly name: string
-  chat(request: AiChatRequest): Promise<AiChatResponse>
+  chat(request: AiChatRequest, options?: AiProviderCallOptions): Promise<AiChatResponse>
 }
 
 // ─── Retry logic ───
@@ -22,10 +29,14 @@ export interface AiProvider {
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 1000
 
-function isRetryable(err: unknown): boolean {
+function isRetryable(err: unknown, signal?: AbortSignal): boolean {
+  // Never retry if the caller's signal was aborted (cancellation or timeout from upstream)
+  if (signal?.aborted) return false
   if (err instanceof Error) {
     const msg = err.message.toLowerCase()
-    if (msg.includes('timeout') || msg.includes('aborted')) return true
+    if (msg.includes('timeout')) return true
+    // 'aborted' without signal.aborted means a transient network abort, not caller cancel
+    if (msg.includes('aborted')) return true
   }
   // Check HTTP status from SDK errors
   const status = (err as { status?: number }).status
@@ -52,16 +63,38 @@ function classifyError(err: unknown): AiProxyError {
   return new AiProxyError(ErrorCode.AI_PROXY_PROVIDER, `AI Provider 错误: ${msg}`, err)
 }
 
-async function withRetry(fn: () => Promise<AiChatResponse>): Promise<AiChatResponse> {
+async function withRetry(
+  fn: () => Promise<AiChatResponse>,
+  signal?: AbortSignal
+): Promise<AiChatResponse> {
   let lastError: unknown
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       return await fn()
     } catch (err) {
       lastError = err
-      if (attempt < MAX_RETRIES && isRetryable(err)) {
+      if (attempt < MAX_RETRIES && isRetryable(err, signal)) {
         const delay = BASE_DELAY_MS * Math.pow(2, attempt)
-        await new Promise((resolve) => setTimeout(resolve, delay))
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, delay)
+          // If signal aborts during backoff, resolve immediately to exit
+          if (signal) {
+            const onAbort = (): void => {
+              clearTimeout(timer)
+              resolve()
+            }
+            if (signal.aborted) {
+              clearTimeout(timer)
+              resolve()
+              return
+            }
+            signal.addEventListener('abort', onAbort, { once: true })
+          }
+        })
+        // After backoff, check if signal was aborted before retrying
+        if (signal?.aborted) {
+          throw classifyError(err)
+        }
         continue
       }
       throw classifyError(err)
@@ -80,7 +113,7 @@ export class ClaudeProvider implements AiProvider {
     this.client = new Anthropic({ apiKey })
   }
 
-  async chat(request: AiChatRequest): Promise<AiChatResponse> {
+  async chat(request: AiChatRequest, options?: AiProviderCallOptions): Promise<AiChatResponse> {
     return withRetry(async () => {
       // Extract system message if present
       let system: string | undefined
@@ -102,7 +135,10 @@ export class ClaudeProvider implements AiProvider {
           ...(system ? { system } : {}),
           messages,
         },
-        { timeout: TIMEOUT_MS }
+        {
+          ...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+          ...(options?.signal ? { signal: options.signal } : {}),
+        }
       )
 
       const content =
@@ -120,7 +156,7 @@ export class ClaudeProvider implements AiProvider {
         model: response.model,
         finishReason: response.stop_reason ?? 'unknown',
       }
-    })
+    }, options?.signal)
   }
 }
 
@@ -134,7 +170,7 @@ export class OpenAiProvider implements AiProvider {
     this.client = new OpenAI({ apiKey })
   }
 
-  async chat(request: AiChatRequest): Promise<AiChatResponse> {
+  async chat(request: AiChatRequest, options?: AiProviderCallOptions): Promise<AiChatResponse> {
     return withRetry(async () => {
       const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> =
         request.messages.map((msg: AiChatMessage) => ({
@@ -149,7 +185,10 @@ export class OpenAiProvider implements AiProvider {
           max_tokens: request.maxTokens,
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
         },
-        { timeout: TIMEOUT_MS }
+        {
+          ...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+          ...(options?.signal ? { signal: options.signal } : {}),
+        }
       )
 
       const choice = response.choices[0]
@@ -162,7 +201,7 @@ export class OpenAiProvider implements AiProvider {
         model: response.model,
         finishReason: choice?.finish_reason ?? 'unknown',
       }
-    })
+    }, options?.signal)
   }
 }
 

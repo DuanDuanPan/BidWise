@@ -61,7 +61,7 @@ describe('provider-adapter', () => {
           model: 'claude-sonnet-4-20250514',
           max_tokens: 1024,
         }),
-        expect.objectContaining({ timeout: 30000 })
+        {} // No default timeout — upstream controls via options.timeoutMs
       )
 
       expect(response.content).toBe('AI response')
@@ -135,7 +135,7 @@ describe('provider-adapter', () => {
           model: 'gpt-4o',
           max_tokens: 1024,
         }),
-        expect.objectContaining({ timeout: 30000 })
+        {} // No default timeout — upstream controls via options.timeoutMs
       )
 
       expect(response.content).toBe('OpenAI response')
@@ -181,6 +181,98 @@ describe('provider-adapter', () => {
       expect(() =>
         createProvider({ provider: 'invalid' as 'claude', apiKey: 'key', defaultModel: 'model' })
       ).toThrow(AiProxyError)
+    })
+  })
+
+  describe('signal/timeoutMs propagation', () => {
+    it('ClaudeProvider passes timeoutMs and signal to SDK call', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        model: 'claude-sonnet-4-20250514',
+        stop_reason: 'end_turn',
+      })
+
+      const controller = new AbortController()
+      const provider = new ClaudeProvider('key')
+      await provider.chat(
+        {
+          messages: [{ role: 'user', content: 'test' }],
+          model: 'claude-sonnet-4-20250514',
+          maxTokens: 1024,
+        },
+        { signal: controller.signal, timeoutMs: 60000 }
+      )
+
+      const sdkOptions = mockCreate.mock.calls[0][1]
+      expect(sdkOptions).toEqual(
+        expect.objectContaining({ timeout: 60000, signal: controller.signal })
+      )
+    })
+
+    it('ClaudeProvider omits timeout/signal from SDK options when not provided', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        model: 'claude-sonnet-4-20250514',
+        stop_reason: 'end_turn',
+      })
+
+      const provider = new ClaudeProvider('key')
+      await provider.chat({
+        messages: [{ role: 'user', content: 'test' }],
+        model: 'claude-sonnet-4-20250514',
+        maxTokens: 1024,
+      })
+
+      const sdkOptions = mockCreate.mock.calls[0][1]
+      expect(sdkOptions).toEqual({})
+      expect(sdkOptions).not.toHaveProperty('timeout')
+      expect(sdkOptions).not.toHaveProperty('signal')
+    })
+
+    it('OpenAiProvider passes timeoutMs and signal to SDK call', async () => {
+      mockCompletionsCreate.mockResolvedValue({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+        model: 'gpt-4o',
+      })
+
+      const controller = new AbortController()
+      const provider = new OpenAiProvider('key')
+      await provider.chat(
+        {
+          messages: [{ role: 'user', content: 'test' }],
+          model: 'gpt-4o',
+          maxTokens: 1024,
+        },
+        { signal: controller.signal, timeoutMs: 120000 }
+      )
+
+      const sdkOptions = mockCompletionsCreate.mock.calls[0][1]
+      expect(sdkOptions).toEqual(
+        expect.objectContaining({ timeout: 120000, signal: controller.signal })
+      )
+    })
+
+    it('OpenAiProvider omits timeout/signal from SDK options when not provided', async () => {
+      mockCompletionsCreate.mockResolvedValue({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+        model: 'gpt-4o',
+      })
+
+      const provider = new OpenAiProvider('key')
+      await provider.chat({
+        messages: [{ role: 'user', content: 'test' }],
+        model: 'gpt-4o',
+        maxTokens: 1024,
+      })
+
+      const sdkOptions = mockCompletionsCreate.mock.calls[0][1]
+      expect(sdkOptions).toEqual({})
+      expect(sdkOptions).not.toHaveProperty('timeout')
+      expect(sdkOptions).not.toHaveProperty('signal')
     })
   })
 
