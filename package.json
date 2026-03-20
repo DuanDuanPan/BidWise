@@ -13,10 +13,12 @@
     "format:check": "prettier --check .",
     "verify:structure": "node scripts/verify-structure.mjs",
     "setup:ai-config": "electron ./scripts/setup-ai-config.mjs",
-    "test:unit": "vitest run",
-    "test:e2e:smoke": "playwright test -g @smoke",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
+    "native:rebuild:node": "pnpm rebuild better-sqlite3",
+    "native:rebuild:electron": "pnpm exec electron-rebuild -f -w better-sqlite3",
+    "test:unit": "pnpm native:rebuild:node && vitest run",
+    "test:e2e:smoke": "pnpm native:rebuild:electron && playwright test -g @smoke",
+    "test:e2e": "pnpm native:rebuild:electron && playwright test",
+    "test:e2e:headed": "pnpm native:rebuild:electron && playwright test --headed",
     "test:e2e:report": "playwright show-report playwright-report",
     "test": "pnpm test:unit && pnpm test:e2e",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
@@ -40,7 +42,9 @@
     "better-sqlite3": "^12.8.0",
     "kysely": "^0.28.13",
     "openai": "^6.32.0",
-    "uuid": "^13.0.0"
+    "react-router-dom": "^7.13.1",
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

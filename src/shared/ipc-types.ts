@@ -17,6 +17,7 @@ export type ProjectRecord = {
   id: string
   name: string
   customerName: string | null
+  industry: string | null
   deadline: string | null
   proposalType: string
   sopStage: string
@@ -28,19 +29,23 @@ export type ProjectRecord = {
 
 export type ProjectListItem = Pick<
   ProjectRecord,
-  'id' | 'name' | 'customerName' | 'deadline' | 'sopStage' | 'status' | 'updatedAt'
+  'id' | 'name' | 'customerName' | 'industry' | 'deadline' | 'sopStage' | 'status' | 'updatedAt'
 >
 
 export type CreateProjectInput = {
   name: string
   rootPath?: string
   customerName?: string
+  industry?: string
   deadline?: string
   proposalType?: string
 }
 
 export type UpdateProjectInput = Partial<
-  Pick<ProjectRecord, 'name' | 'customerName' | 'deadline' | 'proposalType' | 'rootPath'>
+  Pick<
+    ProjectRecord,
+    'name' | 'customerName' | 'industry' | 'deadline' | 'proposalType' | 'rootPath'
+  >
 >
 
 export const IPC_CHANNELS = {

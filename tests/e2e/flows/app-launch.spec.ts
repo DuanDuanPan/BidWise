@@ -7,14 +7,16 @@ test('@smoke should launch Electron app and show main window', async () => {
     args: [resolve(__dirname, '../../../out/main/index.js')],
   })
 
-  const window = await electronApp.firstWindow()
+  await expect.poll(() => electronApp.windows().length, { timeout: 30000 }).toBeGreaterThan(0)
+
+  const [window] = electronApp.windows()
   await window.waitForLoadState('domcontentloaded')
 
   const title = await window.title()
   expect(title).toBe('BidWise')
 
-  const appRoot = window.locator('[data-testid="app-root"]')
-  await expect(appRoot).toBeVisible()
+  const projectKanban = window.locator('[data-testid="project-kanban"]')
+  await expect(projectKanban).toBeVisible()
 
   await electronApp.close()
 })

@@ -1,2 +1,9 @@
-// Zustand stores placeholder
-// Per-domain stores will be added as features are implemented
+export { useProjectStore } from './projectStore'
+export type {
+  ProjectStore,
+  ProjectState,
+  ProjectActions,
+  ProjectFilter,
+  QuickFilter,
+  SortMode,
+} from './projectStore'

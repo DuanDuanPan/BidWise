@@ -1,6 +1,7 @@
 import { Migrator, type Migration } from 'kysely'
 import { getDb } from './client'
 import * as migration001 from './migrations/001_initial_schema'
+import * as migration002 from './migrations/002_add_industry'
 import { createLogger } from '@main/utils/logger'
 
 const logger = createLogger('db:migrator')
@@ -8,6 +9,7 @@ const logger = createLogger('db:migrator')
 // 内联 Migration Provider（避免 Electron 打包路径问题）
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
+  '002_add_industry': migration002,
 }
 
 export async function runMigrations(): Promise<void> {

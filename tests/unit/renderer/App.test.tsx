@@ -1,20 +1,31 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import App from '@renderer/App'
+
+// Mock window.api for ProjectKanban's useProjects hook
+beforeEach(() => {
+  vi.stubGlobal('api', {
+    projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    projectCreate: vi.fn(),
+    projectGet: vi.fn(),
+    projectUpdate: vi.fn(),
+    projectDelete: vi.fn(),
+    projectArchive: vi.fn(),
+  })
+})
 
 describe('App component', () => {
   afterEach(() => {
     cleanup()
   })
 
-  it('should render the app root', () => {
+  it('should render the project kanban', async () => {
     render(<App />)
-    const root = screen.getByTestId('app-root')
-    expect(root).toBeInTheDocument()
+    expect(screen.getByTestId('project-kanban')).toBeInTheDocument()
   })
 
-  it('should render the design system demo', () => {
+  it('should render the create project button', async () => {
     render(<App />)
-    expect(screen.getByTestId('design-system-demo')).toBeInTheDocument()
+    expect(screen.getByTestId('create-project-btn')).toBeInTheDocument()
   })
 })

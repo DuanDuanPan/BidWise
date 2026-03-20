@@ -3,11 +3,13 @@ import Database from 'better-sqlite3'
 import { CamelCasePlugin, Kysely, Migrator, SqliteDialect, type Migration } from 'kysely'
 import type { DB } from '@main/db/schema'
 import * as migration001 from '@main/db/migrations/001_initial_schema'
+import * as migration002 from '@main/db/migrations/002_add_industry'
 import { ProjectRepository } from '@main/db/repositories/project-repo'
 import { NotFoundError } from '@main/utils/errors'
 
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
+  '002_add_industry': migration002,
 }
 
 // Mock getDb to use test DB

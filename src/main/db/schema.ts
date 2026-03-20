@@ -7,6 +7,7 @@ export interface ProjectTable {
   proposalType: string
   sopStage: string
   status: string
+  industry: string | null
   rootPath: string | null
   createdAt: string
   updatedAt: string
