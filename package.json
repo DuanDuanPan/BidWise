@@ -5,8 +5,8 @@
   "main": "./out/main/index.js",
   "author": "BidWise Team",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "pnpm native:rebuild:electron && electron-vite dev",
+    "build": "pnpm native:rebuild:electron && electron-vite build",
     "start": "electron-vite preview",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
