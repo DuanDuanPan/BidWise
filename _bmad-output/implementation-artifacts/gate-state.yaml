@@ -1,11 +1,29 @@
-last_updated: "2026-03-20T08:28:28.000Z"
+last_updated: "2026-03-20T09:38:34.000Z"
 batch_id: "batch-2026-03-20-2"
 batch_stories: ["1-6", "2-2"]
 gates:
   G1: { status: PASS, timestamp: "2026-03-20T06:15:00.000Z", verified_by: commander, details: "User confirmed batch [1-6, 2-2]" }
   G2: { status: PASS, timestamp: "2026-03-20T06:30:00.000Z", verified_by: commander, details: "Both story files exist" }
   G3: { status: PASS, timestamp: "2026-03-20T05:56:06.000Z", verified_by: commander, details: "1-6 has .pen+3 PNG+manifest; 2-2 backend skip" }
-  G4: { status: PASS, timestamp: "2026-03-20T08:19:10.000Z", verified_by: commander, details: "Both stories validated by independent codex panes (1-6: R4 pass, 2-2: R3 pass)" }
-  G5: { status: PASS, timestamp: "2026-03-20T08:31:00.000Z", verified_by: inspector, details: "Inspector APPROVE — commit 7f99622, workspace clean, G1-G4 all PASS" }
-  G6: { status: PASS, timestamp: "2026-03-20T08:28:28.000Z", verified_by: commander, details: "Worktrees created (BidWise-story-1-6, BidWise-story-2-2), dev panes %64 %65 alive" }
-story_gates: {}
+  G4: { status: PASS, timestamp: "2026-03-20T08:19:10.000Z", verified_by: commander, details: "Both stories validated by independent codex panes" }
+  G5: { status: PASS, timestamp: "2026-03-20T08:31:00.000Z", verified_by: inspector, details: "Inspector APPROVE — commit 7f99622" }
+  G6: { status: PASS, timestamp: "2026-03-20T08:28:28.000Z", verified_by: commander, details: "Worktrees created" }
+  G7_1-6: { status: PASS, verified_by: commander, details: "Dev complete, 255 tests pass, build pass" }
+  G7_2-2: { status: PASS, verified_by: commander, details: "Dev complete, 124 tests pass, build pass" }
+story_gates:
+  "1-6":
+    phase: fixing
+    review_cycle: 2
+    dev_complete: true
+    review_findings_r1: "[High] route stale project, [High] SOP persist fire-and-forget, [Medium] card no keyboard, [Medium] invalid sopStage crash, [Low] hardcoded colors, [Low] missing aria-label"
+    review_findings_r1_fixed: "4/6 fixed (route, persist, keyboard, sopStage fallback)"
+    review_findings_r2: "[Low] hardcoded colors in ProjectCard/Kanban/Workspace, [Low] MoreOutlined missing aria-label"
+    remaining_severity: Low
+  "2-2":
+    phase: fixing
+    review_cycle: 2
+    dev_complete: true
+    review_findings_r1: "[High] timeout not enforced, [High] cancel swallowed by retry, [Medium] retry no re-execute, [Medium] progress 100% throttled, [Low] agent:status unsafe"
+    review_findings_r1_fixed: "3/5 fixed (cancel/retry, progress bypass, agent:status check)"
+    review_findings_r2: "[High] executor ignores signal (cooperative cancel limitation), [Medium] recoverPendingTasks no executor map on restart"
+    remaining_severity: Medium
