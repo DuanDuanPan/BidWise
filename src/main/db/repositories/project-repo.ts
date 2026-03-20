@@ -4,8 +4,10 @@ import { DatabaseError, NotFoundError } from '@main/utils/errors'
 import type { ProjectTable } from '../schema'
 
 export type CreateProjectRepoInput = {
+  id?: string
   name: string
   customerName?: string
+  industry?: string
   deadline?: string
   proposalType?: string
   rootPath?: string
@@ -14,6 +16,7 @@ export type CreateProjectRepoInput = {
 export type UpdateProjectRepoInput = {
   name?: string
   customerName?: string | null
+  industry?: string | null
   deadline?: string | null
   proposalType?: string
   rootPath?: string | null
@@ -23,9 +26,10 @@ export class ProjectRepository {
   async create(input: CreateProjectRepoInput): Promise<ProjectTable> {
     const now = new Date().toISOString()
     const project: ProjectTable = {
-      id: uuidv4(),
+      id: input.id ?? uuidv4(),
       name: input.name,
       customerName: input.customerName ?? null,
+      industry: input.industry ?? null,
       deadline: input.deadline ?? null,
       proposalType: input.proposalType ?? 'presale-technical',
       sopStage: 'not-started',

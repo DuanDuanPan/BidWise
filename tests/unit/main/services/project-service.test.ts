@@ -3,15 +3,38 @@ import Database from 'better-sqlite3'
 import { CamelCasePlugin, Kysely, Migrator, SqliteDialect, type Migration } from 'kysely'
 import type { DB } from '@main/db/schema'
 import * as migration001 from '@main/db/migrations/001_initial_schema'
+import * as migration002 from '@main/db/migrations/002_add_industry'
 
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
+  '002_add_industry': migration002,
 }
 
 let testDb: Kysely<DB>
 
 vi.mock('@main/db/client', () => ({
   getDb: () => testDb,
+}))
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => '/tmp/bidwise-test',
+  },
+}))
+
+vi.mock('fs', () => ({
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  rmSync: vi.fn(),
+  existsSync: vi.fn(() => false),
+}))
+
+vi.mock('@main/utils/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+  }),
 }))
 
 describe('projectService', () => {
@@ -64,14 +87,28 @@ describe('projectService', () => {
       const project = await projectService.create({
         name: '完整项目',
         customerName: '客户B',
+        industry: '军工',
         deadline: '2026-06-01T00:00:00.000Z',
         proposalType: 'presale-commercial',
-        rootPath: '/tmp/proj',
       })
       expect(project.customerName).toBe('客户B')
+      expect(project.industry).toBe('军工')
       expect(project.deadline).toBe('2026-06-01T00:00:00.000Z')
-      expect(project.proposalType).toBe('presale-commercial')
-      expect(project.rootPath).toBe('/tmp/proj')
+    })
+
+    it('should set rootPath after creation', async () => {
+      const project = await projectService.create({ name: '目录测试' })
+      expect(project.rootPath).toContain(project.id)
+    })
+
+    it('should rollback DB if directory creation fails', async () => {
+      const { mkdirSync } = await import('fs')
+      vi.mocked(mkdirSync).mockImplementationOnce(() => {
+        throw new Error('disk full')
+      })
+      await expect(projectService.create({ name: '失败项目' })).rejects.toThrow()
+      const all = await projectService.list()
+      expect(all).toHaveLength(0)
     })
   })
 

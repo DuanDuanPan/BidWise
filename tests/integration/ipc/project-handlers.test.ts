@@ -3,6 +3,7 @@ import Database from 'better-sqlite3'
 import { CamelCasePlugin, Kysely, Migrator, SqliteDialect, type Migration } from 'kysely'
 import type { DB } from '@main/db/schema'
 import * as migration001 from '@main/db/migrations/001_initial_schema'
+import * as migration002 from '@main/db/migrations/002_add_industry'
 import { ErrorCode } from '@shared/constants'
 import { IPC_CHANNELS } from '@shared/ipc-types'
 import type {
@@ -14,6 +15,7 @@ import type {
 
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
+  '002_add_industry': migration002,
 }
 
 let testDb: Kysely<DB>
@@ -32,6 +34,24 @@ vi.mock('electron', () => ({
       registeredHandlers.set(channel, handler)
     },
   },
+  app: {
+    getPath: () => '/tmp/bidwise-test',
+  },
+}))
+
+vi.mock('fs', () => ({
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  rmSync: vi.fn(),
+  existsSync: vi.fn(() => false),
+}))
+
+vi.mock('@main/utils/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+  }),
 }))
 
 // Import AFTER mocks are set up
