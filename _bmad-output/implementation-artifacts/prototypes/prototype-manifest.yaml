@@ -124,3 +124,22 @@ stories:
       - "Story 1-9 — 搜索结果分组"
       - "Story 1-9 — 自动保存提示"
     notes: "Cmd+K command palette overlay with fuzzy search. Covers Cmd+S auto-save toast."
+
+# Batch 4 prototypes (2026-03-21)
+story-1-8:
+  pen_file: story-1-8.pen
+  export_dir: story-1-8/
+  frames: [NjHR3, ErK6n, 8c0vm]
+  description: 智能待办面板 — 展开态/折叠态/空状态
+
+story-2-5:
+  pen_file: story-2-5.pen
+  export_dir: story-2-5/
+  frames: [bO6Ro, nyxnU, kjxE8]
+  description: 需求抽取与评分模型 — 进度/列表/编辑器
+
+story-3-1:
+  pen_file: story-3-1.pen
+  export_dir: story-3-1/
+  frames: [XxVKB, twkMT, eitx7]
+  description: Plate编辑器 — 工作空间/格式展示/保存指示器
