@@ -8,17 +8,24 @@
 
 set -euo pipefail
 
-COMMANDER_PANE="${1:?Usage: watchdog.sh <commander_pane> <inspector_pane> <project_root>}"
+COMMANDER_PANE="${1:?Usage: watchdog.sh <commander_pane> <inspector_pane> <project_root> <session_name>}"
 INSPECTOR_PANE="${2:?}"
 PROJECT_ROOT="${3:?}"
+SESSION_NAME="${4:?}"
 ALERT_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/watchdog-alerts.yaml"
 JOURNAL_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/session-journal.yaml"
 GATE_STATE_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/gate-state.yaml"
+SENTINEL_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/restart-eligible.yaml"
 CHECK_INTERVAL=60
+SESSION_MAX_SECONDS=3600  # 1 小时
 
 # 确保 alert 文件存在
 mkdir -p "$(dirname "$ALERT_FILE")"
 [ -f "$ALERT_FILE" ] || echo "alerts: []" > "$ALERT_FILE"
+
+# 会话计时器
+SESSION_START=$(date +%s)
+sentinel_written=false
 
 log_alert() {
   local alert_type="$1"
@@ -103,17 +110,48 @@ except Exception as e:
   done
 }
 
+# ─── Check 3: 会话超时 → 写入 restart-eligible 标记 ───
+check_session_timeout() {
+  local now
+  now=$(date +%s)
+  local elapsed=$(( now - SESSION_START ))
+
+  if [ "$elapsed" -ge "$SESSION_MAX_SECONDS" ] && [ "$sentinel_written" = false ]; then
+    local ts
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    cat > "$SENTINEL_FILE" <<EOF
+reason: "session_timeout"
+elapsed_seconds: ${elapsed}
+timestamp: "${ts}"
+commander_pane: "${COMMANDER_PANE}"
+EOF
+    sentinel_written=true
+    echo "[watchdog] Session exceeded ${SESSION_MAX_SECONDS}s. Wrote restart-eligible sentinel."
+  fi
+}
+
+# ─── Check 4: restart-eligible 被消费 → 重置计时器 ───
+check_sentinel_consumed() {
+  if [ "$sentinel_written" = true ] && [ ! -f "$SENTINEL_FILE" ]; then
+    SESSION_START=$(date +%s)
+    sentinel_written=false
+    echo "[watchdog] Sentinel consumed. Timer reset."
+  fi
+}
+
 # ─── 主循环 ───
 while true; do
   sleep "$CHECK_INTERVAL"
 
-  # 检查指挥官 pane 是否还存在
-  if ! tmux list-panes -F '#{pane_id}' 2>/dev/null | grep -q "$COMMANDER_PANE"; then
-    echo "[watchdog] Commander pane $COMMANDER_PANE no longer exists. Exiting."
+  # 检查 tmux session 是否还存在（不绑定单个 pane）
+  if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "[watchdog] Session '$SESSION_NAME' no longer exists. Exiting."
     exit 0
   fi
 
-  # 只执行高确定性检查（结构化数据），不做自然语言匹配
+  # 确定性检查（结构化数据）
   check_llm_phase_mismatch
   check_predispatch_gap
+  check_session_timeout
+  check_sentinel_consumed
 done

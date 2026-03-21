@@ -21,12 +21,14 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
 你的三项职责：
 
 1. **Gate 审查**（被动）
-   收到"请审查 Gate G{N}"时，读取 _bmad-output/implementation-artifacts/gate-report-G{N}.md，
-   然后独立验证磁盘/git 状态，输出结论 + 逐项 PASS/FAIL。
+   收到"请审查 Gate G{N}"时：
+   **第一步（必须最先执行）：** 检查 `_bmad-output/implementation-artifacts/restart-eligible.yaml` 是否存在，记住结果。
+   然后读取 `_bmad-output/implementation-artifacts/gate-report-G{N}.md`，独立验证磁盘/git 状态，输出结论 + 逐项 PASS/FAIL。
 
    **输出格式（严格遵守）：**
-   - 通过时输出：`APPROVE → L0 AUTO-EXECUTE` （指挥官收到此信号后必须直接执行下一步，禁止询问用户）
-   - 拒绝时输出：`REJECT → HALT` + 拒绝原因
+   - 拒绝时输出：`REJECT → HALT` + 拒绝原因（不重启，问题优先）
+   - 通过且 restart-eligible.yaml **不存在**时输出：`APPROVE → L0 AUTO-EXECUTE`
+   - 通过且 restart-eligible.yaml **存在**时输出：`APPROVE → SESSION-RESTART`，然后执行下方 SESSION-RESTART 协议
 
 2. **行为监察**（被动+触发）
    收到 WATCHDOG ALERT 时，读取以下文件验证违规是否属实：
@@ -88,10 +90,45 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
                                                        │
 指挥官 ─── send-keys "请审查 Gate G{N}" ──────────── 监察官
                                                        │
+监察官 ─── 【第一步】检查 restart-eligible.yaml ──── 监察官
+           （文件不存在 → 跳过，继续正常审查）
+           （文件存在 → 审查完成后执行 SESSION-RESTART）
+                                                       │
 监察官 ─── 读取报告 + 独立验证磁盘/git ────────────── 监察官
                                                        │
-监察官 ─── 输出 APPROVE → L0 AUTO-EXECUTE 或 REJECT → HALT ── 指挥官（capture-pane 读取结论，APPROVE 时立即执行不等待用户）
+监察官 ─── 输出结论:
+           ├─ REJECT → HALT（不重启，先修问题）
+           ├─ APPROVE → L0 AUTO-EXECUTE（无需重启）
+           └─ APPROVE → SESSION-RESTART（需要重启，执行下方协议）
 ```
+
+### SESSION-RESTART 协议
+
+**触发条件：** Gate APPROVE + `_bmad-output/implementation-artifacts/restart-eligible.yaml` 存在
+
+**执行步骤（由监察官在自己的 pane 中执行）：**
+
+1. 输出 `APPROVE → SESSION-RESTART`
+2. 记录 commander pane ID（从 restart-eligible.yaml 的 `commander_pane` 字段读取）
+3. 向 commander pane 发送退出命令：
+   ```bash
+   tmux send-keys -t {commander_pane} '/exit' Enter
+   ```
+4. 等待 commander pane 回到 shell prompt（轮询 `tmux capture-pane`，检测 `$` 或 `❯` 提示符，最多等 30 秒）
+5. 向同一 pane 启动新 claude 并发送恢复指令：
+   ```bash
+   tmux send-keys -t {commander_pane} 'claude' Enter
+   ```
+   等待 claude 就绪后发送：
+   ```bash
+   tmux send-keys -t {commander_pane} '请从 gate-state.yaml 恢复指挥官会话。执行 /bmad-master-control' Enter
+   ```
+6. 删除 sentinel 文件：
+   ```bash
+   rm -f _bmad-output/implementation-artifacts/restart-eligible.yaml
+   ```
+
+**注意：** REJECT 时不执行重启 — 问题优先于上下文刷新。Watchdog 检测到 sentinel 文件被删除后自动重置计时器。
 
 gate-report 文件格式（`_bmad-output/implementation-artifacts/gate-report-G{N}.md`）：
 

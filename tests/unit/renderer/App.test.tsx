@@ -11,6 +11,11 @@ beforeEach(() => {
     projectUpdate: vi.fn(),
     projectDelete: vi.fn(),
     projectArchive: vi.fn(),
+    analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
+    analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
+    taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
+    taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+    onTaskProgress: vi.fn().mockReturnValue(() => {}),
   })
 })
 

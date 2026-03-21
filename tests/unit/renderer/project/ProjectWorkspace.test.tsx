@@ -220,6 +220,11 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       projectCreate: vi.fn(),
       projectDelete: vi.fn(),
       projectArchive: vi.fn(),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
+      analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
+      taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
   })
@@ -243,6 +248,13 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
   })
 
   it('@p0 renders stage guide placeholder inside workspace layout', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
     renderWorkspace()
     const guide = await screen.findByTestId('stage-guide-placeholder')
     expect(guide).toBeInTheDocument()

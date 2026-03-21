@@ -152,7 +152,7 @@ tmux pipe-pane -t {utility_pane} -o 'cat >> {mc_log_dir}/pane-{utility_pane}.log
 ### 7. Watchdog Startup
 
 ```bash
-tmux send-keys -t {utility_pane} "nohup bash ${CLAUDE_SKILL_DIR}/watchdog.sh {commander_pane} {inspector_pane} {project_root} &" Enter
+tmux send-keys -t {utility_pane} "nohup bash ${CLAUDE_SKILL_DIR}/watchdog.sh {commander_pane} {inspector_pane} {project_root} {current_session} &" Enter
 ```
 
 ### 8. Session Journal Initialization

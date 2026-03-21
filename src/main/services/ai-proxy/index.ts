@@ -11,6 +11,7 @@ import { getAiProxyConfig } from '@main/config/app-config'
 import { Desensitizer } from '@main/services/ai-proxy/desensitizer'
 import { createProvider, getDefaultModel } from '@main/services/ai-proxy/provider-adapter'
 import { writeTrace } from '@main/services/ai-proxy/ai-trace-logger'
+import { remove as removeMapping } from '@main/services/ai-proxy/mapping-store'
 import type { TraceEntry } from '@main/services/ai-proxy/ai-trace-logger'
 import type { DesensitizeStats } from '@main/services/ai-proxy/desensitizer'
 import type { AiProvider } from '@main/services/ai-proxy/provider-adapter'
@@ -174,8 +175,7 @@ class AiProxyService {
       // Clean up mapping if we created one
       if (mappingId) {
         try {
-          const mappingStoreModule = await import('@main/services/ai-proxy/mapping-store')
-          await mappingStoreModule.remove(mappingId)
+          await removeMapping(mappingId)
         } catch {
           // Best effort cleanup
         }

@@ -13,7 +13,7 @@
     "format:check": "prettier --check .",
     "verify:structure": "node scripts/verify-structure.mjs",
     "setup:ai-config": "electron ./scripts/setup-ai-config.mjs",
-    "native:rebuild:node": "pnpm rebuild better-sqlite3",
+    "native:rebuild:node": "NODE_OPTIONS=\"--disable-warning=DEP0176\" pnpm rebuild better-sqlite3",
     "native:rebuild:electron": "pnpm exec electron-rebuild -f -w better-sqlite3",
     "test:unit": "pnpm native:rebuild:node && vitest run",
     "test:e2e:smoke": "pnpm native:rebuild:electron && playwright test -g @smoke",

@@ -141,10 +141,11 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     try {
       const res = await window.api.analysisGetTender({ projectId })
       if (res.success && res.data) {
+        const tender = res.data
         set((state) => ({
           projects: updateProjectState(state.projects, projectId, () => ({
-            tenderMeta: res.data.meta,
-            parsedTender: res.data,
+            tenderMeta: tender.meta,
+            parsedTender: tender,
             importTaskId: null,
             parseProgress: 100,
             parseMessage: '解析完成',

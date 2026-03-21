@@ -119,11 +119,15 @@ export type IpcEventPayloadMap = {
 
 export type IpcChannel = keyof IpcChannelMap
 
-// --- Channel name → camelCase method name (e.g. 'project:create' → 'projectCreate') ---
+// --- Channel name → camelCase method name (e.g. 'task:get-status' → 'taskGetStatus') ---
+
+type KebabToCamelCase<S extends string> = S extends `${infer Head}-${infer Tail}`
+  ? `${Head}${Capitalize<KebabToCamelCase<Tail>>}`
+  : S
 
 type ChannelToMethodName<S extends string> = S extends `${infer Domain}:${infer Action}`
-  ? `${Domain}${Capitalize<Action>}`
-  : S
+  ? `${Domain}${Capitalize<KebabToCamelCase<Action>>}`
+  : KebabToCamelCase<S>
 
 // --- Exhaustive preload API type — derived from IpcChannelMap ---
 // Adding a channel to IpcChannelMap without implementing it in preload will cause a compile error.
