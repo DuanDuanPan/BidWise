@@ -18,9 +18,11 @@
 | F10 | **禁止让 codex 执行文件编辑/修复**（codex 只做验证和审查，除非 C2 升级条件满足） | 验证 FAIL → 派发 claude 子窗格修复；仅 review_cycle >= 2 时 codex 可接手修复（C2 升级） | 2026-03-20: codex 验证发现问题后直接在同一 pane 中修复文件 |
 | F11 | **禁止让执行过修复的窗格重新验证自己的修改（自我认证）** | 关闭旧窗格，开新 codex 窗格（fresh context）重新验证 | 2026-03-20: claude 修复后在同一窗格发送验证指令，失去独立性 |
 
-| F12 | **禁止 `split-window -t {session}` 创建子窗格**（session 名会 split 当前活跃 pane，焦点变化后布局错乱） | 所有 `split-window` 必须用具体 pane ID 作为 `-t` 目标。创建顺序（先纵后横）：Bottom Anchor → `-t {commander_pane} -v -l 40%`；Inspector → `-t {commander_pane} -h -l 55%`；Utility → `-t {inspector_pane} -h -l 45%`；Dev/Review panes → `-t {bottom_anchor} -h` | 2026-03-20: Inspector 从 utility pane 右侧分割，而非 commander 右侧，布局与约定不符 |
+| F12 | **禁止 `split-window -t {session}` 创建子窗格**（session 名会 split 当前活跃 pane，焦点变化后布局错乱） | 所有 `split-window` 必须用具体 pane ID 作为 `-t` 目标。创建顺序（先纵后横）：Bottom Anchor → `-t {commander_pane} -v -l 40%`；Inspector → `-t {commander_pane} -h -l 55%`；Utility → `-t {inspector_pane} -h -l 45%`；第一个工作任务复用 `bottom_anchor`，后续工作 pane 从当前最右侧 bottom pane `-h` 分裂 | 2026-03-20: Inspector 从 utility pane 右侧分割，而非 commander 右侧，布局与约定不符 |
 
 | F13 | **禁止依赖 Pencil MCP 自动保存 .pen 文件**（`batch_design` 只修改内存状态，`open_document` 切换不触发保存，编辑器无 save 工具） | Prototype 步骤完成后，指挥官必须执行强制落盘：`batch_get(readDepth=99)` 读取完整内存节点树 → Python `json.load` 原文件获取 version+variables → 替换 children → `json.dump` 写回 .pen 文件 → `ls -la` 验证文件大小变化 | 2026-03-21: story-1-7.pen 和 story-1-9.pen 在 batch_design 成功后文件大小未变，设计内容仅存在于 Pencil 进程内存中，sub-pane 结束后设计丢失 |
+
+| F14 | **禁止在 mixed window（上层控制区 + 下层工作区）上调用 `tmux select-layout`** | 工作层均衡只能使用 bottom-only `resize-pane -x` 方案；每次 split / kill / resize 后必须用 `pane_top` / `pane_left` 做几何校验 | 2026-03-21: `select-layout -t {bottom_anchor} even-horizontal` 把整窗 pane 拉平成同一水平行，误导指挥官认为初始化布局错误并触发重建 |
 
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 

@@ -85,6 +85,10 @@ Generate unique instance ID and create log directory for pipe-pane logging:
 ```bash
 mc_instance="{current_session}-$(date +%s)"
 mc_log_dir="/tmp/mc-logs/${mc_instance}/"
+CLAUDE_SKILL_DIR="{project_root}/.claude/skills/bmad-master-control"
+TMUX_LAYOUT_HELPER="${CLAUDE_SKILL_DIR}/tmux-layout.sh"
+WATCHDOG_CONTROL_HELPER="${CLAUDE_SKILL_DIR}/watchdog-control.sh"
+STATE_CONTROL_HELPER="${CLAUDE_SKILL_DIR}/state-control.sh"
 mkdir -p "${mc_log_dir}"
 ```
 
@@ -115,7 +119,7 @@ Record commander pane ID: `tmux display-message -p '#{pane_id}'` → set `comman
 **Step 5a: Bottom Anchor（先纵向分割，预留全宽底部区域）**
 
 ```bash
-tmux split-window -t {commander_pane} -v -l 40% "cd {project_root} && zsh"
+bottom_anchor="$(tmux split-window -t {commander_pane} -v -l 40% -P -F '#{pane_id}' "cd {project_root} && zsh")"
 ```
 Record `bottom_anchor`. Wait for shell prompt.
 
@@ -124,16 +128,28 @@ Record `bottom_anchor`. Wait for shell prompt.
 See `./inspector-protocol.md` for full standing order.
 
 ```bash
-tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+inspector_pane="$(tmux split-window -t {commander_pane} -h -l 55% -P -F '#{pane_id}' "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"
 ```
 Record `inspector_pane`. Send standing order. Wait for `INSPECTOR READY`.
 
 **Step 5c: Utility（从 inspector 横向分割，上半区最右）**
 
 ```bash
-tmux split-window -t {inspector_pane} -h -l 45% "cd {project_root} && zsh"
+utility_pane="$(tmux split-window -t {inspector_pane} -h -l 45% -P -F '#{pane_id}' "cd {project_root} && zsh")"
+"${TMUX_LAYOUT_HELPER}" set-top-titles "{commander_pane}" "${inspector_pane}" "${utility_pane}"
 ```
 Wait for shell prompt. Record `utility_pane`.
+
+Run geometry validation immediately after Step 5c using:
+
+```bash
+"${TMUX_LAYOUT_HELPER}" validate-init "{current_session}" "${bottom_anchor}"
+"${TMUX_LAYOUT_HELPER}" dump-geometry "{current_session}"
+```
+
+Assert:
+- `mc-commander` / `mc-inspector` / `mc-util` all have `top=0`
+- `bottom_anchor` has `top > 0` and spans the full bottom row
 
 Wait for baseline audit result (`BASELINE AUDIT: COMPLIANT` or `BASELINE AUDIT: VIOLATION`).
 If VIOLATION → ask user (L2): "Inspector 基线审计发现问题: {details}。继续还是先处理？"
@@ -152,8 +168,25 @@ tmux pipe-pane -t {utility_pane} -o 'cat >> {mc_log_dir}/pane-{utility_pane}.log
 ### 7. Watchdog Startup
 
 ```bash
-tmux send-keys -t {utility_pane} "nohup bash ${CLAUDE_SKILL_DIR}/watchdog.sh {commander_pane} {inspector_pane} {project_root} {current_session} &" Enter
+tmux send-keys -t {utility_pane} "\"${WATCHDOG_CONTROL_HELPER}\" restart-detached \"${CLAUDE_SKILL_DIR}\" \"{commander_pane}\" \"{inspector_pane}\" \"{project_root}\" \"{current_session}\" \"0\"" Enter
 ```
+
+### 7b. Watchdog Startup Verification
+
+启动后必须验证 watchdog 真的活着，而不是假设 `nohup` 成功：
+
+```bash
+"${WATCHDOG_CONTROL_HELPER}" verify-start "{project_root}" "{current_session}" 8 120
+```
+
+若首次验证失败：
+
+```bash
+tmux send-keys -t {utility_pane} "\"${WATCHDOG_CONTROL_HELPER}\" restart-detached \"${CLAUDE_SKILL_DIR}\" \"{commander_pane}\" \"{inspector_pane}\" \"{project_root}\" \"{current_session}\" \"0\"" Enter
+"${WATCHDOG_CONTROL_HELPER}" verify-start "{project_root}" "{current_session}" 8 120
+```
+
+第二次仍失败 → HALT，不进入 Step 2。
 
 ### 8. Session Journal Initialization
 
@@ -250,6 +283,8 @@ Location: `_bmad-output/implementation-artifacts/gate-state.yaml`
 last_updated: "2026-03-20T10:30:00.000Z"
 batch_id: "batch-2026-03-20-1"
 batch_stories: ["1-5", "2-1"]
+session_generation: 0
+failover_epoch: 0
 gates:
   G1: { status: PASS, timestamp: "...", verified_by: commander, details: "..." }
   G5: { status: PASS, timestamp: "...", verified_by: inspector, details: "..." }
@@ -281,6 +316,10 @@ panes:                       # EPHEMERAL — 当前 session 内有效，resume �
   stories:
     "1-5": { dev: "%91" }
 inspector_state: idle         # ephemeral — re-init on resume
+watchdog:                     # EPHEMERAL + observable — 由 watchdog-control / heartbeat 校验
+  pid: 12345
+  last_heartbeat: "2026-03-20T10:31:00Z"
+  status: alive
 ```
 
 ### Session Journal Format

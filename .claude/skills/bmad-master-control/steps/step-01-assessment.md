@@ -61,7 +61,8 @@ utility_pane: ''
 ## GATE G1: batch_selection → batch_prep
 - **Assert:** 用户已明确确认 batch 选择
 - **Assert:** batch_stories 数组非空
-- **On pass:** 通过 utility_pane 创建 gate-state.yaml，记录 G1 PASS + batch_stories 列表
+- **On pass:** 通过 utility_pane 调用 helper 初始化 gate-state.yaml，记录 G1 PASS + batch_stories 列表：
+  `tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" init-batch-state \"{project_root}\" \"{batch_id}\" \"{batch_stories_csv}\" \"{utility_pane}\" \"{inspector_pane}\" \"{bottom_anchor}\" \"{details}\" 0" Enter`
 
 ## CHECKPOINT
 - 已选 batch: {batch_stories}

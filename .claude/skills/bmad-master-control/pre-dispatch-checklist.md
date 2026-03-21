@@ -9,24 +9,22 @@
    - AUTH: step 标注的 level
    - PANE: 新建 or 复用 — 如 review→fix 转换，必须新 pane（C2 不变量）
 
-2. 通过 utility_pane 写入 dispatch_audit entry：
+2. 通过 utility_pane 写入 dispatch_audit entry（必须走 generation-guarded helper）：
 
-```yaml
-- seq: {next_seq}
-  timestamp: "{iso}"
-  type: dispatch_audit
-  story_id: "{story_id}"
-  phase: "{phase}"
-  llm: "{claude|codex}"
-  auth: "{L0|L1|L2|L3}"
-  pane: "{new|reuse}"
-  pane_reuse_reason: ""
-  constitution_check: "{PASS|FAIL}"
-  constitution_detail: "C2:{llm}/{phase}={OK|FAIL}, AUTH:{level}={OK|FAIL}, PANE:{new|reuse}={OK|FAIL}"
+```bash
+current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"{phase}\" \"{llm}\" \"{auth}\" \"{pane}\" \"{pane_reuse_reason}\" \"{PASS|FAIL}\" \"C2:{llm}/{phase}={OK|FAIL}, AUTH:{level}={OK|FAIL}, PANE:{new|reuse}={OK|FAIL}\"" Enter
 ```
 
 3. 执行 dispatch
 
-**FAIL 处理：** 如果 constitution_check 任一子项为 FAIL，不执行 dispatch，改为写 correction entry 记录违规。Watchdog 和 inspector 将 correction 视为合法活动（不触发 predispatch_gap 告警）。
+**FAIL 处理：** 如果 constitution_check 任一子项为 FAIL，不执行 dispatch，改为通过 helper 写 correction entry：
+
+```bash
+current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-correction \"{project_root}\" \"${current_generation}\" \"self\" \"predispatch blocked\" \"C2\" \"rewrite dispatch with correct llm/auth/pane\" \"pre-dispatch\" \"{story_id}\"" Enter
+```
+
+Watchdog 和 inspector 将 correction 视为合法活动（不触发 predispatch_gap 告警）。
 
 **注意：** 如果 session-journal 中存在与当前 story/phase 相关的 correction entry，应在决策时考虑。但不要求每次都物理 Read journal（step 转换时 GUARDS 已经 Read 过）。

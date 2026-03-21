@@ -38,11 +38,21 @@ utility_pane: ''
      3. 在 `_bmad-output/implementation-artifacts/` 下查找匹配 `*{story_id}*.md`（排除 `*validation*`）
    - backlog story 的路径初始可为空，待 2a 创建后回填
 3. Partition batch: stories_to_create / stories_to_reuse / ui_stories / backend_only_stories
+4. Verify watchdog is healthy before entering batch-prep long-running work:
+   - Derive current generation:
+     `current_generation="$(sed -n 's/^session_generation:[[:space:]]*//p' _bmad-output/implementation-artifacts/gate-state.yaml | head -n 1)"; [ -n "$current_generation" ] || current_generation=0`
+   - Run:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+   - If auto-restarted, append a `correction` entry via utility pane before continuing
 
 ### 2a: Create missing story files (backlog only, sequential)
 4. For each story in `stories_to_create`:
+   - Re-check watchdog health:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
    - Execute pre-dispatch (Read `../pre-dispatch-checklist.md`)
-   - Open claude sub-pane, send task packet:
+   - Open claude sub-pane:
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-create" "{project_root}" "claude --dangerously-skip-permissions")"`
+   - Send task packet:
      ```
      Skill: bmad-create-story
      Goal: Create story file for explicitly assigned story
@@ -66,13 +76,16 @@ utility_pane: ''
 
 ### 2b: Add prototypes (UI stories only, where missing)
 5. For each story in `ui_stories` that lacks current prototype:
+   - Re-check watchdog health before prototype creation:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
    - Execute pre-dispatch
    - **Pre-create files** via utility_pane (Pencil MCP has no save-as):
      ```bash
      cp _bmad-output/implementation-artifacts/prototypes/prototype.pen _bmad-output/implementation-artifacts/prototypes/story-{id}.pen
      mkdir -p _bmad-output/implementation-artifacts/prototypes/story-{id}/
      ```
-   - Open claude sub-pane, instruct prototype + F13 落盘 + 导出（同一个 pane 完成全流程，保留 Pencil 内存状态）:
+   - Open claude sub-pane:
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-prototype" "{project_root}" "claude --dangerously-skip-permissions")"`（同一个 pane 完成全流程，保留 Pencil 内存状态）
      ```
      Goal: Create story prototype with forced disk save
      Inputs:
@@ -111,7 +124,11 @@ utility_pane: ''
 
 ### 2c: Validate entire batch (PARALLEL, codex)
 6. For each story in batch, **simultaneously** open separate codex sub-panes:
+   - Re-check watchdog health before launching parallel validation:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
    - Execute pre-dispatch for each (LLM = codex)
+   - Open each codex pane:
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-validate" "{project_root}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
    - Send task packet:
      ```
      Role: story validation
@@ -127,8 +144,11 @@ utility_pane: ''
      - MC_DONE VALIDATE {story_id} PASS|FAIL
      ```
 7. Poll all validate panes round-robin. Collect PASS/FAIL per story. Close each after result.
+   - Before each aggregate pass, verify watchdog still healthy:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
 8. If any FAIL:
-   - Open claude pane to fix story file/prototype per findings
+   - Open claude pane to fix story file/prototype per findings:
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-fix-story" "{project_root}" "claude --dangerously-skip-permissions")"`
    - Re-validate only failed stories (new codex panes)
    - Max 3 validation cycles per story. Exceed → HALT
 
@@ -138,6 +158,8 @@ utility_pane: ''
 
 ### 2d: Single batch commit
 9. Open claude pane, git add all new/updated story/prototype artifacts
+   - Re-check watchdog health before commit/gate transition:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
 10. Single commit covering all prepared stories (F2: 禁止逐 story 单独 commit)
 11. If no file changes needed (all reused) → skip commit
 12. Close pane

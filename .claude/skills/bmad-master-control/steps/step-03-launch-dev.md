@@ -38,10 +38,10 @@ bottom_anchor: ''
 ### Launch Dev Panes
 5. For each story:
    - Execute pre-dispatch (Read `../pre-dispatch-checklist.md`):
-     LLM = claude, AUTH = L0, EXECUTOR = sub-pane, PANE = new
-   - Open claude sub-pane (from bottom_anchor):
-     `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && claude --dangerously-skip-permissions"`
-   - Enable pipe-pane logging: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
+     LLM = claude, AUTH = L0, EXECUTOR = sub-pane, PANE = fresh worker slot
+   - Open claude sub-pane:
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-dev" "../BidWise-story-{story_id}" "claude --dangerously-skip-permissions")"`
+   - Enable pipe-pane logging: `tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'`
    - Wait for Claude prompt (❯)
    - Send task packet:
      ```
@@ -68,20 +68,21 @@ bottom_anchor: ''
      - reference PNG dir: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{story_id}/
      - visual baseline: Story 1.4 design system + ux-design-specification
      ```
-   - Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-dev"`
    - Record story_states[story_id] = { phase: "dev", current_llm: "claude", review_cycle: 0, is_ui: true/false }
-   - Record panes.stories[story_id] = { dev: {new_pane_id} }
-   - Update gate-state.yaml with story_states + panes snapshot
+   - Record panes.stories[story_id] = { dev: {work_pane_id} }
+   - Update gate-state.yaml with generation-guarded write path（use `STATE_CONTROL_HELPER` / utility pane; do not write raw YAML directly）
 
-6. Equalize bottom pane widths:
-   `tmux select-layout -t {bottom_anchor} even-horizontal`
+6. After all dev panes launch, optionally run:
+   - `"{TMUX_LAYOUT_HELPER}" rebalance-bottom "{current_session}" "{commander_pane}"`
+   - `"{TMUX_LAYOUT_HELPER}" validate-work "{current_session}"`
 
 7. Output (L1): `🔨 并行开发已启动 — {batch_size} 个 Story 在独立 worktree 中开发中`
 
 ## GATE G6: worktree → monitor
 - **Assert foreach batch_stories:** `test -d ../BidWise-story-{story_id}`
 - **Assert foreach batch_stories:** panes.stories[story_id].dev 存在于 `tmux list-panes -s`
-- **On pass:** 更新 gate-state.yaml G6 PASS
+- **On pass:** 通过 helper 记录 G6 PASS：
+  `current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"; tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" record-batch-gate \"{project_root}\" \"${current_generation}\" \"G6\" \"commander\" \"worktrees created and dev panes alive\"" Enter`
 
 ## CHECKPOINT
 - Worktrees created: {list}

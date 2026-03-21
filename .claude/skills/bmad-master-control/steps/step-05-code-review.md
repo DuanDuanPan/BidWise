@@ -35,11 +35,9 @@ bottom_anchor: ''
    - LLM = codex ✓ (C2: 审查 = codex)
    - AUTH = L0 ✓
    - PANE = new ✓ (fresh context)
-5. Open NEW codex sub-pane (from bottom_anchor):
-   `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
-   Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
-   Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
-   Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-review"`
+5. Open NEW codex sub-pane:
+   `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-review" "../BidWise-story-{story_id}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
+   Enable pipe-pane: `tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'`
 6. Send task packet:
    ```
    Skill: bmad-code-review
@@ -60,8 +58,8 @@ bottom_anchor: ''
    - findings grouped as must-fix / should-fix / optional
    ```
 7. If UI Story, append UX audit request
-8. Record: story.phase = "review", story.current_llm = "codex"; panes.stories[story_id].review = new pane_id
-9. Update gate-state.yaml
+8. Record: story.phase = "review", story.current_llm = "codex"; panes.stories[story_id].review = work_pane_id
+9. Update gate-state.yaml through generation-guarded helper writes (no raw YAML edits)
 
 **Return to step-04 monitoring loop.**
 
@@ -85,7 +83,8 @@ bottom_anchor: ''
    - Rename pane title: `tmux select-pane -t {dev_pane} -T "mc-story-{story_id}-fixing"`
    - Send fix task packet to dev_pane
 7. If dev_pane exited:
-   - Open NEW claude sub-pane in worktree
+   - Open NEW claude sub-pane in worktree:
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-fixing" "../BidWise-story-{story_id}" "claude --dangerously-skip-permissions")"`
    - Send fix task packet:
      ```
      Skill: debugging-strategies
@@ -100,16 +99,16 @@ bottom_anchor: ''
      - MC_DONE FIX {story_id} REVIEW_READY|HALT
      ```
 8. Record: story.phase = "fixing", story.current_llm = "claude"
+9. Update gate-state.yaml through generation-guarded helper writes
 
 #### Escalated Fix (review_cycle >= 2): Codex
 9. **Execute pre-dispatch:**
    - LLM = **codex** ✓ (C2 升级: claude 2次失败 → codex)
    - PANE = **new** ✓ (C2 不变量: 不能是 review pane)
 10. Close existing dev pane if alive
-11. Open NEW codex sub-pane (from bottom_anchor, NOT the review pane):
-    `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
-    Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
-    Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
+11. Open NEW codex sub-pane（from the bottom work layer, NOT the review pane）:
+    `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-fixing" "../BidWise-story-{story_id}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
+    Enable pipe-pane: `tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'`
 12. Send task packet:
     ```
     Skill: debugging-strategies
@@ -124,8 +123,7 @@ bottom_anchor: ''
     Expected Output:
     - MC_DONE FIX {story_id} REVIEW_READY|HALT
     ```
-13. Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-fixing"`
-14. Record: story.phase = "fixing", story.current_llm = "codex"; panes.stories[story_id].dev = new pane_id
-15. Update gate-state.yaml
+13. Record: story.phase = "fixing", story.current_llm = "codex"; panes.stories[story_id].dev = work_pane_id
+14. Update gate-state.yaml through generation-guarded helper writes
 
 **Return to step-04 monitoring loop.**

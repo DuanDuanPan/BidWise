@@ -47,7 +47,7 @@ merged_story_files_list: []
      - Send to inspector: "请审查 Gate G10 (Story {story_id})"
      - Poll until `APPROVE → L0 AUTO-EXECUTE` or `APPROVE → SESSION-RESTART` or `REJECT → HALT`
      - REJECT → HALT
-   - **On `APPROVE → L0 AUTO-EXECUTE`:** 更新 gate-state，**立即进入 Sequential Merge，不通知用户、不等待确认（C3-L0 + F5）**
+   - **On `APPROVE → L0 AUTO-EXECUTE`:** 通过 helper 记录 G10 PASS，**立即进入 Sequential Merge，不通知用户、不等待确认（C3-L0 + F5）**
    - **On `APPROVE → SESSION-RESTART`:** Inspector 已将 G10 PASS 写入 gate-state.yaml 并即将重启 commander。Commander 无需额外动作。新 commander 恢复后根据 story phase 和 merge_state 继续 merge 流程。
 
 ### Sequential Merge
@@ -62,7 +62,7 @@ merged_story_files_list: []
    f. Verify merge succeeded (check exit code)
    g. If merge fails → HALT with conflict details
    h. Set story.phase = "merged" (durable — enables resume if session restarts before regression)
-   i. Update gate-state.yaml: merge_state.current_story = {story_id}, merge_state.queue/completed as needed
+   i. Update gate-state.yaml: merge_state.current_story = {story_id}, merge_state.queue/completed as needed（generation-guarded helper path）
 
    **After each successful merge → Read `./step-08-regression.md`**
    (Regression must pass before merging next story)

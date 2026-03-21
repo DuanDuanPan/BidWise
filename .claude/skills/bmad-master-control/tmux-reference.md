@@ -14,31 +14,90 @@
 1. 先 Bottom Anchor: `-t {commander_pane} -v -l 40%`（预留全宽底部区域）
 2. 再 Inspector: `-t {commander_pane} -h -l 55%`（上半区 commander 右侧）
 3. 再 Utility: `-t {inspector_pane} -h -l 45%`（上半区 inspector 右侧）
-4. Dev/Review panes: `-t {bottom_anchor} -h`（下半区横向扩展）
+4. Dev/Review panes: 第一个任务复用 `bottom_anchor`；后续任务从当前最右侧 bottom pane `-h` 分裂（下半区横向扩展）
 
 **关键：所有 split 的 `-t` 目标必须是具体 pane ID（如 `%74`），禁止用 session 名。**
 用 session 名时 tmux 会 split 当前活跃 pane，一旦焦点变化布局就错。
 
 按需查阅。指挥官在需要具体 tmux 命令语法时 Read 此文件。
 
-## Sub-Pane 创建（均从 bottom_anchor 分割）
+推荐统一通过 helper 执行工作层操作：
 
 ```bash
-# Claude pane (Create Story, Prototype, Dev, Fix)
-tmux split-window -t {bottom_anchor} -h "cd {path} && claude --dangerously-skip-permissions"
-
-# Codex pane (Validate, Code Review, 顽固 bug 修复, Regression)
-tmux split-window -t {bottom_anchor} -h "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
+TMUX_LAYOUT_HELPER="{project_root}/.claude/skills/bmad-master-control/tmux-layout.sh"
+STATE_CONTROL_HELPER="{project_root}/.claude/skills/bmad-master-control/state-control.sh"
 ```
 
-**每次 split-window 后必须立即均衡下半区宽度：**
+## Top-Layer Pane Titles
+
+初始化完成后立即设置固定标题，禁止依赖主机名或 CLI 标题判断布局：
+
 ```bash
-tmux select-layout -t {bottom_anchor} even-horizontal
+"${TMUX_LAYOUT_HELPER}" set-top-titles "{commander_pane}" "{inspector_pane}" "{utility_pane}"
 ```
+
+## Bottom Work Layer Rules
+
+- `bottom_anchor` 是下半区的第一个 pane，也是第一个工作 pane 的默认承载位
+- **第一个**工作任务优先复用 `bottom_anchor`，不要先多切一个空 pane
+- **后续**工作 pane 只能从当前最右侧 bottom pane 继续 `split-window -h`
+- **禁止**在该 mixed window 上调用 `tmux select-layout ... even-horizontal`
+- 每次 split / kill / resize 后都要重新做几何校验，不能靠肉眼判断
+
+### 获取当前 bottom panes（按 left 从左到右排序）
+
+Helper 内部已实现，无需手写。
+
+### 打开第一个工作 pane（复用 bottom_anchor）
+
+```bash
+work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "{command}")"
+```
+
+### 打开后续工作 pane（从当前最右侧 bottom pane 横向分裂）
+
+同样使用 `open-worker`。helper 会自动判断是复用 `bottom_anchor` 还是从当前最右侧 bottom pane 分裂。
+
+## Bottom-Only Width Balancing
+
+**目标：** 只调整下半区宽度，不触碰上半区几何。
+
+```bash
+"${TMUX_LAYOUT_HELPER}" rebalance-bottom "{current_session}" "{commander_pane}"
+```
+
+## Geometry Validation
+
+每次布局变更后必须运行一次。输出必须带字段名，禁止使用无分隔符格式。
+
+```bash
+"${TMUX_LAYOUT_HELPER}" validate-work "{current_session}"
+"${TMUX_LAYOUT_HELPER}" dump-geometry "{current_session}"
+```
+
+**必须同时满足：**
+
+- `mc-commander` / `mc-inspector` / `mc-util` 的 `top=0`
+- 任一 `mc-story-*` pane 的 `top > 0`
+- 不允许出现 `mc-story-*` pane 的 `top=0`
+
+若任一断言失败：立即 HALT 或销毁工作 pane 后按 F12 顺序重建。
+
+## Sub-Pane 创建（工作层）
+
+```bash
+# Claude pane
+work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "claude --dangerously-skip-permissions")"
+
+# Codex pane
+work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"
+```
+
+`open-worker` 内部已经执行 bottom-only balancing + geometry validation，不要再额外调用 `select-layout`。
 
 **每个新建 pane 创建后必须立即启用 pipe-pane 日志：**
 ```bash
-tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'
+tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'
 ```
 
 ## 消息发送
@@ -78,32 +137,17 @@ tmux kill-pane -t {pane_id}
 ## Gate State 写入（通过 utility pane）
 
 ```bash
-# 创建初始 gate-state.yaml
-tmux send-keys -t {utility_pane} "cat > _bmad-output/implementation-artifacts/gate-state.yaml << 'GATE_EOF'
-last_updated: \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-batch_id: \"batch-$(date +%Y-%m-%d)-1\"
-batch_stories: [\"{{story_id_1}}\", \"{{story_id_2}}\"]
-gates:
-  G1: { status: PASS, timestamp: \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\", verified_by: commander, details: \"{{details}}\" }
-story_gates: {}
-story_states: {}
-panes:
-  utility: \"{{utility_pane}}\"
-  inspector: \"{{inspector_pane}}\"
-  bottom_anchor: \"{{bottom_anchor}}\"
-  inspector_state: idle
-GATE_EOF" Enter
+# 创建初始 gate-state.yaml（带 generation / failover_epoch）
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" init-batch-state \"{project_root}\" \"batch-$(date +%Y-%m-%d)-1\" \"{{story_id_1}},{{story_id_2}}\" \"{{utility_pane}}\" \"{{inspector_pane}}\" \"{{bottom_anchor}}\" \"{{details}}\" 0" Enter
 
-# 更新单个 gate（python YAML 安全写入）
-tmux send-keys -t {utility_pane} "python3 -c \"
-import yaml, datetime
-path = '_bmad-output/implementation-artifacts/gate-state.yaml'
-with open(path) as f: state = yaml.safe_load(f)
-state['last_updated'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
-state['gates']['G{{N}}'] = {'status': 'PASS', 'timestamp': state['last_updated'], 'verified_by': '{{commander_or_inspector}}', 'details': '{{details}}'}
-with open(path, 'w') as f: yaml.dump(state, f, default_flow_style=False, allow_unicode=True)
-print('Gate G{{N}} recorded as PASS')
-\"" Enter
+# 读取当前 generation
+current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+
+# 更新 batch gate（带 generation fencing）
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" record-batch-gate \"{project_root}\" \"${current_generation}\" \"G{{N}}\" \"{{commander_or_inspector}}\" \"{{details}}\"" Enter
+
+# 更新 story gate（带 generation fencing）
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" record-story-gate \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"G{{N}}\" \"{{commander_or_inspector}}\" \"{{details}}\"" Enter
 
 # 写入 gate-report
 tmux send-keys -t {utility_pane} "cat > _bmad-output/implementation-artifacts/gate-report-G{{N}}.md << 'REPORT_EOF'
@@ -123,27 +167,10 @@ REPORT_EOF" Enter
 ## Session Journal 写入（通过 utility pane）
 
 ```bash
-# 追加 dispatch_audit 条目
-tmux send-keys -t {utility_pane} "python3 -c \"
-import yaml, datetime
-path = '_bmad-output/implementation-artifacts/session-journal.yaml'
-try:
-    with open(path) as f: data = yaml.safe_load(f) or {}
-except FileNotFoundError:
-    data = {'batch_id': '{{batch_id}}', 'entries': []}
-entries = data.setdefault('entries', [])
-seq = max((e.get('seq', 0) for e in entries), default=0) + 1
-entries.append({
-    'seq': seq,
-    'timestamp': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'type': '{{type}}',
-    'story_id': '{{story_id}}',
-    'phase': '{{phase}}',
-    'llm': '{{llm}}',
-    'auth': '{{auth}}',
-    'constitution_check': 'PASS'
-})
-with open(path, 'w') as f: yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-print(f'Journal entry #{seq} recorded')
-\"" Enter
+# 追加 dispatch_audit 条目（带 generation fencing）
+current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"{{phase}}\" \"{{llm}}\" \"{{auth}}\" \"{{pane}}\" \"{{pane_reuse_reason}}\" \"PASS\" \"{{constitution_detail}}\"" Enter
+
+# 追加 correction 条目（带 generation fencing）
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-correction \"{project_root}\" \"${current_generation}\" \"{{trigger}}\" \"{{description}}\" \"{{violated_rule}}\" \"{{correct_action}}\" \"{{step}}\" \"{{story_id}}\"" Enter
 ```

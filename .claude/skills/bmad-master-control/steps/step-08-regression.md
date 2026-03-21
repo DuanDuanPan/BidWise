@@ -28,56 +28,65 @@ bottom_anchor: ''
 ### Preflight
 1. Read gate-state.yaml → 确认 story G10 PASS for current_merge_story_id
 2. Execute pre-dispatch: LLM = codex, AUTH = L0, PANE = new
+3. Verify watchdog is healthy before regression:
+   - Derive current generation from `gate-state.yaml.session_generation`（if missing, use `0`）
+   - Run:
+     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
 
 ### Launch Regression Pane
-3. Open codex sub-pane on main (from bottom_anchor):
-   `tmux split-window -t {bottom_anchor} -h "cd {project_root} && codex ..."`
-   Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
-   Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
-   Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{current_merge_story_id}-regression"`
-   Record: panes.stories[current_merge_story_id].regression = new pane_id
+4. Open codex sub-pane on main (from bottom_anchor):
+   `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{current_merge_story_id}-regression" "{project_root}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
+   Enable pipe-pane: `tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'`
+   Record: panes.stories[current_merge_story_id].regression = work_pane_id
    Set story.phase = "regression" (durable — enables resume if session restarts mid-regression)
-   Update gate-state.yaml
-4. Set regression_cycle = 0
+   Update gate-state.yaml through generation-guarded helper writes
+5. Set regression_cycle = 0
 
 ### Regression Loop (max 3 cycles)
-5. Increment regression_cycle
-6. If regression_cycle > 3 → HALT: "Regression failed after 3 full cycles"
+6. Increment regression_cycle
+7. If regression_cycle > 3 → HALT: "Regression failed after 3 full cycles"
+8. Re-check watchdog health at the start of each regression cycle:
+   `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
 
 #### L1: 基础自动化
-7. Send: "请在 main 执行 L1 基础自动化回归（第 {cycle} 轮）: `pnpm test:unit && pnpm lint && pnpm typecheck && pnpm build`。全绿零 warning = PASS。"
-8. Poll until L1 completes
-9. If L1 FAIL:
+9. Send: "请在 main 执行 L1 基础自动化回归（第 {cycle} 轮）: `pnpm test:unit && pnpm lint && pnpm typecheck && pnpm build`。全绿零 warning = PASS。"
+10. Poll until L1 completes
+11. If L1 FAIL:
    - Send: "L1 失败，请修复。修复后不要自行重跑 — 等待指挥官重新发起。"
    - Poll until fix completes
-   - **Go to step 5** (restart full cycle)
+   - **Go to step 6** (restart full cycle)
 
 #### L2: Story AC 回归
-10. Send: "L1 通过。请执行 L2 Story AC 回归：读取以下 story 文件的 AC，逐项验证每个 AC 在 main 上仍然满足。Story 文件: {merged_story_files_list}。报告每个 AC 的 PASS/FAIL。"
-11. Poll until L2 completes
-12. If L2 FAIL:
+12. Re-check watchdog health before L2:
+    `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+13. Send: "L1 通过。请执行 L2 Story AC 回归：读取以下 story 文件的 AC，逐项验证每个 AC 在 main 上仍然满足。Story 文件: {merged_story_files_list}。报告每个 AC 的 PASS/FAIL。"
+14. Poll until L2 completes
+15. If L2 FAIL:
     - Send: "L2 AC 回归失败: {failed_ACs}。请修复。修复后等待指挥官重新发起（从 L1 开始）。"
     - Poll until fix completes
-    - **Go to step 5** (restart full cycle)
+    - **Go to step 6** (restart full cycle)
 
 #### L3: 集成验证
-13. Send: "L2 通过。请执行 L3 集成验证：检查合并后各 story 之间的交叉功能，验证跨层调用链路（UI→IPC→Service→DB），启动 app (`pnpm dev`) 验证无报错。PASS 或 FAIL。"
-14. Poll until L3 completes
-15. If L3 FAIL:
+16. Re-check watchdog health before L3:
+    `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+17. Send: "L2 通过。请执行 L3 集成验证：检查合并后各 story 之间的交叉功能，验证跨层调用链路（UI→IPC→Service→DB），启动 app (`pnpm dev`) 验证无报错。PASS 或 FAIL。"
+18. Poll until L3 completes
+19. If L3 FAIL:
     - Send: "L3 集成验证失败。请修复。修复后等待指挥官重新发起（从 L1 开始）。"
     - Poll until fix completes
-    - **Go to step 5** (restart full cycle)
+    - **Go to step 6** (restart full cycle)
 
 ### All Three Layers Passed in Same Cycle
 
 ### GATE G11 (per story): regression → cleanup
 - **Assert:** L1 + L2 + L3 在同一 regression_cycle 中全部通过
-- **On pass:** 更新 gate-state.yaml story_gates.{current_merge_story_id}.G11 = PASS
+- **On pass:** 通过 helper 记录 story gate：
+  `current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"; tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" record-story-gate \"{project_root}\" \"${current_generation}\" \"{current_merge_story_id}\" \"G11\" \"commander\" \"all regression layers passed in same cycle\"" Enter`
 
-16. Set story_states[current_merge_story_id].phase = "done"
-17. Update gate-state.yaml: move current_merge_story_id from merge_state.current_story to merge_state.completed
-18. Close codex pane
-19. Output (L1): "✅ Story {current_merge_story_id} 三层回归全部通过（第 {cycle} 轮）"
+20. Set story_states[current_merge_story_id].phase = "done"
+21. Update gate-state.yaml: move current_merge_story_id from merge_state.current_story to merge_state.completed（generation-guarded helper path）
+22. Close codex pane
+23. Output (L1): "✅ Story {current_merge_story_id} 三层回归全部通过（第 {cycle} 轮）"
 
 ## CHECKPOINT
 - Story: {current_merge_story_id}
