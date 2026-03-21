@@ -1,17 +1,21 @@
 # Gate Report G5
 - Gate: G5 (batch commit → worktree)
-- Batch: ["1-7", "2-3", "1-9"]
-- 提交时间: 2026-03-21T00:54:10.000Z
+- Batch: [1-8, 2-5, 3-1]
+- 提交时间: 2026-03-21T13:55:54.000Z
 
 ## 指挥官执行摘要
-Batch-3 准备阶段完成。3个 story 文件已创建并通过验证，2个 UI 原型已设计并强制落盘，sprint-status 已更新。主 batch commit: 928e8af，gate-report 追加 commit: 33b54ad。
+Batch-4 prep 完成。3 个 story 文件创建（bmad-create-story），3 个 UI 原型创建（Pencil MCP + F13 强制落盘），
+3 轮 codex 验证后用户接受（findings 记录在 validation-findings-batch4.md），单次 batch commit 109b0e1。
 
 ## 磁盘状态断言
-- [ ] git log -3 中存在包含所有 3 个 story ID (1-7, 2-3, 1-9) 的 commit
-- [ ] _bmad-output/implementation-artifacts/story-1-7-workspace-layout-shell.md 存在
-- [ ] _bmad-output/implementation-artifacts/2-3-tender-import-async-parsing.md 存在
-- [ ] _bmad-output/implementation-artifacts/1-9-command-palette.md 存在
-- [ ] _bmad-output/implementation-artifacts/prototypes/story-1-7.pen 大小 > prototype.pen
-- [ ] _bmad-output/implementation-artifacts/prototypes/story-1-9.pen 大小 > prototype.pen
-- [ ] sprint-status.yaml 中 3 个 story 状态为 ready-for-dev
-- [ ] git status --short 输出为空（工作区干净）
+- [ ] git log -1 包含 batch story IDs (1-8, 2-5, 3-1)
+- [ ] story-1-8-smart-todo-priority.md 存在
+- [ ] story-2-5.md 存在
+- [ ] story-3-1-plate-editor-markdown-serialization.md 存在
+- [ ] prototypes/story-1-8.pen 存在且 > prototype.pen
+- [ ] prototypes/story-2-5.pen 存在且 > prototype.pen
+- [ ] prototypes/story-3-1.pen 存在且 > prototype.pen
+- [ ] 每个 story 的 PNG 导出目录有 >= 1 文件
+- [ ] prototype-manifest.yaml 包含 3 个 story 条目
+- [ ] sprint-status.yaml 中 1-8, 2-5 为 ready-for-dev, 3-1 对应 epic-3 为 in-progress
+- [ ] git status 无未提交的 tracked 文件修改
