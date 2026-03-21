@@ -1,11 +1,2 @@
 batch_id: ""
 entries: []
-  - seq: 99
-    timestamp: "2026-03-21T10:07:12Z"
-    type: correction
-    trigger: user
-    description: "Commander directly executed git commit, pnpm lint, rm in own context instead of dispatching to sub-panes"
-    violated_rule: "C1/F8"
-    correct_action: "All git/build/edit operations must go through tmux sub-panes"
-    step: "step-07-merge"
-    story_id: "batch"

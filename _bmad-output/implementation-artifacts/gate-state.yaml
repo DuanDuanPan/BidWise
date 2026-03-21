@@ -1,4 +1,4 @@
-last_updated: "2026-03-21T10:04:31.000Z"
+last_updated: "2026-03-21T11:30:02.000Z"
 batch_id: "batch-2026-03-20-3"
 batch_stories: ["1-7", "2-3", "1-9"]
 gates:
@@ -23,7 +23,7 @@ story_gates:
     G9: {status: PASS, timestamp: "2026-03-21T10:50:00.000Z", verified_by: commander}
 story_states:
   "1-7":
-    phase: uat_waiting
+    phase: done
     review_cycle: 2
     current_llm: claude
     is_ui: true
@@ -35,7 +35,7 @@ story_states:
     auto_qa_cycle: 1
     merge_priority: 2
   "2-3":
-    phase: uat_waiting
+    phase: done
     review_cycle: 3
     current_llm: codex
     is_ui: true
@@ -47,7 +47,7 @@ story_states:
     auto_qa_cycle: 1
     merge_priority: 1
   "1-9":
-    phase: uat_waiting
+    phase: done
     review_cycle: 3
     current_llm: codex
     is_ui: true
