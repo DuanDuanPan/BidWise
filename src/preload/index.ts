@@ -41,6 +41,15 @@ const requestApi = {
 
   taskCancel: (taskId: IpcChannelMap['task:cancel']['input']) =>
     typedInvoke(IPC_CHANNELS.TASK_CANCEL, taskId),
+
+  taskGetStatus: (input: IpcChannelMap['task:get-status']['input']) =>
+    typedInvoke(IPC_CHANNELS.TASK_GET_STATUS, input),
+
+  analysisImportTender: (input: IpcChannelMap['analysis:import-tender']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_IMPORT_TENDER, input),
+
+  analysisGetTender: (input: IpcChannelMap['analysis:get-tender']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_TENDER, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

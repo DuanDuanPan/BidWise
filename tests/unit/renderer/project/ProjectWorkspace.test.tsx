@@ -58,6 +58,11 @@ describe('@story-1-6 ProjectWorkspace', () => {
       projectCreate: vi.fn(),
       projectDelete: vi.fn(),
       projectArchive: vi.fn(),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
+      analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
+      taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
   })
@@ -68,6 +73,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
       ...window.api,
       projectGet: vi.fn().mockReturnValue(new Promise(() => {})),
       projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
     })
     renderWorkspace()
     expect(screen.getByTestId('workspace-loading')).toBeInTheDocument()
@@ -85,10 +91,10 @@ describe('@story-1-6 ProjectWorkspace', () => {
     expect(bar).toBeInTheDocument()
   })
 
-  it('@p0 renders stage guide placeholder', async () => {
+  it('@p0 renders AnalysisView for requirements-analysis stage', async () => {
     renderWorkspace()
-    const guide = await screen.findByTestId('stage-guide-placeholder')
-    expect(guide).toBeInTheDocument()
+    const view = await screen.findByTestId('analysis-view')
+    expect(view).toBeInTheDocument()
   })
 
   it('@p1 shows project name in header', async () => {
@@ -113,6 +119,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
         data: { ...mockProject, sopStage: 'proposal-writing' },
       }),
       projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
     })
     renderWorkspace()
     const guide = await screen.findByTestId('stage-guide-placeholder')
@@ -128,6 +135,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
         error: { code: 'NOT_FOUND', message: '项目不存在' },
       }),
       projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
     })
     renderWorkspace()
     const errorView = await screen.findByTestId('workspace-error')

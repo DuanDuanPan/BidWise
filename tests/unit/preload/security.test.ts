@@ -69,6 +69,9 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'agentStatus',
       'taskList',
       'taskCancel',
+      'taskGetStatus',
+      'analysisImportTender',
+      'analysisGetTender',
       'onTaskProgress',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)
