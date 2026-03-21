@@ -75,32 +75,45 @@ except Exception as e:
   done
 }
 
-# ─── Check 2: Pre-dispatch 审计缺口（高确定性 — 时间戳比较）───
+# ─── Check 2: Pre-dispatch 审计缺口（感知当前阶段，避免长任务误报）───
 check_predispatch_gap() {
   [ -f "$JOURNAL_FILE" ] || return 0
+  [ -f "$GATE_STATE_FILE" ] || return 0
 
   python3 -c "
 import yaml, sys
 from datetime import datetime, timezone
 try:
+    with open('${GATE_STATE_FILE}') as f:
+        state = yaml.safe_load(f) or {}
+    story_states = state.get('story_states') or {}
+    phases = [s.get('phase','') for s in story_states.values()]
+
+    # 只在 commander 应该主动行动但没行动时告警
+    has_pending = any(p == 'pending_review' for p in phases)
+    all_past_dev = all(p in ('auto_qa_pending','qa_running','uat_waiting','done') for p in phases)
+    has_qa_pending = any(p == 'auto_qa_pending' for p in phases)
+    batch_stalled = all_past_dev and has_qa_pending
+
+    if not has_pending and not batch_stalled:
+        sys.exit(0)  # 全在长任务阶段，gap 正常
+
     with open('${JOURNAL_FILE}') as f:
         data = yaml.safe_load(f) or {}
     entries = data.get('entries', [])
-    audits = [e for e in entries if e.get('type') == 'dispatch_audit']
-    if not audits:
-        # 没有任何 dispatch_audit 但已有其他条目 → 可能跳过了 pre-dispatch
-        non_audits = [e for e in entries if e.get('type') != 'dispatch_audit']
-        if len(non_audits) > 2:
-            print('no_dispatch_audit_found')
+    recent_activity = [e for e in entries if e.get('type') in ('dispatch_audit', 'correction')]
+    if not recent_activity:
+        if len(entries) > 2:
+            print('no_dispatch_or_correction_found')
         sys.exit(0)
-    last = audits[-1]
+    last = recent_activity[-1]
     ts_str = last.get('timestamp', '')
     if ts_str:
         last_ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
         now = datetime.now(timezone.utc)
         gap = (now - last_ts).total_seconds()
-        if gap > 600:  # 10 分钟无 dispatch_audit
-            print(f'last_audit_{int(gap)}s_ago')
+        if gap > 600:
+            print(f'last_activity_{int(gap)}s_ago')
 except Exception as e:
     print(f'ERROR: {e}', file=sys.stderr)
 " 2>/dev/null | while IFS= read -r line; do

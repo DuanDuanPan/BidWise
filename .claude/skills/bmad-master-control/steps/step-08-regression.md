@@ -34,6 +34,10 @@ bottom_anchor: ''
    `tmux split-window -t {bottom_anchor} -h "cd {project_root} && codex ..."`
    Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
    Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
+   Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{current_merge_story_id}-regression"`
+   Record: panes.stories[current_merge_story_id].regression = new pane_id
+   Set story.phase = "regression" (durable — enables resume if session restarts mid-regression)
+   Update gate-state.yaml
 4. Set regression_cycle = 0
 
 ### Regression Loop (max 3 cycles)
@@ -71,8 +75,9 @@ bottom_anchor: ''
 - **On pass:** 更新 gate-state.yaml story_gates.{current_merge_story_id}.G11 = PASS
 
 16. Set story_states[current_merge_story_id].phase = "done"
-17. Close codex pane
-18. Output (L1): "✅ Story {current_merge_story_id} 三层回归全部通过（第 {cycle} 轮）"
+17. Update gate-state.yaml: move current_merge_story_id from merge_state.current_story to merge_state.completed
+18. Close codex pane
+19. Output (L1): "✅ Story {current_merge_story_id} 三层回归全部通过（第 {cycle} 轮）"
 
 ## CHECKPOINT
 - Story: {current_merge_story_id}

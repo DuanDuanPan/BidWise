@@ -68,8 +68,10 @@ bottom_anchor: ''
      - reference PNG dir: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{story_id}/
      - visual baseline: Story 1.4 design system + ux-design-specification
      ```
-   - Record: story_states[story_id] = { phase: "dev", dev_pane: pane_id, current_llm: "claude", review_cycle: 0, is_ui: true/false }
-   - Update gate-state.yaml with story_states snapshot
+   - Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-dev"`
+   - Record story_states[story_id] = { phase: "dev", current_llm: "claude", review_cycle: 0, is_ui: true/false }
+   - Record panes.stories[story_id] = { dev: {new_pane_id} }
+   - Update gate-state.yaml with story_states + panes snapshot
 
 6. Equalize bottom pane widths:
    `tmux select-layout -t {bottom_anchor} even-horizontal`
@@ -78,7 +80,7 @@ bottom_anchor: ''
 
 ## GATE G6: worktree → monitor
 - **Assert foreach batch_stories:** `test -d ../BidWise-story-{story_id}`
-- **Assert foreach batch_stories:** story_states[story_id].dev_pane 存在于 `tmux list-panes`
+- **Assert foreach batch_stories:** panes.stories[story_id].dev 存在于 `tmux list-panes -s`
 - **On pass:** 更新 gate-state.yaml G6 PASS
 
 ## CHECKPOINT

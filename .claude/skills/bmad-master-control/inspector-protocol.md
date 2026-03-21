@@ -106,16 +106,35 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
 
 **触发条件：** Gate APPROVE + `_bmad-output/implementation-artifacts/restart-eligible.yaml` 存在
 
-**执行步骤（由监察官在自己的 pane 中执行）：**
+**执行步骤（由监察官在自己的 pane 中执行，顺序不可变）：**
 
 1. 输出 `APPROVE → SESSION-RESTART`
-2. 记录 commander pane ID（从 restart-eligible.yaml 的 `commander_pane` 字段读取）
-3. 向 commander pane 发送退出命令：
+2. **先落盘 gate PASS（在杀 commander 之前，消除竞态）：**
+   通过 shell 更新 gate-state.yaml，写入 gate PASS：
+   ```bash
+   python3 -c "
+   import yaml
+   with open('_bmad-output/implementation-artifacts/gate-state.yaml') as f:
+       state = yaml.safe_load(f)
+   # 对 batch gate (G5):
+   state['gates']['G{N}'] = {'status': 'PASS', 'timestamp': '...', 'verified_by': 'inspector'}
+   # 或对 story gate (G10):
+   state.setdefault('story_gates', {}).setdefault('{story_id}', {})['G{N}'] = {'status': 'PASS', ...}
+   import datetime
+   state['last_updated'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+   with open('_bmad-output/implementation-artifacts/gate-state.yaml', 'w') as f:
+       yaml.dump(state, f, allow_unicode=True)
+   "
+   ```
+3. 验证写入成功：检查 `last_updated` 已更新
+4. 删除 sentinel 文件：`rm -f _bmad-output/implementation-artifacts/restart-eligible.yaml`
+5. 记录 commander pane ID（从 restart-eligible.yaml 的 `commander_pane` 字段读取，在删除前已记录）
+6. 向 commander pane 发送退出命令：
    ```bash
    tmux send-keys -t {commander_pane} '/exit' Enter
    ```
-4. 等待 commander pane 回到 shell prompt（轮询 `tmux capture-pane`，检测 `$` 或 `❯` 提示符，最多等 30 秒）
-5. 向同一 pane 启动新 claude 并发送恢复指令：
+7. 等待 commander pane 回到 shell prompt（轮询 `tmux capture-pane`，检测 `$` 或 `❯` 提示符，最多等 30 秒）
+8. 向同一 pane 启动新 claude 并发送恢复指令：
    ```bash
    tmux send-keys -t {commander_pane} 'claude' Enter
    ```
@@ -123,11 +142,8 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
    ```bash
    tmux send-keys -t {commander_pane} '请从 gate-state.yaml 恢复指挥官会话。执行 /bmad-master-control' Enter
    ```
-6. 删除 sentinel 文件：
-   ```bash
-   rm -f _bmad-output/implementation-artifacts/restart-eligible.yaml
-   ```
 
+**关键顺序：** 先写 gate PASS → 再删 sentinel → 再杀 commander。即使杀进程失败，状态已安全落盘。
 **注意：** REJECT 时不执行重启 — 问题优先于上下文刷新。Watchdog 检测到 sentinel 文件被删除后自动重置计时器。
 
 gate-report 文件格式（`_bmad-output/implementation-artifacts/gate-report-G{N}.md`）：

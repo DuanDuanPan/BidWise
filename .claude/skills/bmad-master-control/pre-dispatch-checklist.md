@@ -21,8 +21,12 @@
   auth: "{L0|L1|L2|L3}"
   pane: "{new|reuse}"
   pane_reuse_reason: ""
+  constitution_check: "{PASS|FAIL}"
+  constitution_detail: "C2:{llm}/{phase}={OK|FAIL}, AUTH:{level}={OK|FAIL}, PANE:{new|reuse}={OK|FAIL}"
 ```
 
 3. 执行 dispatch
+
+**FAIL 处理：** 如果 constitution_check 任一子项为 FAIL，不执行 dispatch，改为写 correction entry 记录违规。Watchdog 和 inspector 将 correction 视为合法活动（不触发 predispatch_gap 告警）。
 
 **注意：** 如果 session-journal 中存在与当前 story/phase 相关的 correction entry，应在决策时考虑。但不要求每次都物理 Read journal（step 转换时 GUARDS 已经 Read 过）。

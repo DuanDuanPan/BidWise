@@ -72,35 +72,40 @@ utility_pane: ''
      cp _bmad-output/implementation-artifacts/prototypes/prototype.pen _bmad-output/implementation-artifacts/prototypes/story-{id}.pen
      mkdir -p _bmad-output/implementation-artifacts/prototypes/story-{id}/
      ```
-   - Open claude sub-pane, instruct:
-     1. Use `open_document` to open `story-{id}.pen` (NOT prototype.pen — C5/F3)
-     2. Use `batch_get` to read standard frames/tokens from prototype.pen for reference
-     3. Use `batch_design` to create story-specific frames prefixed with `Story {id} —`
-     4. Use `export_nodes` to export reference PNGs to `prototypes/story-{id}/`
-     5. Complete → MC_DONE PROTOTYPE {story_id}
-   - Close sub-pane after MC_DONE
-   - **F13 强制落盘（指挥官执行，不依赖 sub-pane）：**
-     1. Commander 使用 `open_document` 打开 `story-{id}.pen`
-     2. Commander 使用 `batch_get(filePath, readDepth=99, includePathGeometry=true)` 读取完整内存节点树
-     3. 如果 batch_get 结果被持久化到文件，通过 Python 读取该文件；否则重试直到持久化
-     4. Via utility_pane 执行 Python 强制写盘：
-        ```python
+   - Open claude sub-pane, instruct prototype + F13 落盘 + 导出（同一个 pane 完成全流程，保留 Pencil 内存状态）:
+     ```
+     Goal: Create story prototype with forced disk save
+     Inputs:
+     - story id: {story_id}
+     - source pen: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{id}.pen
+     - reference pen: {project_root}/_bmad-output/implementation-artifacts/prototypes/prototype.pen
+     - export dir: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{id}/
+     Steps:
+     1. open_document to open story-{id}.pen (NOT prototype.pen — C5/F3)
+     2. batch_get to read standard frames/tokens from prototype.pen for reference
+     3. batch_design to create story-specific frames prefixed with "Story {id} —"
+     4. [F13 强制落盘] open_document story-{id}.pen again, then batch_get(readDepth=99, includePathGeometry=true) to capture full in-memory node tree, then Python write to disk:
         import json
-        with open("prototypes/story-{id}.pen") as f:
-            pen = json.load(f)  # 获取 version + variables
-        pen["children"] = in_memory_children  # 替换为内存中的节点树
-        with open("prototypes/story-{id}.pen", "w") as f:
+        with open("{source_pen_path}") as f:
+            pen = json.load(f)
+        pen["children"] = in_memory_children
+        with open("{source_pen_path}", "w") as f:
             json.dump(pen, f, ensure_ascii=False, indent=2)
-        ```
-     5. 验证文件大小变化：`ls -la prototypes/story-{id}.pen`（必须 > prototype.pen 大小）
-   - Update `prototype-manifest.yaml` with story entry (via utility_pane)
-   - Verify on disk: `.pen` 文件大小已变 + manifest entry + reference PNGs
-   - If verify fails → HALT
+     5. export_nodes to export reference PNGs to export dir
+     Expected Output:
+     - MC_DONE PROTOTYPE_SAVED {story_id}
+     ```
+   - Close sub-pane after MC_DONE PROTOTYPE_SAVED
+   - **Commander 磁盘验证（在 allowed-tools 范围内）：**
+     - 通过 tmux: `ls -la _bmad-output/implementation-artifacts/prototypes/story-{id}.pen`（文件大小 > prototype.pen）
+     - 通过 tmux: `ls _bmad-output/implementation-artifacts/prototypes/story-{id}/` (PNG 存在)
+     - If verify fails → HALT
+   - Update `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml` with story entry (via utility_pane)
 
 ### GATE G3: prototype → validate
-- **Assert foreach ui_stories:** `test -f prototypes/story-{id}.pen`
-- **Assert foreach ui_stories:** at least 1 PNG under `prototypes/story-{id}/`
-- **Assert foreach ui_stories:** story_id in prototype-manifest.yaml
+- **Assert foreach ui_stories:** `test -f _bmad-output/implementation-artifacts/prototypes/story-{id}.pen`
+- **Assert foreach ui_stories:** at least 1 PNG under `_bmad-output/implementation-artifacts/prototypes/story-{id}/`
+- **Assert foreach ui_stories:** story_id in `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml`
 - **Assert foreach backend_only_stories:** SKIP (no prototype required)
 - **On pass:** 更新 gate-state.yaml G3 PASS
 
@@ -142,9 +147,10 @@ utility_pane: ''
 - **Inspector gate:**
   - 写入 gate-report-G5.md (通过 utility_pane)
   - 发送审查请求到 inspector_pane: "请审查 Gate G5"
-  - 轮询 inspector_pane 直到 `APPROVE → L0 AUTO-EXECUTE` 或 `REJECT → HALT`
+  - 轮询 inspector_pane 直到 `APPROVE → L0 AUTO-EXECUTE` 或 `APPROVE → SESSION-RESTART` 或 `REJECT → HALT`
   - REJECT → HALT
 - **On `APPROVE → L0 AUTO-EXECUTE`:** 更新 gate-state.yaml G5 PASS (verified_by: inspector)，**立即读取 step-03 继续执行，不通知用户、不等待确认（C3-L0 + F5）**
+- **On `APPROVE → SESSION-RESTART`:** Inspector 已将 G5 PASS 写入 gate-state.yaml 并即将重启 commander。Commander 无需额外动作——等待被重启即可。新 commander 从 gate-state.yaml 恢复，路由到 step-03。
 
 ## CHECKPOINT
 - 所有 story 文件已创建/确认

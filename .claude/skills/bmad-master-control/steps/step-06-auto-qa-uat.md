@@ -32,6 +32,10 @@ utility_pane: ''
 4. For **each** story, **simultaneously** open a codex sub-pane:
    - **Execute pre-dispatch:** LLM = codex, AUTH = L0, PANE = new
    - Open codex sub-pane in story worktree; equalize after: `tmux select-layout -t {bottom_anchor} even-horizontal`
+   - Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-qa"`
+   - Record: panes.stories[story_id].qa = new pane_id
+   - Set story.phase = "qa_running" (durable — enables resume if session restarts mid-QA)
+   - Update gate-state.yaml with phase change
    - Check if story-scoped Playwright tests exist: `tests/e2e/stories/story-{story_id}*.spec.ts`
    - Send task packet:
      ```

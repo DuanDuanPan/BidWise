@@ -39,6 +39,7 @@ bottom_anchor: ''
    `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
    Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
    Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
+   Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-review"`
 6. Send task packet:
    ```
    Skill: bmad-code-review
@@ -59,7 +60,7 @@ bottom_anchor: ''
    - findings grouped as must-fix / should-fix / optional
    ```
 7. If UI Story, append UX audit request
-8. Record: story.review_pane = new pane_id, story.phase = "review", story.current_llm = "codex"
+8. Record: story.phase = "review", story.current_llm = "codex"; panes.stories[story_id].review = new pane_id
 9. Update gate-state.yaml
 
 **Return to step-04 monitoring loop.**
@@ -81,6 +82,7 @@ bottom_anchor: ''
    - LLM = **claude** ✓ (C2: 修复 = claude)
    - PANE = new or reuse dev_pane (NOT review pane — C2 不变量)
 6. If dev_pane still alive:
+   - Rename pane title: `tmux select-pane -t {dev_pane} -T "mc-story-{story_id}-fixing"`
    - Send fix task packet to dev_pane
 7. If dev_pane exited:
    - Open NEW claude sub-pane in worktree
@@ -122,7 +124,8 @@ bottom_anchor: ''
     Expected Output:
     - MC_DONE FIX {story_id} REVIEW_READY|HALT
     ```
-13. Record: story.phase = "fixing", story.current_llm = "codex", story.dev_pane = new pane_id
-14. Update gate-state.yaml
+13. Set pane title: `tmux select-pane -t {new_pane_id} -T "mc-story-{story_id}-fixing"`
+14. Record: story.phase = "fixing", story.current_llm = "codex"; panes.stories[story_id].dev = new pane_id
+15. Update gate-state.yaml
 
 **Return to step-04 monitoring loop.**

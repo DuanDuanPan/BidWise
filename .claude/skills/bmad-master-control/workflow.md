@@ -169,18 +169,43 @@ EOF" Enter
 ### 9. Gate State Resumption (断点恢复)
 
 Check if `_bmad-output/implementation-artifacts/gate-state.yaml` exists:
-- If exists: read it, identify last PASS gate, route to corresponding step
+- If exists: read it, run resume algorithm below
 - If not: fresh start → route to Step 1
 
-| Last PASS Gate | Resume Step |
-|---------------|-------------|
-| G1 | step-02-batch-prep |
-| G2 | step-02 (prototype section) |
-| G3 | step-02 (validate section) |
-| G4 | step-02 (commit section) |
-| G5 | step-03-launch-dev |
-| G6 | step-04-monitoring |
-| Story-level G7-G11 | step-04 (check individual story phases) |
+**恢复算法（基于全量 gates + story_states + merge_state）：**
+
+```
+1. 检查 batch-level gates (G1-G6):
+   G6 未 PASS → 按 batch gate 回溯:
+     G5 PASS → step-03
+     G4 PASS → step-02 (commit)
+     G3 PASS → step-02 (validate)
+     G2 PASS → step-02 (prototype)
+     G1 PASS → step-02
+     无 PASS  → step-01
+
+2. G6 PASS → 基于 story_states.phase 集合决策:
+
+   任一 story phase 在 {dev, pending_review, review, fixing}
+     → step-04（监控循环处理所有活跃 story）
+
+   全部 story phase = done
+     → step-09（cleanup）
+
+   有 story phase 在 {merged, regression}
+     → step-07（恢复 merge 队列，从 merge_state 读取进度）
+
+   全部 story phase 在 {auto_qa_pending, qa_running, uat_waiting, done}:
+     有 auto_qa_pending → step-06（未派发 QA）
+     有 qa_running      → step-06（检查 QA pane 存活，重建或等待）
+     余下全 uat_waiting  → step-07（等用户 UAT）
+```
+
+**Resume 后 pane 重建：** 读取 gate-state.yaml 的 `panes` 区（ephemeral），用 tmux pane title 发现存活 pane：
+```bash
+tmux list-panes -s -F '#{pane_title} #{pane_id}' | grep "^mc-story-"
+```
+匹配 title 的 pane 直接复用；无匹配的 story 根据 phase 重新创建 pane。
 
 ---
 
@@ -231,9 +256,11 @@ gates:
 story_gates:
   "1-5":
     G7: { status: PASS, ... }
-story_states:                # DURABLE only — no pane IDs (ephemeral handles don't survive session restart)
+story_states:                # DURABLE — 跨 session 有效
   "1-5":
     phase: review             # durable: resume point
+    # 完整 phase 列表: dev, pending_review, review, fixing,
+    #   auto_qa_pending, qa_running, uat_waiting, merged, regression, done
     review_cycle: 1           # durable: tracks fix attempts
     current_llm: codex        # durable: which LLM should be active
     is_ui: true               # durable: story attribute
@@ -244,8 +271,16 @@ story_states:                # DURABLE only — no pane IDs (ephemeral handles d
     validation_cycle: 0       # durable: tracks validate attempts
     auto_qa_cycle: 0          # durable: tracks QA attempts
     merge_priority: 1         # durable: merge order
-    # Pane IDs are NOT stored — on resume, panes are re-created based on phase
-inspector_state: idle         # ephemeral but lightweight — re-init on resume
+merge_state:                 # DURABLE — merge/regression 进度
+  queue: ["1-5", "2-1"]      # 有序 merge 队列
+  current_story: "1-5"       # 正在 merge/regression 的 story
+  completed: []              # 已完成 merge + regression 的 story
+panes:                       # EPHEMERAL — 当前 session 内有效，resume 时通过 tmux title 发现或重建
+  inspector: "%92"
+  utility: "%93"
+  stories:
+    "1-5": { dev: "%91" }
+inspector_state: idle         # ephemeral — re-init on resume
 ```
 
 ### Session Journal Format
