@@ -6,6 +6,7 @@ import { useSopNavigation } from '../hooks/useSopNavigation'
 import { useSopKeyboardNav } from '../hooks/useSopKeyboardNav'
 import { SopProgressBar } from './SopProgressBar'
 import { StageGuidePlaceholder } from './StageGuidePlaceholder'
+import { AnalysisView } from '@modules/analysis/components/AnalysisView'
 
 export function ProjectWorkspace(): React.JSX.Element {
   const navigate = useNavigate()
@@ -95,7 +96,11 @@ export function ProjectWorkspace(): React.JSX.Element {
 
       {/* Main content area — placeholder for Story 1.7 three-column layout */}
       <div className="flex flex-1 overflow-hidden">
-        <StageGuidePlaceholder stageKey={currentStageKey} />
+        {currentStageKey === 'requirements-analysis' && projectId ? (
+          <AnalysisView projectId={projectId} />
+        ) : (
+          <StageGuidePlaceholder stageKey={currentStageKey} />
+        )}
       </div>
     </div>
   )

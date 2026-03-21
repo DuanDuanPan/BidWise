@@ -143,7 +143,6 @@ This project uses **BMad** (Blueprint for Modern Application Development) method
 - `/bmad-sprint-status` — Check sprint status
 - `/bmad-master-control` — Parallel dev orchestration via tmux (see `.claude/skills/bmad-master-control/` for full protocol, including constitution, forbidden list, step-based workflow, inspector protocol, and watchdog)
 
-
 ## Planning Artifacts
 
 All planning documents are in `_bmad-output/planning-artifacts/`:

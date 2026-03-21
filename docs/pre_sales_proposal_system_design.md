@@ -44,21 +44,22 @@
 
 ### 2.1 关键组件说明
 
-| 组件 | 作用 | 与 MiroFish 的对应点 |
-|------|------|----------------------|
-| **RAG + 向量化** | 将招标 PDF/Word 转为向量，抽取关键需求 | 与 MiroFish 中的 `trace_graph`、[search](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/zep_tools.py#464-545) 类似 |
-| **主编 Agent** | 根据需求大纲生成 Markdown 初稿 | 对应 MiroFish 的 [ReportAgent](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/report_agent.py#864-1881) / `PlanAgent` |
-| **评审 Agents** | 多角色（甲方、评标专家、内部 PM、研发等）分别给出评审意见 | 与 MiroFish 的多 Persona ([OasisProfileGenerator](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/oasis_profile_generator.py#142-1200)) |
-| **DebateManager** | 实现 **Round‑Robin** 多轮博弈：找茬 → 辩护 → 妥协 → 仲裁 | 采用 MiroFish 的 **ReACT** 循环思考‑行动‑观察模式 |
-| **Human‑in‑the‑Loop UI** | 当冲突无法自行解决时弹出仲裁面板，供人类输入指令 | 与 MiroFish 中的 **手动干预** 机制相似，但更结构化 |
-| **资产库 (Asset Meta‑Library)** | 存放图片、表格、架构图等资产，带丰富标签与 Markdown 片段 | 与 MiroFish 的 **Zep 知识图谱** 类似，只是专注于多媒体资产 |
-| **渲染层** | 使用 `pandoc --reference-doc=company_template.docx` 将 Markdown → Word，保持公司模板样式 | 与 MiroFish 的 **Report Generation** 类似，只是输出格式不同 |
+| 组件                            | 作用                                                                                     | 与 MiroFish 的对应点                                                                                                                                     |
+| ------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RAG + 向量化**                | 将招标 PDF/Word 转为向量，抽取关键需求                                                   | 与 MiroFish 中的 `trace_graph`、[search](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/zep_tools.py#464-545) 类似                     |
+| **主编 Agent**                  | 根据需求大纲生成 Markdown 初稿                                                           | 对应 MiroFish 的 [ReportAgent](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/report_agent.py#864-1881) / `PlanAgent`                  |
+| **评审 Agents**                 | 多角色（甲方、评标专家、内部 PM、研发等）分别给出评审意见                                | 与 MiroFish 的多 Persona ([OasisProfileGenerator](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/oasis_profile_generator.py#142-1200)) |
+| **DebateManager**               | 实现 **Round‑Robin** 多轮博弈：找茬 → 辩护 → 妥协 → 仲裁                                 | 采用 MiroFish 的 **ReACT** 循环思考‑行动‑观察模式                                                                                                        |
+| **Human‑in‑the‑Loop UI**        | 当冲突无法自行解决时弹出仲裁面板，供人类输入指令                                         | 与 MiroFish 中的 **手动干预** 机制相似，但更结构化                                                                                                       |
+| **资产库 (Asset Meta‑Library)** | 存放图片、表格、架构图等资产，带丰富标签与 Markdown 片段                                 | 与 MiroFish 的 **Zep 知识图谱** 类似，只是专注于多媒体资产                                                                                               |
+| **渲染层**                      | 使用 `pandoc --reference-doc=company_template.docx` 将 Markdown → Word，保持公司模板样式 | 与 MiroFish 的 **Report Generation** 类似，只是输出格式不同                                                                                              |
 
 ---
 
 ## 3. 多轮博弈实现细节
 
 ### 3.1 轮次设计
+
 1. **Round 1 – 找茬阶段**
    - 主编 Agent 输出方案 V1.0（Markdown）。
    - 所有评审 Agents 并发读取，返回 **评审意见**（JSON：[section](file:///Volumes/Data/Work/Code/LLM/MiroFish/backend/app/services/report_agent.py#2093-2129), `suggestion`, `severity`）。
@@ -70,6 +71,7 @@
    - 若多数 Agent 已达成一致，则进入 **方案完善**；否则进入 **仲裁**。
 
 ### 3.2 结构化 Prompt 示例（主编 Agent）
+
 ```text
 You are the ProposalEditor Agent.
 Your task: incorporate the following reviewer feedback into the current proposal.
@@ -89,6 +91,7 @@ Produce:
 ```
 
 ### 3.3 仲裁机制
+
 - 当 `request_arbitration` 出现时，系统状态切换为 `PENDING_HUMAN_ARBITRATION`。
 - 前端弹出 **仲裁面板**，展示冲突双方的理由与可选方案（A/B/自定义）。
 - 人类输入指令后，系统将指令包装为 **System Override**，注入下一轮 ReACT 循环，强制执行。
@@ -98,6 +101,7 @@ Produce:
 ## 4. 渲染层与样式一致性
 
 ### 4.1 使用 Pandoc + Reference‑Doc
+
 1. **准备公司模板**：`company_template.docx`（包含所有公司标准的样式、页眉页脚、Logo、目录字段）。
 2. **转换命令**：
    ```bash
@@ -109,6 +113,7 @@ Produce:
 3. **效果**：Markdown 的 `#`、`##` 自动映射到模板中的 “标题1/标题2”，段落、列表、代码块均使用模板的正文样式，图片、表格保持原始尺寸并套用模板的表格样式。
 
 ### 4.2 若需更细粒度控制（python-docx）
+
 - 将 Markdown 转为 **JSON AST**（使用 `mistune` 或 `markdown-it-py`），在脚本中遍历节点并使用 `python-docx` 按 **书签**（Bookmark）插入内容，确保每一页的布局、页眉页脚、页码完全符合公司规范。
 
 ---
@@ -116,6 +121,7 @@ Produce:
 ## 5. 资产库（Asset Meta‑Library）
 
 ### 5.1 资产结构示例（JSON）
+
 ```json
 {
   "asset_id": "img_arch_microservice_v3",
@@ -129,30 +135,33 @@ Produce:
 ```
 
 ### 5.2 检索与注入流程
+
 1. **Agent Thought**："本章节需要系统架构图"。
 2. **Action**：调用 `search_visual_assets(query="系统架构", tags=["微服务", "高可用"])`。
 3. **Observation**：返回上述 JSON（含 `markdown_snippet`）。
 4. **Agent**：在生成章节时直接把 `markdown_snippet` 插入，随后继续撰写文字说明。
 
 ### 5.3 表格复用
+
 - 将常用的功能清单、硬件配置表等保存为 **CSV/JSON**，在需要时 **按需过滤**（如只保留满足招标要求的行），再渲染为 Markdown 表格，Pandoc 会自动转为 Word 中的正式表格（带边框、底纹）。
 
 ---
 
 ## 6. 与 MiroFish 可借鉴的技术点
 
-| MiroFish 功能 | 在本系统的对应实现 | 价值说明 |
-|---------------|-------------------|----------|
-| **Zep 知识图谱** | **资产库 + 向量化 RAG** | 为方案生成提供结构化的背景知识与可复用资产 |
-| **多 Persona（OasisProfileGenerator）** | **评审 Agents（甲方、专家、PM、研发）** | 多视角评审保证方案全方位覆盖 |
-| **ReACT 循环（思考‑行动‑观察）** | **DebateManager + ReACT** | 让 Agent 在每轮评审后主动查询、修正、重新生成，避免一次性生成错误 |
-| **冲突检测 & 人工干预** | **仲裁 UI + System Override** | 当自动协商失败时，及时让人类介入，防止死循环 |
-| **报告生成（ReportAgent）** | **渲染层（Pandoc + Template）** | 将结构化 Markdown 直接输出符合公司标准的 Word 文档 |
-| **系统日志 & 变更记录** | **变更日志 JSON** | 全程可追溯，后期审计、经验沉淀方便 |
+| MiroFish 功能                           | 在本系统的对应实现                      | 价值说明                                                          |
+| --------------------------------------- | --------------------------------------- | ----------------------------------------------------------------- |
+| **Zep 知识图谱**                        | **资产库 + 向量化 RAG**                 | 为方案生成提供结构化的背景知识与可复用资产                        |
+| **多 Persona（OasisProfileGenerator）** | **评审 Agents（甲方、专家、PM、研发）** | 多视角评审保证方案全方位覆盖                                      |
+| **ReACT 循环（思考‑行动‑观察）**        | **DebateManager + ReACT**               | 让 Agent 在每轮评审后主动查询、修正、重新生成，避免一次性生成错误 |
+| **冲突检测 & 人工干预**                 | **仲裁 UI + System Override**           | 当自动协商失败时，及时让人类介入，防止死循环                      |
+| **报告生成（ReportAgent）**             | **渲染层（Pandoc + Template）**         | 将结构化 Markdown 直接输出符合公司标准的 Word 文档                |
+| **系统日志 & 变更记录**                 | **变更日志 JSON**                       | 全程可追溯，后期审计、经验沉淀方便                                |
 
 ---
 
 ## 7. 工作流示例（端到端）
+
 1. **上传招标文件** → 系统进行 OCR → 向量化 → 关键需求抽取。
 2. **主编 Agent** 根据需求大纲生成 `proposal_v1.md`（包含占位的资产标签）。
 3. **评审 Agents** 并发给出 `feedback.json`。
@@ -164,6 +173,7 @@ Produce:
 ---
 
 ## 8. 下一步行动建议
+
 - **需求确认**：与业务方确认需要的评审角色、仲裁触发阈值。
 - **资产库建设**：先把已有的架构图、产品手册、标准表格导入并打标签。
 - **模板准备**：导出公司标准的 `company_template.docx`（确保所有样式已定义）。
