@@ -31,6 +31,11 @@ tmux split-window -t {bottom_anchor} -h "cd {path} && claude --dangerously-skip-
 tmux split-window -t {bottom_anchor} -h "cd {path} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
 ```
 
+**每次 split-window 后必须立即均衡下半区宽度：**
+```bash
+tmux select-layout -t {bottom_anchor} even-horizontal
+```
+
 **每个新建 pane 创建后必须立即启用 pipe-pane 日志：**
 ```bash
 tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'

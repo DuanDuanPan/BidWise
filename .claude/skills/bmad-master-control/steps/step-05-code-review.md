@@ -37,6 +37,7 @@ bottom_anchor: ''
    - PANE = new ✓ (fresh context)
 5. Open NEW codex sub-pane (from bottom_anchor):
    `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
+   Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
    Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
 6. Send task packet:
    ```
@@ -105,6 +106,7 @@ bottom_anchor: ''
 10. Close existing dev pane if alive
 11. Open NEW codex sub-pane (from bottom_anchor, NOT the review pane):
     `tmux split-window -t {bottom_anchor} -h "cd ../BidWise-story-{story_id} && codex ..."`
+    Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
     Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
 12. Send task packet:
     ```

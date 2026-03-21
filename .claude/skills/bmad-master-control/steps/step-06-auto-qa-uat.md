@@ -31,7 +31,7 @@ utility_pane: ''
 3. Collect all stories with phase == `auto_qa_pending`
 4. For **each** story, **simultaneously** open a codex sub-pane:
    - **Execute pre-dispatch:** LLM = codex, AUTH = L0, PANE = new
-   - Open codex sub-pane in story worktree
+   - Open codex sub-pane in story worktree; equalize after: `tmux select-layout -t {bottom_anchor} even-horizontal`
    - Check if story-scoped Playwright tests exist: `tests/e2e/stories/story-{story_id}*.spec.ts`
    - Send task packet:
      ```

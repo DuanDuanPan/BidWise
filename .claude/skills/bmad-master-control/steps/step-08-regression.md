@@ -32,6 +32,7 @@ bottom_anchor: ''
 ### Launch Regression Pane
 3. Open codex sub-pane on main (from bottom_anchor):
    `tmux split-window -t {bottom_anchor} -h "cd {project_root} && codex ..."`
+   Equalize: `tmux select-layout -t {bottom_anchor} even-horizontal`
    Enable pipe-pane: `tmux pipe-pane -t {new_pane_id} -o 'cat >> {mc_log_dir}/pane-{new_pane_id}.log'`
 4. Set regression_cycle = 0
 

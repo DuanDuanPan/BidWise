@@ -71,7 +71,10 @@ bottom_anchor: ''
    - Record: story_states[story_id] = { phase: "dev", dev_pane: pane_id, current_llm: "claude", review_cycle: 0, is_ui: true/false }
    - Update gate-state.yaml with story_states snapshot
 
-6. Output (L1): `🔨 并行开发已启动 — {batch_size} 个 Story 在独立 worktree 中开发中`
+6. Equalize bottom pane widths:
+   `tmux select-layout -t {bottom_anchor} even-horizontal`
+
+7. Output (L1): `🔨 并行开发已启动 — {batch_size} 个 Story 在独立 worktree 中开发中`
 
 ## GATE G6: worktree → monitor
 - **Assert foreach batch_stories:** `test -d ../BidWise-story-{story_id}`
