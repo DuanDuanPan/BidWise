@@ -38,9 +38,12 @@ review ←───────────────────────�
 ### Each Poll Iteration
 
 1. **Restore state:** Read gate-state.yaml → 恢复 story_states, pane registry
+   - If any `phase == dev` story has `dispatch_state ∈ {pane_opened, packet_pasted}`:
+     **do not** treat it as running dev; read `./step-03-launch-dev.md` and repair dispatch first
 2. **每轮强制刷新:** Read `../constitution.md` + `session-journal.yaml`
 3. **Inspector health check:** Verify inspector pane alive via `tmux list-panes`
    - If missing: re-initialize inspector (see `../inspector-protocol.md`)
+   - Sync live pane IDs back into gate-state via helper (`sync-runtime-panes`)
 4. **Watchdog health check:** Verify watchdog still healthy
    - Derive current generation:
      `current_generation="$(sed -n 's/^session_generation:[[:space:]]*//p' _bmad-output/implementation-artifacts/gate-state.yaml | head -n 1)"; [ -n "$current_generation" ] || current_generation=0`
@@ -49,12 +52,14 @@ review ←───────────────────────�
    - If unhealthy:
      - append `correction` entry to `session-journal.yaml`
      - If `ensure-running` still fails → HALT
+   - On healthy: sync pid / heartbeat / status back into gate-state via helper (`sync-watchdog`)
 
 5. **Poll each active story based on phase:**
 
 #### Phase: `dev`
 - Read `../completion-detection.md` if needed for detection tips
 - Capture dev_pane output, check for:
+  - `❯ [Pasted text #…]` or equivalent staged-input marker → treat as failed/incomplete dispatch, **not** as idle completion; return to Step 3 repair
   - Claude idle (❯) or MC_DONE DEV → set phase = "pending_review"
   - HALT → HALT and notify user
   - Error/crash → warn user

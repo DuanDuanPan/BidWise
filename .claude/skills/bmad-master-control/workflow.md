@@ -217,9 +217,14 @@ Check if `_bmad-output/implementation-artifacts/gate-state.yaml` exists:
      G1 PASS → step-02
      无 PASS  → step-01
 
-2. G6 PASS → 基于 story_states.phase 集合决策:
+2. G6 PASS → 基于 story_states.phase + dispatch_state 集合决策:
 
    任一 story phase 在 {dev, pending_review, review, fixing}
+     且存在 dev story 的 dispatch_state ∈ {pane_opened, packet_pasted}
+     → step-03（dispatch repair；worker pane 已存在但任务未真正提交）
+
+   任一 story phase 在 {dev, pending_review, review, fixing}
+     且所有 dev story 的 dispatch_state ∈ {packet_submitted, worker_running}
      → step-04（监控循环处理所有活跃 story）
 
    全部 story phase = done
@@ -298,6 +303,9 @@ story_states:                # DURABLE — 跨 session 有效
     #   auto_qa_pending, qa_running, uat_waiting, merged, regression, done
     review_cycle: 1           # durable: tracks fix attempts
     current_llm: codex        # durable: which LLM should be active
+    dispatch_state: worker_running
+    # dispatch_state: pane_opened | packet_pasted | packet_submitted | worker_running
+    # Step 3 恢复必须优先看 dispatch_state，不能只看 phase=dev
     is_ui: true               # durable: story attribute
     worktree_path: "../BidWise-story-1-5"  # durable: verifiable on disk
     story_file_main: "_bmad-output/implementation-artifacts/story-1-5.md"

@@ -7,6 +7,10 @@
 #   state-control.sh record-story-gate <project_root> <expected_generation> <story_id> <gate_name> <verified_by> <details>
 #   state-control.sh append-dispatch-audit <project_root> <expected_generation> <story_id> <phase> <llm> <auth> <pane> <pane_reuse_reason> <constitution_check> <constitution_detail>
 #   state-control.sh append-correction <project_root> <expected_generation> <trigger> <description> <violated_rule> <correct_action> <step> [story_id]
+#   state-control.sh register-worker-pane <project_root> <expected_generation> <story_id> <pane_id> <pane_title>
+#   state-control.sh mark-dispatch-state <project_root> <expected_generation> <story_id> <dispatch_state>
+#   state-control.sh sync-runtime-panes <project_root> <expected_generation> <utility_pane> <inspector_pane> <bottom_anchor>
+#   state-control.sh sync-watchdog <project_root> <expected_generation> <pid> <last_heartbeat> <status>
 #   state-control.sh approve-failover <project_root> <expected_generation> <gate_name> <verified_by> <details> [story_id]
 
 set -euo pipefail
@@ -83,6 +87,12 @@ end
 def print_generation(project_root)
   state = load_yaml(state_path(project_root))
   puts generation_of(state)
+end
+
+def ensure_story_state(state, story_id)
+  state["story_states"] ||= {}
+  state["story_states"][story_id] ||= {}
+  state["story_states"][story_id]
 end
 
 def init_batch_state(project_root, batch_id, batch_stories_csv, utility_pane, inspector_pane, bottom_anchor, g1_details, session_generation = 0)
@@ -198,6 +208,57 @@ def append_correction(project_root, expected_generation, trigger, description, v
   puts "correction entry ##{seq} recorded"
 end
 
+def register_worker_pane(project_root, expected_generation, story_id, pane_id, pane_title)
+  state = ensure_generation(project_root, expected_generation)
+  state["last_updated"] = now_z
+  story_state = ensure_story_state(state, story_id)
+  story_state["dev_pane"] = pane_id
+  story_state["pane_title"] = pane_title
+  # Preserve existing fields, set defaults for new stories
+  story_state["phase"] ||= "dev"
+  story_state["review_cycle"] ||= 0
+  story_state["current_llm"] ||= "claude"
+  # Step 3 is only partially complete after pane creation; dispatch_state captures that nuance.
+  story_state["dispatch_state"] ||= "pane_opened"
+  # Also register in panes.stories for quick lookup
+  state["panes"] ||= {}
+  state["panes"]["stories"] ||= {}
+  state["panes"]["stories"][story_id] = {"dev" => pane_id}
+  write_yaml(state_path(project_root), state)
+  puts "worker pane #{pane_id} registered for story #{story_id}"
+end
+
+def mark_dispatch_state(project_root, expected_generation, story_id, dispatch_state)
+  state = ensure_generation(project_root, expected_generation)
+  state["last_updated"] = now_z
+  story_state = ensure_story_state(state, story_id)
+  story_state["dispatch_state"] = dispatch_state
+  write_yaml(state_path(project_root), state)
+  puts "dispatch_state=#{dispatch_state} recorded for story #{story_id}"
+end
+
+def sync_runtime_panes(project_root, expected_generation, utility_pane, inspector_pane, bottom_anchor)
+  state = ensure_generation(project_root, expected_generation)
+  state["last_updated"] = now_z
+  state["panes"] ||= {}
+  state["panes"]["utility"] = utility_pane
+  state["panes"]["inspector"] = inspector_pane
+  state["panes"]["bottom_anchor"] = bottom_anchor
+  write_yaml(state_path(project_root), state)
+  puts "runtime panes synced"
+end
+
+def sync_watchdog(project_root, expected_generation, pid, last_heartbeat, status)
+  state = ensure_generation(project_root, expected_generation)
+  state["last_updated"] = now_z
+  state["watchdog"] ||= {}
+  state["watchdog"]["pid"] = Integer(pid)
+  state["watchdog"]["last_heartbeat"] = last_heartbeat.to_s.empty? ? nil : last_heartbeat
+  state["watchdog"]["status"] = status
+  write_yaml(state_path(project_root), state)
+  puts "watchdog synced"
+end
+
 def approve_failover(project_root, expected_generation, gate_name, verified_by, details, story_id = nil)
   state = ensure_generation(project_root, expected_generation)
   old_generation = generation_of(state)
@@ -254,6 +315,18 @@ when "append-dispatch-audit"
 when "append-correction"
   die("usage: append-correction <project_root> <expected_generation> <trigger> <description> <violated_rule> <correct_action> <step> [story_id]") unless [7, 8].include?(ARGV.length)
   append_correction(ARGV[0], ARGV[1].to_i, ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6], ARGV[7])
+when "register-worker-pane"
+  die("usage: register-worker-pane <project_root> <expected_generation> <story_id> <pane_id> <pane_title>") unless ARGV.length == 5
+  register_worker_pane(ARGV[0], ARGV[1].to_i, ARGV[2], ARGV[3], ARGV[4])
+when "mark-dispatch-state"
+  die("usage: mark-dispatch-state <project_root> <expected_generation> <story_id> <dispatch_state>") unless ARGV.length == 4
+  mark_dispatch_state(ARGV[0], ARGV[1].to_i, ARGV[2], ARGV[3])
+when "sync-runtime-panes"
+  die("usage: sync-runtime-panes <project_root> <expected_generation> <utility_pane> <inspector_pane> <bottom_anchor>") unless ARGV.length == 5
+  sync_runtime_panes(ARGV[0], ARGV[1].to_i, ARGV[2], ARGV[3], ARGV[4])
+when "sync-watchdog"
+  die("usage: sync-watchdog <project_root> <expected_generation> <pid> <last_heartbeat> <status>") unless ARGV.length == 5
+  sync_watchdog(ARGV[0], ARGV[1].to_i, ARGV[2], ARGV[3], ARGV[4])
 when "approve-failover"
   die("usage: approve-failover <project_root> <expected_generation> <gate_name> <verified_by> <details> [story_id]") unless [5, 6].include?(ARGV.length)
   approve_failover(ARGV[0], ARGV[1].to_i, ARGV[2], ARGV[3], ARGV[4], ARGV[5])

@@ -36,16 +36,13 @@ story_gates: {}
 story_states: {}
 merge_state:
   queue: []
-  current_story: 
+  current_story:
   completed: []
-panes:
-  utility: "%44"
-  inspector: "%62"
-  bottom_anchor: "%42"
+panes: {}
 inspector_state: idle
 session_generation: 0
 failover_epoch: 0
 watchdog:
   pid: 0
-  last_heartbeat: 
+  last_heartbeat:
   status: unknown

@@ -2,6 +2,8 @@
 
 **定位：审计 trail 生成器，不是防线。** 每次向 sub-pane 派发任务前，写一条 dispatch_audit entry 到 session-journal。watchdog 和 inspector 通过审计 trail 发现违规。
 
+**重要：** `dispatch_audit` 只表示“准备用这个参数派发”，不表示 worker 已经收到任务。真正的提交状态必须额外写入 `story_states[*].dispatch_state`。
+
 ## 步骤
 
 1. 确认 dispatch 参数（内部决策，不需要打印 checklist）：
@@ -17,6 +19,9 @@ tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-au
 ```
 
 3. 执行 dispatch
+   - 多行任务包发给 Claude 时，先 paste，再单独发送 `Enter`
+   - Paste 后立即记录 `dispatch_state = packet_pasted`
+   - 只有在 pane 不再显示 `❯ [Pasted text #…]` 后，才记录 `dispatch_state = packet_submitted`
 
 **FAIL 处理：** 如果 constitution_check 任一子项为 FAIL，不执行 dispatch，改为通过 helper 写 correction entry：
 

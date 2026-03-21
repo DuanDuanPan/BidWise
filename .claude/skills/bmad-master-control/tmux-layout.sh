@@ -6,7 +6,7 @@
 #   tmux-layout.sh validate-init <session> <bottom_anchor>
 #   tmux-layout.sh validate-work <session>
 #   tmux-layout.sh rebalance-bottom <session> <commander_pane>
-#   tmux-layout.sh open-worker <session> <commander_pane> <bottom_anchor> <pane_title> <workdir> <command_string>
+#   tmux-layout.sh open-worker <session> <commander_pane> <bottom_anchor> <pane_title> <workdir> <command_string> [<project_root> <expected_generation> <story_id>]
 
 set -euo pipefail
 
@@ -45,14 +45,33 @@ is_shell_command() {
   esac
 }
 
+# Find an existing bottom-layer pane by title. Returns pane_id or empty.
+find_existing_worker() {
+  local session="${1:?session required}"
+  local pane_title="${2:?pane title required}"
+  local existing_id title
+  while IFS= read -r existing_id; do
+    [[ -n "$existing_id" ]] || continue
+    title="$(get_pane_field "$existing_id" '#{pane_title}')"
+    if [[ "$title" == "$pane_title" ]]; then
+      printf '%s\n' "$existing_id"
+      return 0
+    fi
+  done < <(list_bottom_panes "$session")
+  return 1
+}
+
 set_top_titles() {
   local commander="${1:?commander pane required}"
   local inspector="${2:?inspector pane required}"
   local utility="${3:?utility pane required}"
 
   tmux select-pane -t "$commander" -T "mc-commander"
+  tmux set-option -p -t "$commander" allow-rename off
   tmux select-pane -t "$inspector" -T "mc-inspector"
+  tmux set-option -p -t "$inspector" allow-rename off
   tmux select-pane -t "$utility" -T "mc-util"
+  tmux set-option -p -t "$utility" allow-rename off
 }
 
 validate_top_titles() {
@@ -159,9 +178,21 @@ open_worker() {
   local pane_title="${4:?pane title required}"
   local workdir="${5:?workdir required}"
   local command_string="${6:?command string required}"
+  # Optional: pass project_root, expected_generation, story_id to auto-persist pane to gate-state
+  local persist_project_root="${7:-}"
+  local persist_generation="${8:-}"
+  local persist_story_id="${9:-}"
   local safe_workdir run_cmd pane_id rightmost_bottom
   local bottom_anchor_title bottom_anchor_command
   local -a bottom_panes=()
+
+  # --- Fix 4: Idempotency — if a pane with this title already exists, return it ---
+  local existing_pane
+  if existing_pane="$(find_existing_worker "$session" "$pane_title")"; then
+    echo "tmux-layout.sh: reusing existing pane $existing_pane for $pane_title" >&2
+    printf '%s\n' "$existing_pane"
+    return 0
+  fi
 
   safe_workdir="$(printf '%q' "$workdir")"
   run_cmd="cd ${safe_workdir} && ${command_string}"
@@ -186,8 +217,21 @@ open_worker() {
   fi
 
   tmux select-pane -t "$pane_id" -T "$pane_title"
+  tmux set-option -p -t "$pane_id" allow-rename off
   rebalance_bottom "$session" "$commander_pane"
-  validate_work "$session"
+
+  # --- Fix 3: validate_work is non-fatal — warn but always output pane_id ---
+  validate_work "$session" || echo "tmux-layout.sh: WARNING: validate_work failed after creating pane $pane_id" >&2
+
+  # --- Fix 2: Auto-persist pane to gate-state if optional args provided ---
+  if [[ -n "$persist_project_root" ]] && [[ -n "$persist_generation" ]] && [[ -n "$persist_story_id" ]]; then
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "${script_dir}/state-control.sh" register-worker-pane \
+      "$persist_project_root" "$persist_generation" "$persist_story_id" "$pane_id" "$pane_title" \
+      || echo "tmux-layout.sh: WARNING: failed to persist pane $pane_id to gate-state" >&2
+  fi
+
   printf '%s\n' "$pane_id"
 }
 

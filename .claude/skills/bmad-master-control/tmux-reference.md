@@ -87,7 +87,7 @@ work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{comman
 
 ```bash
 # Claude pane
-work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "claude --dangerously-skip-permissions")"
+work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "claude --dangerously-skip-permissions" "{project_root}" "${current_generation}" "{story_id}")"
 
 # Codex pane
 work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"
@@ -106,7 +106,12 @@ tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log
 # 发送任务到 pane
 tmux send-keys -t {pane_id} '命令内容' Enter
 
-# Codex 额外 Enter（确保提交）
+# 多行任务包发给 Claude：先 paste，再单独 Enter，并通过 utility pane 持久化 dispatch_state
+current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" mark-dispatch-state \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"packet_pasted\"" Enter
+tmux send-keys -t {pane_id} Enter
+
+# 若仍停在 [Pasted text]，1s 后补一个 Enter；仍未消失则禁止前进 gate
 sleep 1
 tmux send-keys -t {pane_id} Enter
 ```
@@ -173,4 +178,13 @@ tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-au
 
 # 追加 correction 条目（带 generation fencing）
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-correction \"{project_root}\" \"${current_generation}\" \"{{trigger}}\" \"{{description}}\" \"{{violated_rule}}\" \"{{correct_action}}\" \"{{step}}\" \"{{story_id}}\"" Enter
+
+# 更新 dispatch_state（Step 3 recovery-safe）
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" mark-dispatch-state \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"packet_submitted\"" Enter
+
+# 同步当前 session 的 top-layer pane IDs
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" sync-runtime-panes \"{project_root}\" \"${current_generation}\" \"{{utility_pane}}\" \"{{inspector_pane}}\" \"{{bottom_anchor}}\"" Enter
+
+# 同步 watchdog 可观测状态
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" sync-watchdog \"{project_root}\" \"${current_generation}\" \"{{pid}}\" \"{{last_heartbeat}}\" \"{{status}}\"" Enter
 ```

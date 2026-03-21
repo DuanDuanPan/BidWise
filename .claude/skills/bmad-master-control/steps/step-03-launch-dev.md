@@ -40,10 +40,11 @@ bottom_anchor: ''
    - Execute pre-dispatch (Read `../pre-dispatch-checklist.md`):
      LLM = claude, AUTH = L0, EXECUTOR = sub-pane, PANE = fresh worker slot
    - Open claude sub-pane:
-     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-dev" "../BidWise-story-{story_id}" "claude --dangerously-skip-permissions")"`
+     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-dev" "../BidWise-story-{story_id}" "claude --dangerously-skip-permissions" "{project_root}" "{current_generation}" "{story_id}")"`
    - Enable pipe-pane logging: `tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'`
+   - `register-worker-pane` 完成后，story `dispatch_state` 应为 `pane_opened`
    - Wait for Claude prompt (❯)
-   - Send task packet:
+   - Paste task packet:
      ```
      Skill: bmad-dev-story
      Goal: Implement the assigned story in this worktree only
@@ -68,7 +69,13 @@ bottom_anchor: ''
      - reference PNG dir: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{story_id}/
      - visual baseline: Story 1.4 design system + ux-design-specification
      ```
-   - Record story_states[story_id] = { phase: "dev", current_llm: "claude", review_cycle: 0, is_ui: true/false }
+   - 通过 helper 记录：`dispatch_state = "packet_pasted"`
+   - **Send a dedicated `Enter` after the multiline paste. Do not treat `❯ [Pasted text #…]` as dispatched.**
+   - Re-capture pane:
+     - If still shows `❯ [Pasted text #…]` → send one more `Enter`, wait 1s, capture again
+     - If still shows `❯ [Pasted text #…]` after retry → HALT（这是半提交态，禁止前进到 G6）
+   - Once the pane no longer shows `❯ [Pasted text #…]`, 通过 helper 记录：`dispatch_state = "packet_submitted"`
+   - 只有在 worker 已真正收到任务后，才把该 story 视为 active dev
    - Record panes.stories[story_id] = { dev: {work_pane_id} }
    - Update gate-state.yaml with generation-guarded write path（use `STATE_CONTROL_HELPER` / utility pane; do not write raw YAML directly）
 
@@ -81,13 +88,15 @@ bottom_anchor: ''
 ## GATE G6: worktree → monitor
 - **Assert foreach batch_stories:** `test -d ../BidWise-story-{story_id}`
 - **Assert foreach batch_stories:** panes.stories[story_id].dev 存在于 `tmux list-panes -s`
+- **Assert foreach batch_stories:** story_states[story_id].dispatch_state ∈ {`packet_submitted`, `worker_running`}
+- **Assert foreach batch_stories:** capture-pane 不再显示 `❯ [Pasted text #…]`
 - **On pass:** 通过 helper 记录 G6 PASS：
   `current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"; tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" record-batch-gate \"{project_root}\" \"${current_generation}\" \"G6\" \"commander\" \"worktrees created and dev panes alive\"" Enter`
 
 ## CHECKPOINT
 - Worktrees created: {list}
 - Dev panes launched: {pane_ids}
-- All story_states.phase == "dev"
+- All dev stories have dispatch_state >= `packet_submitted`
 
 ## NEXT
 Read fully and follow `./step-04-monitoring.md`
