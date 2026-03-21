@@ -9,16 +9,21 @@ import { ProjectFilter } from './ProjectFilter'
 import { ProjectCreateModal } from './ProjectCreateModal'
 import { ProjectEditModal } from './ProjectEditModal'
 import { ProjectEmptyState } from './ProjectEmptyState'
+import { useCommandPalette } from '@renderer/shared/command-palette'
+import { formatShortcut } from '@renderer/shared/lib/platform'
 import type { ProjectListItem } from '@shared/ipc-types'
 
 export function ProjectKanban(): React.JSX.Element {
   const { projects, allProjects, loading } = useProjects()
   const deleteProject = useProjectStore((s) => s.deleteProject)
   const archiveProject = useProjectStore((s) => s.archiveProject)
+  const { setOpen: setCommandPaletteOpen } = useCommandPalette()
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ProjectListItem | null>(null)
+
+  const navigateTo = useNavigate()
 
   const handleEdit = useCallback(
     (id: string) => {
@@ -70,7 +75,6 @@ export function ProjectKanban(): React.JSX.Element {
     [deleteProject]
   )
 
-  const navigateTo = useNavigate()
   const handleCardClick = useCallback(
     (id: string) => {
       navigateTo(`/project/${id}`)
@@ -93,9 +97,10 @@ export function ProjectKanban(): React.JSX.Element {
             type="text"
             icon={<SearchOutlined />}
             className="text-text-tertiary"
-            disabled
-            title="全局搜索（即将推出）"
-            aria-label="全局搜索（即将推出）"
+            onClick={() => setCommandPaletteOpen(true)}
+            title={formatShortcut('Ctrl+K')}
+            aria-label="命令面板"
+            data-testid="search-btn"
           />
           <Button
             type="text"

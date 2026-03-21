@@ -3,12 +3,15 @@ import { render, screen, cleanup } from '@testing-library/react'
 import { ConfigProvider, App as AntApp } from 'antd'
 import { HashRouter } from 'react-router-dom'
 import { ProjectKanban } from '@modules/project/components/ProjectKanban'
+import { CommandPaletteProvider } from '@renderer/shared/command-palette/CommandPaletteProvider'
 
 function Wrapper({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <ConfigProvider>
       <AntApp>
-        <HashRouter>{children}</HashRouter>
+        <HashRouter>
+          <CommandPaletteProvider>{children}</CommandPaletteProvider>
+        </HashRouter>
       </AntApp>
     </ConfigProvider>
   )

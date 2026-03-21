@@ -40,6 +40,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "antd": "5.29.3",
     "better-sqlite3": "^12.8.0",
+    "fuse.js": "^7.1.0",
     "kysely": "^0.28.13",
     "mammoth": "^1.12.0",
     "openai": "^6.32.0",

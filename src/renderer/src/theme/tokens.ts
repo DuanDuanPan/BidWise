@@ -20,6 +20,7 @@ export const bgColors = {
   global: '#fafafa',
   content: '#ffffff',
   sidebar: '#f5f5f5',
+  hover: '#f0f0f0',
 } as const
 
 // ─── 批注五色 ───
@@ -60,6 +61,8 @@ export const radius = {
 export const shadows = {
   sm: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
   md: '0 1px 4px 0 rgba(0, 0, 0, 0.05)',
+  modal:
+    '0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05)',
 } as const
 
 // ─── 动效时长 ───

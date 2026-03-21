@@ -4,6 +4,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom'
 import { antdTheme } from './theme/antdTheme'
 import { ProjectKanban, ProjectWorkspace } from '@modules/project'
 import { useAnalysisTaskMonitor } from '@modules/analysis/hooks/useAnalysis'
+import { CommandPaletteProvider } from '@renderer/shared/command-palette'
 
 function App(): React.JSX.Element {
   useAnalysisTaskMonitor()
@@ -13,10 +14,12 @@ function App(): React.JSX.Element {
       <ConfigProvider theme={antdTheme}>
         <AntApp>
           <HashRouter>
-            <Routes>
-              <Route path="/" element={<ProjectKanban />} />
-              <Route path="/project/:id" element={<ProjectWorkspace />} />
-            </Routes>
+            <CommandPaletteProvider>
+              <Routes>
+                <Route path="/" element={<ProjectKanban />} />
+                <Route path="/project/:id" element={<ProjectWorkspace />} />
+              </Routes>
+            </CommandPaletteProvider>
           </HashRouter>
         </AntApp>
       </ConfigProvider>

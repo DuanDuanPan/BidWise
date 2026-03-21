@@ -1,0 +1,5 @@
+export { CommandPaletteProvider } from './CommandPaletteProvider'
+export { useCommandPalette } from './use-command-palette'
+export { commandRegistry } from './command-registry'
+export type { Command, CommandCategory } from './types'
+export { CATEGORY_LABELS, CATEGORY_ORDER } from './types'
