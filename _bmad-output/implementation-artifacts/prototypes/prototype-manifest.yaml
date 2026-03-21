@@ -98,3 +98,29 @@ stories:
         icon: "triangle-alert 18px #FAAD14"
         text: "13px #8B6914"
     notes: "Three frames cover: (1) default workspace with stage 1 active + guide placeholder, (2) all 4 SOP states reference (done/active/warning/idle), (3) skip-stage constraint warning toast. Alpha uses white background; Beta upgrades SOP bar to dark #0C1D3A."
+
+  "1-7":
+    derived_from_template: "_bmad-output/implementation-artifacts/prototypes/prototype.pen"
+    pen_file: "_bmad-output/implementation-artifacts/prototypes/story-1-7.pen"
+    reference_exports_dir: "_bmad-output/implementation-artifacts/prototypes/story-1-7/"
+    reference_exports:
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-7/hhdOB.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-7/sC7ca.png"
+    primary_frames:
+      - "Story 1-7 — 三栏布局标准模式"
+      - "Story 1-7 — 三栏布局紧凑模式"
+    notes: "Workspace shell: left outline 240px + main min 600px + right sidebar 320px + status bar 32px."
+
+  "1-9":
+    derived_from_template: "_bmad-output/implementation-artifacts/prototypes/prototype.pen"
+    pen_file: "_bmad-output/implementation-artifacts/prototypes/story-1-9.pen"
+    reference_exports_dir: "_bmad-output/implementation-artifacts/prototypes/story-1-9/"
+    reference_exports:
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-9/auto-save-toast.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-9/command-palette-overlay.png"
+      - "_bmad-output/implementation-artifacts/prototypes/story-1-9/search-filter-state.png"
+    primary_frames:
+      - "Story 1-9 — 命令面板叠加层"
+      - "Story 1-9 — 搜索结果分组"
+      - "Story 1-9 — 自动保存提示"
+    notes: "Cmd+K command palette overlay with fuzzy search. Covers Cmd+S auto-save toast."

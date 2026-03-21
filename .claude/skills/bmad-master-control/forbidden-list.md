@@ -20,6 +20,8 @@
 
 | F12 | **禁止 `split-window -t {session}` 创建子窗格**（session 名会 split 当前活跃 pane，焦点变化后布局错乱） | 所有 `split-window` 必须用具体 pane ID 作为 `-t` 目标。创建顺序（先纵后横）：Bottom Anchor → `-t {commander_pane} -v -l 40%`；Inspector → `-t {commander_pane} -h -l 55%`；Utility → `-t {inspector_pane} -h -l 45%`；Dev/Review panes → `-t {bottom_anchor} -h` | 2026-03-20: Inspector 从 utility pane 右侧分割，而非 commander 右侧，布局与约定不符 |
 
+| F13 | **禁止依赖 Pencil MCP 自动保存 .pen 文件**（`batch_design` 只修改内存状态，`open_document` 切换不触发保存，编辑器无 save 工具） | Prototype 步骤完成后，指挥官必须执行强制落盘：`batch_get(readDepth=99)` 读取完整内存节点树 → Python `json.load` 原文件获取 version+variables → 替换 children → `json.dump` 写回 .pen 文件 → `ls -la` 验证文件大小变化 | 2026-03-21: story-1-7.pen 和 story-1-9.pen 在 batch_design 成功后文件大小未变，设计内容仅存在于 Pencil 进程内存中，sub-pane 结束后设计丢失 |
+
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 
 ## 自动更新机制

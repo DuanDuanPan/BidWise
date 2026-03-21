@@ -67,18 +67,35 @@ utility_pane: ''
 ### 2b: Add prototypes (UI stories only, where missing)
 5. For each story in `ui_stories` that lacks current prototype:
    - Execute pre-dispatch
+   - **Pre-create files** via utility_pane (Pencil MCP has no save-as):
+     ```bash
+     cp _bmad-output/implementation-artifacts/prototypes/prototype.pen _bmad-output/implementation-artifacts/prototypes/story-{id}.pen
+     mkdir -p _bmad-output/implementation-artifacts/prototypes/story-{id}/
+     ```
    - Open claude sub-pane, instruct:
-     1. **CRITICAL: Pencil MCP has no save-as.** Must pre-create file on disk first:
-        - Via utility_pane: `cp _bmad-output/implementation-artifacts/prototypes/prototype.pen _bmad-output/implementation-artifacts/prototypes/story-{id}.pen`
-        - Via utility_pane: `mkdir -p _bmad-output/implementation-artifacts/prototypes/story-{id}/`
-     2. Use `open_document` to open `story-{id}.pen` (NOT prototype.pen)
-     3. Use `batch_get` to read standard frames/tokens from prototype.pen for reference
-     4. Use `batch_design` to create story-specific frames prefixed with `Story {id} —`
-     5. Use `export_nodes` to export reference PNGs to `prototypes/story-{id}/`
-     6. Update `prototype-manifest.yaml` with story entry
-     7. Verify file size changed: `ls -la prototypes/story-{id}.pen` (must be > 0 bytes, different from original prototype.pen size if modifications were made)
-   - Verify on disk: `.pen` file + manifest entry + reference PNGs
-   - If missing → re-open pane, request save, verify once. If still missing → HALT
+     1. Use `open_document` to open `story-{id}.pen` (NOT prototype.pen — C5/F3)
+     2. Use `batch_get` to read standard frames/tokens from prototype.pen for reference
+     3. Use `batch_design` to create story-specific frames prefixed with `Story {id} —`
+     4. Use `export_nodes` to export reference PNGs to `prototypes/story-{id}/`
+     5. Complete → MC_DONE PROTOTYPE {story_id}
+   - Close sub-pane after MC_DONE
+   - **F13 强制落盘（指挥官执行，不依赖 sub-pane）：**
+     1. Commander 使用 `open_document` 打开 `story-{id}.pen`
+     2. Commander 使用 `batch_get(filePath, readDepth=99, includePathGeometry=true)` 读取完整内存节点树
+     3. 如果 batch_get 结果被持久化到文件，通过 Python 读取该文件；否则重试直到持久化
+     4. Via utility_pane 执行 Python 强制写盘：
+        ```python
+        import json
+        with open("prototypes/story-{id}.pen") as f:
+            pen = json.load(f)  # 获取 version + variables
+        pen["children"] = in_memory_children  # 替换为内存中的节点树
+        with open("prototypes/story-{id}.pen", "w") as f:
+            json.dump(pen, f, ensure_ascii=False, indent=2)
+        ```
+     5. 验证文件大小变化：`ls -la prototypes/story-{id}.pen`（必须 > prototype.pen 大小）
+   - Update `prototype-manifest.yaml` with story entry (via utility_pane)
+   - Verify on disk: `.pen` 文件大小已变 + manifest entry + reference PNGs
+   - If verify fails → HALT
 
 ### GATE G3: prototype → validate
 - **Assert foreach ui_stories:** `test -f prototypes/story-{id}.pen`
