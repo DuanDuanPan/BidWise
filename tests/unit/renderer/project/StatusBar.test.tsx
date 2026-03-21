@@ -28,4 +28,9 @@ describe('@story-1-7 StatusBar', () => {
     render(<StatusBar />)
     expect(screen.queryByTestId('status-sop-stage')).not.toBeInTheDocument()
   })
+
+  it('@p1 renders leftExtra content when provided', () => {
+    render(<StatusBar leftExtra={<span data-testid="left-extra">自动保存</span>} />)
+    expect(screen.getByTestId('left-extra')).toHaveTextContent('自动保存')
+  })
 })

@@ -2,9 +2,10 @@ import { CheckCircleOutlined, DashboardOutlined, FileTextOutlined } from '@ant-d
 
 interface StatusBarProps {
   currentStageName?: string
+  leftExtra?: React.ReactNode
 }
 
-export function StatusBar({ currentStageName }: StatusBarProps): React.JSX.Element {
+export function StatusBar({ currentStageName, leftExtra }: StatusBarProps): React.JSX.Element {
   return (
     <div
       role="status"
@@ -17,8 +18,9 @@ export function StatusBar({ currentStageName }: StatusBarProps): React.JSX.Eleme
       }}
       data-testid="status-bar"
     >
-      {/* Left: metrics */}
+      {/* Left: extra content + metrics */}
       <div className="flex items-center gap-4">
+        {leftExtra}
         <span
           className="text-caption flex items-center gap-1"
           style={{ color: 'var(--color-text-tertiary)' }}

@@ -8,6 +8,7 @@ vi.mock('electron', () => ({
   },
   ipcRenderer: {
     invoke: vi.fn(),
+    sendSync: vi.fn(),
     on: vi.fn(),
     removeListener: vi.fn(),
   },
@@ -79,6 +80,10 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'analysisUpdateRequirement',
       'analysisUpdateScoringModel',
       'analysisConfirmScoringModel',
+      'documentLoad',
+      'documentSave',
+      'documentSaveSync',
+      'documentGetMetadata',
       'onTaskProgress',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)

@@ -23,6 +23,7 @@ import type {
   UpdateScoringModelInput,
   ConfirmScoringModelInput,
 } from './analysis-types'
+import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 
 export type SuccessResponse<T> = {
   success: true
@@ -72,6 +73,19 @@ export type CreateProjectInput = {
   proposalType?: string
 }
 
+export type DocumentSaveInput = {
+  projectId: string
+  content: string
+}
+
+export type DocumentSaveOutput = {
+  lastSavedAt: string
+}
+
+export type DocumentSaveSyncInput = DocumentSaveInput & {
+  rootPath: string
+}
+
 export type UpdateProjectInput = Partial<
   Pick<
     ProjectRecord,
@@ -101,6 +115,10 @@ export const IPC_CHANNELS = {
   ANALYSIS_UPDATE_REQUIREMENT: 'analysis:update-requirement',
   ANALYSIS_UPDATE_SCORING_MODEL: 'analysis:update-scoring-model',
   ANALYSIS_CONFIRM_SCORING_MODEL: 'analysis:confirm-scoring-model',
+  DOCUMENT_LOAD: 'document:load',
+  DOCUMENT_SAVE: 'document:save',
+  DOCUMENT_SAVE_SYNC: 'document:save-sync',
+  DOCUMENT_GET_METADATA: 'document:get-metadata',
 } as const
 
 /** Filter for task:list queries */
@@ -136,6 +154,9 @@ export type IpcChannelMap = {
   'analysis:update-requirement': { input: UpdateRequirementInput; output: RequirementItem }
   'analysis:update-scoring-model': { input: UpdateScoringModelInput; output: ScoringModel }
   'analysis:confirm-scoring-model': { input: ConfirmScoringModelInput; output: ScoringModel }
+  'document:load': { input: { projectId: string }; output: ProposalDocument }
+  'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
+  'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
@@ -178,9 +199,13 @@ export type PreloadEventApi = {
   onTaskProgress: (callback: (event: TaskProgressEvent) => void) => () => void
 }
 
+export type PreloadSyncApi = {
+  documentSaveSync: (input: DocumentSaveSyncInput) => ApiResponse<DocumentSaveOutput>
+}
+
 // --- Combined API type: request-response + event listeners ---
 
-export type FullPreloadApi = PreloadApi & PreloadEventApi
+export type FullPreloadApi = PreloadApi & PreloadEventApi & PreloadSyncApi
 
 // --- IPC Error 类型（供 renderer 端消费） ---
 
