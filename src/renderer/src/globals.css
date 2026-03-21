@@ -106,6 +106,22 @@
       animation: none;
     }
   }
+
+  /* 紧凑模式 flyout 滑入动画 */
+  @keyframes flyout-slide-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      --duration-panel: 0ms;
+    }
+  }
 }
 
 /* 排版层级 */

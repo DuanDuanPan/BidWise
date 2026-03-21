@@ -4,9 +4,16 @@ import { useNavigate } from 'react-router-dom'
 import { useCurrentProject } from '../hooks/useCurrentProject'
 import { useSopNavigation } from '../hooks/useSopNavigation'
 import { useSopKeyboardNav } from '../hooks/useSopKeyboardNav'
+import { useWorkspaceLayout } from '../hooks/useWorkspaceLayout'
+import { useWorkspaceKeyboard } from '../hooks/useWorkspaceKeyboard'
 import { SopProgressBar } from './SopProgressBar'
 import { StageGuidePlaceholder } from './StageGuidePlaceholder'
 import { AnalysisView } from '@modules/analysis/components/AnalysisView'
+import { WorkspaceLayout } from './WorkspaceLayout'
+import { OutlinePanel } from './OutlinePanel'
+import { AnnotationPanel } from './AnnotationPanel'
+import { StatusBar } from './StatusBar'
+import { SOP_STAGES } from '../types'
 
 export function ProjectWorkspace(): React.JSX.Element {
   const navigate = useNavigate()
@@ -18,6 +25,12 @@ export function ProjectWorkspace(): React.JSX.Element {
   )
 
   useSopKeyboardNav(navigateToStage)
+
+  const { outlineCollapsed, sidebarCollapsed, isCompact, toggleOutline, toggleSidebar } =
+    useWorkspaceLayout()
+  useWorkspaceKeyboard(toggleSidebar, toggleOutline)
+
+  const currentStageName = SOP_STAGES.find((s) => s.key === currentStageKey)?.label
 
   if (loading && !currentProject) {
     return (
@@ -94,14 +107,25 @@ export function ProjectWorkspace(): React.JSX.Element {
         onStageClick={navigateToStage}
       />
 
-      {/* Main content area — placeholder for Story 1.7 three-column layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {currentStageKey === 'requirements-analysis' && projectId ? (
-          <AnalysisView projectId={projectId} />
-        ) : (
-          <StageGuidePlaceholder stageKey={currentStageKey} />
-        )}
-      </div>
+      {/* Three-column workspace layout */}
+      <WorkspaceLayout
+        left={<OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline} />}
+        center={
+          currentStageKey === 'requirements-analysis' && projectId ? (
+            <AnalysisView projectId={projectId} />
+          ) : (
+            <StageGuidePlaceholder stageKey={currentStageKey} />
+          )
+        }
+        right={
+          <AnnotationPanel
+            collapsed={sidebarCollapsed}
+            isCompact={isCompact}
+            onToggle={toggleSidebar}
+          />
+        }
+        statusBar={<StatusBar currentStageName={currentStageName} />}
+      />
     </div>
   )
 }
