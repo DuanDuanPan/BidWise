@@ -9,9 +9,13 @@ type ActiveStageKey = Exclude<SopStageKey, 'not-started'>
  * Alt+2=方案设计(阶段2), Alt+3=方案撰写(阶段3), ..., Alt+6=交付归档(阶段6)。
  * 阶段 1（需求分析）为进入工作空间时的默认激活阶段，无快捷键。
  */
-export function useSopKeyboardNav(navigateToStage: (key: ActiveStageKey) => void): void {
+export function useSopKeyboardNav(
+  navigateToStage: (key: ActiveStageKey) => void,
+  disabled?: boolean
+): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
+      if (disabled) return
       if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
 
       const num = parseInt(e.key, 10)
@@ -26,5 +30,5 @@ export function useSopKeyboardNav(navigateToStage: (key: ActiveStageKey) => void
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [navigateToStage])
+  }, [navigateToStage, disabled])
 }

@@ -1,6 +1,12 @@
 import { Spin, Result, Button } from 'antd'
-import { ArrowLeftOutlined, SettingOutlined, SearchOutlined } from '@ant-design/icons'
+import {
+  ArrowLeftOutlined,
+  SettingOutlined,
+  SearchOutlined,
+  FileSearchOutlined,
+} from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useCurrentProject } from '../hooks/useCurrentProject'
 import { useSopNavigation } from '../hooks/useSopNavigation'
 import { useSopKeyboardNav } from '../hooks/useSopKeyboardNav'
@@ -13,6 +19,8 @@ import { WorkspaceLayout } from './WorkspaceLayout'
 import { OutlinePanel } from './OutlinePanel'
 import { AnnotationPanel } from './AnnotationPanel'
 import { StatusBar } from './StatusBar'
+import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
+import { formatShortcut } from '@renderer/shared/lib/platform'
 import { SOP_STAGES } from '../types'
 
 export function ProjectWorkspace(): React.JSX.Element {
@@ -24,7 +32,45 @@ export function ProjectWorkspace(): React.JSX.Element {
     currentProject?.sopStage
   )
 
-  useSopKeyboardNav(navigateToStage)
+  const {
+    open: commandPaletteOpen,
+    setOpen: setCommandPaletteOpen,
+    registerCommand,
+    unregisterCommand,
+  } = useCommandPalette()
+
+  useSopKeyboardNav(navigateToStage, commandPaletteOpen)
+
+  // Temporarily override the global stage stubs while the workspace route is mounted.
+  useEffect(() => {
+    const previousCommands = new Map<string, ReturnType<typeof commandRegistry.getCommand>>()
+
+    for (const stage of SOP_STAGES) {
+      const id = `command-palette:stage-${stage.key}`
+      previousCommands.set(id, commandRegistry.getCommand(id))
+      registerCommand({
+        id,
+        label: `${stage.label}阶段`,
+        category: 'navigation',
+        keywords: [stage.label, stage.shortLabel, stage.key, `阶段${stage.stageNumber}`],
+        icon: <FileSearchOutlined />,
+        shortcut: stage.altKey ? formatShortcut(`Alt+${stage.altKey}`) : undefined,
+        action: () => navigateToStage(stage.key),
+      })
+    }
+
+    return () => {
+      for (const stage of SOP_STAGES) {
+        const id = `command-palette:stage-${stage.key}`
+        const previousCommand = previousCommands.get(id)
+        if (previousCommand) {
+          registerCommand(previousCommand)
+          continue
+        }
+        unregisterCommand(id)
+      }
+    }
+  }, [navigateToStage, registerCommand, unregisterCommand])
 
   const { outlineCollapsed, sidebarCollapsed, isCompact, toggleOutline, toggleSidebar } =
     useWorkspaceLayout()
@@ -85,9 +131,10 @@ export function ProjectWorkspace(): React.JSX.Element {
             type="text"
             icon={<SearchOutlined />}
             className="text-text-tertiary"
-            disabled
-            title="全局搜索（即将推出）"
-            aria-label="全局搜索（即将推出）"
+            onClick={() => setCommandPaletteOpen(true)}
+            title={formatShortcut('Ctrl+K')}
+            aria-label="命令面板"
+            data-testid="search-btn"
           />
           <Button
             type="text"

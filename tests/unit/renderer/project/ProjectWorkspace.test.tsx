@@ -1,8 +1,11 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { ConfigProvider, App as AntApp } from 'antd'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { useState } from 'react'
 import { ProjectWorkspace } from '@modules/project/components/ProjectWorkspace'
+import { CommandPaletteProvider } from '@renderer/shared/command-palette/CommandPaletteProvider'
+import { commandRegistry } from '@renderer/shared/command-palette'
 import { useProjectStore } from '@renderer/stores'
 
 const mockNavigate = vi.fn()
@@ -33,9 +36,44 @@ function renderWorkspace(projectId = 'p1'): void {
     <ConfigProvider>
       <AntApp>
         <MemoryRouter initialEntries={[`/project/${projectId}`]}>
-          <Routes>
-            <Route path="/project/:id" element={<ProjectWorkspace />} />
-          </Routes>
+          <CommandPaletteProvider>
+            <Routes>
+              <Route path="/project/:id" element={<ProjectWorkspace />} />
+            </Routes>
+          </CommandPaletteProvider>
+        </MemoryRouter>
+      </AntApp>
+    </ConfigProvider>
+  )
+}
+
+function WorkspaceLifecycleHarness(): React.JSX.Element {
+  const [showWorkspace, setShowWorkspace] = useState(true)
+
+  return (
+    <>
+      <button data-testid="hide-workspace" onClick={() => setShowWorkspace(false)}>
+        Hide workspace
+      </button>
+      {showWorkspace ? (
+        <Routes>
+          <Route path="/project/:id" element={<ProjectWorkspace />} />
+        </Routes>
+      ) : (
+        <div data-testid="workspace-hidden" />
+      )}
+    </>
+  )
+}
+
+function renderWorkspaceLifecycle(projectId = 'p1'): void {
+  render(
+    <ConfigProvider>
+      <AntApp>
+        <MemoryRouter initialEntries={[`/project/${projectId}`]}>
+          <CommandPaletteProvider>
+            <WorkspaceLifecycleHarness />
+          </CommandPaletteProvider>
         </MemoryRouter>
       </AntApp>
     </ConfigProvider>
@@ -140,6 +178,21 @@ describe('@story-1-6 ProjectWorkspace', () => {
     renderWorkspace()
     const errorView = await screen.findByTestId('workspace-error')
     expect(errorView).toBeInTheDocument()
+  })
+
+  it('@p0 restores default stage commands after workspace unmounts', async () => {
+    renderWorkspaceLifecycle()
+    await screen.findByTestId('project-workspace')
+
+    expect(commandRegistry.getCommand('command-palette:stage-requirements-analysis')).toBeDefined()
+
+    fireEvent.click(screen.getByTestId('hide-workspace'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-hidden')).toBeInTheDocument()
+    })
+
+    expect(commandRegistry.getCommand('command-palette:stage-requirements-analysis')).toBeDefined()
   })
 })
 
