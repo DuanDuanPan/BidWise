@@ -49,6 +49,11 @@ export type ProjectListItem = Pick<
   'id' | 'name' | 'customerName' | 'industry' | 'deadline' | 'sopStage' | 'status' | 'updatedAt'
 >
 
+export type ProjectWithPriority = ProjectListItem & {
+  priorityScore: number
+  nextAction: string
+}
+
 export type CreateProjectInput = {
   name: string
   rootPath?: string
@@ -72,6 +77,7 @@ export const IPC_CHANNELS = {
   PROJECT_UPDATE: 'project:update',
   PROJECT_DELETE: 'project:delete',
   PROJECT_ARCHIVE: 'project:archive',
+  PROJECT_LIST_WITH_PRIORITY: 'project:list-with-priority',
   AGENT_EXECUTE: 'agent:execute',
   AGENT_STATUS: 'agent:status',
   TASK_LIST: 'task:list',
@@ -101,6 +107,7 @@ export type IpcChannelMap = {
   }
   'project:delete': { input: string; output: void }
   'project:archive': { input: string; output: ProjectRecord }
+  'project:list-with-priority': { input: void; output: ProjectWithPriority[] }
   'agent:execute': { input: AgentExecuteRequest; output: AgentExecuteResponse }
   'agent:status': { input: string; output: AgentStatus }
   'task:list': { input: TaskFilter | void; output: TaskRecord[] }

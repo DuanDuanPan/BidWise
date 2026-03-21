@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useCurrentProject } from '../hooks/useCurrentProject'
+import { useContextRestore } from '../hooks/useContextRestore'
 import { useSopNavigation } from '../hooks/useSopNavigation'
 import { useSopKeyboardNav } from '../hooks/useSopKeyboardNav'
 import { useWorkspaceLayout } from '../hooks/useWorkspaceLayout'
@@ -27,10 +28,31 @@ export function ProjectWorkspace(): React.JSX.Element {
   const navigate = useNavigate()
   const { projectId, currentProject, loading, error } = useCurrentProject()
 
+  const { saveContext, restoreContext } = useContextRestore()
+
   const { currentStageKey, stageStatuses, navigateToStage } = useSopNavigation(
     projectId,
     currentProject?.sopStage
   )
+
+  // Restore context on mount (session-level cache, non-persistent)
+  useEffect(() => {
+    if (projectId) {
+      restoreContext(projectId)
+    }
+  }, [projectId, restoreContext])
+
+  // Save context on unmount
+  useEffect(() => {
+    return () => {
+      if (projectId && currentStageKey) {
+        saveContext(projectId, {
+          sopStage: currentStageKey,
+          lastVisitedAt: new Date().toISOString(),
+        })
+      }
+    }
+  }, [projectId, currentStageKey, saveContext])
 
   const {
     open: commandPaletteOpen,

@@ -30,6 +30,8 @@ const requestApi = {
   projectArchive: (projectId: IpcChannelMap['project:archive']['input']) =>
     typedInvoke(IPC_CHANNELS.PROJECT_ARCHIVE, projectId),
 
+  projectListWithPriority: () => typedInvoke(IPC_CHANNELS.PROJECT_LIST_WITH_PRIORITY),
+
   agentExecute: (input: IpcChannelMap['agent:execute']['input']) =>
     typedInvoke(IPC_CHANNELS.AGENT_EXECUTE, input),
 

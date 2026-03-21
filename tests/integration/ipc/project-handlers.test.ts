@@ -11,6 +11,7 @@ import type {
   UpdateProjectInput,
   ApiResponse,
   ProjectRecord,
+  ProjectWithPriority,
 } from '@shared/ipc-types'
 
 const migrations: Record<string, Migration> = {
@@ -95,6 +96,7 @@ describe('IPC project handlers (integration)', () => {
         IPC_CHANNELS.PROJECT_UPDATE,
         IPC_CHANNELS.PROJECT_DELETE,
         IPC_CHANNELS.PROJECT_ARCHIVE,
+        IPC_CHANNELS.PROJECT_LIST_WITH_PRIORITY,
       ]
       for (const channel of expectedChannels) {
         expect(registeredHandlers.has(channel), `missing handler for ${channel}`).toBe(true)
@@ -103,7 +105,7 @@ describe('IPC project handlers (integration)', () => {
 
     it('should register handlers with correct channel name format (domain:action)', () => {
       for (const channel of registeredHandlers.keys()) {
-        expect(channel).toMatch(/^project:\w+$/)
+        expect(channel).toMatch(/^project:[\w-]+$/)
       }
     })
   })
@@ -148,6 +150,62 @@ describe('IPC project handlers (integration)', () => {
       // Delete
       const deleteRes = await invoke<ApiResponse<null>>(IPC_CHANNELS.PROJECT_DELETE, projectId)
       expect(deleteRes.success).toBe(true)
+    })
+  })
+
+  describe('project:list-with-priority through real DB', () => {
+    it('should return priority-sorted active projects', async () => {
+      // Create two active projects with different stages
+      await invoke<ApiResponse<ProjectRecord>>(IPC_CHANNELS.PROJECT_CREATE, {
+        name: '项目A',
+        customerName: '客户A',
+      } satisfies CreateProjectInput)
+
+      await invoke<ApiResponse<ProjectRecord>>(IPC_CHANNELS.PROJECT_CREATE, {
+        name: '项目B',
+        customerName: '客户B',
+      } satisfies CreateProjectInput)
+
+      const res = await invoke<ApiResponse<ProjectWithPriority[]>>(
+        IPC_CHANNELS.PROJECT_LIST_WITH_PRIORITY
+      )
+      expect(res.success).toBe(true)
+      if (res.success) {
+        expect(res.data.length).toBe(2)
+        for (const item of res.data) {
+          expect(item).toHaveProperty('priorityScore')
+          expect(item).toHaveProperty('nextAction')
+          expect(typeof item.priorityScore).toBe('number')
+          expect(typeof item.nextAction).toBe('string')
+        }
+      }
+    })
+
+    it('should exclude archived projects from priority list', async () => {
+      const createRes = await invoke<ApiResponse<ProjectRecord>>(IPC_CHANNELS.PROJECT_CREATE, {
+        name: '归档项目',
+      } satisfies CreateProjectInput)
+      const id = createRes.success ? createRes.data.id : ''
+
+      await invoke<ApiResponse<ProjectRecord>>(IPC_CHANNELS.PROJECT_ARCHIVE, id)
+
+      const res = await invoke<ApiResponse<ProjectWithPriority[]>>(
+        IPC_CHANNELS.PROJECT_LIST_WITH_PRIORITY
+      )
+      expect(res.success).toBe(true)
+      if (res.success) {
+        expect(res.data.find((p) => p.id === id)).toBeUndefined()
+      }
+    })
+
+    it('should return empty array when no active projects', async () => {
+      const res = await invoke<ApiResponse<ProjectWithPriority[]>>(
+        IPC_CHANNELS.PROJECT_LIST_WITH_PRIORITY
+      )
+      expect(res.success).toBe(true)
+      if (res.success) {
+        expect(res.data).toEqual([])
+      }
     })
   })
 
