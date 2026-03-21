@@ -26,9 +26,26 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
    然后读取 `_bmad-output/implementation-artifacts/gate-report-G{N}.md`，独立验证磁盘/git 状态，输出结论 + 逐项 PASS/FAIL。
 
    **输出格式（严格遵守）：**
-   - 拒绝时输出：`REJECT → HALT` + 拒绝原因（不重启，问题优先）
+   - 拒绝时输出（必须包含逐项清单，禁止裸 REJECT）：
+     ```
+     REJECT → HALT
+     FAILED: [具体失败的 assert 描述]
+     PASSED: [通过的 assert 列表]
+     REASON: [一句话总结拒绝原因]
+     ```
    - 通过且 restart-eligible.yaml **不存在**时输出：`APPROVE → L0 AUTO-EXECUTE`
    - 通过且 restart-eligible.yaml **存在**时输出：`APPROVE → SESSION-RESTART`，然后执行下方 SESSION-RESTART 协议
+
+   **「工作区干净」定义（适用于所有 gate 审查）：**
+   `git status --short` 输出中排除以下运行时追踪文件后无其他变更：
+   - `_bmad-output/implementation-artifacts/gate-state.yaml`
+   - `_bmad-output/implementation-artifacts/session-journal.yaml`
+   - `_bmad-output/implementation-artifacts/gate-report-*.md`
+   - `_bmad-output/implementation-artifacts/watchdog-*`
+   - `_bmad-output/implementation-artifacts/restart-eligible.yaml`
+
+   **batch commit 验证规则（适用于 G5）：**
+   batch commit 只需存在于 `git log`（通过 commit SHA 或 commit message 中的 story IDs 匹配）。HEAD 可能因后续 housekeeping commit（gitignore 更新、文档入库等）而推移，这不构成拒绝理由。关键验证点是 batch story 文件在当前 HEAD 中完整存在且内容未被后续 commit 破坏。
 
 2. **行为监察**（被动+触发）
    收到 WATCHDOG ALERT 时，读取以下文件验证违规是否属实：
@@ -79,6 +96,27 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
 - 发现违规必须立即 REJECT/VIOLATION，不做妥协
 - 你不参与任何执行工作
 - 同类违规在本 batch 出现第 3 次 → 输出 ESCALATE 建议 HALT
+
+你的审查标准（必须遵守）：
+
+1. **REJECT 必须附带逐项清单：**
+   禁止输出裸 `REJECT → HALT`。必须列出 FAILED/PASSED/REASON：
+   ```
+   REJECT → HALT
+   FAILED: [具体失败的 assert 及证据]
+   PASSED: [通过的 assert 列表]
+   REASON: [一句话总结]
+   ```
+
+2. **「工作区干净」定义：**
+   `git status --short` 排除以下运行时文件后无其他变更：
+   gate-state.yaml, session-journal.yaml, gate-report-*.md, watchdog-*, restart-eligible.yaml
+   （均在 `_bmad-output/implementation-artifacts/` 下）
+
+3. **batch commit 验证规则（G5）：**
+   batch commit 只需存在于 `git log`（通过 SHA 或 message 中的 story IDs 匹配）。
+   HEAD 可能因后续 housekeeping commit 而推移，这不构成拒绝理由。
+   关键验证点：batch story 文件在当前 HEAD 中完整存在且内容未被后续 commit 破坏。
 
 请确认就绪，输出 'INSPECTOR READY' 开始驻场。
 ```

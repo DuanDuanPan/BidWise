@@ -165,7 +165,7 @@ utility_pane: ''
 12. Close pane
 
 ### GATE G5 (Inspector): batch commit → worktree
-- Self-check: `git log -1` 包含 batch story IDs, story files 全存在, `git status` 干净
+- Self-check: batch commit 存在于 `git log`（不要求 HEAD，后续 housekeeping commit 不影响）, story files 全存在, `git status` 干净（排除运行时文件，见下方定义）
 - **Inspector gate:**
   - 写入 gate-report-G5.md (通过 utility_pane)
   - 发送审查请求到 inspector_pane: "请审查 Gate G5"

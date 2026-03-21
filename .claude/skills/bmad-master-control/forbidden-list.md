@@ -24,6 +24,8 @@
 
 | F14 | **禁止在 mixed window（上层控制区 + 下层工作区）上调用 `tmux select-layout`** | 工作层均衡只能使用 bottom-only `resize-pane -x` 方案；每次 split / kill / resize 后必须用 `pane_top` / `pane_left` 做几何校验 | 2026-03-21: `select-layout -t {bottom_anchor} even-horizontal` 把整窗 pane 拉平成同一水平行，误导指挥官认为初始化布局错误并触发重建 |
 
+| F15 | **禁止 G5 要求 HEAD 等于 batch commit**（batch commit 之后可能有合法 housekeeping commit 如 gitignore、文档入库等） | G5 验证 batch commit 只需确认其存在于 `git log` 且 story 文件在当前 HEAD 完整未被破坏。`git status` 干净的判定须排除运行时追踪文件（gate-state.yaml, session-journal.yaml, gate-report-*.md, watchdog-*, restart-eligible.yaml） | 2026-03-21: Inspector 因 HEAD=de0e3d6（gitignore commit）≠ batch commit 109b0e1 而 REJECT G5，实际 story 文件完整无损 |
+
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 
 ## 自动更新机制
