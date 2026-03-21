@@ -142,3 +142,93 @@ describe('@story-1-6 ProjectWorkspace', () => {
     expect(errorView).toBeInTheDocument()
   })
 })
+
+describe('@story-1-7 ProjectWorkspace three-column layout', () => {
+  let originalInnerWidth: number
+
+  beforeEach(() => {
+    originalInnerWidth = window.innerWidth
+    // Set standard mode width so three-column layout renders fully
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: 1600,
+    })
+    useProjectStore.setState({
+      currentProject: null,
+      loading: false,
+      error: null,
+      projects: [],
+    })
+    vi.stubGlobal('api', {
+      projectGet: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
+      projectUpdate: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
+      projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      projectCreate: vi.fn(),
+      projectDelete: vi.fn(),
+      projectArchive: vi.fn(),
+    })
+    mockNavigate.mockClear()
+  })
+  afterEach(() => {
+    cleanup()
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: originalInnerWidth,
+    })
+  })
+
+  it('@p0 renders three-column layout with all panels', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    expect(screen.getByTestId('workspace-layout')).toBeInTheDocument()
+    expect(screen.getByTestId('outline-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('annotation-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('status-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-main')).toBeInTheDocument()
+  })
+
+  it('@p0 renders stage guide placeholder inside workspace layout', async () => {
+    renderWorkspace()
+    const guide = await screen.findByTestId('stage-guide-placeholder')
+    expect(guide).toBeInTheDocument()
+  })
+
+  it('@p0 renders SOP progress bar and status bar together', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    expect(screen.getByTestId('sop-progress-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('status-bar')).toBeInTheDocument()
+  })
+
+  it('@p1 outline panel has complementary role', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    const outline = screen.getByTestId('outline-panel')
+    expect(outline).toHaveAttribute('role', 'complementary')
+    expect(outline).toHaveAttribute('aria-label', '文档大纲')
+  })
+
+  it('@p1 annotation panel has complementary role', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    const annotation = screen.getByTestId('annotation-panel')
+    expect(annotation).toHaveAttribute('role', 'complementary')
+    expect(annotation).toHaveAttribute('aria-label', '智能批注')
+  })
+
+  it('@p1 status bar has status role', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    const statusBar = screen.getByTestId('status-bar')
+    expect(statusBar).toHaveAttribute('role', 'status')
+    expect(statusBar).toHaveAttribute('aria-label', '项目状态栏')
+  })
+
+  it('@p1 status bar shows current SOP stage name', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    expect(screen.getByTestId('status-sop-stage')).toHaveTextContent('需求分析')
+  })
+})
