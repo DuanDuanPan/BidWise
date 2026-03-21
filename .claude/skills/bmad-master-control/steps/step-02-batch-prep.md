@@ -142,9 +142,9 @@ utility_pane: ''
 - **Inspector gate:**
   - 写入 gate-report-G5.md (通过 utility_pane)
   - 发送审查请求到 inspector_pane: "请审查 Gate G5"
-  - 轮询 inspector_pane 直到 APPROVE 或 REJECT
+  - 轮询 inspector_pane 直到 `APPROVE → L0 AUTO-EXECUTE` 或 `REJECT → HALT`
   - REJECT → HALT
-- **On pass:** 更新 gate-state.yaml G5 PASS (verified_by: inspector)
+- **On `APPROVE → L0 AUTO-EXECUTE`:** 更新 gate-state.yaml G5 PASS (verified_by: inspector)，**立即读取 step-03 继续执行，不通知用户、不等待确认（C3-L0 + F5）**
 
 ## CHECKPOINT
 - 所有 story 文件已创建/确认

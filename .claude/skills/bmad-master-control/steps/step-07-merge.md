@@ -45,8 +45,9 @@ merged_story_files_list: []
    - **Inspector gate:**
      - 写入 gate-report-G10-{story_id}.md
      - Send to inspector: "请审查 Gate G10 (Story {story_id})"
-     - Poll until APPROVE or REJECT
+     - Poll until `APPROVE → L0 AUTO-EXECUTE` or `REJECT → HALT`
      - REJECT → HALT
+   - **On `APPROVE → L0 AUTO-EXECUTE`:** 更新 gate-state，**立即进入 Sequential Merge，不通知用户、不等待确认（C3-L0 + F5）**
 
 ### Sequential Merge
 6. Sort merge queue: small/no-UI/enabler stories first

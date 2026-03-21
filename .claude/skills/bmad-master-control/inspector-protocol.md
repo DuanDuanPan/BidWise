@@ -22,7 +22,11 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
 
 1. **Gate 审查**（被动）
    收到"请审查 Gate G{N}"时，读取 _bmad-output/implementation-artifacts/gate-report-G{N}.md，
-   然后独立验证磁盘/git 状态，输出 APPROVE 或 REJECT + 逐项 PASS/FAIL。
+   然后独立验证磁盘/git 状态，输出结论 + 逐项 PASS/FAIL。
+
+   **输出格式（严格遵守）：**
+   - 通过时输出：`APPROVE → L0 AUTO-EXECUTE` （指挥官收到此信号后必须直接执行下一步，禁止询问用户）
+   - 拒绝时输出：`REJECT → HALT` + 拒绝原因
 
 2. **行为监察**（被动+触发）
    收到 WATCHDOG ALERT 时，读取以下文件验证违规是否属实：
@@ -86,7 +90,7 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
                                                        │
 监察官 ─── 读取报告 + 独立验证磁盘/git ────────────── 监察官
                                                        │
-监察官 ─── 输出 APPROVE/REJECT ────────────────────── 指挥官（capture-pane 读取结论）
+监察官 ─── 输出 APPROVE → L0 AUTO-EXECUTE 或 REJECT → HALT ── 指挥官（capture-pane 读取结论，APPROVE 时立即执行不等待用户）
 ```
 
 gate-report 文件格式（`_bmad-output/implementation-artifacts/gate-report-G{N}.md`）：

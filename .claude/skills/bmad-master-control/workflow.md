@@ -211,6 +211,8 @@ After initialization, read and follow the appropriate step file:
 
 **Enforcement rules:** Each gate must execute (C6). REJECT = no forward. Inspector gates (G5/G10) cannot be self-certified. Gate state persists to `gate-state.yaml` for cross-session resumption.
 
+**Inspector APPROVE 协议：** Inspector 输出 `APPROVE → L0 AUTO-EXECUTE` 时，指挥官**必须立即执行下一步**，不输出状态、不等待用户、不询问确认。该信号等同于 L0 直接执行授权（C3 + F5）。
+
 ---
 
 ## SHARED DEFINITIONS
