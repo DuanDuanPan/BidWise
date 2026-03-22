@@ -63,7 +63,7 @@ development_status:
   2-2-enabler-agent-orchestrator-task-queue: done
   2-3-tender-import-async-parsing: done
   2-4-ocr-recognition-correction: backlog
-  2-5-requirement-extraction-scoring-model: ready-for-dev
+  2-5-requirement-extraction-scoring-model: done
   2-6-mandatory-item-detection: backlog
   2-7-strategy-seed-generation: backlog
   2-8-traceability-matrix: backlog
