@@ -72,7 +72,7 @@ development_status:
 
   # ── Epic 3: AI 方案生成与富文本编辑 (8 stories) ──
   epic-3: in-progress
-  3-1-plate-editor-markdown-serialization: ready-for-dev
+  3-1-plate-editor-markdown-serialization: done
   3-2-editor-workspace-doc-outline: backlog
   3-3-template-driven-proposal-skeleton: backlog
   3-4-ai-chapter-generation: backlog
