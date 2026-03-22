@@ -26,15 +26,15 @@ IDLE without MC_DONE is AMBIGUOUS — do NOT auto-transition.
 - Look for error indicators: stack traces, "Error:", "FATAL"
 
 ### Step 3: Decision matrix
-- POSITIVE evidence of completion → may TRANSITION (with caution)
+- POSITIVE evidence of completion → record the evidence, but do NOT transition from IDLE alone
 - Rate limit / content filter evidence → wait and retry (DISPATCH --retry)
 - Error evidence → treat as ERROR signal path
 - No clear evidence → REQUEST_HUMAN with full pane capture
 
 ## Authority
-- L1 if positive evidence exists (commander may auto-transition with justification)
+- L1 for retry / recovery actions
 - L2 if ambiguous (must escalate to human)
 
 ## Warning
-Never TRANSITION based solely on idle detection. There MUST be positive
-evidence that the task was actually completed successfully.
+IDLE is a diagnostic signal only. It may justify rebuild/re-dispatch or human
+escalation, but it must never advance the story phase by itself.

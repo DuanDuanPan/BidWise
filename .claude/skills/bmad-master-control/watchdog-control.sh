@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # watchdog-control.sh - lifecycle helpers for master-control watchdog
 # Usage:
-#   watchdog-control.sh status <project_root> <session_name> [max_stale_seconds]
-#   watchdog-control.sh verify-start <project_root> <session_name> [timeout_seconds] [max_stale_seconds]
+#   watchdog-control.sh status <project_root> <session_name> [session_generation] [max_stale_seconds]
+#   watchdog-control.sh verify-start <project_root> <session_name> [session_generation] [timeout_seconds] [max_stale_seconds]
 #   watchdog-control.sh restart-detached <skill_dir> <commander_pane> <inspector_pane> <project_root> <session_name> [session_generation]
 #   watchdog-control.sh ensure-running <skill_dir> <commander_pane> <inspector_pane> <project_root> <session_name> [session_generation] [timeout_seconds] [max_stale_seconds]
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/runtime-paths.sh"
 
 die() {
   echo "watchdog-control.sh: $*" >&2
@@ -14,11 +18,24 @@ die() {
 }
 
 pid_file_for() {
-  printf '%s\n' "${1}/_bmad-output/implementation-artifacts/watchdog.pid"
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  printf '%s\n' "$(runtime_dir_for "$project_root" "$session_name" "$generation")/watchdog.pid"
 }
 
 heartbeat_file_for() {
-  printf '%s\n' "${1}/_bmad-output/implementation-artifacts/watchdog-heartbeat.yaml"
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  printf '%s\n' "$(runtime_dir_for "$project_root" "$session_name" "$generation")/watchdog-heartbeat.yaml"
+}
+
+log_file_for() {
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  printf '%s\n' "$(runtime_dir_for "$project_root" "$session_name" "$generation")/watchdog-runtime.log"
 }
 
 heartbeat_value() {
@@ -51,11 +68,13 @@ PY
 status_cmd() {
   local project_root="${1:?project_root required}"
   local expected_session="${2:?session_name required}"
-  local max_stale_seconds="${3:-120}"
+  local session_generation
+  session_generation="$(read_generation_for_project "$project_root" "${3:-}")"
+  local max_stale_seconds="${4:-120}"
   local pid_file heartbeat_file pid heartbeat_session age
 
-  pid_file="$(pid_file_for "$project_root")"
-  heartbeat_file="$(heartbeat_file_for "$project_root")"
+  pid_file="$(pid_file_for "$project_root" "$expected_session" "$session_generation")"
+  heartbeat_file="$(heartbeat_file_for "$project_root" "$expected_session" "$session_generation")"
 
   [ -f "$pid_file" ] || { echo "status=missing-pid"; return 1; }
   [ -f "$heartbeat_file" ] || { echo "status=missing-heartbeat"; return 1; }
@@ -89,11 +108,13 @@ status_cmd() {
 status_quiet() {
   local project_root="${1:?project_root required}"
   local expected_session="${2:?session_name required}"
-  local max_stale_seconds="${3:-120}"
+  local session_generation
+  session_generation="$(read_generation_for_project "$project_root" "${3:-}")"
+  local max_stale_seconds="${4:-120}"
   local pid_file heartbeat_file pid heartbeat_session age
 
-  pid_file="$(pid_file_for "$project_root")"
-  heartbeat_file="$(heartbeat_file_for "$project_root")"
+  pid_file="$(pid_file_for "$project_root" "$expected_session" "$session_generation")"
+  heartbeat_file="$(heartbeat_file_for "$project_root" "$expected_session" "$session_generation")"
 
   [ -f "$pid_file" ] || return 1
   [ -f "$heartbeat_file" ] || return 1
@@ -110,20 +131,22 @@ status_quiet() {
 verify_start_cmd() {
   local project_root="${1:?project_root required}"
   local expected_session="${2:?session_name required}"
-  local timeout_seconds="${3:-8}"
-  local max_stale_seconds="${4:-120}"
+  local session_generation
+  session_generation="$(read_generation_for_project "$project_root" "${3:-}")"
+  local timeout_seconds="${4:-8}"
+  local max_stale_seconds="${5:-120}"
   local deadline now
 
   deadline=$(( $(date +%s) + timeout_seconds ))
   while true; do
-    if status_quiet "$project_root" "$expected_session" "$max_stale_seconds"; then
-      status_cmd "$project_root" "$expected_session" "$max_stale_seconds"
+    if status_quiet "$project_root" "$expected_session" "$session_generation" "$max_stale_seconds"; then
+      status_cmd "$project_root" "$expected_session" "$session_generation" "$max_stale_seconds"
       return 0
     fi
 
     now=$(date +%s)
     if [ "$now" -ge "$deadline" ]; then
-      status_cmd "$project_root" "$expected_session" "$max_stale_seconds" || true
+      status_cmd "$project_root" "$expected_session" "$session_generation" "$max_stale_seconds" || true
       return 1
     fi
 
@@ -137,12 +160,14 @@ restart_detached_cmd() {
   local inspector_pane="${3:?inspector_pane required}"
   local project_root="${4:?project_root required}"
   local session_name="${5:?session_name required}"
-  local session_generation="${6:-0}"
-  local pid_file heartbeat_file current_pid log_file
+  local session_generation
+  session_generation="$(read_generation_for_project "$project_root" "${6:-}")"
+  local pid_file heartbeat_file current_pid log_file runtime_dir
 
-  pid_file="$(pid_file_for "$project_root")"
-  heartbeat_file="$(heartbeat_file_for "$project_root")"
-  log_file="${project_root}/_bmad-output/implementation-artifacts/watchdog-runtime.log"
+  runtime_dir="$(ensure_runtime_dir "$project_root" "$session_name" "$session_generation")"
+  pid_file="$(pid_file_for "$project_root" "$session_name" "$session_generation")"
+  heartbeat_file="$(heartbeat_file_for "$project_root" "$session_name" "$session_generation")"
+  log_file="$(log_file_for "$project_root" "$session_name" "$session_generation")"
 
   if [ -f "$pid_file" ]; then
     current_pid="$(tr -d '[:space:]' < "$pid_file")"
@@ -154,6 +179,8 @@ restart_detached_cmd() {
 
   rm -f "$pid_file" "$heartbeat_file"
 
+  MC_RUNTIME_DIR="$runtime_dir" \
+  MC_SESSION_GENERATION="$session_generation" \
   nohup bash "${skill_dir}/watchdog.sh" \
     "$commander_pane" \
     "$inspector_pane" \
@@ -171,12 +198,13 @@ ensure_running_cmd() {
   local inspector_pane="${3:?inspector_pane required}"
   local project_root="${4:?project_root required}"
   local session_name="${5:?session_name required}"
-  local session_generation="${6:-0}"
+  local session_generation
+  session_generation="$(read_generation_for_project "$project_root" "${6:-}")"
   local timeout_seconds="${7:-8}"
   local max_stale_seconds="${8:-120}"
 
-  if status_quiet "$project_root" "$session_name" "$max_stale_seconds"; then
-    status_cmd "$project_root" "$session_name" "$max_stale_seconds"
+  if status_quiet "$project_root" "$session_name" "$session_generation" "$max_stale_seconds"; then
+    status_cmd "$project_root" "$session_name" "$session_generation" "$max_stale_seconds"
     return 0
   fi
 
@@ -188,20 +216,16 @@ ensure_running_cmd() {
     "$session_name" \
     "$session_generation" >/dev/null
 
-  verify_start_cmd "$project_root" "$session_name" "$timeout_seconds" "$max_stale_seconds"
+  verify_start_cmd "$project_root" "$session_name" "$session_generation" "$timeout_seconds" "$max_stale_seconds"
 }
 
-main() {
-  local cmd="${1:-}"
-  shift || true
+cmd="${1:-}"
+shift || true
 
-  case "$cmd" in
-    status) status_cmd "$@" ;;
-    verify-start) verify_start_cmd "$@" ;;
-    restart-detached) restart_detached_cmd "$@" ;;
-    ensure-running) ensure_running_cmd "$@" ;;
-    *) die "unknown command: ${cmd:-<empty>}" ;;
-  esac
-}
-
-main "$@"
+case "$cmd" in
+  status) status_cmd "$@" ;;
+  verify-start) verify_start_cmd "$@" ;;
+  restart-detached) restart_detached_cmd "$@" ;;
+  ensure-running) ensure_running_cmd "$@" ;;
+  *) die "unknown command: ${cmd:-<empty>}" ;;
+esac

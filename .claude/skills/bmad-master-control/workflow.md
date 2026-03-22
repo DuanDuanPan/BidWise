@@ -74,11 +74,10 @@ All commands go through: `command-gateway.sh <project_root> <expected_gen> <COMM
 
 1. **Environment Verification** — verify tmux, codex, worktree.sh, git clean
 2. **Initialize Event Bus** — `event-bus.sh init <project_root> 0`
-3. **Pane Layout** — create inspector + utility panes via tmux-layout.sh
-4. **Start Task Monitor** — `monitor-control.sh start <project_root> <session_name>`
-5. **Start Watchdog** — `watchdog-control.sh ensure-running <skill_dir> <commander_pane> <inspector_pane> <project_root> <session_name>`
-6. **Enable Pipe-pane Logging** — for all panes
-7. **Resume Check** — if event-log.yaml exists, run `event-bus.sh materialize` → read gate-state → route to correct step
+3. **Pane Layout** — ensure commander/inspector/utility + bottom anchor exist
+4. **Start Runtime** — `runtime-manager.sh ensure-running <project_root> <expected_gen> <session_name> <commander_pane> <inspector_pane>`
+5. **Enable Pipe-pane Logging** — for all panes
+6. **Resume Check** — if event-log.yaml exists, run `event-bus.sh materialize` → read gate-state → route to correct step
 
 ---
 
@@ -101,8 +100,8 @@ This is the core loop. Repeat until all stories reach `done`:
 1. PEEK_EVENTS --priority --limit 10
    → If empty: sleep 15s, then re-peek (max 3 consecutive empty peeks)
    → If events: proceed to step 2
-   → After 3 consecutive empty peeks: monitor-control.sh status to verify
-     task-monitor is alive. If dead → ensure-running. If still dead →
+   → After 3 consecutive empty peeks: `HEALTH ensure_runtime --proactive`
+     verifies monitor/watchdog/inspector together. If still unhealthy →
      REQUEST_HUMAN "task-monitor down". NEVER fall back to manual
      capture-pane (F16).
 

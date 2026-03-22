@@ -17,15 +17,15 @@
 - Action: HEALTH rebuild_pane to restore the worker environment
 - After rebuild: re-DISPATCH the current phase task
 
-### Stale Exit (old pane cleanup)
-- dispatch_state was packet_pasted but pane exited before worker started
+### Stale Exit (delivery incomplete)
+- dispatch_state was packet_submitted or packet_acked but pane exited before work stabilized
 - Dispatch may have failed silently
 - Action: HEALTH rebuild_pane then re-DISPATCH
 
 ## Procedure
 1. Read dispatch_state from state_snapshot
 2. If worker_running → crash path: HEALTH rebuild_pane, then DISPATCH --retry
-3. If packet_pasted → stale path: HEALTH rebuild_pane, then DISPATCH --retry
+3. If packet_submitted / packet_acked → stale path: HEALTH rebuild_pane, then DISPATCH --retry
 4. If null/idle → normal path: log only, no action
 5. If uncertain: REQUEST_HUMAN with pane exit context
 

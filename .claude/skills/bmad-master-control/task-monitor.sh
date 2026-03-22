@@ -14,13 +14,20 @@ set -euo pipefail
 PROJECT_ROOT="${1:?Usage: task-monitor.sh <project_root> <session_name> [check_interval]}"
 SESSION_NAME="${2:?Usage: task-monitor.sh <project_root> <session_name> [check_interval]}"
 CHECK_INTERVAL="${3:-${TASK_MONITOR_CHECK_INTERVAL:-15}}"
+SESSION_GENERATION="${4:-${MC_SESSION_GENERATION:-}}"
 
-IMPL_DIR="$PROJECT_ROOT/_bmad-output/implementation-artifacts"
-PID_FILE="$IMPL_DIR/task-monitor.pid"
-HEARTBEAT_FILE="$IMPL_DIR/task-monitor-heartbeat.yaml"
-GATE_STATE="$IMPL_DIR/gate-state.yaml"
-GEN_LOCK="$IMPL_DIR/generation.lock"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/runtime-paths.sh"
+
+ROOT_IMPL_DIR="$(artifacts_dir "$PROJECT_ROOT")"
+SESSION_GENERATION="$(read_generation_for_project "$PROJECT_ROOT" "$SESSION_GENERATION")"
+RUNTIME_DIR="${MC_RUNTIME_DIR:-$(ensure_runtime_dir "$PROJECT_ROOT" "$SESSION_NAME" "$SESSION_GENERATION")}"
+
+PID_FILE="$RUNTIME_DIR/task-monitor.pid"
+HEARTBEAT_FILE="$RUNTIME_DIR/task-monitor-heartbeat.yaml"
+GATE_STATE="$ROOT_IMPL_DIR/gate-state.yaml"
+GEN_LOCK="$ROOT_IMPL_DIR/generation.lock"
 EVENT_BUS="$SCRIPT_DIR/event-bus.sh"
 
 # Active phases — panes in these phases are monitored (includes pre-dev phases)
@@ -29,7 +36,7 @@ ACTIVE_PHASES="creating|prototyping|validating|dev|review|fixing|qa_running|regr
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-LOG_FILE="$IMPL_DIR/task-monitor.log"
+LOG_FILE="$RUNTIME_DIR/task-monitor.log"
 
 log() {
   local level="$1"; shift
@@ -50,7 +57,9 @@ write_pid() {
 
 cleanup() {
   log_info "Task monitor shutting down (PID $$)"
-  rm -f "$PID_FILE"
+  if [[ -f "$PID_FILE" ]] && [[ "$(cat "$PID_FILE" 2>/dev/null)" == "$$" ]]; then
+    rm -f "$PID_FILE"
+  fi
   exit 0
 }
 
@@ -59,8 +68,21 @@ trap cleanup SIGTERM SIGINT SIGHUP EXIT
 # ---------------------------------------------------------------------------
 # File-based dedup state (bash 3.x compatible — no associative arrays)
 # ---------------------------------------------------------------------------
-DEDUP_FILE="$IMPL_DIR/task-monitor-dedup.tmp"
+DEDUP_FILE="$RUNTIME_DIR/task-monitor-dedup.tmp"
 : > "$DEDUP_FILE"  # truncate on start
+
+# EXIT debounce counters
+EXIT_COUNT_FILE="$RUNTIME_DIR/task-monitor-exit-counts.tmp"
+: > "$EXIT_COUNT_FILE"
+EXIT_DEBOUNCE=3
+
+# IDLE one-shot tracker
+IDLE_FIRED_FILE="$RUNTIME_DIR/task-monitor-idle-fired.tmp"
+: > "$IDLE_FIRED_FILE"
+
+# Per-pane log cursors for incremental signal scanning
+LOG_CURSOR_FILE="$RUNTIME_DIR/task-monitor-log-cursors.tmp"
+: > "$LOG_CURSOR_FILE"
 
 # ---------------------------------------------------------------------------
 # Heartbeat
@@ -90,6 +112,20 @@ read_generation() {
   else
     echo "0"
   fi
+}
+
+read_gate_state_runtime() {
+  if [[ ! -f "$GATE_STATE" ]]; then
+    printf '|\n'
+    return
+  fi
+
+  ruby -ryaml -e '
+    gs = YAML.safe_load(File.read(ARGV[0])) rescue {}
+    session_name = gs["session_name"].to_s
+    session_generation = gs["session_generation"].to_s
+    puts "#{session_name}|#{session_generation}"
+  ' "$GATE_STATE" 2>/dev/null || printf '|\n'
 }
 
 # ---------------------------------------------------------------------------
@@ -147,7 +183,9 @@ get_active_panes() {
 # ---------------------------------------------------------------------------
 pane_alive() {
   local pane_id="$1"
-  tmux list-panes -t "$SESSION_NAME" -F '#{pane_id}' 2>/dev/null | grep -qF "$pane_id"
+  local actual_session
+  actual_session=$(tmux display-message -p -t "$pane_id" '#{session_name}' 2>/dev/null || true)
+  [[ -n "$actual_session" && "$actual_session" == "$SESSION_NAME" ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -165,7 +203,48 @@ capture_pane_tail() {
 # ---------------------------------------------------------------------------
 # Fallback: check mc-logs (Log layer) for sentinels missed by capture-pane
 # ---------------------------------------------------------------------------
-MC_LOG_DIR="$IMPL_DIR/mc-logs"
+MC_LOG_DIR="$ROOT_IMPL_DIR/mc-logs"
+
+read_log_cursor() {
+  local pane_id="$1"
+  local esc
+  esc=$(printf '%s' "$pane_id" | sed 's/[][\/.^$*]/\\&/g')
+  grep "^${esc}=" "$LOG_CURSOR_FILE" 2>/dev/null | head -1 | sed "s/^${esc}=//" || echo "0"
+}
+
+write_log_cursor() {
+  local pane_id="$1"
+  local value="$2"
+  local esc
+  esc=$(printf '%s' "$pane_id" | sed 's/[][\/.^$*]/\\&/g')
+  grep -v "^${esc}=" "$LOG_CURSOR_FILE" > "${LOG_CURSOR_FILE}.tmp" 2>/dev/null || true
+  echo "${pane_id}=${value}" >> "${LOG_CURSOR_FILE}.tmp"
+  mv "${LOG_CURSOR_FILE}.tmp" "$LOG_CURSOR_FILE"
+}
+
+read_new_log_chunk() {
+  local pane_id="$1"
+  local pane_num="${pane_id#%}"
+  local logfile="$MC_LOG_DIR/pane-${pane_num}.log"
+  [[ -f "$logfile" ]] || return 1
+
+  local size prev start
+  size=$(wc -c < "$logfile" 2>/dev/null | tr -d '[:space:]')
+  prev=$(read_log_cursor "$pane_id")
+  [[ "$prev" =~ ^[0-9]+$ ]] || prev=0
+  [[ "$size" =~ ^[0-9]+$ ]] || size=0
+
+  if (( prev > size )); then
+    prev=0
+  fi
+  if (( size <= prev )); then
+    return 1
+  fi
+
+  start=$((prev + 1))
+  write_log_cursor "$pane_id" "$size"
+  tail -c +"$start" "$logfile" 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g'
+}
 
 check_log_for_sentinel() {
   local pane_id="$1"
@@ -177,6 +256,56 @@ check_log_for_sentinel() {
     | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
     | grep -E '^MC_DONE |HALT' \
     | tail -1
+}
+
+emit_dispatch_state_event() {
+  local gen="$1"
+  local story_id="$2"
+  local pane_id="$3"
+  local dispatch_state="$4"
+  local payload
+  payload=$(printf '{"story_id":"%s","pane_id":"%s","dispatch_state":"%s","_priority":"P3"}' \
+    "$story_id" "$pane_id" "$dispatch_state")
+  emit_event "$gen" "DISPATCH_STATE_CHANGED" "$payload"
+}
+
+process_log_chunk() {
+  local gen="$1"
+  local story_id="$2"
+  local pane_id="$3"
+  local scope_key="$4"
+  local chunk
+  chunk=$(read_new_log_chunk "$pane_id" || true)
+  [[ -n "$chunk" ]] || { echo "0"; return; }
+
+  local count=0
+  while IFS= read -r raw_line; do
+    local line
+    line="$(echo "$raw_line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [[ -n "$line" ]] || continue
+
+    if [[ "$line" =~ ^MC_STATE[[:space:]]+([A-Z_]+)$ ]]; then
+      local state_name="${BASH_REMATCH[1]}"
+      if is_new_signal "$scope_key" "STATE:${state_name}"; then
+        local mapped_state
+        mapped_state="$(echo "$state_name" | tr '[:upper:]' '[:lower:]')"
+        emit_dispatch_state_event "$gen" "$story_id" "$pane_id" "$mapped_state"
+        ((count++))
+      fi
+      continue
+    fi
+
+    if [[ "$line" =~ ^MC_DONE[[:space:]] || "$line" =~ ^HALT ]]; then
+      clear_idle_fired "$scope_key"
+      if is_new_signal "$scope_key" "LOG:${line}"; then
+        emit_signal_from_line "$gen" "$story_id" "$pane_id" "$line"
+        ((count++))
+      fi
+      continue
+    fi
+  done <<< "$chunk"
+
+  echo "$count"
 }
 
 # ---------------------------------------------------------------------------
@@ -200,21 +329,65 @@ emit_event() {
 # Dedup check — returns 0 (true) if this signal is new, 1 if duplicate
 # ---------------------------------------------------------------------------
 is_new_signal() {
-  local pane_id="$1"
+  local scope_key="$1"
   local signal_key="$2"
-  local escaped_pane_id
-  escaped_pane_id=$(printf '%s' "$pane_id" | sed 's/[%]/\\%/g')
+  local escaped_scope_key
+  escaped_scope_key=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
 
   local prev
-  prev=$(grep "^${escaped_pane_id}=" "$DEDUP_FILE" 2>/dev/null | head -1 | sed "s/^${escaped_pane_id}=//" || true)
+  prev=$(grep "^${escaped_scope_key}=" "$DEDUP_FILE" 2>/dev/null | head -1 | sed "s/^${escaped_scope_key}=//" || true)
   if [[ "$prev" == "$signal_key" ]]; then
     return 1  # duplicate
   fi
   # Update dedup file: remove old entry, add new
-  grep -v "^${escaped_pane_id}=" "$DEDUP_FILE" > "${DEDUP_FILE}.tmp" 2>/dev/null || true
-  echo "${pane_id}=${signal_key}" >> "${DEDUP_FILE}.tmp"
+  grep -v "^${escaped_scope_key}=" "$DEDUP_FILE" > "${DEDUP_FILE}.tmp" 2>/dev/null || true
+  echo "${scope_key}=${signal_key}" >> "${DEDUP_FILE}.tmp"
   mv "${DEDUP_FILE}.tmp" "$DEDUP_FILE"
   return 0  # new signal
+}
+
+read_exit_count() {
+  local scope_key="$1"
+  local esc
+  esc=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
+  grep "^${esc}=" "$EXIT_COUNT_FILE" 2>/dev/null | head -1 | sed "s/^${esc}=//" || echo "0"
+}
+
+incr_exit_count() {
+  local scope_key="$1"
+  local esc
+  esc=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
+  local cur
+  cur=$(read_exit_count "$scope_key")
+  local nxt=$((cur + 1))
+  grep -v "^${esc}=" "$EXIT_COUNT_FILE" > "${EXIT_COUNT_FILE}.tmp" 2>/dev/null || true
+  echo "${scope_key}=${nxt}" >> "${EXIT_COUNT_FILE}.tmp"
+  mv "${EXIT_COUNT_FILE}.tmp" "$EXIT_COUNT_FILE"
+  echo "$nxt"
+}
+
+reset_exit_count() {
+  local scope_key="$1"
+  local esc
+  esc=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
+  grep -v "^${esc}=" "$EXIT_COUNT_FILE" > "${EXIT_COUNT_FILE}.tmp" 2>/dev/null || true
+  mv "${EXIT_COUNT_FILE}.tmp" "$EXIT_COUNT_FILE"
+}
+
+idle_already_fired() {
+  grep -Fxq "$1" "$IDLE_FIRED_FILE" 2>/dev/null
+}
+
+mark_idle_fired() {
+  idle_already_fired "$1" || echo "$1" >> "$IDLE_FIRED_FILE"
+}
+
+clear_idle_fired() {
+  local scope_key="$1"
+  local esc
+  esc=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
+  grep -v "^${esc}$" "$IDLE_FIRED_FILE" > "${IDLE_FIRED_FILE}.tmp" 2>/dev/null || true
+  mv "${IDLE_FIRED_FILE}.tmp" "$IDLE_FIRED_FILE"
 }
 
 # ---------------------------------------------------------------------------
@@ -252,7 +425,7 @@ is_idle() {
     return 1
   fi
   # Check for common prompt patterns: bare $, claude>, codex>
-  if echo "$text" | grep -qE '^\s*\$\s*$|claude>|codex>|\❯\s*$|➜\s*$'; then
+  if echo "$text" | grep -qE '^[[:space:]]*[$][[:space:]]*$|claude>|codex>|^[[:space:]]*[❯›➜].*$'; then
     return 0
   fi
   return 1
@@ -267,6 +440,8 @@ get_idle_indicator() {
     echo "claude>"
   elif echo "$text" | grep -qE 'codex>'; then
     echo "codex>"
+  elif echo "$text" | grep -qE '^[[:space:]]*[❯›➜].*$'; then
+    echo "agent-prompt"
   elif echo "$text" | grep -qE '^\s*\$\s*$'; then
     echo '$'
   else
@@ -333,6 +508,52 @@ parse_pane_output() {
   echo "NONE" ""
 }
 
+emit_signal_event() {
+  local gen="$1"
+  local story_id="$2"
+  local pane_id="$3"
+  local signal="$4"
+  local detail="${5:-}"
+  local result="${6:-}"
+  local priority="${7:-P1}"
+  local payload
+
+  if [[ "$signal" == "HALT" ]]; then
+    payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"HALT","detail":"%s","_priority":"%s"}' \
+      "$story_id" "$pane_id" "$(echo "$detail" | sed 's/"/\\"/g')" "$priority")
+  elif [[ "$signal" == ERROR* ]]; then
+    payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"ERROR","detail":"%s","_priority":"%s"}' \
+      "$story_id" "$pane_id" "$(echo "$detail" | sed 's/"/\\"/g')" "$priority")
+  elif [[ "$signal" == MC_DONE* ]]; then
+    payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"%s","result":"%s","detail":"%s","_priority":"%s"}' \
+      "$story_id" "$pane_id" "$signal" "$result" "$(echo "$detail" | sed 's/"/\\"/g')" "$priority")
+  else
+    payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"%s","detail":"%s","_priority":"%s"}' \
+      "$story_id" "$pane_id" "$signal" "$(echo "$detail" | sed 's/"/\\"/g')" "$priority")
+  fi
+
+  emit_event "$gen" "PANE_SIGNAL_DETECTED" "$payload"
+}
+
+emit_signal_from_line() {
+  local gen="$1"
+  local story_id="$2"
+  local pane_id="$3"
+  local raw_line="$4"
+  local signal detail result
+
+  read -r signal detail <<< "$(parse_pane_output "$raw_line")"
+  [[ "$signal" != "NONE" ]] || return 1
+
+  if [[ "$signal" == MC_DONE* ]]; then
+    result=$(echo "$detail" | awk '{print $4}')
+  fi
+
+  emit_signal_event "$gen" "$story_id" "$pane_id" "$signal" "$detail" "${result:-}" "P1"
+  log_info "${signal} recovered from logs for $story_id (pane $pane_id)"
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # Analyze a single pane and emit events if warranted
 # Returns the number of events emitted (0 or 1)
@@ -342,22 +563,51 @@ analyze_pane() {
   local pane_id="$2"
   local phase="$3"
   local gen="$4"
+  local scope_key="${story_id}|${pane_id}|${phase}"
+
+  local log_events
+  log_events=$(process_log_chunk "$gen" "$story_id" "$pane_id" "$scope_key")
+  if [[ "$log_events" =~ ^[0-9]+$ ]] && (( log_events > 0 )); then
+    clear_idle_fired "$scope_key"
+    reset_exit_count "$scope_key"
+    echo "$log_events"
+    return
+  fi
 
   # Check pane liveness
   if ! pane_alive "$pane_id"; then
-    local sig_key="PANE_EXIT"
-    if is_new_signal "$pane_id" "$sig_key"; then
-      local payload
-      payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"PANE_EXIT","detail":"pane no longer alive","_priority":"P1"}' \
-        "$story_id" "$pane_id")
-      emit_event "$gen" "PANE_SIGNAL_DETECTED" "$payload"
-      log_info "PANE_EXIT detected for $story_id (pane $pane_id)"
+    local seen_count
+    seen_count=$(incr_exit_count "$scope_key")
+    if (( seen_count < EXIT_DEBOUNCE )); then
+      echo "0"
+      return
+    fi
+
+    local log_signal
+    log_signal=$(check_log_for_sentinel "$pane_id" || true)
+    if [[ -n "$log_signal" ]]; then
+      clear_idle_fired "$scope_key"
+      if is_new_signal "$scope_key" "LOG:${log_signal}"; then
+        emit_signal_from_line "$gen" "$story_id" "$pane_id" "$log_signal"
+        echo "1"
+        return
+      fi
+      echo "0"
+      return
+    fi
+
+    if is_new_signal "$scope_key" "PANE_EXIT"; then
+      clear_idle_fired "$scope_key"
+      emit_signal_event "$gen" "$story_id" "$pane_id" "PANE_EXIT" "pane no longer alive after ${seen_count} consecutive checks" "" "P1"
+      log_info "PANE_EXIT detected for $story_id (pane $pane_id) after ${seen_count} checks"
       echo "1"
       return
     fi
     echo "0"
     return
   fi
+
+  reset_exit_count "$scope_key"
 
   # Capture last 15 lines (enough to see spinner above prompt)
   local captured
@@ -374,12 +624,9 @@ analyze_pane() {
 
   case "$signal" in
     HALT)
-      local sig_key="HALT:${detail}"
-      if is_new_signal "$pane_id" "$sig_key"; then
-        local payload
-        payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"HALT","detail":"%s","_priority":"P0"}' \
-          "$story_id" "$pane_id" "$(echo "$detail" | sed 's/"/\\"/g')")
-        emit_event "$gen" "PANE_SIGNAL_DETECTED" "$payload"
+      clear_idle_fired "$scope_key"
+      if is_new_signal "$scope_key" "HALT:${detail}"; then
+        emit_signal_event "$gen" "$story_id" "$pane_id" "HALT" "$detail" "" "P0"
         log_warn "HALT detected for $story_id (pane $pane_id)"
         echo "1"
         return
@@ -387,15 +634,11 @@ analyze_pane() {
       ;;
 
     MC_DONE_*)
-      local sig_key="${signal}:${detail}"
-      if is_new_signal "$pane_id" "$sig_key"; then
-        # Extract result (4th field) from MC_DONE line: MC_DONE {PHASE} {story_id} {RESULT}
+      clear_idle_fired "$scope_key"
+      if is_new_signal "$scope_key" "${signal}:${detail}"; then
         local mc_result
         mc_result=$(echo "$detail" | awk '{print $4}')
-        local payload
-        payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"%s","result":"%s","detail":"%s","_priority":"P1"}' \
-          "$story_id" "$pane_id" "$signal" "$mc_result" "$(echo "$detail" | sed 's/"/\\"/g')")
-        emit_event "$gen" "PANE_SIGNAL_DETECTED" "$payload"
+        emit_signal_event "$gen" "$story_id" "$pane_id" "$signal" "$detail" "$mc_result" "P1"
         log_info "$signal detected for $story_id (pane $pane_id)"
         echo "1"
         return
@@ -403,12 +646,9 @@ analyze_pane() {
       ;;
 
     ERROR)
-      local sig_key="ERROR:${detail}"
-      if is_new_signal "$pane_id" "$sig_key"; then
-        local payload
-        payload=$(printf '{"story_id":"%s","pane_id":"%s","signal":"ERROR","detail":"%s","_priority":"P2"}' \
-          "$story_id" "$pane_id" "$(echo "$detail" | sed 's/"/\\"/g')")
-        emit_event "$gen" "PANE_SIGNAL_DETECTED" "$payload"
+      clear_idle_fired "$scope_key"
+      if is_new_signal "$scope_key" "ERROR:${detail}"; then
+        emit_signal_event "$gen" "$story_id" "$pane_id" "ERROR" "$detail" "" "P2"
         log_warn "ERROR detected for $story_id (pane $pane_id): $detail"
         echo "1"
         return
@@ -416,16 +656,40 @@ analyze_pane() {
       ;;
 
     NONE)
+      if is_actively_working "$captured"; then
+        clear_idle_fired "$scope_key"
+        echo "0"
+        return
+      fi
+
       # Check for idle (prompt visible, no sentinel)
       if is_idle "$captured"; then
+        local log_signal
+        log_signal=$(check_log_for_sentinel "$pane_id" || true)
+        if [[ -n "$log_signal" ]]; then
+          clear_idle_fired "$scope_key"
+          if is_new_signal "$scope_key" "LOG:${log_signal}"; then
+            emit_signal_from_line "$gen" "$story_id" "$pane_id" "$log_signal"
+            echo "1"
+            return
+          fi
+          echo "0"
+          return
+        fi
+
+        if idle_already_fired "$scope_key"; then
+          echo "0"
+          return
+        fi
+
         local idle_ind
         idle_ind=$(get_idle_indicator "$captured")
-        local sig_key="IDLE:${idle_ind}"
-        if is_new_signal "$pane_id" "$sig_key"; then
+        if is_new_signal "$scope_key" "IDLE:${idle_ind}"; then
           local payload
           payload=$(printf '{"story_id":"%s","pane_id":"%s","idle_indicator":"%s","dispatch_state_at_detection":"%s","_priority":"P2"}' \
             "$story_id" "$pane_id" "$idle_ind" "$phase")
           emit_event "$gen" "PANE_IDLE_NO_SENTINEL" "$payload"
+          mark_idle_fired "$scope_key"
           log_info "IDLE detected for $story_id (pane $pane_id), indicator=$idle_ind"
           echo "1"
           return
@@ -442,11 +706,14 @@ analyze_pane() {
 # Main loop
 # ===========================================================================
 main() {
-  mkdir -p "$IMPL_DIR"
+  mkdir -p "$RUNTIME_DIR"
+
+  local start_generation
+  start_generation="$SESSION_GENERATION"
 
   # Write PID
   write_pid
-  log_info "Task monitor started: PID=$$, session=$SESSION_NAME, interval=${CHECK_INTERVAL}s"
+  log_info "Task monitor started: PID=$$, session=$SESSION_NAME, generation=${start_generation}, interval=${CHECK_INTERVAL}s"
   log_info "Project root: $PROJECT_ROOT"
 
   local cycle_count=0
@@ -455,6 +722,31 @@ main() {
     cycle_count=$((cycle_count + 1))
     local events_this_cycle=0
     local monitored_count=0
+
+    if (( cycle_count % 10 == 0 )); then
+      if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        log_warn "Session '$SESSION_NAME' gone — session lease expired, self-terminating"
+        exit 0
+      fi
+
+      local runtime_meta runtime_session runtime_generation current_generation
+      runtime_meta=$(read_gate_state_runtime)
+      IFS='|' read -r runtime_session runtime_generation <<< "$runtime_meta"
+      current_generation=$(read_generation)
+
+      if [[ -n "$runtime_session" && "$runtime_session" != "$SESSION_NAME" ]]; then
+        log_warn "gate-state leased to session '$runtime_session' (ours: '$SESSION_NAME') — self-terminating"
+        exit 0
+      fi
+      if [[ -n "$runtime_generation" && "$runtime_generation" != "$start_generation" ]]; then
+        log_warn "gate-state generation changed to '$runtime_generation' (ours: '$start_generation') — self-terminating"
+        exit 0
+      fi
+      if [[ "$current_generation" != "$start_generation" ]]; then
+        log_warn "generation.lock changed to '$current_generation' (ours: '$start_generation') — self-terminating"
+        exit 0
+      fi
+    fi
 
     # Read current generation
     local gen

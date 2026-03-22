@@ -59,6 +59,14 @@ rescue => e
   {}
 end
 
+def runtime_consumer_name(project_root, expected_gen, base = "commander")
+  gate_state = load_gate_state(project_root)
+  session_name = gate_state["session_name"].to_s
+  session_name = "unknown" if session_name.empty?
+  safe_session = session_name.gsub(/[^A-Za-z0-9._-]/, "_")
+  "#{base}-#{safe_session}-g#{expected_gen}"
+end
+
 # ── Rule File Selection ─────────────────────────────────────────────────
 # Demand-paging: only load the rule fragment relevant to this event type.
 
@@ -161,20 +169,9 @@ def build_available_commands(event, story_state)
     end
 
   when "PANE_IDLE_NO_SENTINEL"
-    # Ambiguous — offer re-dispatch + transition + escalation
+    # Ambiguous diagnostic only — recover or escalate, never advance business phase.
     commands << "DISPATCH #{story_id} #{phase} --trigger-seq #{seq}" unless phase.empty?
     commands << "REQUEST_HUMAN #{story_id} idle_no_sentinel --trigger-seq #{seq}"
-    # Conditional transition only if commander finds positive evidence
-    case phase
-    when "dev", "DEV"
-      commands << "TRANSITION #{story_id} dev_complete --trigger-seq #{seq}"
-    when "review", "REVIEW"
-      commands << "TRANSITION #{story_id} review_pass --trigger-seq #{seq}"
-      commands << "TRANSITION #{story_id} review_fail --trigger-seq #{seq}"
-    when "qa", "QA"
-      commands << "TRANSITION #{story_id} qa_pass --trigger-seq #{seq}"
-      commands << "TRANSITION #{story_id} qa_fail --trigger-seq #{seq}"
-    end
 
   when "PANE_TIMEOUT"
     commands << "REQUEST_HUMAN #{story_id} timeout --trigger-seq #{seq}"
@@ -232,8 +229,9 @@ def cmd_build(project_root, expected_gen)
   die "event-bus.sh not found at #{event_bus}" unless File.exist?(event_bus)
 
   # 1. Peek pending events from the event bus
+  consumer = runtime_consumer_name(project_root, expected_gen, "commander")
   raw = run_cmd(
-    "bash #{event_bus} peek #{project_root} #{expected_gen} --consumer commander --priority"
+    "bash #{event_bus} peek #{project_root} #{expected_gen} --consumer #{consumer} --priority"
   )
 
   parsed = begin

@@ -22,6 +22,8 @@ require "stringio"
 require "yaml"
 require "fileutils"
 require "open3"
+require "tempfile"
+require "shellwords"
 
 SCRIPT_DIR = ENV["SCRIPT_DIR"] || File.dirname($PROGRAM_NAME)
 
@@ -37,6 +39,7 @@ LLM_FOR_PHASE = {
   "fixing"     => "claude",
   "qa"         => "codex",
   "regression" => "codex",
+  "noop"       => "claude",
 }.freeze
 
 DEFAULT_CONFIG = {
@@ -567,6 +570,7 @@ DISPATCH_INTENT_MAP = {
   "dev"        => "dev_dispatched",
   "qa"         => "qa_dispatched",
   "regression" => "regression_start",
+  "noop"       => nil,
   # review/fixing: phase already advanced by prior TRANSITION (review_fail, g7_pass)
 }.freeze
 
@@ -582,27 +586,32 @@ def build_task_packet(phase, story_id, project_root, state, opts)
   when "create"
     <<~PACKET
       /bmad-create-story #{story_id}
-      When done output: MC_DONE CREATE #{story_id} CREATED
+      When done, print exactly this as the final line with nothing after it:
+      MC_DONE CREATE #{story_id} CREATED
     PACKET
   when "prototype"
     <<~PACKET
       Create a UI prototype for story #{story_id}.
       Story file: #{story_file}
       Use Pencil MCP tools to create the .pen file and export PNG.
-      When done output: MC_DONE PROTOTYPE #{story_id} PROTOTYPED
+      When done, print exactly this as the final line with nothing after it:
+      MC_DONE PROTOTYPE #{story_id} PROTOTYPED
     PACKET
   when "validate"
     <<~PACKET
       Validate story #{story_id} against acceptance criteria.
       Story file: #{story_file}
       Check: story completeness, acceptance criteria clarity, dependency correctness.
-      Output: MC_DONE VALIDATE #{story_id} PASS or MC_DONE VALIDATE #{story_id} FAIL
+      Final line must be exactly one of:
+      MC_DONE VALIDATE #{story_id} PASS
+      MC_DONE VALIDATE #{story_id} FAIL
     PACKET
   when "dev"
     ui_line = is_ui ? "\nThis is a UI story — also use frontend-design skill." : ""
     <<~PACKET
       /bmad-dev-story #{story_file}#{ui_line}
-      When done output: MC_DONE DEV #{story_id} REVIEW_READY
+      When done, print exactly this as the final line with nothing after it:
+      MC_DONE DEV #{story_id} REVIEW_READY
     PACKET
   when "review"
     <<~PACKET
@@ -613,7 +622,9 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       Review mode: branch diff vs main
       Spec file: #{story_file}
       Do not modify files.
-      Output: MC_DONE REVIEW #{story_id} REVIEW_PASS or MC_DONE REVIEW #{story_id} REVIEW_FAIL
+      Final line must be exactly one of:
+      MC_DONE REVIEW #{story_id} REVIEW_PASS
+      MC_DONE REVIEW #{story_id} REVIEW_FAIL
     PACKET
   when "fixing"
     findings_file = "_bmad-output/implementation-artifacts/review-findings-#{story_id}-cycle-#{review_cycle}.md"
@@ -621,7 +632,8 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       Fix code review findings for story #{story_id}.
       Findings: #{findings_file}
       Worktree: #{worktree}
-      When done output: MC_DONE FIXING #{story_id} FIX_COMPLETE
+      When done, print exactly this as the final line with nothing after it:
+      MC_DONE FIXING #{story_id} FIX_COMPLETE
     PACKET
   when "qa"
     <<~PACKET
@@ -630,7 +642,9 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       Worktree: #{worktree}
       Spec file: #{story_file}
       Run tests after generating.
-      Output: MC_DONE QA #{story_id} QA_PASS or MC_DONE QA #{story_id} QA_FAIL
+      Final line must be exactly one of:
+      MC_DONE QA #{story_id} QA_PASS
+      MC_DONE QA #{story_id} QA_FAIL
     PACKET
   when "regression"
     <<~PACKET
@@ -638,11 +652,31 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       Layer 1: pnpm test (unit + integration)
       Layer 2: pnpm lint
       Layer 3: pnpm build
-      Output: MC_DONE REGRESSION #{story_id} PASS or MC_DONE REGRESSION #{story_id} FAIL
+      Final line must be exactly one of:
+      MC_DONE REGRESSION #{story_id} PASS
+      MC_DONE REGRESSION #{story_id} FAIL
+    PACKET
+  when "noop"
+    <<~PACKET
+      This is a dry-run runtime verification task for story #{story_id}.
+      Do not create, modify, delete, or commit any project files.
+      Do not run tests or build commands.
+      Simply acknowledge the task and then print exactly this as the final line:
+      MC_DONE NOOP #{story_id} PASS
     PACKET
   else
     "echo 'Unknown phase: #{phase}'\nMC_DONE #{phase.upcase} #{story_id} UNKNOWN"
   end
+end
+
+def append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, dispatch_state)
+  payload = {
+    "story_id" => story_id,
+    "pane_id" => pane_id,
+    "dispatch_state" => dispatch_state,
+  }
+  event_bus("append", project_root, expected_gen.to_s, "DISPATCH_STATE_CHANGED",
+            "transition_engine", trigger_seq.to_s, JSON.generate(payload))
 end
 
 def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts = {})
@@ -727,7 +761,20 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
   # 6. Create pane via tmux-layout.sh (command = the LLM binary)
   tmux_layout = File.join(SCRIPT_DIR, "tmux-layout.sh")
   title = "mc-#{story_id}-#{phase}"
-  command_string = llm == "codex" ? "codex --dangerously-bypass-approvals-and-sandbox" : "claude --dangerously-skip-permissions"
+  agent_command = llm == "codex" ? "codex --dangerously-bypass-approvals-and-sandbox" : "claude --dangerously-skip-permissions"
+  runtime_dir = File.join(project_root, "_bmad-output", "implementation-artifacts", "runtime", "#{session_name}-g#{expected_gen}")
+  packet_dir = File.join(runtime_dir, "packets")
+  FileUtils.mkdir_p(packet_dir)
+  task_packet = build_task_packet(phase, story_id, project_root, state, opts)
+  packet_file = File.join(packet_dir, "#{story_id}-#{phase}-#{trigger_seq}.txt")
+  File.write(packet_file, task_packet)
+  wrapper = File.join(SCRIPT_DIR, "agent-wrapper.py")
+  command_string = [
+    "python3",
+    Shellwords.escape(wrapper),
+    "--agent-command", Shellwords.escape(agent_command),
+    "--packet-file", Shellwords.escape(packet_file),
+  ].join(" ")
 
   # If fresh-pane requested, kill any existing pane with this title first
   if fresh_pane
@@ -767,17 +814,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
   FileUtils.mkdir_p(log_dir)
   log_file = File.join(log_dir, "pane-#{pane_id.delete('%')}.log")
   system("tmux", "pipe-pane", "-t", pane_id, "-o", "cat >> #{log_file}")
-
-  # 8. Wait briefly for LLM to start, then send task packet
-  sleep 2
-  task_packet = build_task_packet(phase, story_id, project_root, state, opts)
-  # Escape the packet for tmux send-keys: send line by line
-  task_packet.strip.each_line do |line|
-    escaped = line.chomp
-    next if escaped.empty?
-    system("tmux", "send-keys", "-t", pane_id, escaped, "Enter")
-    sleep 0.3
-  end
+  append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, "pane_opened")
 
   # 9. Write TASK_DISPATCHED event
   dispatch_payload = {
@@ -788,6 +825,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
     "c2_override" => c2_override,
     "override_reason" => override_reason,
     "constitution_check" => "PASS",
+    "dispatch_state" => "pane_opened",
   }
   event_bus("append", project_root, expected_gen.to_s, "TASK_DISPATCHED",
             "transition_engine", trigger_seq.to_s, JSON.generate(dispatch_payload))

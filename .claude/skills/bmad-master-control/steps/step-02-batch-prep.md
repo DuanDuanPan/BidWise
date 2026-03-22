@@ -39,12 +39,12 @@ utility_pane: ''
 3. Partition batch: stories_to_create / stories_to_reuse / ui_stories / backend_only_stories
 4. Health check: `command-gateway.sh <project_root> <gen> HEALTH check_inspector --proactive`
 
-### 2a: Create missing story files (backlog only, sequential)
-4. For each story in `stories_to_create`:
+### 2a: Create missing story files (backlog only, PARALLEL)
+4. For each story in `stories_to_create`, dispatch ALL in parallel:
    - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> create --trigger-seq <N>`
      (transition-engine handles pane creation, task packet, and completion detection)
-   - Wait for PANE_SIGNAL_DETECTED event (MC_DONE signal) via PEEK_EVENTS
-   - 完成后回填 story_registry[story_id] 路径
+5. Wait for ALL PANE_SIGNAL_DETECTED events (MC_DONE signals) via PEEK_EVENTS — poll until every story in `stories_to_create` has a MC_DONE CREATE signal
+6. 全部完成后批量回填 story_registry[story_id] 路径
 
 ### GATE G2: create → prototype
 - **Assert foreach batch_stories:** story_registry[story_id].story_file_main 非空

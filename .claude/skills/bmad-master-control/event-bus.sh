@@ -28,6 +28,7 @@ EVENT_TYPES = Set.new(%w[
   STORY_PHASE_CHANGED
   GATE_PASSED
   TASK_DISPATCHED
+  DISPATCH_STATE_CHANGED
   PANE_REGISTERED
   PANE_CLOSED
   GENERATION_BUMPED
@@ -68,6 +69,10 @@ MATERIALIZATION_RULES = {
     state["session_name"] = p["session_name"] if p["session_name"]
     state["commander_pane"] = p["commander_pane"] if p["commander_pane"]
     state["bottom_anchor"] = p["bottom_anchor"] if p["bottom_anchor"]
+    state["panes"] ||= {}
+    state["panes"]["inspector"] = p["inspector_pane"] if p["inspector_pane"]
+    state["panes"]["utility"] = p["utility_pane"] if p["utility_pane"]
+    state["panes"]["bottom_anchor"] = p["bottom_anchor"] if p["bottom_anchor"]
     Array(p["stories"]).each_with_index do |sid, idx|
       state["story_states"][sid] ||= default_story_state(sid, idx + 1)
     end
@@ -101,8 +106,14 @@ MATERIALIZATION_RULES = {
     p = e["payload"]
     ss = state["story_states"][p["story_id"]] ||= {}
     ss["current_llm"] = p["llm"]
-    ss["dispatch_state"] = "worker_running"
+    ss["dispatch_state"] = p["dispatch_state"] || "worker_running"
     ss["c2_override"] = p["c2_override"] || false
+  },
+
+  "DISPATCH_STATE_CHANGED" => ->(state, e) {
+    p = e["payload"]
+    ss = state["story_states"][p["story_id"]] ||= {}
+    ss["dispatch_state"] = p["dispatch_state"] if p["dispatch_state"]
   },
 
   "PANE_REGISTERED" => ->(state, e) {
