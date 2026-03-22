@@ -727,7 +727,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
   # 6. Create pane via tmux-layout.sh (command = the LLM binary)
   tmux_layout = File.join(SCRIPT_DIR, "tmux-layout.sh")
   title = "mc-#{story_id}-#{phase}"
-  command_string = llm == "codex" ? "codex" : "claude"
+  command_string = llm == "codex" ? "codex --dangerously-bypass-approvals-and-sandbox" : "claude --dangerously-skip-permissions"
 
   # If fresh-pane requested, kill any existing pane with this title first
   if fresh_pane

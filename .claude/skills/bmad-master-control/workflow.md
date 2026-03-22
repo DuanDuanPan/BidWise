@@ -99,8 +99,12 @@ This is the core loop. Repeat until all stories reach `done`:
 
 ```
 1. PEEK_EVENTS --priority --limit 10
-   → If empty: sleep 15s, then re-peek
-   → If events: proceed
+   → If empty: sleep 15s, then re-peek (max 3 consecutive empty peeks)
+   → If events: proceed to step 2
+   → After 3 consecutive empty peeks: monitor-control.sh status to verify
+     task-monitor is alive. If dead → ensure-running. If still dead →
+     REQUEST_HUMAN "task-monitor down". NEVER fall back to manual
+     capture-pane (F16).
 
 2. For each event (highest priority first):
    a. context-assembler.sh build <project_root> <gen>
@@ -113,6 +117,10 @@ This is the core loop. Repeat until all stories reach `done`:
 
 4. Repeat from step 1
 ```
+
+**CRITICAL: 指挥官的唯一信息入口是 PEEK_EVENTS。**
+指挥官绝不直接 `tmux capture-pane` 读取 worker pane（F9 + F16）。
+如果事件流中断，修复 task-monitor 或 REQUEST_HUMAN——不降级为手动巡逻。
 
 ---
 

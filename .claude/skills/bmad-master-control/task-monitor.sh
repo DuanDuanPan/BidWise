@@ -57,9 +57,10 @@ cleanup() {
 trap cleanup SIGTERM SIGINT SIGHUP EXIT
 
 # ---------------------------------------------------------------------------
-# In-memory dedup state (associative arrays)
+# File-based dedup state (bash 3.x compatible — no associative arrays)
 # ---------------------------------------------------------------------------
-declare -A LAST_EMITTED   # LAST_EMITTED[pane_id] = "signal:detail_hash"
+DEDUP_FILE="$IMPL_DIR/task-monitor-dedup.tmp"
+: > "$DEDUP_FILE"  # truncate on start
 
 # ---------------------------------------------------------------------------
 # Heartbeat
@@ -154,8 +155,28 @@ pane_alive() {
 # ---------------------------------------------------------------------------
 capture_pane_tail() {
   local pane_id="$1"
-  local lines="${2:-5}"
-  tmux capture-pane -t "$pane_id" -p -S "-$lines" 2>/dev/null || true
+  local lines="${2:-15}"
+  # Capture and strip ANSI/TUI escape sequences for reliable parsing
+  tmux capture-pane -t "$pane_id" -p -S "-$lines" 2>/dev/null \
+    | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g' \
+    || true
+}
+
+# ---------------------------------------------------------------------------
+# Fallback: check mc-logs (Log layer) for sentinels missed by capture-pane
+# ---------------------------------------------------------------------------
+MC_LOG_DIR="$IMPL_DIR/mc-logs"
+
+check_log_for_sentinel() {
+  local pane_id="$1"
+  local pane_num="${pane_id#%}"
+  local logfile="$MC_LOG_DIR/pane-${pane_num}.log"
+  [[ -f "$logfile" ]] || return 1
+  # Search last 200 lines of log for MC_DONE or HALT (strip ANSI)
+  tail -200 "$logfile" 2>/dev/null \
+    | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+    | grep -E '^MC_DONE |HALT' \
+    | tail -1
 }
 
 # ---------------------------------------------------------------------------
@@ -167,7 +188,7 @@ emit_event() {
   local payload_json="$3"
 
   if [[ -x "$EVENT_BUS" ]]; then
-    "$EVENT_BUS" append "$PROJECT_ROOT" "$gen" "$event_type" "task_monitor" "null" "$payload_json" 2>/dev/null || {
+    "$EVENT_BUS" append "$PROJECT_ROOT" "$gen" "$event_type" "task_monitor" "null" "$payload_json" >/dev/null 2>/dev/null || {
       log_error "Failed to emit event: type=$event_type payload=$payload_json"
     }
   else
@@ -181,13 +202,44 @@ emit_event() {
 is_new_signal() {
   local pane_id="$1"
   local signal_key="$2"
+  local escaped_pane_id
+  escaped_pane_id=$(printf '%s' "$pane_id" | sed 's/[%]/\\%/g')
 
-  local prev="${LAST_EMITTED[$pane_id]:-}"
+  local prev
+  prev=$(grep "^${escaped_pane_id}=" "$DEDUP_FILE" 2>/dev/null | head -1 | sed "s/^${escaped_pane_id}=//" || true)
   if [[ "$prev" == "$signal_key" ]]; then
     return 1  # duplicate
   fi
-  LAST_EMITTED[$pane_id]="$signal_key"
+  # Update dedup file: remove old entry, add new
+  grep -v "^${escaped_pane_id}=" "$DEDUP_FILE" > "${DEDUP_FILE}.tmp" 2>/dev/null || true
+  echo "${pane_id}=${signal_key}" >> "${DEDUP_FILE}.tmp"
+  mv "${DEDUP_FILE}.tmp" "$DEDUP_FILE"
   return 0  # new signal
+}
+
+# ---------------------------------------------------------------------------
+# Detect if Claude Code / Codex is actively working (spinner, thinking, etc.)
+# If active, we should NOT report idle even if a prompt char is visible.
+# ---------------------------------------------------------------------------
+is_actively_working() {
+  local text="$1"
+  # Claude Code spinner patterns: unicode spinners + status text
+  if echo "$text" | grep -qE 'Drizzling|Quantumizing|Spiraling|Crystallizing|Vaporizing|Reflecting'; then
+    return 0
+  fi
+  # Generic activity indicators
+  if echo "$text" | grep -qE 'Running…|thinking|tool uses.*ctrl'; then
+    return 0
+  fi
+  # Time-stamped progress: (3m 36s · ↓ 21.8k tokens)
+  if echo "$text" | grep -qE '\([0-9]+[ms] [0-9]+s · ↓'; then
+    return 0
+  fi
+  # Agent sub-tasks still in progress
+  if echo "$text" | grep -qE 'agents? (started|running|finished)'; then
+    return 0
+  fi
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -195,6 +247,10 @@ is_new_signal() {
 # ---------------------------------------------------------------------------
 is_idle() {
   local text="$1"
+  # First: if actively working, never report idle
+  if is_actively_working "$text"; then
+    return 1
+  fi
   # Check for common prompt patterns: bare $, claude>, codex>
   if echo "$text" | grep -qE '^\s*\$\s*$|claude>|codex>|\❯\s*$|➜\s*$'; then
     return 0
@@ -303,9 +359,9 @@ analyze_pane() {
     return
   fi
 
-  # Capture last 5 lines
+  # Capture last 15 lines (enough to see spinner above prompt)
   local captured
-  captured=$(capture_pane_tail "$pane_id" 5)
+  captured=$(capture_pane_tail "$pane_id" 15)
 
   if [[ -z "$captured" ]]; then
     echo "0"
