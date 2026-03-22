@@ -31,7 +31,7 @@ beforeEach(() => {
   })
 })
 
-describe('ProjectKanban', () => {
+describe('ProjectKanban @story-1-8', () => {
   afterEach(() => {
     cleanup()
     window.sessionStorage.clear()

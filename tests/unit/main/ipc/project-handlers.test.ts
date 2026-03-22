@@ -144,7 +144,7 @@ describe('registerProjectHandlers', () => {
     expect(result).toEqual({ success: true, data: undefined })
   })
 
-  it('dispatches project:list-with-priority through sortProjectsByPriority', async () => {
+  it('@story-1-8 dispatches project:list-with-priority through sortProjectsByPriority', async () => {
     const mockProjects = [{ id: '1', name: 'Test', status: 'active' }]
     const mockSorted = [{ id: '1', name: 'Test', priorityScore: 50, nextAction: '开始需求分析' }]
     mockProjectService.list.mockResolvedValue(mockProjects)

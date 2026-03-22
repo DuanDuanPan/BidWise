@@ -29,7 +29,7 @@ function mockApi(overrides: Partial<typeof window.api> = {}): void {
   })
 }
 
-describe('todoStore', () => {
+describe('@story-1-8 todoStore', () => {
   beforeEach(() => {
     useTodoStore.setState({
       todoItems: [],

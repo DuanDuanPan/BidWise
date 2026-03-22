@@ -153,7 +153,7 @@ describe('IPC project handlers (integration)', () => {
     })
   })
 
-  describe('project:list-with-priority through real DB', () => {
+  describe('project:list-with-priority through real DB @story-1-8', () => {
     it('should return priority-sorted active projects', async () => {
       // Create two active projects with different stages
       await invoke<ApiResponse<ProjectRecord>>(IPC_CHANNELS.PROJECT_CREATE, {

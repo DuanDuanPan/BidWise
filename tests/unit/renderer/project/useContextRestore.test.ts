@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useContextRestore } from '@modules/project/hooks/useContextRestore'
 
-describe('useContextRestore', () => {
+describe('@story-1-8 useContextRestore', () => {
   it('returns null for unsaved project', () => {
     const { result } = renderHook(() => useContextRestore())
     expect(result.current.restoreContext('unknown-id')).toBeNull()

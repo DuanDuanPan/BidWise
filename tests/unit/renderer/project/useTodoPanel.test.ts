@@ -6,7 +6,7 @@ function setWindowWidth(width: number): void {
   Object.defineProperty(window, 'innerWidth', { value: width, writable: true })
 }
 
-describe('useTodoPanel', () => {
+describe('@story-1-8 useTodoPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     setWindowWidth(1600)

@@ -23,7 +23,7 @@ function makeProject(overrides: Partial<ProjectTable> = {}): ProjectTable {
   }
 }
 
-describe('todo-priority-service', () => {
+describe('@story-1-8 todo-priority-service', () => {
   beforeEach(() => {
     // Fix Date.now for deterministic tests
     vi.useFakeTimers()

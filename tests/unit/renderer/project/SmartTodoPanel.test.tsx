@@ -70,13 +70,16 @@ const defaultProps = {
   onCreateProject: vi.fn(),
 }
 
-describe('SmartTodoPanel', () => {
+describe('@story-1-8 SmartTodoPanel', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-21T12:00:00.000Z'))
     useTodoStore.setState({ todoItems: mockItems, loading: false, error: null })
   })
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
@@ -135,6 +138,12 @@ describe('SmartTodoPanel', () => {
   it('displays "未设定" for items without deadline', () => {
     render(<SmartTodoPanel {...defaultProps} />, { wrapper: Wrapper })
     expect(screen.getByText('未设定')).toBeInTheDocument()
+  })
+
+  it('applies warning styling to near deadlines', () => {
+    render(<SmartTodoPanel {...defaultProps} />, { wrapper: Wrapper })
+    const urgentDeadline = screen.getByText(/1天后/)
+    expect(urgentDeadline).toHaveClass('text-warning')
   })
 
   it('has correct ARIA attributes on panel', () => {
