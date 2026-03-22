@@ -46,8 +46,57 @@ ASSIGNABLE_STORY_FIELDS = %w[
 INSPECTOR_STATES = %w[idle busy_gate busy_audit busy_behavior].freeze
 MERGE_STATE_FIELDS = %w[queue current_story completed].freeze
 
+def sprint_status_path(project_root)
+  artifacts_dir(project_root) + "sprint-status.yaml"
+end
+
+def load_yaml_safe(path, default = {})
+  return default unless path.exist?
+  loaded = YAML.load_file(path)
+  loaded.is_a?(Hash) ? loaded : default
+rescue StandardError
+  default
+end
+
+def load_sprint_status(project_root)
+  load_yaml_safe(sprint_status_path(project_root), {})
+end
+
+def resolve_story_key(project_root, story_id)
+  development_status = load_sprint_status(project_root)["development_status"]
+  return story_id if development_status.is_a?(Hash) && development_status.key?(story_id)
+  return nil unless development_status.is_a?(Hash)
+
+  matched_key = development_status.keys.find do |key|
+    key_str = key.to_s
+    key_str == story_id || key_str.start_with?("#{story_id}-")
+  end
+  matched_key&.to_s
+end
+
+def resolve_story_file_rel(project_root, story_id, story_key = nil)
+  impl_dir = artifacts_dir(project_root)
+  legacy_rel = "_bmad-output/implementation-artifacts/story-#{story_id}.md"
+  story_key = story_key.to_s.strip
+  keyed_rel = story_key.empty? ? nil : "_bmad-output/implementation-artifacts/#{story_key}.md"
+
+  existing = [keyed_rel, legacy_rel].compact.find do |rel|
+    (Pathname(project_root) + rel).exist?
+  end
+  return existing if existing
+
+  glob_match = Dir.glob((impl_dir + "*#{story_id}*.md").to_s)
+    .reject { |path| File.basename(path).include?("validation") }
+    .sort
+    .first
+  return Pathname(glob_match).relative_path_from(Pathname(project_root)).to_s if glob_match
+
+  keyed_rel || legacy_rel
+end
+
 def default_story_state(project_root, story_id, merge_priority = nil)
-  story_file_rel = "_bmad-output/implementation-artifacts/story-#{story_id}.md"
+  story_key = resolve_story_key(project_root, story_id)
+  story_file_rel = resolve_story_file_rel(project_root, story_id, story_key)
   {
     "phase" => nil,
     "review_cycle" => 0,
@@ -57,7 +106,7 @@ def default_story_state(project_root, story_id, merge_priority = nil)
     "worktree_path" => "../BidWise-story-#{story_id}",
     "story_file_main" => (Pathname(project_root) + story_file_rel).to_s,
     "story_file_rel" => story_file_rel,
-    "story_key" => nil,
+    "story_key" => story_key,
     "validation_cycle" => 0,
     "auto_qa_cycle" => 0,
     "merge_priority" => merge_priority,
@@ -137,6 +186,21 @@ end
 
 def normalize_story_state(project_root, state, story_id, story_state)
   normalized = default_story_state(project_root, story_id, story_merge_priority(state, story_id)).merge(story_state || {})
+  resolved_story_key = resolve_story_key(project_root, story_id)
+  resolved_story_file_rel = resolve_story_file_rel(project_root, story_id, resolved_story_key)
+  current_story_file_rel = normalized["story_file_rel"].to_s
+  current_story_file_path = current_story_file_rel.empty? ? nil : (Pathname(project_root) + current_story_file_rel)
+  resolved_story_file_path = Pathname(project_root) + resolved_story_file_rel
+
+  if normalized["story_key"].to_s.empty? && resolved_story_key
+    normalized["story_key"] = resolved_story_key
+  end
+
+  if current_story_file_rel.empty? || (!current_story_file_path.exist? && resolved_story_file_path.exist?)
+    normalized["story_file_rel"] = resolved_story_file_rel
+  end
+
+  normalized["story_file_main"] = (Pathname(project_root) + normalized["story_file_rel"].to_s).to_s
   normalized.delete("dev_pane")
   normalized.delete("pane_title")
   normalized

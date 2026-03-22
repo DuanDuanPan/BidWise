@@ -38,6 +38,44 @@ log_file_for() {
   printf '%s\n' "$(runtime_dir_for "$project_root" "$session_name" "$generation")/watchdog-runtime.log"
 }
 
+link_runtime_compat_artifacts() {
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  local artifacts
+
+  artifacts="$(artifacts_dir "$project_root")"
+  link_runtime_artifact "$(pid_file_for "$project_root" "$session_name" "$generation")" "$artifacts/watchdog.pid"
+  link_runtime_artifact "$(heartbeat_file_for "$project_root" "$session_name" "$generation")" "$artifacts/watchdog-heartbeat.yaml"
+  link_runtime_artifact "$(log_file_for "$project_root" "$session_name" "$generation")" "$artifacts/watchdog-runtime.log"
+}
+
+find_project_watchdogs() {
+  local project_root="${1:?project_root required}"
+  ps -axo pid=,command= | while IFS= read -r line; do
+    [[ "$line" == *"watchdog.sh"* ]] || continue
+    [[ "$line" == *" ${project_root} "* || "$line" == *" ${project_root}" ]] || continue
+    set -- $line
+    [[ $# -ge 5 ]] || continue
+    printf '%s\n' "$1"
+  done
+}
+
+kill_project_watchdogs() {
+  local project_root="${1:?project_root required}"
+  local killed=0
+  local pid
+  while read -r pid; do
+    [[ -n "${pid:-}" ]] || continue
+    kill "$pid" 2>/dev/null || true
+    killed=1
+  done < <(find_project_watchdogs "$project_root")
+
+  if [[ "$killed" == "1" ]]; then
+    sleep 1
+  fi
+}
+
 heartbeat_value() {
   local file="${1:?file required}"
   local key="${2:?key required}"
@@ -165,6 +203,7 @@ restart_detached_cmd() {
   local pid_file heartbeat_file current_pid log_file runtime_dir
 
   runtime_dir="$(ensure_runtime_dir "$project_root" "$session_name" "$session_generation")"
+  kill_project_watchdogs "$project_root"
   pid_file="$(pid_file_for "$project_root" "$session_name" "$session_generation")"
   heartbeat_file="$(heartbeat_file_for "$project_root" "$session_name" "$session_generation")"
   log_file="$(log_file_for "$project_root" "$session_name" "$session_generation")"
@@ -178,6 +217,7 @@ restart_detached_cmd() {
   fi
 
   rm -f "$pid_file" "$heartbeat_file"
+  link_runtime_compat_artifacts "$project_root" "$session_name" "$session_generation"
 
   MC_RUNTIME_DIR="$runtime_dir" \
   MC_SESSION_GENERATION="$session_generation" \

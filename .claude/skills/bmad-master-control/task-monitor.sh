@@ -69,20 +69,20 @@ trap cleanup SIGTERM SIGINT SIGHUP EXIT
 # File-based dedup state (bash 3.x compatible — no associative arrays)
 # ---------------------------------------------------------------------------
 DEDUP_FILE="$RUNTIME_DIR/task-monitor-dedup.tmp"
-: > "$DEDUP_FILE"  # truncate on start
+[[ -f "$DEDUP_FILE" ]] || : > "$DEDUP_FILE"
 
 # EXIT debounce counters
 EXIT_COUNT_FILE="$RUNTIME_DIR/task-monitor-exit-counts.tmp"
-: > "$EXIT_COUNT_FILE"
+[[ -f "$EXIT_COUNT_FILE" ]] || : > "$EXIT_COUNT_FILE"
 EXIT_DEBOUNCE=3
 
 # IDLE one-shot tracker
 IDLE_FIRED_FILE="$RUNTIME_DIR/task-monitor-idle-fired.tmp"
-: > "$IDLE_FIRED_FILE"
+[[ -f "$IDLE_FIRED_FILE" ]] || : > "$IDLE_FIRED_FILE"
 
 # Per-pane log cursors for incremental signal scanning
 LOG_CURSOR_FILE="$RUNTIME_DIR/task-monitor-log-cursors.tmp"
-: > "$LOG_CURSOR_FILE"
+[[ -f "$LOG_CURSOR_FILE" ]] || : > "$LOG_CURSOR_FILE"
 
 # ---------------------------------------------------------------------------
 # Heartbeat
@@ -203,7 +203,8 @@ capture_pane_tail() {
 # ---------------------------------------------------------------------------
 # Fallback: check mc-logs (Log layer) for sentinels missed by capture-pane
 # ---------------------------------------------------------------------------
-MC_LOG_DIR="$ROOT_IMPL_DIR/mc-logs"
+MC_LOG_DIR="$RUNTIME_DIR/mc-logs"
+mkdir -p "$MC_LOG_DIR"
 
 normalize_terminal_stream() {
   perl -0pe '
@@ -290,6 +291,15 @@ process_log_chunk() {
   chunk=$(read_new_log_chunk "$pane_id" || true)
   [[ -n "$chunk" ]] || { echo "0"; return; }
 
+  # Terminal-state short-circuit: if dedup is already at MC_DONE/HALT,
+  # skip all intermediate MC_STATE signals to prevent post-restart replay
+  local current_dedup
+  current_dedup="$(last_seen_signal "$scope_key")"
+  local skip_intermediate=false
+  case "$current_dedup" in
+    LOG:MC_DONE*|LOG:HALT*) skip_intermediate=true ;;
+  esac
+
   local count=0
   while IFS= read -r raw_line; do
     local line
@@ -297,6 +307,10 @@ process_log_chunk() {
     [[ -n "$line" ]] || continue
 
     if [[ "$line" =~ ^MC_STATE[[:space:]]+([A-Z_]+)$ ]]; then
+      # Discard intermediate signals once terminal state is reached
+      if "$skip_intermediate"; then
+        continue
+      fi
       local state_name="${BASH_REMATCH[1]}"
       if is_new_signal "$scope_key" "STATE:${state_name}"; then
         local mapped_state
@@ -726,6 +740,61 @@ analyze_pane() {
   echo "0"
 }
 
+# ---------------------------------------------------------------------------
+# Restart recovery: fast-forward dedup + cursor for panes with terminal signals
+# ---------------------------------------------------------------------------
+recover_terminal_signals() {
+  local dominated=false
+  for f in "$DEDUP_FILE" "$LOG_CURSOR_FILE" "$EXIT_COUNT_FILE" "$IDLE_FIRED_FILE"; do
+    [[ -s "$f" ]] && { dominated=true; break; }
+  done
+  "$dominated" || return 0
+
+  log_info "Restart detected — running terminal signal recovery"
+
+  local gen
+  gen=$(read_generation)
+
+  local pane_list
+  pane_list=$(get_active_panes)
+  [[ -n "$pane_list" ]] || return 0
+
+  while IFS=' ' read -r story_id pane_id phase role; do
+    [[ -z "$story_id" || -z "$pane_id" ]] && continue
+    local scope_key="${story_id}|${pane_id}|${phase}"
+
+    local terminal_signal
+    terminal_signal=$(check_log_for_sentinel "$pane_id" || true)
+    [[ -n "$terminal_signal" ]] || continue
+
+    # 1. Fast-forward dedup to terminal signal
+    local escaped_scope
+    escaped_scope=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
+    local current_dedup
+    current_dedup=$(grep "^${escaped_scope}=" "$DEDUP_FILE" 2>/dev/null \
+      | head -1 | sed "s/^${escaped_scope}=//" || true)
+
+    case "$current_dedup" in
+      STATE:*|"")
+        grep -v "^${escaped_scope}=" "$DEDUP_FILE" > "${DEDUP_FILE}.tmp" 2>/dev/null || true
+        echo "${scope_key}=LOG:${terminal_signal}" >> "${DEDUP_FILE}.tmp"
+        mv "${DEDUP_FILE}.tmp" "$DEDUP_FILE"
+        log_info "Recovery: fast-forwarded dedup for $story_id to terminal signal"
+        ;;
+    esac
+
+    # 2. Advance cursor to end of log to prevent rescan of intermediate states
+    local pane_num="${pane_id#%}"
+    local logfile="$MC_LOG_DIR/pane-${pane_num}.log"
+    if [[ -f "$logfile" ]]; then
+      local end_pos
+      end_pos=$(wc -c < "$logfile" 2>/dev/null | tr -d '[:space:]')
+      write_log_cursor "$pane_id" "$end_pos"
+      log_info "Recovery: advanced cursor for $pane_id to byte $end_pos"
+    fi
+  done <<< "$pane_list"
+}
+
 # ===========================================================================
 # Main loop
 # ===========================================================================
@@ -739,6 +808,12 @@ main() {
   write_pid
   log_info "Task monitor started: PID=$$, session=$SESSION_NAME, generation=${start_generation}, interval=${CHECK_INTERVAL}s"
   log_info "Project root: $PROJECT_ROOT"
+
+  # Restart recovery
+  if [[ -s "$DEDUP_FILE" || -s "$LOG_CURSOR_FILE" || -s "$EXIT_COUNT_FILE" || -s "$IDLE_FIRED_FILE" ]]; then
+    log_info "Resumed from existing state files (restart recovery active)"
+  fi
+  recover_terminal_signals
 
   local cycle_count=0
 

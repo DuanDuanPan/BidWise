@@ -64,10 +64,11 @@ bottom_anchor: ''
 
 **Entry:** step-04 detects review FAIL for this story.
 
-1. Read gate-state.yaml → 恢复 story_states
-2. Extract review findings from `panes.stories[story_id].review` via capture-pane
-3. Write findings file (通过 utility_pane):
-   `../BidWise-story-{story_id}/review-findings-cycle-{N}.md`
+1. Read gate-state.yaml → 恢复 story_states, 获取 review_cycle（已被 review_fail 递增后的值）
+2. Verify findings file exists:
+   `{project_root}/_bmad-output/implementation-artifacts/review-findings-{story_id}-cycle-{review_cycle}.md`
+   - If missing: HALT "review findings file not found for cycle {review_cycle}"
+3. Read findings file → extract Verdict and Must-Fix count for logging
 4. Review pane is closed by transition-engine after REVIEW_FAIL event
 
 #### Normal Fix (review_cycle < 2): Claude

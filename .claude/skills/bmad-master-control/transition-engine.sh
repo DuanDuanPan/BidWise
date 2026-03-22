@@ -240,6 +240,14 @@ def artifacts_dir(project_root)
   Pathname(project_root) + "_bmad-output" + "implementation-artifacts"
 end
 
+def runtime_dir(project_root, session_name, generation)
+  artifacts_dir(project_root) + "runtime" + "#{session_name}-g#{generation}"
+end
+
+def runtime_mc_logs_dir(project_root, session_name, generation)
+  runtime_dir(project_root, session_name, generation) + "mc-logs"
+end
+
 def gate_state_path(project_root)
   artifacts_dir(project_root) + "gate-state.yaml"
 end
@@ -614,6 +622,9 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       MC_DONE DEV #{story_id} REVIEW_READY
     PACKET
   when "review"
+    findings_cycle = review_cycle + 1
+    findings_output = File.join(File.expand_path(project_root), "_bmad-output", "implementation-artifacts",
+                                "review-findings-#{story_id}-cycle-#{findings_cycle}.md")
     <<~PACKET
       /bmad-code-review
       Review story implementation against main in fresh context.
@@ -621,13 +632,22 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       Worktree: #{worktree}
       Review mode: branch diff vs main
       Spec file: #{story_file}
-      Do not modify files.
+      Do not modify source files in the worktree; writing the review findings artifact is required.
+      Write your review findings to: #{findings_output}
+      Format:
+      # Review Findings: #{story_id} (cycle #{findings_cycle})
+      ## Verdict: PASS | FAIL
+      ## Must-Fix Issues
+      - [ ] issue description (file:line)
+      ## Suggestions (non-blocking)
+      - suggestion description
       Final line must be exactly one of:
       MC_DONE REVIEW #{story_id} REVIEW_PASS
       MC_DONE REVIEW #{story_id} REVIEW_FAIL
     PACKET
   when "fixing"
-    findings_file = "_bmad-output/implementation-artifacts/review-findings-#{story_id}-cycle-#{review_cycle}.md"
+    findings_file = File.join(File.expand_path(project_root), "_bmad-output", "implementation-artifacts",
+                              "review-findings-#{story_id}-cycle-#{review_cycle}.md")
     <<~PACKET
       Fix code review findings for story #{story_id}.
       Findings: #{findings_file}
@@ -761,7 +781,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
   # 6. Create pane via tmux-layout.sh (command = the LLM binary)
   tmux_layout = File.join(SCRIPT_DIR, "tmux-layout.sh")
   title = "mc-#{story_id}-#{phase}"
-  agent_command = llm == "codex" ? "codex --dangerously-bypass-approvals-and-sandbox" : "claude --dangerously-skip-permissions"
+  agent_command = llm == "codex" ? "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox" : "claude --dangerously-skip-permissions"
   runtime_dir = File.join(project_root, "_bmad-output", "implementation-artifacts", "runtime", "#{session_name}-g#{expected_gen}")
   packet_dir = File.join(runtime_dir, "packets")
   FileUtils.mkdir_p(packet_dir)
@@ -810,7 +830,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
   pane_id = stdout.strip
 
   # 7. Enable pipe-pane logging
-  log_dir = File.join(project_root, "_bmad-output", "implementation-artifacts", "mc-logs")
+  log_dir = runtime_mc_logs_dir(project_root, session_name, expected_gen).to_s
   FileUtils.mkdir_p(log_dir)
   log_file = File.join(log_dir, "pane-#{pane_id.delete('%')}.log")
   system("tmux", "pipe-pane", "-t", pane_id, "-o", "cat >> #{log_file}")

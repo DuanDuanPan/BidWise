@@ -74,7 +74,7 @@ MATERIALIZATION_RULES = {
     state["panes"]["utility"] = p["utility_pane"] if p["utility_pane"]
     state["panes"]["bottom_anchor"] = p["bottom_anchor"] if p["bottom_anchor"]
     Array(p["stories"]).each_with_index do |sid, idx|
-      state["story_states"][sid] ||= default_story_state(sid, idx + 1)
+      state["story_states"][sid] ||= default_story_state($materialize_project_root, sid, idx + 1)
     end
   },
 
@@ -173,6 +173,10 @@ def artifacts_dir(project_root)
   Pathname(project_root) + "_bmad-output" + "implementation-artifacts"
 end
 
+def sprint_status_path(project_root)
+  artifacts_dir(project_root) + "sprint-status.yaml"
+end
+
 def event_log_path(project_root)
   artifacts_dir(project_root) + "event-log.yaml"
 end
@@ -183,6 +187,14 @@ end
 
 def gate_state_path(project_root)
   artifacts_dir(project_root) + "gate-state.yaml"
+end
+
+def watchdog_pid_path(project_root)
+  artifacts_dir(project_root) + "watchdog.pid"
+end
+
+def watchdog_heartbeat_path(project_root)
+  artifacts_dir(project_root) + "watchdog-heartbeat.yaml"
 end
 
 def generation_lock_path(project_root)
@@ -199,6 +211,10 @@ def load_yaml_safe(path, default = {})
   loaded.is_a?(Hash) ? loaded : default
 rescue StandardError
   default
+end
+
+def load_sprint_status(project_root)
+  load_yaml_safe(sprint_status_path(project_root), {})
 end
 
 def write_yaml(path, data)
@@ -240,8 +256,41 @@ def next_seq(events)
   events.map { |e| Integer(e["seq"] || 0) rescue 0 }.max + 1
 end
 
-def default_story_state(story_id, merge_priority = nil)
-  story_file_rel = "_bmad-output/implementation-artifacts/story-#{story_id}.md"
+def resolve_story_key(project_root, story_id)
+  development_status = load_sprint_status(project_root)["development_status"]
+  return story_id if development_status.is_a?(Hash) && development_status.key?(story_id)
+  return nil unless development_status.is_a?(Hash)
+
+  matched_key = development_status.keys.find do |key|
+    key_str = key.to_s
+    key_str == story_id || key_str.start_with?("#{story_id}-")
+  end
+  matched_key&.to_s
+end
+
+def resolve_story_file_rel(project_root, story_id, story_key = nil)
+  impl_dir = artifacts_dir(project_root)
+  legacy_rel = "_bmad-output/implementation-artifacts/story-#{story_id}.md"
+  story_key = story_key.to_s.strip
+  keyed_rel = story_key.empty? ? nil : "_bmad-output/implementation-artifacts/#{story_key}.md"
+
+  existing = [keyed_rel, legacy_rel].compact.find do |rel|
+    (Pathname(project_root) + rel).exist?
+  end
+  return existing if existing
+
+  glob_match = Dir.glob((impl_dir + "*#{story_id}*.md").to_s)
+    .reject { |path| File.basename(path).include?("validation") }
+    .sort
+    .first
+  return Pathname(glob_match).relative_path_from(Pathname(project_root)).to_s if glob_match
+
+  keyed_rel || legacy_rel
+end
+
+def default_story_state(project_root, story_id, merge_priority = nil)
+  story_key = resolve_story_key(project_root, story_id)
+  story_file_rel = resolve_story_file_rel(project_root, story_id, story_key)
   {
     "phase" => nil,
     "review_cycle" => 0,
@@ -250,13 +299,86 @@ def default_story_state(story_id, merge_priority = nil)
     "is_ui" => nil,
     "worktree_path" => "../BidWise-story-#{story_id}",
     "story_file_rel" => story_file_rel,
-    "story_key" => nil,
+    "story_key" => story_key,
     "validation_cycle" => 0,
     "auto_qa_cycle" => 0,
     "regression_cycle" => 0,
     "merge_priority" => merge_priority,
     "c2_override" => false,
   }
+end
+
+def process_alive?(pid)
+  Process.kill(0, Integer(pid))
+  true
+rescue StandardError
+  false
+end
+
+def materialized_watchdog_state(project_root, fallback = {})
+  pid = 0
+  heartbeat = {}
+
+  pid_path = watchdog_pid_path(project_root)
+  heartbeat_path = watchdog_heartbeat_path(project_root)
+
+  pid = Integer(pid_path.read.strip) if pid_path.exist?
+  heartbeat = load_yaml_safe(heartbeat_path, {})
+
+  status =
+    if pid <= 0
+      fallback.is_a?(Hash) && !fallback.empty? ? fallback["status"] : "unknown"
+    elsif !heartbeat_path.exist?
+      "missing-heartbeat"
+    elsif process_alive?(pid)
+      "alive"
+    else
+      "dead"
+    end
+
+  {
+    "pid" => pid,
+    "last_heartbeat" => heartbeat["last_check"] || (fallback.is_a?(Hash) ? fallback["last_heartbeat"] : nil),
+    "status" => status,
+  }.compact
+rescue ArgumentError
+  fallback.is_a?(Hash) ? fallback : {}
+end
+
+def build_materialized_state(project_root, events)
+  existing_state = load_yaml_safe(gate_state_path(project_root), {})
+  $materialize_project_root = project_root
+
+  state = {
+    "last_updated" => now_z,
+    "batch_id" => nil,
+    "batch_stories" => [],
+    "config" => {},
+    "gates" => {},
+    "story_gates" => {},
+    "story_states" => {},
+    "merge_state" => {"queue" => [], "current_story" => nil, "completed" => []},
+    "panes" => {"stories" => {}},
+    "session_generation" => read_generation_lock(project_root),
+    "failover_epoch" => 0,
+    "watchdog" => materialized_watchdog_state(project_root, existing_state["watchdog"]),
+    "inspector_state" => existing_state["inspector_state"] || "idle",
+  }
+
+  sorted = events.sort_by { |e| Integer(e["seq"]) }
+  sorted.each do |event|
+    rule = MATERIALIZATION_RULES[event["type"]]
+    if rule
+      rule.call(state, event)
+    else
+      warn "event-bus.sh: unknown event type for materialization: #{event["type"]}"
+    end
+  end
+
+  state["last_updated"] = now_z
+  state
+ensure
+  $materialize_project_root = nil
 end
 
 # Find event matching criteria in event list
@@ -325,6 +447,7 @@ def cmd_append(project_root, expected_gen, type, source, trigger_seq_raw, payloa
 
     events << event
     write_yaml(event_log_path(project_root), log)
+    write_yaml(gate_state_path(project_root), build_materialized_state(project_root, events))
 
     puts JSON.generate({"success" => true, "seq" => seq, "type" => type})
   end
@@ -384,35 +507,8 @@ end
 def cmd_materialize(project_root)
   log = load_event_log(project_root)
   events = log["events"]
-
-  # Initialize empty state skeleton
-  state = {
-    "last_updated" => now_z,
-    "batch_id" => nil,
-    "batch_stories" => [],
-    "config" => {},
-    "gates" => {},
-    "story_gates" => {},
-    "story_states" => {},
-    "merge_state" => {"queue" => [], "current_story" => nil, "completed" => []},
-    "panes" => {"stories" => {}},
-    "session_generation" => read_generation_lock(project_root),
-    "failover_epoch" => 0,
-    "watchdog" => {},
-  }
-
-  # Replay all events in seq order
+  state = build_materialized_state(project_root, events)
   sorted = events.sort_by { |e| Integer(e["seq"]) }
-  sorted.each do |event|
-    rule = MATERIALIZATION_RULES[event["type"]]
-    if rule
-      rule.call(state, event)
-    else
-      warn "event-bus.sh: unknown event type for materialization: #{event["type"]}"
-    end
-  end
-
-  state["last_updated"] = now_z
   write_yaml(gate_state_path(project_root), state)
 
   puts JSON.generate({

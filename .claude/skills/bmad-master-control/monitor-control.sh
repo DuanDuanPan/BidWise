@@ -36,6 +36,21 @@ log_file() {
   printf '%s\n' "$(runtime_dir_for "$project_root" "$session_name" "$generation")/task-monitor.log"
 }
 
+link_runtime_compat_artifacts() {
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  local artifacts runtime_logs_dir
+
+  artifacts="$(artifacts_dir "$project_root")"
+  runtime_logs_dir="$(ensure_runtime_mc_logs_dir "$project_root" "$session_name" "$generation")"
+
+  link_runtime_artifact "$(pid_file "$project_root" "$session_name" "$generation")" "$artifacts/task-monitor.pid"
+  link_runtime_artifact "$(heartbeat_file "$project_root" "$session_name" "$generation")" "$artifacts/task-monitor-heartbeat.yaml"
+  link_runtime_artifact "$(log_file "$project_root" "$session_name" "$generation")" "$artifacts/task-monitor.log"
+  link_runtime_artifact "$runtime_logs_dir" "$artifacts/mc-logs"
+}
+
 is_running() {
   local project_root="${1:?project_root required}"
   local session_name="${2:?session_name required}"
@@ -92,6 +107,7 @@ cmd_start() {
   hf="$(heartbeat_file "$project_root" "$session_name" "$generation")"
   log="$(log_file "$project_root" "$session_name" "$generation")"
   rm -f "$pf" "$hf"
+  link_runtime_compat_artifacts "$project_root" "$session_name" "$generation"
 
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting task-monitor daemon..." >> "$log"
   MC_RUNTIME_DIR="$(runtime_dir_for "$project_root" "$session_name" "$generation")" \

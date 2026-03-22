@@ -21,6 +21,7 @@ ALERT_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/watchdog-alert
 ALERT_CACHE_FILE="${RUNTIME_DIR}/watchdog-alert-cache.txt"
 EVENT_LOG_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/event-log.yaml"
 GATE_STATE_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/gate-state.yaml"
+GENERATION_LOCK_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/generation.lock"
 PID_FILE="${RUNTIME_DIR}/watchdog.pid"
 HEARTBEAT_FILE="${RUNTIME_DIR}/watchdog-heartbeat.yaml"
 CHECK_INTERVAL="${WATCHDOG_CHECK_INTERVAL:-60}"
@@ -71,6 +72,31 @@ current_generation() {
     fi
   fi
   printf '%s\n' "$generation"
+}
+
+read_gate_state_runtime() {
+  if [ ! -f "$GATE_STATE_FILE" ]; then
+    printf '|\n'
+    return
+  fi
+
+  python3 - "$GATE_STATE_FILE" <<'PY'
+import sys, yaml
+path = sys.argv[1]
+try:
+    data = yaml.safe_load(open(path, "r", encoding="utf-8")) or {}
+except Exception:
+    data = {}
+print(f"{data.get('session_name', '')}|{data.get('session_generation', '')}")
+PY
+}
+
+read_generation_lock() {
+  if [ -f "$GENERATION_LOCK_FILE" ]; then
+    tr -d '[:space:]' < "$GENERATION_LOCK_FILE"
+  else
+    printf '%s\n' "$SESSION_GENERATION"
+  fi
 }
 
 alert_cache_key() {
@@ -299,6 +325,25 @@ while true; do
   # 检查 tmux session 是否还存在（不绑定单个 pane）
   if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     echo "[watchdog] Session '$SESSION_NAME' no longer exists. Exiting."
+    exit 0
+  fi
+
+  runtime_meta="$(read_gate_state_runtime)"
+  IFS='|' read -r runtime_session runtime_generation <<< "$runtime_meta"
+  current_generation_lock="$(read_generation_lock)"
+
+  if [ -n "$runtime_session" ] && [ "$runtime_session" != "$SESSION_NAME" ]; then
+    echo "[watchdog] gate-state leased to session '$runtime_session' (ours: '$SESSION_NAME'). Exiting."
+    exit 0
+  fi
+
+  if [ -n "$runtime_generation" ] && [ "$runtime_generation" != "$SESSION_GENERATION" ]; then
+    echo "[watchdog] gate-state generation changed to '$runtime_generation' (ours: '$SESSION_GENERATION'). Exiting."
+    exit 0
+  fi
+
+  if [ "$current_generation_lock" != "$SESSION_GENERATION" ]; then
+    echo "[watchdog] generation.lock changed to '$current_generation_lock' (ours: '$SESSION_GENERATION'). Exiting."
     exit 0
   fi
 

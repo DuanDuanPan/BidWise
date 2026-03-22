@@ -33,6 +33,9 @@ _bmad-output/implementation-artifacts/runtime/
 _bmad-output/implementation-artifacts/event-log.yaml
 _bmad-output/implementation-artifacts/gate-state.yaml
 _bmad-output/implementation-artifacts/generation.lock
-_bmad-output/implementation-artifacts/mc-logs/
+_bmad-output/implementation-artifacts/mc-logs
+_bmad-output/implementation-artifacts/task-monitor-heartbeat.yaml
+_bmad-output/implementation-artifacts/task-monitor.pid
+.claude/skills/bmad-master-control/__pycache__/
 .serena/
 nohup.out

@@ -18,6 +18,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MC="$ROOT/.claude/skills/bmad-master-control"
 ARTIFACTS="$ROOT/_bmad-output/implementation-artifacts"
 
+resolve_runtime_dir() {
+  local session_name generation runtime_dir
+  session_name="$(ruby -ryaml -e 'gs = YAML.safe_load(File.read(ARGV[0])) rescue {}; puts gs["session_name"].to_s' "$ARTIFACTS/gate-state.yaml" 2>/dev/null || true)"
+  generation="$(tr -d '[:space:]' < "$ARTIFACTS/generation.lock" 2>/dev/null || true)"
+  if [[ -n "$session_name" && -n "$generation" ]]; then
+    runtime_dir="$ARTIFACTS/runtime/${session_name}-g${generation}"
+    if [[ -d "$runtime_dir" ]]; then
+      printf '%s\n' "$runtime_dir"
+      return
+    fi
+  fi
+  printf '%s\n' "$ARTIFACTS"
+}
+
 # Resolve tmux session
 if [[ -n "${1:-}" ]]; then
   SESSION="$1"
@@ -30,12 +44,13 @@ else
 fi
 
 # Ensure artifacts dir exists (may not exist on cold start)
-mkdir -p "$ARTIFACTS/mc-logs"
+RUNTIME_DIR="$(resolve_runtime_dir)"
+mkdir -p "$RUNTIME_DIR/mc-logs"
 
 # Touch files so tail -F doesn't fail on first run
 touch "$ARTIFACTS/event-log.yaml" \
-      "$ARTIFACTS/task-monitor.log" \
-      "$ARTIFACTS/watchdog-runtime.log" \
+      "$RUNTIME_DIR/task-monitor.log" \
+      "$RUNTIME_DIR/watchdog-runtime.log" \
       "$ARTIFACTS/watchdog-alerts.yaml"
 
 # ── Check for existing mc-observe window ──────────────────────────────────
@@ -83,8 +98,8 @@ tmux split-window -t "$SESSION:mc-observe.0" -v \
 # ── Pane 4 (below pane 2): deviation logs ───────────────────────────────
 tmux select-pane -t "$SESSION:mc-observe.1"
 tmux split-window -t "$SESSION:mc-observe.1" -v \
-  "tail -F '$ARTIFACTS/task-monitor.log' \
-          '$ARTIFACTS/watchdog-runtime.log' \
+  "tail -F '$RUNTIME_DIR/task-monitor.log' \
+          '$RUNTIME_DIR/watchdog-runtime.log' \
           '$ARTIFACTS/watchdog-alerts.yaml'"
 
 # ── Set pane titles ──────────────────────────────────────────────────────

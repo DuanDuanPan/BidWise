@@ -53,6 +53,23 @@ ensure_runtime_dir() {
   printf '%s\n' "$dir"
 }
 
+runtime_mc_logs_dir_for() {
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  printf '%s\n' "$(runtime_dir_for "$project_root" "$session_name" "$generation")/mc-logs"
+}
+
+ensure_runtime_mc_logs_dir() {
+  local project_root="${1:?project_root required}"
+  local session_name="${2:?session_name required}"
+  local generation="${3:?generation required}"
+  local dir
+  dir="$(runtime_mc_logs_dir_for "$project_root" "$session_name" "$generation")"
+  mkdir -p "$dir"
+  printf '%s\n' "$dir"
+}
+
 link_runtime_artifact() {
   local target="${1:?target required}"
   local link_path="${2:?link_path required}"

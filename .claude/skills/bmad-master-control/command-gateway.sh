@@ -28,6 +28,7 @@ require "fileutils"
 require "tempfile"
 require "shellwords"
 require "time"
+require "timeout"
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -83,6 +84,18 @@ rescue StandardError
   0
 end
 
+def runtime_dir(project_root, session_name, generation)
+  File.join(project_root, "_bmad-output", "implementation-artifacts", "runtime", "#{session_name}-g#{generation}")
+end
+
+def runtime_mc_logs_dir(project_root, session_name, generation)
+  File.join(runtime_dir(project_root, session_name, generation), "mc-logs")
+end
+
+def runtime_pane_log_file(project_root, session_name, generation, pane_id)
+  File.join(runtime_mc_logs_dir(project_root, session_name, generation), "pane-#{pane_id.to_s.delete('%')}.log")
+end
+
 def runtime_consumer_name(project_root, expected_gen, base = "commander")
   gs_path = File.join(project_root, "_bmad-output", "implementation-artifacts", "gate-state.yaml")
   gs = File.exist?(gs_path) ? (YAML.safe_load(File.read(gs_path)) rescue {}) : {}
@@ -124,8 +137,12 @@ end
 
 def clean_terminal_output(text)
   text.to_s
+    .dup
+    .force_encoding(Encoding::UTF_8)
+    .scrub
     .gsub(/\e\[[0-9;]*[[:alpha:]]/, "")
     .gsub(/\e\][^\a]*\a/, "")
+    .gsub(/\r/, "\n")
 end
 
 def command_matches?(actual, expected)
@@ -152,7 +169,71 @@ def wait_for_pane_pattern(pane_id, pattern, timeout_sec: 30, lines: 120)
   end
 end
 
-def paste_block_to_pane(pane_id, text, buffer_prefix)
+def wait_for_pane_command(pane_id, expected, timeout_sec: 30)
+  deadline = Time.now + timeout_sec
+  loop do
+    current_cmd = `tmux display-message -p -t "#{pane_id}" '\#{pane_current_command}' 2>/dev/null`.strip rescue ""
+    return true if command_matches?(current_cmd, expected)
+    return false if Time.now >= deadline
+    sleep 1
+  end
+end
+
+def pane_log_size(log_file)
+  File.exist?(log_file) ? File.size(log_file) : 0
+rescue StandardError
+  0
+end
+
+def pane_log_text(log_file)
+  return "" unless File.exist?(log_file)
+  clean_terminal_output(File.binread(log_file))
+rescue StandardError
+  ""
+end
+
+def wait_for_log_pattern(log_file, pattern, timeout_sec: 30, start_pos: 0)
+  deadline = Time.now + timeout_sec
+  loop do
+    if File.exist?(log_file)
+      raw = File.binread(log_file)
+      chunk = raw.byteslice(start_pos, raw.bytesize - start_pos) || "".b
+      return true if clean_terminal_output(chunk).match?(pattern)
+    end
+    return false if Time.now >= deadline
+    sleep 1
+  end
+end
+
+def wait_for_log_substrings(log_file, substrings, timeout_sec: 30, start_pos: 0)
+  deadline = Time.now + timeout_sec
+  expected = Array(substrings)
+  loop do
+    if File.exist?(log_file)
+      raw = File.binread(log_file)
+      chunk = raw.byteslice(start_pos, raw.bytesize - start_pos) || "".b
+      text = clean_terminal_output(chunk)
+      return true if expected.any? { |needle| text.include?(needle) }
+    end
+    return false if Time.now >= deadline
+    sleep 1
+  end
+end
+
+def inspector_boot_output_seen?(text)
+  text.include?("OpenAI Codex") || text.include?("Starting MCP servers")
+end
+
+def inspector_input_ready_seen?(text)
+  normalized = clean_terminal_output(text)
+  return true if normalized.match?(/gpt-[^\n]{0,80}·\s*100%\s*/m)
+  return true if normalized.include?("Implement {feature}")
+  return true if normalized.include?("Run /review on my current changes")
+  return true if normalized.include?("Describe the task")
+  false
+end
+
+def paste_block_to_pane(pane_id, text, buffer_prefix, submit_key: "Enter", post_paste_delay: 0.2)
   buffer_name = "#{buffer_prefix}-#{$$}"
   Tempfile.create([buffer_prefix, ".txt"]) do |tmp|
     tmp.write(text.end_with?("\n") ? text : "#{text}\n")
@@ -160,13 +241,14 @@ def paste_block_to_pane(pane_id, text, buffer_prefix)
     system("tmux", "load-buffer", "-b", buffer_name, tmp.path)
   end
   system("tmux", "paste-buffer", "-b", buffer_name, "-t", pane_id.to_s)
-  system("tmux", "send-keys", "-t", pane_id.to_s, "Enter")
+  sleep post_paste_delay if post_paste_delay.to_f > 0
+  system("tmux", "send-keys", "-t", pane_id.to_s, submit_key)
 ensure
   system("tmux", "delete-buffer", "-b", buffer_name.to_s, [:out, :err] => "/dev/null")
 end
 
-def ensure_pipe_logging(project_root, pane_id)
-  log_dir = File.join(project_root, "_bmad-output", "implementation-artifacts", "mc-logs")
+def ensure_pipe_logging(project_root, session_name, generation, pane_id)
+  log_dir = runtime_mc_logs_dir(project_root, session_name, generation)
   FileUtils.mkdir_p(log_dir)
   log_file = File.join(log_dir, "pane-#{pane_id.delete('%')}.log")
   system("tmux", "pipe-pane", "-t", pane_id.to_s, "-o", "cat >> #{log_file}")
@@ -269,61 +351,228 @@ end
 
 def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_phase:)
   inspector_pane = context.fetch("inspector_pane")
-  ensure_pipe_logging(project_root, inspector_pane)
-  runtime_dir = File.join(project_root, "_bmad-output", "implementation-artifacts", "runtime", "#{context.fetch("session_name")}-g#{read_generation_lock(project_root)}")
-  FileUtils.mkdir_p(runtime_dir)
-  standing_order_marker = File.join(runtime_dir, "inspector-standing-order.sent")
+  session_name = context.fetch("session_name")
+  generation = read_generation_lock(project_root)
+  rt_dir = runtime_dir(project_root, session_name, generation)
+  FileUtils.mkdir_p(rt_dir)
+  log_file = runtime_pane_log_file(project_root, session_name, generation, inspector_pane)
+  ensure_pipe_logging(project_root, session_name, generation, inspector_pane)
 
   pane_cmd = `tmux display-message -p -t "#{inspector_pane}" '\#{pane_current_command}' 2>/dev/null`.strip rescue ""
-  unless command_matches?(pane_cmd, "codex")
-    system("tmux", "send-keys", "-t", inspector_pane, "C-c")
-    sleep 1
-    launch_cmd = "cd #{Shellwords.escape(project_root)} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox"
-    system("tmux", "send-keys", "-t", inspector_pane, launch_cmd, "Enter")
-  end
 
-  prompt_re = /(^|\n)\s*(?:❯|›|➜).*$|(^|\n)\s*codex>.*$/m
-  ready_prompt = false
-  deadline = Time.now + 30
-  loop do
-    current_cmd = `tmux display-message -p -t "#{inspector_pane}" '\#{pane_current_command}' 2>/dev/null`.strip rescue ""
-    pane_text = capture_pane_text(inspector_pane, 80)
-    if command_matches?(current_cmd, "codex") && pane_text.match?(prompt_re)
-      ready_prompt = true
-      break
+  # ── Branch A: wrapper 运行中 ──
+  if wrapper_running?(rt_dir, inspector_pane)
+    unless inspector_ready_from_log?(project_root, session_name, generation, inspector_pane)
+      ready = wait_for_log_substrings(log_file,
+        ["MC_STATE INSPECTOR_READY", "INSPECTOR READY", "BASELINE AUDIT:"], timeout_sec: 60)
+      die("INSPECTOR_PROTOCOL_TIMEOUT") unless ready
     end
-    break if Time.now >= deadline
-    sleep 1
-  end
-  die("INSPECTOR_BOOT_TIMEOUT: codex prompt not observed in #{inspector_pane}") unless ready_prompt
-
-  pane_text = capture_pane_text(inspector_pane, 180)
-  unless pane_text.include?("INSPECTOR READY") || pane_text.include?("BASELINE AUDIT:")
-    paste_block_to_pane(
-      inspector_pane,
-      inspector_bootstrap_message,
-      "mc-inspector-bootstrap"
-    )
-    ready_protocol = wait_for_pane_pattern(
-      inspector_pane,
-      /(^|\n)\s*(?:[•●*\-]\s*)?INSPECTOR READY\s*$/m,
-      timeout_sec: 30,
-      lines: 220
-    )
-    die("INSPECTOR_PROTOCOL_TIMEOUT: readiness sentinel not observed in #{inspector_pane}") unless ready_protocol
-    pane_text = capture_pane_text(inspector_pane, 220)
+    marker = inspector_marker_path(rt_dir)
+    die("INSPECTOR_BOOT_TOKEN_MISSING: cannot resolve marker path") unless marker
+    ok = send_standing_order_via_fifo(rt_dir, marker, batch_id, stories, current_phase)
+    die("INSPECTOR_STANDING_ORDER_FAILED: FIFO send failed for wrapper inspector") unless ok
+    return context.merge("inspector_status" => "ready", "inspector_mode" => "wrapper")
   end
 
-  unless File.exist?(standing_order_marker)
-    paste_block_to_pane(
-      inspector_pane,
-      inspector_standing_order(batch_id, stories, current_phase),
-      "mc-inspector-standing-order"
-    )
-    File.write(standing_order_marker, Time.now.utc.iso8601)
+  # ── Branch B: 旧模式（直接 codex） ──
+  if command_matches?(pane_cmd, "codex")
+    unless inspector_ready_from_log?(project_root, session_name, generation, inspector_pane)
+      ready = wait_for_log_substrings(log_file,
+        ["INSPECTOR READY", "BASELINE AUDIT:"], timeout_sec: 30)
+      die("INSPECTOR_PROTOCOL_TIMEOUT") unless ready
+    end
+    marker = legacy_marker_path(rt_dir, log_file)
+    if marker.nil?
+      # No INSPECTOR READY token in log — kill and fall through to Branch C on next call
+      system("tmux", "send-keys", "-t", inspector_pane, "C-c")
+      sleep 0.5
+      die("LEGACY_INSPECTOR_NO_TOKEN: no INSPECTOR READY found in log, restart required")
+    end
+    unless File.exist?(marker)
+      paste_block_to_pane(
+        inspector_pane,
+        inspector_standing_order(batch_id, stories, current_phase),
+        "mc-inspector-standing-order",
+        submit_key: "Tab"
+      )
+      File.write(marker, Time.now.utc.iso8601)
+    end
+    return context.merge("inspector_status" => "ready", "inspector_mode" => "legacy")
   end
 
-  context.merge("inspector_status" => "ready")
+  # ── Branch C: 全新启动 ──
+  system("tmux", "send-keys", "-t", inspector_pane, "C-c")
+  sleep 0.5
+
+  # Clear stale boot token so wrapper_running? returns false during startup
+  stale_token = inspector_boot_token_path(rt_dir)
+  File.delete(stale_token) if File.exist?(stale_token)
+
+  packet_file = File.join(rt_dir, "inspector-bootstrap-packet.txt")
+  File.write(packet_file, inspector_bootstrap_message)
+
+  control_fifo = File.join(rt_dir, "inspector-control.fifo")
+  system("mkfifo", control_fifo) unless File.exist?(control_fifo)
+
+  boot_token_file = inspector_boot_token_path(rt_dir)
+  wrapper = File.join(SCRIPT_DIR, "agent-wrapper.py")
+  launch_cmd = [
+    "cd #{Shellwords.escape(project_root)} &&",
+    "python3 #{Shellwords.escape(wrapper)}",
+    "--agent-command #{Shellwords.escape("codex --no-alt-screen --search --dangerously-bypass-approvals-and-sandbox")}",
+    "--packet-file #{Shellwords.escape(packet_file)}",
+    "--ready-timeout 90",
+    "--control-fifo #{Shellwords.escape(control_fifo)}",
+    "--long-lived",
+    "--ready-match #{Shellwords.escape("INSPECTOR READY")}",
+    "--ready-emit INSPECTOR_READY",
+    "--boot-token-file #{Shellwords.escape(boot_token_file)}",
+  ].join(" ")
+  system("tmux", "send-keys", "-t", inspector_pane, launch_cmd, "Enter")
+
+  ready = wait_for_log_substrings(log_file,
+    ["MC_STATE INSPECTOR_READY", "INSPECTOR READY", "BASELINE AUDIT:"], timeout_sec: 120)
+  die("INSPECTOR_BOOT_TIMEOUT") unless ready
+
+  # Boot token now exists (written by wrapper at startup)
+  marker = inspector_marker_path(rt_dir)
+  die("INSPECTOR_BOOT_TOKEN_MISSING: wrapper did not write boot token") unless marker
+  ok = send_standing_order_via_fifo(rt_dir, marker, batch_id, stories, current_phase)
+  die("INSPECTOR_STANDING_ORDER_FAILED: FIFO send failed after fresh launch") unless ok
+
+  context.merge("inspector_status" => "ready", "inspector_mode" => "wrapper")
+end
+
+def inspector_ready_from_log?(project_root, session_name, generation, pane_id)
+  log_file = runtime_pane_log_file(project_root, session_name, generation, pane_id)
+  log_text = pane_log_text(log_file)
+  log_text.include?("INSPECTOR READY") || log_text.include?("BASELINE AUDIT:")
+end
+
+def inspector_log_file(project_root, session_name, pane_id)
+  generation = read_generation_lock(project_root)
+  runtime_pane_log_file(project_root, session_name, generation, pane_id)
+end
+
+INSPECTOR_BOOT_TOKEN_FILENAME = "inspector-boot.token"
+
+def inspector_boot_token_path(rt_dir)
+  File.join(rt_dir, INSPECTOR_BOOT_TOKEN_FILENAME)
+end
+
+def read_inspector_boot_token(rt_dir)
+  path = inspector_boot_token_path(rt_dir)
+  return nil unless File.exist?(path)
+  content = File.read(path).strip
+  token = {}
+  content.each_line do |line|
+    k, v = line.strip.split("=", 2)
+    token[k] = v if k && v
+  end
+  token
+rescue StandardError
+  nil
+end
+
+def inspector_marker_path(rt_dir)
+  token = read_inspector_boot_token(rt_dir)
+  return nil unless token && token["boot_id"]
+  File.join(rt_dir, "inspector-standing-order-#{token["boot_id"]}.sent")
+end
+
+def wrapper_running?(rt_dir, inspector_pane)
+  pane_cmd = `tmux display-message -p -t "#{inspector_pane}" '\#{pane_current_command}' 2>/dev/null`.strip rescue ""
+  return false unless command_matches?(pane_cmd, "python3") || command_matches?(pane_cmd, "python")
+
+  token = read_inspector_boot_token(rt_dir)
+  return false unless token && token["wrapper_pid"]
+  begin
+    Process.kill(0, Integer(token["wrapper_pid"]))
+    true
+  rescue Errno::ESRCH, Errno::EPERM, ArgumentError
+    false
+  end
+end
+
+def legacy_ready_token(log_file)
+  return nil unless File.exist?(log_file)
+  offset = nil
+  pos = 0
+  File.foreach(log_file) do |line|
+    clean = clean_terminal_output(line)
+    if clean.include?("INSPECTOR READY")
+      offset = pos
+    end
+    pos += line.bytesize
+  end
+  offset ? "legacy-#{offset}" : nil
+rescue StandardError
+  nil
+end
+
+def legacy_marker_path(rt_dir, log_file)
+  token = legacy_ready_token(log_file)
+  return nil unless token
+  File.join(rt_dir, "inspector-standing-order-#{token}.sent")
+end
+
+def detect_inspector_mode(project_root, session_name, generation, inspector_pane)
+  rt_dir = runtime_dir(project_root, session_name, generation)
+  if wrapper_running?(rt_dir, inspector_pane)
+    "wrapper"
+  else
+    pane_cmd = `tmux display-message -p -t "#{inspector_pane}" '\#{pane_current_command}' 2>/dev/null`.strip rescue ""
+    command_matches?(pane_cmd, "codex") ? "legacy" : "unknown"
+  end
+end
+
+# Returns true if sent (or already sent), false if send failed
+def send_standing_order_via_fifo(rt_dir, marker_file, batch_id, stories, current_phase)
+  return true if marker_file && File.exist?(marker_file)
+
+  fifo = File.join(rt_dir, "inspector-control.fifo")
+  return false unless File.exist?(fifo)
+
+  order = inspector_standing_order(batch_id, stories, current_phase)
+  begin
+    Timeout.timeout(5) do
+      File.open(fifo, "w") { |f| f.write(order + "\n"); f.flush }
+    end
+    File.write(marker_file, Time.now.utc.iso8601) if marker_file
+    true
+  rescue Timeout::Error
+    false
+  rescue StandardError
+    false
+  end
+end
+
+def send_to_inspector(project_root, session_name, generation, inspector_pane, message)
+  rt_dir = runtime_dir(project_root, session_name, generation)
+  mode = detect_inspector_mode(project_root, session_name, generation, inspector_pane)
+
+  case mode
+  when "wrapper"
+    fifo = File.join(rt_dir, "inspector-control.fifo")
+    unless File.exist?(fifo)
+      return {"success" => false, "error" => "control FIFO missing", "action" => "ensure_inspector"}
+    end
+    begin
+      Timeout.timeout(5) do
+        File.open(fifo, "w") { |f| f.write(message + "\n"); f.flush }
+      end
+      {"success" => true}
+    rescue StandardError => e
+      {"success" => false, "error" => e.message, "action" => "ensure_inspector"}
+    end
+
+  when "legacy"
+    paste_block_to_pane(inspector_pane, message, "mc-inspector-msg", submit_key: "Tab")
+    {"success" => true}
+
+  else
+    {"success" => false, "error" => "unknown inspector mode", "action" => "ensure_inspector"}
+  end
 end
 
 # ─── Command Parser ──────────────────────────────────────────────────────────
@@ -617,10 +866,12 @@ def handle_health(project_root, expected_gen, cmd)
       if inspector_line
         inspector_pane = inspector_line.split.first
         pane_cmd = `tmux display-message -p -t "#{inspector_pane}" '\#{pane_current_command}' 2>/dev/null`.strip rescue ""
-        pane_tail = `tmux capture-pane -t "#{inspector_pane}" -p -S -80 2>/dev/null` rescue ""
-        clean_tail = pane_tail
-          .gsub(/\e\[[0-9;]*[[:alpha:]]/, "")
-          .gsub(/\e\][^\a]*\a/, "")
+        generation = read_generation_lock(project_root)
+        clean_tail = pane_log_text(runtime_pane_log_file(project_root, session_name, generation, inspector_pane))
+        if clean_tail.empty?
+          pane_tail = `tmux capture-pane -t "#{inspector_pane}" -p -S -80 2>/dev/null` rescue ""
+          clean_tail = clean_terminal_output(pane_tail)
+        end
 
         payload["inspector_pane"] = inspector_pane
         payload["pane_command"] = pane_cmd
@@ -741,8 +992,65 @@ def handle_health(project_root, expected_gen, cmd)
     payload["pane_result"] = pane_result
 
   when "check_logging"
-    # Check pipe-pane status — idempotent
-    payload["result"] = "checked"
+    begin
+      gs_path = File.join(project_root, "_bmad-output", "implementation-artifacts", "gate-state.yaml")
+      gs = File.exist?(gs_path) ? (YAML.safe_load(File.read(gs_path)) rescue {}) : {}
+      session_name = gs["session_name"].to_s
+
+      if session_name.empty?
+        payload["result"] = "error"
+        payload["error"] = "session_name not found in gate-state"
+      else
+        generation = read_generation_lock(project_root)
+        log_dir = runtime_mc_logs_dir(project_root, session_name, generation)
+        issues = []
+        repaired = []
+
+        unless Dir.exist?(log_dir)
+          issues << "mc-logs directory missing: #{log_dir}"
+        end
+
+        pane_stories = gs.dig("panes", "stories") || {}
+        all_panes = pane_stories.values.flat_map { |v| v.is_a?(Hash) ? v.values : [v] }
+        all_panes << gs.dig("panes", "inspector") if gs.dig("panes", "inspector")
+
+        all_panes.compact.uniq.each do |pane_id|
+          log_file = File.join(log_dir, "pane-#{pane_id.delete('%')}.log")
+
+          pane_alive = begin
+            out = `tmux list-panes -t "#{session_name}" -F '\#{pane_id}' 2>/dev/null`.lines.map(&:strip)
+            out.include?(pane_id)
+          rescue StandardError
+            false
+          end
+
+          unless File.exist?(log_file)
+            if pane_alive
+              issues << "log file missing for active pane #{pane_id}"
+              ensure_pipe_logging(project_root, session_name, generation, pane_id)
+              repaired << pane_id
+            end
+            next
+          end
+
+          if pane_alive
+            mtime = File.mtime(log_file) rescue Time.at(0)
+            age = (Time.now - mtime).to_i
+            if age > 120
+              issues << "log stale for active pane #{pane_id} (#{age}s since last write)"
+            end
+            ensure_pipe_logging(project_root, session_name, generation, pane_id)
+          end
+        end
+
+        payload["result"] = issues.empty? ? "healthy" : "degraded"
+        payload["issues"] = issues unless issues.empty?
+        payload["repaired_panes"] = repaired unless repaired.empty?
+      end
+    rescue StandardError => e
+      payload["result"] = "error"
+      payload["error"] = e.message
+    end
   end
 
   # Write audit event
