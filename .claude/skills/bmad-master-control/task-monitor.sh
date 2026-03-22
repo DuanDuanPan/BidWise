@@ -196,7 +196,7 @@ capture_pane_tail() {
   local lines="${2:-15}"
   # Capture and strip ANSI/TUI escape sequences for reliable parsing
   tmux capture-pane -t "$pane_id" -p -S "-$lines" 2>/dev/null \
-    | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g' \
+    | normalize_terminal_stream \
     || true
 }
 
@@ -204,6 +204,14 @@ capture_pane_tail() {
 # Fallback: check mc-logs (Log layer) for sentinels missed by capture-pane
 # ---------------------------------------------------------------------------
 MC_LOG_DIR="$ROOT_IMPL_DIR/mc-logs"
+
+normalize_terminal_stream() {
+  perl -0pe '
+    s/\e\[[0-9;?]*[[:alpha:]]/ /g;
+    s/\e\][^\a]*(?:\a|\e\\\\)/ /g;
+    s/\r/\n/g;
+  '
+}
 
 read_log_cursor() {
   local pane_id="$1"
@@ -228,7 +236,7 @@ read_new_log_chunk() {
   local logfile="$MC_LOG_DIR/pane-${pane_num}.log"
   [[ -f "$logfile" ]] || return 1
 
-  local size prev start
+  local size prev start chunk
   size=$(wc -c < "$logfile" 2>/dev/null | tr -d '[:space:]')
   prev=$(read_log_cursor "$pane_id")
   [[ "$prev" =~ ^[0-9]+$ ]] || prev=0
@@ -242,8 +250,10 @@ read_new_log_chunk() {
   fi
 
   start=$((prev + 1))
+  chunk=$(tail -c +"$start" "$logfile" 2>/dev/null | normalize_terminal_stream)
+  [[ -n "$chunk" ]] || return 1
   write_log_cursor "$pane_id" "$size"
-  tail -c +"$start" "$logfile" 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g'
+  printf '%s' "$chunk"
 }
 
 check_log_for_sentinel() {
@@ -251,10 +261,12 @@ check_log_for_sentinel() {
   local pane_num="${pane_id#%}"
   local logfile="$MC_LOG_DIR/pane-${pane_num}.log"
   [[ -f "$logfile" ]] || return 1
-  # Search last 200 lines of log for MC_DONE or HALT (strip ANSI)
-  tail -200 "$logfile" 2>/dev/null \
-    | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
-    | grep -E '^MC_DONE |HALT' \
+  # Search a recent tail slice for terminal sentinels even if the incremental
+  # cursor missed them. MC_DONE is required to be the final worker line.
+  tail -400 "$logfile" 2>/dev/null \
+    | normalize_terminal_stream \
+    | grep -E '^[[:space:]]*MC_DONE[[:space:]]+|^[[:space:]]*HALT' \
+    | sed 's/^[[:space:]]*//' \
     | tail -1
 }
 
@@ -296,6 +308,9 @@ process_log_chunk() {
     fi
 
     if [[ "$line" =~ ^MC_DONE[[:space:]] || "$line" =~ ^HALT ]]; then
+      if [[ "$line" =~ ^MC_DONE[[:space:]] ]] && ! worker_running_seen "$scope_key"; then
+        continue
+      fi
       clear_idle_fired "$scope_key"
       if is_new_signal "$scope_key" "LOG:${line}"; then
         emit_signal_from_line "$gen" "$story_id" "$pane_id" "$line"
@@ -344,6 +359,20 @@ is_new_signal() {
   echo "${scope_key}=${signal_key}" >> "${DEDUP_FILE}.tmp"
   mv "${DEDUP_FILE}.tmp" "$DEDUP_FILE"
   return 0  # new signal
+}
+
+last_seen_signal() {
+  local scope_key="$1"
+  local escaped_scope_key
+  escaped_scope_key=$(printf '%s' "$scope_key" | sed 's/[][\/.^$*]/\\&/g')
+  grep "^${escaped_scope_key}=" "$DEDUP_FILE" 2>/dev/null | head -1 | sed "s/^${escaped_scope_key}=//" || true
+}
+
+worker_running_seen() {
+  local scope_key="$1"
+  local prev
+  prev="$(last_seen_signal "$scope_key")"
+  [[ "$prev" == "STATE:WORKER_RUNNING" || "$prev" == LOG:MC_DONE* || "$prev" == MC_DONE* ]]
 }
 
 read_exit_count() {
@@ -574,24 +603,32 @@ analyze_pane() {
     return
   fi
 
+  # Defensive fallback: pipe-pane log writes are asynchronous, so a terminal
+  # sentinel can exist in the log tail even if the per-pane cursor already
+  # advanced past the last incremental chunk.
+  local log_signal
+  log_signal=$(check_log_for_sentinel "$pane_id" || true)
+  if [[ -n "$log_signal" ]]; then
+    if [[ "$log_signal" =~ ^MC_DONE[[:space:]] ]] && ! worker_running_seen "$scope_key"; then
+      echo "0"
+      return
+    fi
+    clear_idle_fired "$scope_key"
+    reset_exit_count "$scope_key"
+    if is_new_signal "$scope_key" "LOG:${log_signal}"; then
+      emit_signal_from_line "$gen" "$story_id" "$pane_id" "$log_signal"
+      echo "1"
+      return
+    fi
+    echo "0"
+    return
+  fi
+
   # Check pane liveness
   if ! pane_alive "$pane_id"; then
     local seen_count
     seen_count=$(incr_exit_count "$scope_key")
     if (( seen_count < EXIT_DEBOUNCE )); then
-      echo "0"
-      return
-    fi
-
-    local log_signal
-    log_signal=$(check_log_for_sentinel "$pane_id" || true)
-    if [[ -n "$log_signal" ]]; then
-      clear_idle_fired "$scope_key"
-      if is_new_signal "$scope_key" "LOG:${log_signal}"; then
-        emit_signal_from_line "$gen" "$story_id" "$pane_id" "$log_signal"
-        echo "1"
-        return
-      fi
       echo "0"
       return
     fi
@@ -664,19 +701,6 @@ analyze_pane() {
 
       # Check for idle (prompt visible, no sentinel)
       if is_idle "$captured"; then
-        local log_signal
-        log_signal=$(check_log_for_sentinel "$pane_id" || true)
-        if [[ -n "$log_signal" ]]; then
-          clear_idle_fired "$scope_key"
-          if is_new_signal "$scope_key" "LOG:${log_signal}"; then
-            emit_signal_from_line "$gen" "$story_id" "$pane_id" "$log_signal"
-            echo "1"
-            return
-          fi
-          echo "0"
-          return
-        fi
-
         if idle_already_fired "$scope_key"; then
           echo "0"
           return
@@ -778,4 +802,6 @@ main() {
   done
 }
 
-main "$@"
+if [[ "${TASK_MONITOR_LIB_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
