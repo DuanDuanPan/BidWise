@@ -43,6 +43,12 @@ function makeEmptyProjectState(
     loading: false,
     error: null,
     taskStatus: null,
+    requirements: null,
+    scoringModel: null,
+    extractionTaskId: null,
+    extractionProgress: 0,
+    extractionMessage: '',
+    extractionLoading: false,
     ...overrides,
   }
 }
@@ -165,6 +171,26 @@ describe('analysisStore', () => {
       const projectState = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
       expect(projectState.error).toBe('解析失败')
       expect(projectState.loading).toBe(false)
+    })
+
+    it('should clear extraction task state on extraction failure', () => {
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': makeEmptyProjectState({
+            extractionTaskId: 'extract-1',
+            extractionLoading: true,
+            taskStatus: 'completed',
+          }),
+        },
+      })
+
+      useAnalysisStore.getState().setError('proj-1', '抽取失败', 'extraction')
+
+      const projectState = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      expect(projectState.error).toBe('抽取失败')
+      expect(projectState.extractionTaskId).toBeNull()
+      expect(projectState.extractionLoading).toBe(false)
+      expect(projectState.taskStatus).toBe('completed')
     })
   })
 

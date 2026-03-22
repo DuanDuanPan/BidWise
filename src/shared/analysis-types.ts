@@ -50,3 +50,86 @@ export interface ImportTenderResult {
 export interface GetTenderInput {
   projectId: string
 }
+
+// ─── Story 2.5: Requirement Extraction & Scoring Model ───
+
+export type RequirementCategory =
+  | 'technical'
+  | 'implementation'
+  | 'service'
+  | 'qualification'
+  | 'commercial'
+  | 'other'
+
+export interface RequirementItem {
+  id: string
+  sequenceNumber: number
+  description: string
+  sourcePages: number[]
+  category: RequirementCategory
+  priority: 'high' | 'medium' | 'low'
+  status: 'extracted' | 'confirmed' | 'modified' | 'deleted'
+}
+
+export interface ScoringSubItem {
+  id: string
+  name: string
+  maxScore: number
+  description: string
+  sourcePages: number[]
+}
+
+export interface ScoringCriterion {
+  id: string
+  category: string
+  maxScore: number
+  weight: number
+  subItems: ScoringSubItem[]
+  reasoning: string
+  status: 'extracted' | 'confirmed' | 'modified'
+}
+
+export interface ScoringModel {
+  projectId: string
+  totalScore: number
+  criteria: ScoringCriterion[]
+  extractedAt: string
+  confirmedAt: string | null
+  version: number
+}
+
+export interface ExtractionResult {
+  requirements: RequirementItem[]
+  scoringModel: ScoringModel
+}
+
+export interface ExtractRequirementsInput {
+  projectId: string
+}
+
+export interface ExtractionTaskResult {
+  taskId: string
+}
+
+export interface GetRequirementsInput {
+  projectId: string
+}
+
+export interface GetScoringModelInput {
+  projectId: string
+}
+
+export interface UpdateRequirementInput {
+  id: string
+  patch: Partial<Pick<RequirementItem, 'description' | 'category' | 'priority' | 'status'>>
+}
+
+export interface UpdateScoringModelInput {
+  projectId: string
+  criterionId: string
+  patch: Partial<Pick<ScoringCriterion, 'maxScore' | 'weight' | 'reasoning' | 'status'>>
+}
+
+export interface ConfirmScoringModelInput {
+  projectId: string
+}

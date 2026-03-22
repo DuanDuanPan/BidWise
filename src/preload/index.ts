@@ -52,6 +52,24 @@ const requestApi = {
 
   analysisGetTender: (input: IpcChannelMap['analysis:get-tender']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_GET_TENDER, input),
+
+  analysisExtractRequirements: (input: IpcChannelMap['analysis:extract-requirements']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_EXTRACT_REQUIREMENTS, input),
+
+  analysisGetRequirements: (input: IpcChannelMap['analysis:get-requirements']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_REQUIREMENTS, input),
+
+  analysisGetScoringModel: (input: IpcChannelMap['analysis:get-scoring-model']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_SCORING_MODEL, input),
+
+  analysisUpdateRequirement: (input: IpcChannelMap['analysis:update-requirement']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_UPDATE_REQUIREMENT, input),
+
+  analysisUpdateScoringModel: (input: IpcChannelMap['analysis:update-scoring-model']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_UPDATE_SCORING_MODEL, input),
+
+  analysisConfirmScoringModel: (input: IpcChannelMap['analysis:confirm-scoring-model']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_CONFIRM_SCORING_MODEL, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

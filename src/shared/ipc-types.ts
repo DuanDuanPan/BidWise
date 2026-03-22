@@ -13,6 +13,15 @@ import type {
   ImportTenderResult,
   GetTenderInput,
   ParsedTender,
+  ExtractRequirementsInput,
+  ExtractionTaskResult,
+  GetRequirementsInput,
+  RequirementItem,
+  GetScoringModelInput,
+  ScoringModel,
+  UpdateRequirementInput,
+  UpdateScoringModelInput,
+  ConfirmScoringModelInput,
 } from './analysis-types'
 
 export type SuccessResponse<T> = {
@@ -86,6 +95,12 @@ export const IPC_CHANNELS = {
   TASK_PROGRESS_EVENT: 'task:progress',
   ANALYSIS_IMPORT_TENDER: 'analysis:import-tender',
   ANALYSIS_GET_TENDER: 'analysis:get-tender',
+  ANALYSIS_EXTRACT_REQUIREMENTS: 'analysis:extract-requirements',
+  ANALYSIS_GET_REQUIREMENTS: 'analysis:get-requirements',
+  ANALYSIS_GET_SCORING_MODEL: 'analysis:get-scoring-model',
+  ANALYSIS_UPDATE_REQUIREMENT: 'analysis:update-requirement',
+  ANALYSIS_UPDATE_SCORING_MODEL: 'analysis:update-scoring-model',
+  ANALYSIS_CONFIRM_SCORING_MODEL: 'analysis:confirm-scoring-model',
 } as const
 
 /** Filter for task:list queries */
@@ -115,6 +130,12 @@ export type IpcChannelMap = {
   'task:get-status': { input: { taskId: string }; output: TaskRecord | null }
   'analysis:import-tender': { input: ImportTenderInput; output: ImportTenderResult }
   'analysis:get-tender': { input: GetTenderInput; output: ParsedTender | null }
+  'analysis:extract-requirements': { input: ExtractRequirementsInput; output: ExtractionTaskResult }
+  'analysis:get-requirements': { input: GetRequirementsInput; output: RequirementItem[] | null }
+  'analysis:get-scoring-model': { input: GetScoringModelInput; output: ScoringModel | null }
+  'analysis:update-requirement': { input: UpdateRequirementInput; output: RequirementItem }
+  'analysis:update-scoring-model': { input: UpdateScoringModelInput; output: ScoringModel }
+  'analysis:confirm-scoring-model': { input: ConfirmScoringModelInput; output: ScoringModel }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

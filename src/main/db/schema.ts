@@ -32,7 +32,34 @@ export interface TaskTable {
   completedAt: string | null
 }
 
+export interface RequirementTable {
+  id: string
+  projectId: string
+  sequenceNumber: number
+  description: string
+  sourcePages: string // JSON array
+  category: string
+  priority: string
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ScoringModelTable {
+  id: string
+  projectId: string
+  totalScore: number
+  criteria: string // JSON
+  extractedAt: string
+  confirmedAt: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
+  requirements: RequirementTable
+  scoringModels: ScoringModelTable
 }
