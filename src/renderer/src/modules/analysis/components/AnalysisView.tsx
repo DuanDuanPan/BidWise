@@ -1,23 +1,47 @@
 import { useEffect } from 'react'
-import { message } from 'antd'
+import { message, Button, Tabs, Alert, Progress } from 'antd'
+import { FileSearchOutlined, LoadingOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { getAnalysisProjectState, useAnalysisStore } from '@renderer/stores'
 import { TenderUploadZone } from './TenderUploadZone'
 import { ParseProgressPanel } from './ParseProgressPanel'
 import { TenderResultSummary } from './TenderResultSummary'
+import { RequirementsList } from './RequirementsList'
+import { ScoringModelEditor } from './ScoringModelEditor'
 import type { AnalysisViewProps } from '../types'
 
 export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Element {
   const projectState = useAnalysisStore((state) => getAnalysisProjectState(state, projectId))
   const fetchTenderResult = useAnalysisStore((s) => s.fetchTenderResult)
   const reset = useAnalysisStore((s) => s.reset)
+  const extractRequirements = useAnalysisStore((s) => s.extractRequirements)
+  const fetchRequirements = useAnalysisStore((s) => s.fetchRequirements)
+  const fetchScoringModel = useAnalysisStore((s) => s.fetchScoringModel)
+  const updateRequirement = useAnalysisStore((s) => s.updateRequirement)
+  const updateScoringCriterion = useAnalysisStore((s) => s.updateScoringCriterion)
+  const confirmScoringModel = useAnalysisStore((s) => s.confirmScoringModel)
 
-  const { parsedTender, importTaskId, parseProgress, parseMessage, loading, error, taskStatus } =
-    projectState
+  const {
+    parsedTender,
+    importTaskId,
+    parseProgress,
+    parseMessage,
+    loading,
+    error,
+    taskStatus,
+    requirements,
+    scoringModel,
+    extractionTaskId,
+    extractionProgress,
+    extractionMessage,
+    extractionLoading,
+  } = projectState
 
-  // On mount / project change: check for existing tender result
+  // On mount / project change: check for existing data
   useEffect(() => {
     void fetchTenderResult(projectId)
-  }, [projectId, fetchTenderResult])
+    void fetchRequirements(projectId)
+    void fetchScoringModel(projectId)
+  }, [projectId, fetchTenderResult, fetchRequirements, fetchScoringModel])
 
   const handleCancel = async (): Promise<void> => {
     if (!importTaskId) return
@@ -33,23 +57,32 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     }
   }
 
+  const handleExtract = async (): Promise<void> => {
+    await extractRequirements(projectId)
+  }
+
   // Determine view state
   const isParsing = importTaskId !== null
   const isParseCompleted =
     importTaskId !== null && taskStatus === 'completed' && parsedTender === null
   const hasParsedResult = parsedTender !== null
+  const hasExtractionResult = requirements !== null
+  const isExtracting = extractionTaskId !== null && !hasExtractionResult
 
-  if (hasParsedResult) {
+  // Error state (no parsed result)
+  if (!hasParsedResult && error && !isParsing) {
     return (
-      <div className="flex-1 overflow-auto" data-testid="analysis-view">
-        <TenderResultSummary parsedTender={parsedTender} />
-        <div className="border-border border-t p-4">
-          <TenderUploadZone projectId={projectId} disabled={loading} />
-        </div>
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-4"
+        data-testid="analysis-view"
+      >
+        <div className="text-red-500">{error}</div>
+        <TenderUploadZone projectId={projectId} disabled={loading} />
       </div>
     )
   }
 
+  // Parsing in progress
   if (isParsing || isParseCompleted) {
     return (
       <div className="flex flex-1 items-center justify-center" data-testid="analysis-view">
@@ -66,22 +99,120 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     )
   }
 
-  if (error) {
+  // No tender yet — show upload zone
+  if (!hasParsedResult) {
     return (
-      <div
-        className="flex flex-1 flex-col items-center justify-center gap-4"
-        data-testid="analysis-view"
-      >
-        <div className="text-red-500">{error}</div>
+      <div className="flex flex-1 items-center justify-center" data-testid="analysis-view">
         <TenderUploadZone projectId={projectId} disabled={loading} />
       </div>
     )
   }
 
-  // Default: upload zone (empty state)
+  // Tender parsed — show results + extraction UI
   return (
-    <div className="flex flex-1 items-center justify-center" data-testid="analysis-view">
-      <TenderUploadZone projectId={projectId} disabled={loading} />
+    <div className="flex-1 overflow-auto" data-testid="analysis-view">
+      <TenderResultSummary parsedTender={parsedTender} />
+
+      {/* Extraction section */}
+      <div className="border-border border-t p-4">
+        {/* Extraction error */}
+        {error && !isExtracting && !hasExtractionResult && (
+          <Alert
+            type="error"
+            showIcon
+            icon={<ExclamationCircleOutlined />}
+            message={`AI 抽取失败：${error}`}
+            action={
+              <Button size="small" onClick={handleExtract} data-testid="retry-extract-btn">
+                重新抽取
+              </Button>
+            }
+            className="mb-4"
+            data-testid="extraction-error"
+          />
+        )}
+
+        {/* Extracting in progress */}
+        {isExtracting && (
+          <div
+            className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4"
+            data-testid="extraction-progress"
+          >
+            <div className="mb-2 flex items-center gap-2 text-blue-600">
+              <LoadingOutlined />
+              <span className="font-medium">正在调用 AI 分析招标文件</span>
+            </div>
+            <Progress percent={Math.round(extractionProgress)} size="small" status="active" />
+            <div className="text-text-secondary mt-1 text-xs">
+              {extractionMessage || '正在分析...'}
+            </div>
+          </div>
+        )}
+
+        {/* Not yet extracted — show trigger button */}
+        {!hasExtractionResult && !isExtracting && !error && (
+          <div
+            className="flex items-center justify-between rounded-lg border border-dashed border-gray-300 p-4"
+            data-testid="extraction-trigger"
+          >
+            <div className="flex items-center gap-3">
+              <FileSearchOutlined style={{ fontSize: 20 }} className="text-text-secondary" />
+              <span>
+                招标文件已完成解析，共识别 {parsedTender.totalPages} 页内容。
+                点击右侧按钮开始抽取需求与评分模型。
+              </span>
+            </div>
+            <Button
+              type="primary"
+              icon={<FileSearchOutlined />}
+              onClick={handleExtract}
+              loading={extractionLoading}
+              data-testid="extract-btn"
+            >
+              抽取需求与评分模型
+            </Button>
+          </div>
+        )}
+
+        {/* Extraction results — Requirements + Scoring Model tabs */}
+        {hasExtractionResult && (
+          <Tabs
+            defaultActiveKey="requirements"
+            items={[
+              {
+                key: 'requirements',
+                label: `需求清单 (${requirements.length})`,
+                children: (
+                  <RequirementsList requirements={requirements} onUpdate={updateRequirement} />
+                ),
+              },
+              {
+                key: 'scoring',
+                label: '评分模型',
+                children: scoringModel ? (
+                  <ScoringModelEditor
+                    scoringModel={scoringModel}
+                    onUpdateCriterion={(criterionId, patch) =>
+                      updateScoringCriterion(projectId, criterionId, patch)
+                    }
+                    onConfirm={() => confirmScoringModel(projectId)}
+                  />
+                ) : (
+                  <div className="text-text-secondary p-8 text-center">评分模型数据加载中...</div>
+                ),
+              },
+            ]}
+            data-testid="extraction-tabs"
+          />
+        )}
+      </div>
+
+      {/* Re-upload zone */}
+      {!hasExtractionResult && (
+        <div className="border-border border-t p-4">
+          <TenderUploadZone projectId={projectId} disabled={loading} />
+        </div>
+      )}
     </div>
   )
 }
