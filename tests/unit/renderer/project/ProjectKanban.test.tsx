@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { ConfigProvider, App as AntApp } from 'antd'
 import { HashRouter } from 'react-router-dom'
 import { ProjectKanban } from '@modules/project/components/ProjectKanban'
@@ -18,8 +18,11 @@ function Wrapper({ children }: { children: React.ReactNode }): React.JSX.Element
 }
 
 beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true })
+  window.sessionStorage.clear()
   vi.stubGlobal('api', {
     projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    projectListWithPriority: vi.fn().mockResolvedValue({ success: true, data: [] }),
     projectCreate: vi.fn(),
     projectGet: vi.fn(),
     projectUpdate: vi.fn(),
@@ -28,9 +31,10 @@ beforeEach(() => {
   })
 })
 
-describe('ProjectKanban', () => {
+describe('ProjectKanban @story-1-8', () => {
   afterEach(() => {
     cleanup()
+    window.sessionStorage.clear()
   })
 
   it('should render the kanban container', () => {
@@ -50,6 +54,11 @@ describe('ProjectKanban', () => {
     expect(emptyState).toBeInTheDocument()
   })
 
+  it('should render smart todo panel', () => {
+    render(<ProjectKanban />, { wrapper: Wrapper })
+    expect(screen.getByTestId('todo-panel')).toBeInTheDocument()
+  })
+
   it('should render project cards when projects exist', async () => {
     vi.stubGlobal('api', {
       projectList: vi.fn().mockResolvedValue({
@@ -67,6 +76,7 @@ describe('ProjectKanban', () => {
           },
         ],
       }),
+      projectListWithPriority: vi.fn().mockResolvedValue({ success: true, data: [] }),
       projectCreate: vi.fn(),
       projectGet: vi.fn(),
       projectUpdate: vi.fn(),
@@ -77,5 +87,17 @@ describe('ProjectKanban', () => {
     const card = await screen.findByTestId('project-card-p1')
     expect(card).toBeInTheDocument()
     expect(screen.getByText('测试项目')).toBeInTheDocument()
+  })
+
+  it('should restore the collapsed todo panel state after remount', () => {
+    const firstRender = render(<ProjectKanban />, { wrapper: Wrapper })
+
+    fireEvent.click(screen.getByTestId('todo-panel-toggle'))
+    expect(screen.getByTestId('todo-panel').style.width).toBe('0px')
+
+    firstRender.unmount()
+
+    render(<ProjectKanban />, { wrapper: Wrapper })
+    expect(screen.getByTestId('todo-panel').style.width).toBe('0px')
   })
 })

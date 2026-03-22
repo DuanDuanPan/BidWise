@@ -8,6 +8,9 @@ export type {
   SortMode,
 } from './projectStore'
 
+export { useTodoStore } from './todoStore'
+export type { TodoStore, TodoState, TodoActions } from './todoStore'
+
 export { useAnalysisStore } from './analysisStore'
 export {
   EMPTY_ANALYSIS_PROJECT_STATE,

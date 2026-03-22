@@ -1,5 +1,6 @@
 import { createIpcHandler } from './create-handler'
 import { projectService } from '@main/services/project-service'
+import { sortProjectsByPriority } from '@main/services/todo-priority-service'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Automatically extracts all project:* channels from IpcChannelMap
@@ -21,6 +22,11 @@ const projectHandlerMap: { [C in ProjectChannel]: () => void } = {
     createIpcHandler('project:delete', (projectId) => projectService.delete(projectId)),
   'project:archive': () =>
     createIpcHandler('project:archive', (projectId) => projectService.archive(projectId)),
+  'project:list-with-priority': () =>
+    createIpcHandler('project:list-with-priority', async () => {
+      const projects = await projectService.list()
+      return sortProjectsByPriority(projects)
+    }),
 }
 
 export type RegisteredProjectChannels = ProjectChannel

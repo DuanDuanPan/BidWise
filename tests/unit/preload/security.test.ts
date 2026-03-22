@@ -65,6 +65,7 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'projectUpdate',
       'projectDelete',
       'projectArchive',
+      'projectListWithPriority',
       'agentExecute',
       'agentStatus',
       'taskList',

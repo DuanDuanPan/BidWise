@@ -1,6 +1,8 @@
 import { vi, describe, it, expect, beforeEach, type Mock } from 'vitest'
 import { ipcMain } from 'electron'
 
+const mockSortProjectsByPriority = vi.hoisted(() => vi.fn())
+
 const mockProjectService = vi.hoisted(() => ({
   create: vi.fn(),
   list: vi.fn(),
@@ -20,6 +22,10 @@ vi.mock('@main/services/project-service', () => ({
   projectService: mockProjectService,
 }))
 
+vi.mock('@main/services/todo-priority-service', () => ({
+  sortProjectsByPriority: mockSortProjectsByPriority,
+}))
+
 import { registerProjectHandlers } from '@main/ipc/project-handlers'
 
 describe('registerProjectHandlers', () => {
@@ -27,7 +33,7 @@ describe('registerProjectHandlers', () => {
     vi.clearAllMocks()
   })
 
-  it('registers all 6 project IPC channels', () => {
+  it('registers all 7 project IPC channels', () => {
     registerProjectHandlers()
 
     const registeredChannels = (ipcMain.handle as Mock).mock.calls.map((call: unknown[]) => call[0])
@@ -38,6 +44,7 @@ describe('registerProjectHandlers', () => {
       'project:update',
       'project:delete',
       'project:archive',
+      'project:list-with-priority',
     ])
   })
 
@@ -135,6 +142,25 @@ describe('registerProjectHandlers', () => {
 
     expect(mockProjectService.archive).toHaveBeenCalledWith('1')
     expect(result).toEqual({ success: true, data: undefined })
+  })
+
+  it('@story-1-8 dispatches project:list-with-priority through sortProjectsByPriority', async () => {
+    const mockProjects = [{ id: '1', name: 'Test', status: 'active' }]
+    const mockSorted = [{ id: '1', name: 'Test', priorityScore: 50, nextAction: '开始需求分析' }]
+    mockProjectService.list.mockResolvedValue(mockProjects)
+    mockSortProjectsByPriority.mockReturnValue(mockSorted)
+
+    registerProjectHandlers()
+
+    const callback = (ipcMain.handle as Mock).mock.calls.find(
+      (call: unknown[]) => call[0] === 'project:list-with-priority'
+    )?.[1]
+
+    const result = await callback({})
+
+    expect(mockProjectService.list).toHaveBeenCalled()
+    expect(mockSortProjectsByPriority).toHaveBeenCalledWith(mockProjects)
+    expect(result).toEqual({ success: true, data: mockSorted })
   })
 
   it('wraps service errors in error response format', async () => {
