@@ -10,9 +10,9 @@ utility_pane: ''
 
 ## GUARDS
 - Read `../constitution.md` before proceeding
-- Read `session-journal.yaml` if it exists
+
 - **AUTH: L0** for cleanup / archive / batch review | **L2** only for next batch decision
-- **ROLE:** 指挥官通过子窗格执行 cleanup
+- **ROLE:** 指挥官通过 command-gateway 执行 cleanup
 
 ## RULES
 1. Cleanup 只针对已 merge + regression PASS 的 story
@@ -32,8 +32,8 @@ utility_pane: ''
 3. Output (L1): "🧹 Cleanup 完成 — {count} 个 worktree 已清理"
 
 ### Forbidden List Update (Batch Review)
-4. Read gate-state.yaml → 统计本 batch 所有 Gate FAIL 记录（含已修复的）
-5. Read session-journal.yaml → 统计所有 correction entries
+4. Read event-log.yaml → 统计本 batch 所有 Gate FAIL 记录（含已修复的）
+5. Read event-log.yaml → 统计所有 correction/violation entries
 6. For each FAIL→fix→retry 模式或 correction pattern:
    - 判断是否为新型偏差（不与 forbidden-list.md 中 F1-F{N} 重复）
    - 新型偏差 → 通过子窗格追加到 `../forbidden-list.md` (FORBIDDEN_LIST_END 标记前) + git commit 固化
@@ -43,11 +43,11 @@ utility_pane: ''
    - 通知监察官新增的禁忌条目
    - Output (L1): "📝 禁忌清单已更新 — 新增 {count} 条"
 
-### Gate State Archive
-8. 通过子窗格:
+### Event Log & Gate State Archive
+8. `event-bus.sh materialize <project_root>` for final consistent state
+9. Archive event-log + gate-state:
+   `mv _bmad-output/implementation-artifacts/event-log.yaml _bmad-output/implementation-artifacts/event-log-{batch_id}.yaml`
    `mv _bmad-output/implementation-artifacts/gate-state.yaml _bmad-output/implementation-artifacts/gate-state-{batch_id}.yaml`
-9. 归档 session-journal:
-   `mv _bmad-output/implementation-artifacts/session-journal.yaml _bmad-output/implementation-artifacts/session-journal-{batch_id}.yaml`
 
 ### Next Batch Decision
 10. Re-read sprint-status.yaml
@@ -62,5 +62,5 @@ utility_pane: ''
 ## CHECKPOINT
 - Cleaned worktrees: {list}
 - Forbidden list updates: {new_entries}
-- Archived: gate-state-{batch_id}.yaml, session-journal-{batch_id}.yaml
+- Archived: event-log-{batch_id}.yaml, gate-state-{batch_id}.yaml
 - Next batch available: {yes/no}

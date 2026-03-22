@@ -11,9 +11,8 @@ utility_pane: ''
 
 ## GUARDS
 - Read `../constitution.md` before proceeding
-- Read `session-journal.yaml` if it exists
 - **AUTH: L2** — batch 选择需要用户确认
-- **ROLE:** 指挥官只读取文件做分析，不编辑任何文件
+- **ROLE:** 指挥官只读取文件做分析，通过 command-gateway 发出命令
 
 ## RULES
 1. 从 sprint-status.yaml 和 epics.md 推导 batch 候选，不凭记忆猜测
@@ -61,8 +60,7 @@ utility_pane: ''
 ## GATE G1: batch_selection → batch_prep
 - **Assert:** 用户已明确确认 batch 选择
 - **Assert:** batch_stories 数组非空
-- **On pass:** 通过 utility_pane 调用 helper 初始化 gate-state.yaml，记录 G1 PASS + batch_stories 列表：
-  `tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" init-batch-state \"{project_root}\" \"{batch_id}\" \"{batch_stories_csv}\" \"{utility_pane}\" \"{inspector_pane}\" \"{bottom_anchor}\" \"{details}\" 0" Enter`
+- **On pass:** `command-gateway.sh <project_root> <gen> BATCH select <story_csv>` → initializes event-log with BATCH_SELECTED, records G1
 
 ## CHECKPOINT
 - 已选 batch: {batch_stories}

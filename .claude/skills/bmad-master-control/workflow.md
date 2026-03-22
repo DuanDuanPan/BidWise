@@ -1,11 +1,12 @@
-# Master Control — 并行开发指挥官
+# Master Control v2 — 事件驱动指挥官
 
-**Goal:** 自动编排多个 Story 的完整生命周期，通过 tmux 子窗格派发所有具体工作。
+**Goal:** 事件驱动编排多个 Story 的完整生命周期。
 
-**Your Role:** 你是指挥官（master control），负责编排和监控。
-- 绝不直接编辑文件、跑构建、执行 skill — 一切通过 tmux 子窗格派发
-- 你**可以读取文件**来获取信息和做决策，但**不可写入/执行**
-- 子窗格使用 `tmux split-window`（禁止 `new-window`），与你并排显示
+**Your Role:** 你是指挥官，只做决策。所有机制由确定性代码执行。
+- 通过 command-gateway.sh 发出命令（TRANSITION, DISPATCH, BATCH, HEALTH, REQUEST_HUMAN）
+- 通过 context-assembler.sh build 获取决策包
+- 通过 event-bus.sh peek/ack 消费事件
+- 绝不直接执行 tmux 命令、state-control.sh 或修改文件
 
 ---
 
@@ -13,14 +14,14 @@
 
 | 文件 | 用途 | 何时读取 |
 |------|------|---------|
-| `./constitution.md` | 6 条核心规则 | **每次 sub-pane dispatch 前 + 每次 gate** |
-| `./forbidden-list.md` | 禁忌清单 | **每次 gate + 每次 step 转换** |
-| `./pre-dispatch-checklist.md` | 派发前自检 | **每次 sub-pane dispatch 前** |
-| `./inspector-protocol.md` | 御史台协议 | inspector 相关操作时 |
-| `./tmux-reference.md` | tmux 命令语法 | 需要查命令时 |
-| `./completion-detection.md` | 完成检测方法 | monitoring loop 中 |
-| `session-journal.yaml` | 会话内纠错日志 | **每次 dispatch 前** |
-| `gate-state.yaml` | 状态快照 + gate 记录 | **每次 step 转换** |
+| `./constitution.md` | 6 条核心规则 | 决策有疑问时 |
+| `./forbidden-list.md` | 禁忌清单 | 决策有疑问时 |
+| `./rules/*.md` | 按事件类型的规则片段 | context-assembler 自动注入 |
+| `./inspector-protocol.md` | 御史台协议 | G5/G10 inspector 操作时 |
+| `./completion-detection.md` | 三层检测方法 | task-monitor 实现参考 |
+| `event-log.yaml` | 事件日志（唯一真相源） | 审计/调试时 |
+| `gate-state.yaml` | 物化视图（只读快照） | 快速查看当前状态 |
+| `generation.lock` | Generation 唯一真相源 | command-gateway 自动检查 |
 
 ---
 
@@ -51,377 +52,127 @@
 
 ---
 
+## COMMAND SYNTAX
+
+All commands go through: `command-gateway.sh <project_root> <expected_gen> <COMMAND>`
+
+| Command | Syntax | When |
+|---------|--------|------|
+| TRANSITION | `TRANSITION <story_id> <intent> --trigger-seq <N>` | 状态转换 |
+| DISPATCH | `DISPATCH <story_id> <phase> --trigger-seq <N> [--override-llm LLM --override-reason REASON] [--fresh-pane]` | 派发任务到子窗格 |
+| REQUEST_HUMAN | `REQUEST_HUMAN <story_id> <reason> --trigger-seq <N>` | 请求人类介入 |
+| BATCH select | `BATCH select <story_csv>` | 选择 batch |
+| BATCH start_qa | `BATCH start_qa <story_csv> --trigger-seq <N>` | 批量 QA |
+| BATCH start_merge_queue | `BATCH start_merge_queue <csv> --trigger-seq <N>` | 启动 merge 队列 |
+| HEALTH | `HEALTH <action> (--trigger-seq <N> \| --proactive)` | 健康检查 |
+| PEEK_EVENTS | `PEEK_EVENTS [--types T1,T2] [--limit N] [--priority]` | 读取待处理事件 |
+| ACK_EVENTS | `ACK_EVENTS --seq <N>` | 确认已处理事件 |
+
+---
+
 ## INITIALIZATION
 
-### 1. Skill Preflight Check
-
-```
-required_skills = [
-  "bmad-create-story", "bmad-dev-story", "bmad-code-review",
-  "frontend-design", "ui-ux-pro-max", "debugging-strategies"
-]
-```
-
-For each: check `.claude/skills/{skill}/SKILL.md` exists. Any missing → HALT.
-
-### 2. Constitution & Forbidden List Loading
-
-- Read `./constitution.md` → 确认 6 条核心规则
-- Read `./forbidden-list.md` → 逐条确认已理解
-
-### 3. Environment Verification
-
-- Verify tmux: `[ -n "$TMUX" ] || echo "NOT_IN_TMUX"` → if not in tmux: HALT
-- Record current session: `tmux display-message -p '#{session_name}'` → set `current_session`
-- Verify codex: `which codex` → if not found: HALT
-- Verify worktree.sh: `test -x ./scripts/worktree.sh` → if missing: HALT
-- Verify git clean: `git status --short` → if dirty: ask user (L2)
-- Check node_modules: `test -d node_modules` → if missing: warn (L1)
-
-### 3b. Commander Instance & Log Directory
-
-Generate unique instance ID and create log directory for pipe-pane logging:
-
-```bash
-mc_instance="{current_session}-$(date +%s)"
-mc_log_dir="/tmp/mc-logs/${mc_instance}/"
-MC_LOG_META="{project_root}/_bmad-output/implementation-artifacts/mc-log-dir.txt"
-CLAUDE_SKILL_DIR="{project_root}/.claude/skills/bmad-master-control"
-TMUX_LAYOUT_HELPER="${CLAUDE_SKILL_DIR}/tmux-layout.sh"
-WATCHDOG_CONTROL_HELPER="${CLAUDE_SKILL_DIR}/watchdog-control.sh"
-STATE_CONTROL_HELPER="${CLAUDE_SKILL_DIR}/state-control.sh"
-mkdir -p "${mc_log_dir}"
-printf '%s\n' "${mc_log_dir}" > "${MC_LOG_META}"
-```
-
-All pane logs, including commander, write to `{mc_log_dir}/pane-{pane_id}.log`.
-`{MC_LOG_META}` is the durable pointer used after session restart / resume to restore pipe-pane logging.
-
-### 4. Configuration Loading
-
-Load from `{project-root}/_bmad/bmm/config.yaml`:
-- `{project_name}`, `{communication_language}`, `{document_output_language}`
-- `{planning_artifacts}` → planning docs path
-- `{implementation_artifacts}` → story files and sprint-status path
-
-### 5. Pane Creation（顺序和目标不可变）
-
-**布局目标（F12 强制）— 上下两区：**
-```
-┌──────────────┬─────────────┬──────────┐
-│  Commander   │  Inspector  │   Util   │  ← 上半区（指挥控制层）
-├──────────────┴─────────────┴──────────┤
-│      Dev / Review panes（按需开启）    │  ← 下半区（工作层，灵活创建）
-└────────────────────────────────────────┘
-```
-
-Record commander pane ID: `tmux display-message -p '#{pane_id}'` → set `commander_pane`
-
-**创建顺序：先纵后横（确保下半区全宽）**
-
-**Step 5a: Bottom Anchor（先纵向分割，预留全宽底部区域）**
-
-```bash
-bottom_anchor="$(tmux split-window -t {commander_pane} -v -l 40% -P -F '#{pane_id}' "cd {project_root} && zsh")"
-```
-Record `bottom_anchor`. Wait for shell prompt.
-
-**Step 5b: Inspector（从 commander 横向分割，上半区中部）**
-
-See `./inspector-protocol.md` for full standing order.
-
-```bash
-inspector_pane="$(tmux split-window -t {commander_pane} -h -l 55% -P -F '#{pane_id}' "cd {project_root} && codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"
-```
-Record `inspector_pane`. Send standing order. Wait for `INSPECTOR READY`.
-
-**Step 5c: Utility（从 inspector 横向分割，上半区最右）**
-
-```bash
-utility_pane="$(tmux split-window -t {inspector_pane} -h -l 45% -P -F '#{pane_id}' "cd {project_root} && zsh")"
-"${TMUX_LAYOUT_HELPER}" set-top-titles "{commander_pane}" "${inspector_pane}" "${utility_pane}"
-```
-Wait for shell prompt. Record `utility_pane`.
-
-Run geometry validation immediately after Step 5c using:
-
-```bash
-"${TMUX_LAYOUT_HELPER}" validate-init "{current_session}" "${bottom_anchor}"
-"${TMUX_LAYOUT_HELPER}" dump-geometry "{current_session}"
-```
-
-Assert:
-- `mc-commander` / `mc-inspector` / `mc-util` all have `top=0`
-- `bottom_anchor` has `top > 0` and spans the full bottom row
-
-Wait for baseline audit result (`BASELINE AUDIT: COMPLIANT` or `BASELINE AUDIT: VIOLATION`).
-If VIOLATION → ask user (L2): "Inspector 基线审计发现问题: {details}。继续还是先处理？"
-
-### 6. Pipe-Pane Logging（三层通讯保障）
-
-为所有已创建 pane 启用日志捕获（确保 Log 层可用；**commander pane 也必须记录**）：
-
-```bash
-tmux pipe-pane -t {commander_pane} -o 'cat >> {mc_log_dir}/pane-{commander_pane}.log'
-tmux pipe-pane -t {bottom_anchor} -o 'cat >> {mc_log_dir}/pane-{bottom_anchor}.log'
-tmux pipe-pane -t {inspector_pane} -o 'cat >> {mc_log_dir}/pane-{inspector_pane}.log'
-tmux pipe-pane -t {utility_pane} -o 'cat >> {mc_log_dir}/pane-{utility_pane}.log'
-```
-
-立即验证 logging 已生效（至少 commander / inspector / utility / bottom_anchor 都必须 `pane_pipe=1`）：
-
-```bash
-for pane in "{commander_pane}" "{bottom_anchor}" "{inspector_pane}" "{utility_pane}"; do
-  tmux list-panes -t "{current_session}" -F '#{pane_id} #{pane_pipe}' | grep -Fx "${pane} 1"
-done
-```
-
-若 commander pane logging 未生效：立即重试一次；第二次仍失败 → HALT。
-
-### 7. Watchdog Startup
-
-```bash
-tmux send-keys -t {utility_pane} "\"${WATCHDOG_CONTROL_HELPER}\" restart-detached \"${CLAUDE_SKILL_DIR}\" \"{commander_pane}\" \"{inspector_pane}\" \"{project_root}\" \"{current_session}\" \"0\"" Enter
-```
-
-### 7b. Watchdog Startup Verification
-
-启动后必须验证 watchdog 真的活着，而不是假设 `nohup` 成功：
-
-```bash
-"${WATCHDOG_CONTROL_HELPER}" verify-start "{project_root}" "{current_session}" 8 120
-```
-
-若首次验证失败：
-
-```bash
-tmux send-keys -t {utility_pane} "\"${WATCHDOG_CONTROL_HELPER}\" restart-detached \"${CLAUDE_SKILL_DIR}\" \"{commander_pane}\" \"{inspector_pane}\" \"{project_root}\" \"{current_session}\" \"0\"" Enter
-"${WATCHDOG_CONTROL_HELPER}" verify-start "{project_root}" "{current_session}" 8 120
-```
-
-第二次仍失败 → HALT，不进入 Step 2。
-
-### 8. Session Journal Initialization
-
-通过 utility_pane 创建空 session-journal:
-
-```bash
-tmux send-keys -t {utility_pane} "cat > _bmad-output/implementation-artifacts/session-journal.yaml << 'EOF'
-batch_id: \"\"
-entries: []
-EOF" Enter
-```
-
-### 9. Gate State Resumption (断点恢复)
-
-Check if `_bmad-output/implementation-artifacts/gate-state.yaml` exists:
-- If exists: read it, run resume algorithm below
-- If not: fresh start → route to Step 1
-
-**恢复算法（基于全量 gates + story_states + merge_state）：**
-
-```
-1. 检查 batch-level gates (G1-G6):
-   G6 未 PASS → 按 batch gate 回溯:
-     G5 PASS → step-03
-     G4 PASS → step-02 (commit)
-     G3 PASS → step-02 (validate)
-     G2 PASS → step-02 (prototype)
-     G1 PASS → step-02
-     无 PASS  → step-01
-
-2. G6 PASS → 基于 story_states.phase + dispatch_state 集合决策:
-
-   任一 story phase 在 {dev, pending_review, review, fixing}
-     且存在 dev story 的 dispatch_state ∈ {pane_opened, packet_pasted}
-     → step-03（dispatch repair；worker pane 已存在但任务未真正提交）
-
-   任一 story phase 在 {dev, pending_review, review, fixing}
-     且所有 dev story 的 dispatch_state ∈ {packet_submitted, worker_running}
-     → step-04（监控循环处理所有活跃 story）
-
-   全部 story phase = done
-     → step-09（cleanup；L0 auto-execute，不询问用户）
-
-   有 story phase 在 {merged, regression}
-     → step-07（恢复 merge 队列，从 merge_state 读取进度）
-
-   全部 story phase 在 {auto_qa_pending, qa_running, uat_waiting, done}:
-     有 auto_qa_pending → step-06（未派发 QA）
-     有 qa_running      → step-06（检查 QA pane 存活，重建或等待）
-     余下全 uat_waiting  → step-07（等用户 UAT）
-```
-
-**Resume 后 pane 重建：** 读取 gate-state.yaml 的 `panes` 区（ephemeral），用 tmux pane title 发现存活 pane：
-```bash
-tmux list-panes -s -F '#{pane_title} #{pane_id}' | grep "^mc-story-"
-```
-匹配 title 的 pane 直接复用；无匹配的 story 根据 phase 重新创建 pane。
-
-**Resume 后 logging 恢复（必须先于 step routing 执行）：**
-```bash
-MC_LOG_META="{project_root}/_bmad-output/implementation-artifacts/mc-log-dir.txt"
-mc_log_dir="$(cat "${MC_LOG_META}" 2>/dev/null || true)"
-if [ -z "${mc_log_dir}" ]; then
-  mc_instance="{current_session}-$(date +%s)"
-  mc_log_dir="/tmp/mc-logs/${mc_instance}/"
-  mkdir -p "${mc_log_dir}"
-  printf '%s\n' "${mc_log_dir}" > "${MC_LOG_META}"
-fi
-
-for pane in "{commander_pane}" "{inspector_pane}" "{utility_pane}" "{bottom_anchor}" $(tmux list-panes -t "{current_session}" -F '#{pane_title} #{pane_id}' | awk '/^mc-story-/{print $2}'); do
-  [ -n "${pane}" ] || continue
-  pane_num="${pane#%}"
-  tmux pipe-pane -t "${pane}" -o "cat >> ${mc_log_dir}/pane-${pane_num}.log"
-done
-```
-恢复后必须验证 commander pane 的 `pane_pipe=1`；否则禁止进入下一 step。
+1. **Environment Verification** — verify tmux, codex, worktree.sh, git clean
+2. **Initialize Event Bus** — `event-bus.sh init <project_root> 0`
+3. **Pane Layout** — create inspector + utility panes via tmux-layout.sh
+4. **Start Task Monitor** — `monitor-control.sh start <project_root> <session_name>`
+5. **Start Watchdog** — `watchdog-control.sh ensure-running <skill_dir> <commander_pane> <inspector_pane> <project_root> <session_name>`
+6. **Enable Pipe-pane Logging** — for all panes
+7. **Resume Check** — if event-log.yaml exists, run `event-bus.sh materialize` → read gate-state → route to correct step
 
 ---
 
-## STEP ROUTING
+## GATE STATE RESUMPTION
 
-After initialization, read and follow the appropriate step file:
+Run `event-bus.sh materialize <project_root>` to rebuild gate-state from event-log.
 
-- **Fresh start** → Read fully and follow `./steps/step-01-assessment.md`
-- **Resume from checkpoint** → Read the step file indicated by gate state resumption
-
----
-
-## GATE OVERVIEW
-
-| Gate | 转换 | 级别 | 检查要点 |
-|------|------|------|---------|
-| G1 | Step 1→2 | Self-check | 用户已确认 batch |
-| G2 | 2a→2b | Self-check | 所有 story 文件存在于磁盘 |
-| G3 | 2b→2c | Self-check | UI story 有 .pen + PNG + manifest |
-| G4 | 2c→2d | Self-check | 所有 story validation == PASS |
-| **G5** | **Step 2→3** | **Inspector** | **Batch commit 在 git log；story 文件/原型完整；工作区干净** |
-| G6 | Step 3→4 | Self-check | Worktree 已创建，dev pane 存活 |
-| G7 | dev→review | Self-check (per story) | Dev 完成，源文件存在 |
-| G8 | review→auto_qa | Self-check (per story) | Code review PASS |
-| G9 | auto_qa→uat | Self-check (per story) | QA 报告存在且 PASS |
-| **G10** | **UAT→merge** | **Inspector (per story)** | **用户确认 ✅；前置 gate 链完整** |
-| G11 | regression→cleanup | Self-check (per story) | 三层回归同一轮全部通过 |
-
-**Enforcement rules:** Each gate must execute (C6). REJECT = no forward. Inspector gates (G5/G10) cannot be self-certified. Gate state persists to `gate-state.yaml` for cross-session resumption.
-
-**Inspector APPROVE 协议：** Inspector 输出 `APPROVE → L0 AUTO-EXECUTE` 时，指挥官**必须立即执行下一步**，不输出状态、不等待用户、不询问确认。该信号等同于 L0 直接执行授权（C3 + F5）。
+Read gate-state.yaml:
+- Check batch-level gates (G1-G6): trace back to last PASS
+- Check story_states phases + dispatch_states
+- Route to the appropriate step in the workflow
 
 ---
 
-## SHARED DEFINITIONS
+## COMMANDER WORK LOOP (replaces polling)
 
-### Gate State File Format
-
-Location: `_bmad-output/implementation-artifacts/gate-state.yaml`
-
-```yaml
-last_updated: "2026-03-20T10:30:00.000Z"
-batch_id: "batch-2026-03-20-1"
-batch_stories: ["1-5", "2-1"]
-session_generation: 0
-failover_epoch: 0
-gates:
-  G1: { status: PASS, timestamp: "...", verified_by: commander, details: "..." }
-  G5: { status: PASS, timestamp: "...", verified_by: inspector, details: "..." }
-story_gates:
-  "1-5":
-    G7: { status: PASS, ... }
-story_states:                # DURABLE — 跨 session 有效
-  "1-5":
-    phase: review             # durable: resume point
-    # 完整 phase 列表: dev, pending_review, review, fixing,
-    #   auto_qa_pending, qa_running, uat_waiting, merged, regression, done
-    review_cycle: 1           # durable: tracks fix attempts
-    current_llm: codex        # durable: which LLM should be active
-    dispatch_state: worker_running
-    # dispatch_state: pane_opened | packet_pasted | packet_submitted | worker_running
-    # Step 3 恢复必须优先看 dispatch_state，不能只看 phase=dev
-    is_ui: true               # durable: story attribute
-    worktree_path: "../BidWise-story-1-5"  # durable: verifiable on disk
-    story_file_main: "_bmad-output/implementation-artifacts/story-1-5.md"
-    story_file_rel: "_bmad-output/implementation-artifacts/story-1-5.md"
-    story_key: "1-5-project-crud-kanban"
-    validation_cycle: 0       # durable: tracks validate attempts
-    auto_qa_cycle: 0          # durable: tracks QA attempts
-    merge_priority: 1         # durable: merge order
-    # 禁止在 story_states 内重复写 dev_pane / pane_title；
-    # pane 引用只存放在 panes.stories，避免双重真相
-merge_state:                 # DURABLE — merge/regression 进度
-  queue: ["1-5", "2-1"]      # 有序 merge 队列
-  current_story: "1-5"       # 正在 merge/regression 的 story
-  completed: []              # 已完成 merge + regression 的 story
-panes:                       # EPHEMERAL — 当前 session 内有效，resume 时通过 tmux title 发现或重建
-  inspector: "%92"
-  utility: "%93"
-  stories:
-    "1-5": { dev: "%91", review: "%94", qa: "%95" }
-inspector_state: idle         # ephemeral — re-init on resume
-watchdog:                     # EPHEMERAL + observable — 由 watchdog-control / heartbeat 校验
-  pid: 12345
-  last_heartbeat: "2026-03-20T10:31:00Z"
-  status: alive
-```
-
-### Session Journal Format
-
-Location: `_bmad-output/implementation-artifacts/session-journal.yaml`
-
-```yaml
-batch_id: "batch-2026-03-20-1"
-entries:
-  - seq: 1
-    timestamp: "2026-03-20T10:15:00Z"
-    type: dispatch_audit    # dispatch_audit | correction | gate_fail
-    story_id: "1-5"
-    phase: "dev"
-    llm: "claude"
-    auth: "L0"
-    constitution_check: "PASS"
-  - seq: 2
-    timestamp: "2026-03-20T10:16:00Z"
-    type: correction
-    trigger: user           # user | self | inspector | gate | watchdog
-    description: "..."
-    violated_rule: "C2"
-    correct_action: "..."
-    step: "5b"
-    story_id: "1-5"
-```
-
-### Story Registry Schema
-
-```yaml
-story_registry:
-  "1-5":
-    story_key: "1-5-project-crud-kanban"
-    story_id: "1-5"
-    story_file_rel: "_bmad-output/implementation-artifacts/story-1-5.md"
-    story_file_main: "/abs/path/story-1-5.md"
-    story_file_worktree: "../BidWise-story-1-5/_bmad-output/..."
-    worktree_path: "../BidWise-story-1-5"
-    is_ui: true
-    prep_mode: "create"     # create | reuse
-```
-
-### Task Packet Template
-
-指挥官向任何 sub-pane 派发任务时，使用固定 4 段格式：
+This is the core loop. Repeat until all stories reach `done`:
 
 ```
-Skill: {skill_name}
-Goal: {one-line goal}
-Inputs:
-- {key}: {value}
-Constraints:
-- {constraint}
-Expected Output:
-- MC_DONE {PHASE} {story_id} {RESULT}
+1. PEEK_EVENTS --priority --limit 10
+   → If empty: sleep 15s, then re-peek
+   → If events: proceed
+
+2. For each event (highest priority first):
+   a. context-assembler.sh build <project_root> <gen>
+      → Returns decision packet with: event, state, rules, available_commands
+   b. Read applicable_rules
+   c. Decide: pick the correct command from available_commands
+   d. Execute: command-gateway.sh <project_root> <gen> <COMMAND>
+
+3. ACK_EVENTS --seq <last_processed_seq>
+
+4. Repeat from step 1
 ```
 
-规则：
-- skill 名直接写，不加 `/`
-- 所有文件路径用绝对路径
-- 一次只派发一个目标
-- Expected Output 带 `MC_DONE` 哨兵，便于 `capture-pane` 检测
+---
+
+## STEP REFERENCE
+
+Steps are reference for what transitions/dispatches are appropriate in each phase:
+
+### Step 1: Batch Assessment
+- Read sprint-status.yaml → select stories
+- `BATCH select <story_csv>` → initializes event-log with BATCH_SELECTED
+- Record G1 gate
+
+### Step 2: Batch Prep (queued → dev_ready)
+- For each story: `TRANSITION` through pre-dev phases
+- Create stories: `DISPATCH <story_id> create --trigger-seq <N>`
+- Prototype (UI only): `DISPATCH <story_id> prototype --trigger-seq <N>`
+- Validate: `DISPATCH <story_id> validate --trigger-seq <N>`
+- After all validated: `BATCH commit --trigger-seq <N>` (transitions all stories to committed, records G4)
+- Inspector G5: wait for inspector approve → `TRANSITION <story_id> g5_approved --trigger-seq <N>`
+
+### Step 3: Launch Dev
+- Create worktrees: `./scripts/worktree.sh create <story_id>`
+- `DISPATCH <story_id> dev --trigger-seq <N>` (records G6, creates pane)
+
+### Step 4: Monitoring (handled by work loop)
+- Task monitor detects MC_DONE/HALT/idle → emits events
+- Commander receives events via PEEK → makes decisions
+
+### Step 5: Code Review
+- After dev_complete → `TRANSITION <story_id> g7_pass --trigger-seq <N>`
+- Auto-dispatches review to codex pane
+- review_pass → `TRANSITION <story_id> review_pass --trigger-seq <N>`
+- review_fail → `TRANSITION <story_id> review_fail --trigger-seq <N>` → fix cycle
+
+### Step 6: Auto QA + UAT
+- `DISPATCH <story_id> qa --trigger-seq <N>`
+- qa_pass → `TRANSITION <story_id> qa_pass --trigger-seq <N>` → uat_waiting
+- UAT: human provides result (L2) → `TRANSITION <story_id> uat_pass --trigger-seq <N>`
+
+### Step 7: Merge
+- Inspector G10 → `TRANSITION <story_id> g10_approved --trigger-seq <N>` (merge executed by engine)
+- `TRANSITION <story_id> regression_start --trigger-seq <N>`
+
+### Step 8: Regression
+- `DISPATCH <story_id> regression --trigger-seq <N>`
+- regression_pass → `TRANSITION <story_id> regression_pass --trigger-seq <N>` (records G11)
+
+### Step 9: Cleanup
+- `event-bus.sh materialize` for final consistent state
+- Archive event-log + gate-state
+- Remove worktrees
+- Update sprint-status.yaml on main
+
+---
+
+## FORBIDDEN ACTIONS (enforced by allowed-tools)
+
+- Direct tmux commands (use command-gateway DISPATCH/HEALTH)
+- Direct state-control.sh calls (use command-gateway TRANSITION)
+- Direct file editing (dispatch to sub-panes)
+- Skipping trigger-seq on event-driven commands
+- Auto-transitioning on IDLE without positive evidence
+- Self-certifying inspector gates G5/G10

@@ -22,8 +22,7 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
 
 1. **Gate 审查**（被动）
    收到"请审查 Gate G{N}"时：
-   **第一步（必须最先执行）：** 检查 `_bmad-output/implementation-artifacts/restart-eligible.yaml` 是否存在，记住结果。
-   然后读取 `_bmad-output/implementation-artifacts/gate-report-G{N}.md`，独立验证磁盘/git 状态，输出结论 + 逐项 PASS/FAIL。
+   读取 `_bmad-output/implementation-artifacts/gate-report-G{N}.md`，独立验证磁盘/git 状态，输出结论 + 逐项 PASS/FAIL。
 
    **输出格式（严格遵守）：**
    - 拒绝时输出（必须包含逐项清单，禁止裸 REJECT）：
@@ -33,32 +32,30 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
      PASSED: [通过的 assert 列表]
      REASON: [一句话总结拒绝原因]
      ```
-   - 通过且 restart-eligible.yaml **不存在**时输出：`APPROVE → L0 AUTO-EXECUTE`
-   - 通过且 restart-eligible.yaml **存在**时输出：`APPROVE → SESSION-RESTART`，然后执行下方 SESSION-RESTART 协议
+   - 通过时输出：`APPROVE → L0 AUTO-EXECUTE`
 
    **「工作区干净」定义（适用于所有 gate 审查）：**
    `git status --short` 输出中排除以下运行时追踪文件后无其他变更：
    - `_bmad-output/implementation-artifacts/gate-state.yaml`
-   - `_bmad-output/implementation-artifacts/session-journal.yaml`
+   - `_bmad-output/implementation-artifacts/event-log.yaml`
    - `_bmad-output/implementation-artifacts/gate-report-*.md`
    - `_bmad-output/implementation-artifacts/watchdog-*`
-   - `_bmad-output/implementation-artifacts/restart-eligible.yaml`
 
    **batch commit 验证规则（适用于 G5）：**
    batch commit 只需存在于 `git log`（通过 commit SHA 或 commit message 中的 story IDs 匹配）。HEAD 可能因后续 housekeeping commit（gitignore 更新、文档入库等）而推移，这不构成拒绝理由。关键验证点是 batch story 文件在当前 HEAD 中完整存在且内容未被后续 commit 破坏。
 
 2. **行为监察**（被动+触发）
    收到 WATCHDOG ALERT 时，读取以下文件验证违规是否属实：
-   - _bmad-output/implementation-artifacts/session-journal.yaml
+   - _bmad-output/implementation-artifacts/event-log.yaml（TASK_DISPATCHED events）
    - _bmad-output/implementation-artifacts/watchdog-alerts.yaml
    - _bmad-output/implementation-artifacts/gate-state.yaml
 
    检查项：
-   - session-journal 中 dispatch_audit 的 LLM 是否匹配 phase 规则
-   - dispatch_audit 的 constitution_check 是否全 PASS
+   - event-log 中 TASK_DISPATCHED 事件的 LLM 是否匹配 phase 规则
+   - TASK_DISPATCHED 的 constitution_check 是否全 PASS
    - 是否存在 correction 条目（说明已有错误发生）
    - gate-state 中 story_states.current_llm 是否匹配 phase
-   - 是否有 dispatch_audit 缺口（指挥官可能跳过了 pre-dispatch 协议）
+   - 是否有 TASK_DISPATCHED 缺口（指挥官可能跳过了 pre-dispatch 协议）
 
    输出：VIOLATION CONFIRMED: {details} + 建议修正措施
    或：FALSE POSITIVE: {reason}
@@ -69,7 +66,7 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
    - 活跃 pane 与 story phase 一致
    - 无未授权的 main 分支变更
    - 工作流顺序合规
-   - session-journal 中无未处理的 correction
+   - event-log.yaml 中无未处理的 correction
 
    输出 COMPLIANT 或 VIOLATION: {details}
 
@@ -110,7 +107,7 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
 
 2. **「工作区干净」定义：**
    `git status --short` 排除以下运行时文件后无其他变更：
-   gate-state.yaml, session-journal.yaml, gate-report-*.md, watchdog-*, restart-eligible.yaml
+   gate-state.yaml, event-log.yaml, gate-report-*.md, watchdog-*
    （均在 `_bmad-output/implementation-artifacts/` 下）
 
 3. **batch commit 验证规则（G5）：**
@@ -128,53 +125,26 @@ tmux split-window -t {commander_pane} -h -l 55% "cd {project_root} && codex -c m
                                                        │
 指挥官 ─── send-keys "请审查 Gate G{N}" ──────────── 监察官
                                                        │
-监察官 ─── 【第一步】检查 restart-eligible.yaml ──── 监察官
-           （文件不存在 → 跳过，继续正常审查）
-           （文件存在 → 审查完成后执行 SESSION-RESTART）
-                                                       │
 监察官 ─── 读取报告 + 独立验证磁盘/git ────────────── 监察官
                                                        │
 监察官 ─── 输出结论:
-           ├─ REJECT → HALT（不重启，先修问题）
-           ├─ APPROVE → L0 AUTO-EXECUTE（无需重启）
-           └─ APPROVE → SESSION-RESTART（需要重启，执行下方协议）
+           ├─ APPROVE → L0 AUTO-EXECUTE
+           └─ REJECT → HALT
 ```
 
-### SESSION-RESTART 协议
+### approve-failover 协议
 
-**触发条件：** Gate APPROVE + `_bmad-output/implementation-artifacts/restart-eligible.yaml` 存在
+**触发条件：** Gate APPROVE 后需要记录 failover（如 inspector 代行 gate PASS 写入）
 
-**执行步骤（由监察官在自己的 pane 中执行，顺序不可变）：**
-
-1. 输出 `APPROVE → SESSION-RESTART`
-2. **先做 generation-guarded failover 落盘（在杀 commander 之前，消除竞态）：**
-   ```bash
-   STATE_CONTROL_HELPER="{project_root}/.claude/skills/bmad-master-control/state-control.sh"
-   expected_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
-   # 对 batch gate (G5):
-   "${STATE_CONTROL_HELPER}" approve-failover "{project_root}" "${expected_generation}" "G{N}" "inspector" "{details}"
-   # 或对 story gate (G10):
-   "${STATE_CONTROL_HELPER}" approve-failover "{project_root}" "${expected_generation}" "G{N}" "inspector" "{details}" "{story_id}"
-   ```
-3. 验证写入成功：检查 `session_generation` 递增，`failover_epoch` 递增，且 gate PASS 已写入
-4. 删除 sentinel 文件：`rm -f _bmad-output/implementation-artifacts/restart-eligible.yaml`
-5. 记录 commander pane ID（从 restart-eligible.yaml 的 `commander_pane` 字段读取，在删除前已记录）
-6. 向 commander pane 发送退出命令：
-   ```bash
-   tmux send-keys -t {commander_pane} '/exit' Enter
-   ```
-7. 等待 commander pane 回到 shell prompt（轮询 `tmux capture-pane`，检测 `$` 或 `❯` 提示符，最多等 30 秒）
-8. 向同一 pane 启动新 claude 并发送恢复指令：
-   ```bash
-   tmux send-keys -t {commander_pane} 'claude' Enter
-   ```
-   等待 claude 就绪后发送：
-   ```bash
-   tmux send-keys -t {commander_pane} '请从 gate-state.yaml 恢复指挥官会话。执行 /bmad-master-control' Enter
-   ```
-
-**关键顺序：** 先做 generation bump + gate PASS → 再删 sentinel → 再杀 commander。即使杀进程失败，状态已安全落盘。
-**注意：** REJECT 时不执行重启 — 问题优先于上下文刷新。Watchdog 检测到 sentinel 文件被删除后自动重置计时器。
+**执行命令：**
+```bash
+EVENT_BUS="{project_root}/.claude/skills/bmad-master-control/event-bus.sh"
+expected_generation="$(cat {project_root}/_bmad-output/implementation-artifacts/generation.lock)"
+# 对 batch gate (G5):
+"${EVENT_BUS}" approve-failover "{project_root}" "${expected_generation}" "$((expected_generation + 1))" "G{N}" "inspector" "{details}"
+# 或对 story gate (G10):
+"${EVENT_BUS}" approve-failover "{project_root}" "${expected_generation}" "$((expected_generation + 1))" "G{N}" "inspector" "{details}" "{story_id}"
+```
 
 gate-report 文件格式（`_bmad-output/implementation-artifacts/gate-report-G{N}.md`）：
 

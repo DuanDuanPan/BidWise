@@ -11,10 +11,10 @@ utility_pane: ''
 
 ## GUARDS
 - Read `../constitution.md` before proceeding
-- Read `session-journal.yaml` if it exists
+
 - **AUTH: L0** for auto QA execution | **L2** for UAT notification (user must respond)
 - **LLM:** Auto QA = codex
-- **ROLE:** 指挥官通过子窗格派发 QA，然后通知用户做 UAT
+- **ROLE:** 指挥官通过 command-gateway 派发 QA，然后通知用户做 UAT
 
 ## RULES
 1. 人工 UAT 之前先跑自动化 QA — 让模型完成可重复检查，人类聚焦业务判断
@@ -26,21 +26,13 @@ utility_pane: ''
 ### Automated QA (parallel dispatch, aggregate results)
 1. Read gate-state.yaml → 恢复 story_states
 2. Create directory if missing: `{project_root}/_bmad-output/implementation-artifacts/tests/`
-3. Verify watchdog is healthy before parallel QA:
-   - Derive current generation from `gate-state.yaml.session_generation`（if missing, use `0`）
-   - Run:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
-   - On healthy, persist heartbeat via `sync-watchdog-from-files`
+3. Health check: `command-gateway.sh <project_root> <gen> HEALTH check_inspector --proactive`
 
 #### Phase A: Parallel Dispatch
 4. Collect all stories with phase == `auto_qa_pending`
-5. For **each** story, **simultaneously** open a codex sub-pane:
-   - **Prepare pre-dispatch:** LLM = codex, AUTH = L0, PANE = new
-   - Open codex sub-pane:
-     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-qa" "../BidWise-story-{story_id}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
-   - Write `dispatch_audit` with the real `work_pane_id`
-   - Persist via helper:
-     - `upsert-story-state ... "phase=qa_running" "current_llm=codex" "dispatch_state=worker_running" "auto_qa_cycle={next_auto_qa_cycle}" "pane.qa={work_pane_id}"`
+5. For **each** story, dispatch QA via command-gateway:
+   - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> qa --trigger-seq <N>`
+     (transition-engine opens codex pane, sends task packet, records state)
    - Check if story-scoped Playwright tests exist: `tests/e2e/stories/story-{story_id}*.spec.ts`
    - Send task packet:
      ```
@@ -64,11 +56,8 @@ utility_pane: ''
    - Each pane runs independently; do NOT wait for one to finish before launching the next
 
 #### Phase B: Aggregate Results
-6. Wait for **all** QA panes to report `MC_DONE`; close each pane as it completes
-7. Before batch aggregation, re-check watchdog health:
-   `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
-   Then `sync-watchdog-from-files`
-8. Collect all results, then **batch-update** gate-state.yaml once (avoid concurrent writes)
+6. Wait for PANE_SIGNAL_DETECTED events (MC_DONE signals) via PEEK_EVENTS for all QA stories
+7. Collect all results from events
 9. For each FAIL story:
      - Write findings to `../BidWise-story-{story_id}/auto-qa-findings-cycle-{N}.md`
      - Set story.phase = "fixing"
@@ -80,8 +69,7 @@ utility_pane: ''
 ### GATE G9 (per story): auto_qa → uat
 - **Assert:** `test -f {project_root}/_bmad-output/implementation-artifacts/tests/auto-qa-story-{story_id}.md`
 - **Assert:** QA report 包含 PASS
-- **On pass:** 通过 helper 记录 story gate：
-  `current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"; tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" record-story-gate \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"G9\" \"commander\" \"auto QA PASS\"" Enter`
+- **On pass:** `command-gateway.sh <project_root> <gen> TRANSITION <story_id> qa_pass --trigger-seq <N>` (records G9)
 
 ### UAT Notification (L2 — HALT and wait)
 11. Set story.phase = "uat_waiting" for each passing story

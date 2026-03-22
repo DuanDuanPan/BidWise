@@ -14,11 +14,10 @@ utility_pane: ''
 
 ## GUARDS
 - Read `../constitution.md` before proceeding
-- Read `session-journal.yaml` if it exists
 - Read `../forbidden-list.md`
 - **AUTH: L0** — batch 准备是标准流转，直接执行
 - **LLM:** create story = claude | validate = codex | commit = claude
-- **ROLE:** 指挥官通过子窗格派发，不自己编辑
+- **ROLE:** 指挥官通过 command-gateway 派发，不自己编辑
 
 ## RULES
 1. **C4 批处理:** 先批量 create → 再批量 prototype → 再统一 validate → 单次 batch commit。禁止逐 story 闭环 (F1)
@@ -38,54 +37,29 @@ utility_pane: ''
      3. 在 `_bmad-output/implementation-artifacts/` 下查找匹配 `*{story_id}*.md`（排除 `*validation*`）
    - backlog story 的路径初始可为空，待 2a 创建后回填
 3. Partition batch: stories_to_create / stories_to_reuse / ui_stories / backend_only_stories
-4. Verify watchdog is healthy before entering batch-prep long-running work:
-   - Derive current generation:
-     `current_generation="$(sed -n 's/^session_generation:[[:space:]]*//p' _bmad-output/implementation-artifacts/gate-state.yaml | head -n 1)"; [ -n "$current_generation" ] || current_generation=0`
-   - Run:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
-   - If auto-restarted, append a `correction` entry via utility pane before continuing
+4. Health check: `command-gateway.sh <project_root> <gen> HEALTH check_inspector --proactive`
 
 ### 2a: Create missing story files (backlog only, sequential)
 4. For each story in `stories_to_create`:
-   - Re-check watchdog health:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
-   - Execute pre-dispatch (Read `../pre-dispatch-checklist.md`)
-   - Open claude sub-pane:
-     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-create" "{project_root}" "claude --dangerously-skip-permissions")"`
-   - Send task packet:
-     ```
-     Skill: bmad-create-story
-     Goal: Create story file for explicitly assigned story
-     Inputs:
-     - story id: {story_id}
-     - story key: {story_key}
-     - project root: {project_root}
-     Constraints:
-     - use only this explicit story target; do not auto-select another
-     - update sprint tracking as required
-     Expected Output:
-     - MC_DONE CREATE_STORY {story_id}
-     ```
+   - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> create --trigger-seq <N>`
+     (transition-engine handles pane creation, task packet, and completion detection)
+   - Wait for PANE_SIGNAL_DETECTED event (MC_DONE signal) via PEEK_EVENTS
    - 完成后回填 story_registry[story_id] 路径
-   - 关闭 pane，继续下一个（不做 validate/commit）
 
 ### GATE G2: create → prototype
 - **Assert foreach batch_stories:** story_registry[story_id].story_file_main 非空
 - **Assert foreach batch_stories:** `test -f {story_file_main}`
-- **On pass:** 更新 gate-state.yaml G2 PASS
+- **On pass:** `command-gateway.sh <project_root> <gen> RECORD_GATE G2 --trigger-seq <N>`
 
 ### 2b: Add prototypes (UI stories only, where missing)
 5. For each story in `ui_stories` that lacks current prototype:
-   - Re-check watchdog health before prototype creation:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
-   - Execute pre-dispatch
    - **Pre-create files** via utility_pane (Pencil MCP has no save-as):
      ```bash
      cp _bmad-output/implementation-artifacts/prototypes/prototype.pen _bmad-output/implementation-artifacts/prototypes/story-{id}.pen
      mkdir -p _bmad-output/implementation-artifacts/prototypes/story-{id}/
      ```
-   - Open claude sub-pane:
-     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-prototype" "{project_root}" "claude --dangerously-skip-permissions")"`（同一个 pane 完成全流程，保留 Pencil 内存状态）
+   - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> prototype --trigger-seq <N>`
+     (同一个 pane 完成全流程，保留 Pencil 内存状态)
      ```
      Goal: Create story prototype with forced disk save
      Inputs:
@@ -120,46 +94,25 @@ utility_pane: ''
 - **Assert foreach ui_stories:** at least 1 PNG under `_bmad-output/implementation-artifacts/prototypes/story-{id}/`
 - **Assert foreach ui_stories:** story_id in `_bmad-output/implementation-artifacts/prototypes/prototype-manifest.yaml`
 - **Assert foreach backend_only_stories:** SKIP (no prototype required)
-- **On pass:** 更新 gate-state.yaml G3 PASS
+- **On pass:** `command-gateway.sh <project_root> <gen> RECORD_GATE G3 --trigger-seq <N>`
 
 ### 2c: Validate entire batch (PARALLEL, codex)
-6. For each story in batch, **simultaneously** open separate codex sub-panes:
-   - Re-check watchdog health before launching parallel validation:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
-   - Execute pre-dispatch for each (LLM = codex)
-   - Open each codex pane:
-     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-validate" "{project_root}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
-   - Send task packet:
-     ```
-     Role: story validation
-     Goal: Validate story contract before development
-     Inputs:
-     - story id: {story_id}
-     - story file: {story_file_main}
-     - checklist: {project_root}/.claude/skills/bmad-create-story/checklist.md
-     Constraints:
-     - read checklist before validating
-     - do not modify files
-     Expected Output:
-     - MC_DONE VALIDATE {story_id} PASS|FAIL
-     ```
-7. Poll all validate panes round-robin. Collect PASS/FAIL per story. Close each after result.
-   - Before each aggregate pass, verify watchdog still healthy:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+6. For each story in batch, dispatch validation in parallel:
+   - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> validate --trigger-seq <N>`
+   (transition-engine opens codex panes, sends task packets)
+7. Wait for PANE_SIGNAL_DETECTED events (MC_DONE signals) via PEEK_EVENTS for all stories. Collect PASS/FAIL per story.
 8. If any FAIL:
-   - Open claude pane to fix story file/prototype per findings:
-     `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-fix-story" "{project_root}" "claude --dangerously-skip-permissions")"`
-   - Re-validate only failed stories (new codex panes)
+   - Dispatch fix: `command-gateway.sh <project_root> <gen> DISPATCH <story_id> fixing --trigger-seq <N>`
+   - Re-validate only failed stories
    - Max 3 validation cycles per story. Exceed → HALT
 
 ### GATE G4: validate → commit
 - **Assert foreach batch_stories:** validation_status[story_id] == PASS
-- **On pass:** 更新 gate-state.yaml G4 PASS
+- **On pass:** `command-gateway.sh <project_root> <gen> RECORD_GATE G4 --trigger-seq <N>`
 
 ### 2d: Single batch commit
-9. Open claude pane, git add all new/updated story/prototype artifacts
-   - Re-check watchdog health before commit/gate transition:
-     `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+9. `command-gateway.sh <project_root> <gen> BATCH commit --trigger-seq <N>`
+   (gateway reads batch_stories from gate-state, runs batch_committed transition for each story; records G4)
 10. Single commit covering all prepared stories (F2: 禁止逐 story 单独 commit)
 11. If no file changes needed (all reused) → skip commit
 12. Close pane
@@ -169,10 +122,9 @@ utility_pane: ''
 - **Inspector gate:**
   - 写入 gate-report-G5.md (通过 utility_pane)
   - 发送审查请求到 inspector_pane: "请审查 Gate G5"
-  - 轮询 inspector_pane 直到 `APPROVE → L0 AUTO-EXECUTE` 或 `APPROVE → SESSION-RESTART` 或 `REJECT → HALT`
+  - 轮询 inspector_pane 直到 `APPROVE → L0 AUTO-EXECUTE` 或 `REJECT → HALT`
   - REJECT → HALT
-- **On `APPROVE → L0 AUTO-EXECUTE`:** 更新 gate-state.yaml G5 PASS (verified_by: inspector)，**立即读取 step-03 继续执行，不通知用户、不等待确认（C3-L0 + F5）**
-- **On `APPROVE → SESSION-RESTART`:** Inspector 已将 G5 PASS 写入 gate-state.yaml 并即将重启 commander。Commander 无需额外动作——等待被重启即可。新 commander 从 gate-state.yaml 恢复，路由到 step-03。
+- **On `APPROVE → L0 AUTO-EXECUTE`:** For each story: `command-gateway.sh <project_root> <gen> TRANSITION <story_id> g5_approved --trigger-seq <N>`，**立即读取 step-03 继续执行，不通知用户、不等待确认（C3-L0 + F5）**
 
 ## CHECKPOINT
 - 所有 story 文件已创建/确认

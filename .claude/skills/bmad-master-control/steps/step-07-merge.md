@@ -14,10 +14,10 @@ merged_story_files_list: []
 
 ## GUARDS
 - Read `../constitution.md` before proceeding
-- Read `session-journal.yaml` if it exists
+
 - **AUTH: L2** — merge 影响共享状态（main 分支）
 - **LLM:** merge 操作通过 shell/worktree.sh
-- **ROLE:** 指挥官通过子窗格执行 merge
+- **ROLE:** 指挥官通过 command-gateway 执行 merge
 
 ## RULES
 1. UAT 结果必须从用户消息中明确解析，无法解析的 story 需请求重述
@@ -36,7 +36,7 @@ merged_story_files_list: []
 ### Handle UAT Failures
 4. For each FAIL story:
    - Send user feedback to dev pane as fix instructions
-   - Persist via helper: `upsert-story-state ... "phase=fixing" "review_cycle=0"`
+   - `command-gateway.sh <project_root> <gen> TRANSITION <story_id> uat_fail --trigger-seq <N>`
    - Continue processing PASS stories (don't block merge)
 
 ### GATE G10 (per story, Inspector): UAT → merge
@@ -45,10 +45,9 @@ merged_story_files_list: []
    - **Inspector gate:**
      - 写入 gate-report-G10-{story_id}.md
      - Send to inspector: "请审查 Gate G10 (Story {story_id})"
-     - Poll until `APPROVE → L0 AUTO-EXECUTE` or `APPROVE → SESSION-RESTART` or `REJECT → HALT`
+     - Poll until `APPROVE → L0 AUTO-EXECUTE` or `REJECT → HALT`
      - REJECT → HALT
-   - **On `APPROVE → L0 AUTO-EXECUTE`:** 通过 helper 记录 G10 PASS，**立即进入 Sequential Merge，不通知用户、不等待确认（C3-L0 + F5）**
-   - **On `APPROVE → SESSION-RESTART`:** Inspector 已将 G10 PASS 写入 gate-state.yaml 并即将重启 commander。Commander 无需额外动作。新 commander 恢复后根据 story phase 和 merge_state 继续 merge 流程。
+   - **On `APPROVE → L0 AUTO-EXECUTE`:** `command-gateway.sh <project_root> <gen> TRANSITION <story_id> g10_approved --trigger-seq <N>` (records G10 PASS)，**立即进入 Sequential Merge，不通知用户、不等待确认（C3-L0 + F5）**
 
 ### Sequential Merge
 6. Sort merge queue: small/no-UI/enabler stories first
@@ -61,9 +60,8 @@ merged_story_files_list: []
    e. Run: `./scripts/worktree.sh merge {story_id}`
    f. Verify merge succeeded (check exit code)
    g. If merge fails → HALT with conflict details
-   h. Persist via helper: `upsert-story-state ... "phase=merged"`
-   i. Update gate-state.yaml via helper:
-      - `update-merge-state ... "current_story={story_id}" "queue={remaining_csv}" "completed={completed_csv}"`
+   h. `command-gateway.sh <project_root> <gen> TRANSITION <story_id> regression_start --trigger-seq <N>`
+      (transition-engine sets phase=merged, updates merge_state)
 
    **After each successful merge → Read `./step-08-regression.md`**
    (Regression must pass before merging next story)
