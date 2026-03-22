@@ -27,7 +27,7 @@ function mockApi(overrides: Partial<typeof window.api> = {}): void {
   })
 }
 
-describe('documentStore', () => {
+describe('@story-3-1 documentStore', () => {
   beforeEach(() => {
     vi.useRealTimers()
     mockApi()
@@ -80,6 +80,33 @@ describe('documentStore', () => {
       const state = useDocumentStore.getState()
       expect(state.content).toBe('# Updated')
       expect(state.autoSave.dirty).toBe(true)
+    })
+
+    it('debounces auto-save for 1 second and only persists the latest edit', async () => {
+      vi.useFakeTimers()
+
+      const documentSave = vi.fn().mockResolvedValue({
+        success: true,
+        data: { lastSavedAt: '2026-03-21T10:00:30.000Z' },
+      })
+      mockApi({ documentSave })
+
+      useDocumentStore.getState().updateContent('# First draft', 'proj-1')
+      await vi.advanceTimersByTimeAsync(600)
+      useDocumentStore.getState().updateContent('# Final draft', 'proj-1')
+
+      await vi.advanceTimersByTimeAsync(999)
+      expect(documentSave).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      await Promise.resolve()
+
+      expect(documentSave).toHaveBeenCalledTimes(1)
+      expect(documentSave).toHaveBeenCalledWith({
+        projectId: 'proj-1',
+        content: '# Final draft',
+      })
+      expect(useDocumentStore.getState().autoSave.dirty).toBe(false)
     })
   })
 

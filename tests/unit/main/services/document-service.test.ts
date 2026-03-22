@@ -51,7 +51,7 @@ function createErrnoError(code: string, message = code): NodeJS.ErrnoException {
   return error
 }
 
-describe('documentService', () => {
+describe('documentService @story-3-1', () => {
   let documentService: typeof import('@main/services/document-service').documentService
   let DocumentNotFoundError: typeof import('@main/utils/errors').DocumentNotFoundError
   let DocumentSaveError: typeof import('@main/utils/errors').DocumentSaveError

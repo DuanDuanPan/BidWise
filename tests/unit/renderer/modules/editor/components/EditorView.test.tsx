@@ -33,7 +33,7 @@ vi.mock('@modules/editor/components/PlateEditor', () => ({
   ),
 }))
 
-describe('EditorView', () => {
+describe('@story-3-1 EditorView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockLoading = false

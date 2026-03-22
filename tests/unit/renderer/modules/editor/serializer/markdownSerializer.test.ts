@@ -7,7 +7,7 @@ function createTestEditor(): ReturnType<typeof createPlateEditor> {
   return createPlateEditor({ plugins: editorPlugins })
 }
 
-describe('markdownSerializer', () => {
+describe('@story-3-1 markdownSerializer', () => {
   describe('serializeToMarkdown', () => {
     it('should serialize empty editor to empty or whitespace-only string', () => {
       const editor = createTestEditor()
@@ -77,6 +77,34 @@ describe('markdownSerializer', () => {
 
       expect(result).toContain('| 列1 | 列2 |')
       expect(result).toMatch(/\|\s*A\s+\|\s*B\s+\|/)
+    })
+
+    it('should roundtrip ordered lists, H4 headings, and GFM inline formatting', () => {
+      const editor = createTestEditor()
+      const source =
+        '#### 小节标题\n\n1. 第一步\n2. 第二步\n\n`行内代码` ~~删除线~~ **加粗** *斜体*'
+      const nodes = deserializeFromMarkdown(editor, source)
+      editor.tf.setValue(nodes)
+      const result = serializeToMarkdown(editor)
+
+      expect(result).toContain('#### 小节标题')
+      expect(result).toContain('1. 第一步')
+      expect(result).toContain('2. 第二步')
+      expect(result).toContain('`行内代码`')
+      expect(result).toContain('~~删除线~~')
+      expect(result).toContain('**加粗**')
+      expect(result).toMatch(/_斜体_|\*斜体\*/)
+    })
+
+    it('should roundtrip fenced code blocks', () => {
+      const editor = createTestEditor()
+      const source = '```ts\nconst bid = true\n```'
+      const nodes = deserializeFromMarkdown(editor, source)
+      editor.tf.setValue(nodes)
+      const result = serializeToMarkdown(editor)
+
+      expect(result).toContain('```')
+      expect(result).toContain('const bid = true')
     })
   })
 })

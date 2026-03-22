@@ -75,7 +75,7 @@ vi.mock('platejs/react', () => ({
   ),
 }))
 
-describe('PlateEditor', () => {
+describe('@story-3-1 PlateEditor', () => {
   beforeEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
@@ -106,8 +106,12 @@ describe('PlateEditor', () => {
     render(<PlateEditor initialContent="" projectId="proj-1" />)
     const editorEl = screen.getByTestId('plate-editor-content')
     expect(editorEl).toBeDefined()
+    expect(editorEl.className).toContain('max-w-[800px]')
+    expect(editorEl.className).toContain('leading-[1.8]')
     expect(editorEl.className).toContain('[&_h1]:text-2xl')
     expect(editorEl.className).toContain('[&_h4]:text-sm')
+    expect((editorEl as HTMLDivElement).style.fontFamily).toContain('PingFang SC')
+    expect((editorEl as HTMLDivElement).style.fontFamily).toContain('Microsoft YaHei')
   })
 
   it('registers a synchronous flush handler', () => {
@@ -123,6 +127,29 @@ describe('PlateEditor', () => {
 
     expect(onSyncFlushReady).toHaveBeenCalledTimes(1)
     expect(typeof onSyncFlushReady.mock.calls[0]?.[0]).toBe('function')
+  })
+
+  it('flushes the latest markdown synchronously without scheduling debounce save', () => {
+    const onSyncFlushReady = vi.fn()
+
+    render(
+      <PlateEditor
+        initialContent="# Heading"
+        projectId="proj-1"
+        onSyncFlushReady={onSyncFlushReady}
+      />
+    )
+
+    const flush = onSyncFlushReady.mock.calls[0]?.[0] as (() => string) | undefined
+    expect(flush).toBeDefined()
+
+    const result = flush?.()
+
+    expect(result).toBe('# Serialized')
+    expect(mockSerialize).toHaveBeenCalledTimes(1)
+    expect(mockUpdateContent).toHaveBeenCalledWith('# Serialized', 'proj-1', {
+      scheduleSave: false,
+    })
   })
 
   it('hydrates the editor when external initialContent changes', async () => {

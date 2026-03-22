@@ -41,7 +41,7 @@ vi.mock('@main/utils/errors', () => ({
 
 import { registerDocumentHandlers } from '@main/ipc/document-handlers'
 
-describe('document-handlers', () => {
+describe('document-handlers @story-3-1', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
