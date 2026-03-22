@@ -36,7 +36,7 @@ merged_story_files_list: []
 ### Handle UAT Failures
 4. For each FAIL story:
    - Send user feedback to dev pane as fix instructions
-   - Set story.phase = "fixing", review_cycle = 0 (reset)
+   - Persist via helper: `upsert-story-state ... "phase=fixing" "review_cycle=0"`
    - Continue processing PASS stories (don't block merge)
 
 ### GATE G10 (per story, Inspector): UAT → merge
@@ -61,8 +61,9 @@ merged_story_files_list: []
    e. Run: `./scripts/worktree.sh merge {story_id}`
    f. Verify merge succeeded (check exit code)
    g. If merge fails → HALT with conflict details
-   h. Set story.phase = "merged" (durable — enables resume if session restarts before regression)
-   i. Update gate-state.yaml: merge_state.current_story = {story_id}, merge_state.queue/completed as needed（generation-guarded helper path）
+   h. Persist via helper: `upsert-story-state ... "phase=merged"`
+   i. Update gate-state.yaml via helper:
+      - `update-merge-state ... "current_story={story_id}" "queue={remaining_csv}" "completed={completed_csv}"`
 
    **After each successful merge → Read `./step-08-regression.md`**
    (Regression must pass before merging next story)
@@ -75,9 +76,13 @@ merged_story_files_list: []
    Sprint 状态已自动更新
    {remaining_or_failed_summary}
    ```
+   - 该输出仅为里程碑播报，**不是**征求用户意见
+   - 禁止追加“是否 cleanup / 是否结束 batch”之类的问题
 
 9. If any story still in fixing → **Read `./step-04-monitoring.md`**
-10. If all merged and regression passed → **Read `./step-09-cleanup.md`**
+10. If all merged and regression passed → **immediately Read `./step-09-cleanup.md` and execute cleanup (L0)**
+    - 不等待用户确认
+    - 不输出 cleanup/结束 batch 二选一
 
 ## CHECKPOINT
 - UAT results: {uat_results}

@@ -30,16 +30,17 @@ utility_pane: ''
    - Derive current generation from `gate-state.yaml.session_generation`（if missing, use `0`）
    - Run:
      `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+   - On healthy, persist heartbeat via `sync-watchdog-from-files`
 
 #### Phase A: Parallel Dispatch
 4. Collect all stories with phase == `auto_qa_pending`
 5. For **each** story, **simultaneously** open a codex sub-pane:
-   - **Execute pre-dispatch:** LLM = codex, AUTH = L0, PANE = new
+   - **Prepare pre-dispatch:** LLM = codex, AUTH = L0, PANE = new
    - Open codex sub-pane:
      `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-qa" "../BidWise-story-{story_id}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"`
-   - Record: panes.stories[story_id].qa = work_pane_id
-   - Set story.phase = "qa_running" (durable — enables resume if session restarts mid-QA)
-   - Update gate-state.yaml with phase change through generation-guarded helper writes
+   - Write `dispatch_audit` with the real `work_pane_id`
+   - Persist via helper:
+     - `upsert-story-state ... "phase=qa_running" "current_llm=codex" "dispatch_state=worker_running" "auto_qa_cycle={next_auto_qa_cycle}" "pane.qa={work_pane_id}"`
    - Check if story-scoped Playwright tests exist: `tests/e2e/stories/story-{story_id}*.spec.ts`
    - Send task packet:
      ```
@@ -66,10 +67,12 @@ utility_pane: ''
 6. Wait for **all** QA panes to report `MC_DONE`; close each pane as it completes
 7. Before batch aggregation, re-check watchdog health:
    `"{WATCHDOG_CONTROL_HELPER}" ensure-running "{CLAUDE_SKILL_DIR}" "{commander_pane}" "{inspector_pane}" "{project_root}" "{current_session}" "${current_generation}" 8 120`
+   Then `sync-watchdog-from-files`
 8. Collect all results, then **batch-update** gate-state.yaml once (avoid concurrent writes)
 9. For each FAIL story:
      - Write findings to `../BidWise-story-{story_id}/auto-qa-findings-cycle-{N}.md`
      - Set story.phase = "fixing"
+     - Clear `pane.qa`, then run `cleanup-stale-panes`
 10. If any story FAIL:
      - Output (L1): "⚠️ 自动化 QA 发现阻塞问题，已回流修复"
      - **Read `./step-04-monitoring.md`** to re-enter monitoring loop
@@ -82,6 +85,7 @@ utility_pane: ''
 
 ### UAT Notification (L2 — HALT and wait)
 11. Set story.phase = "uat_waiting" for each passing story
+    - Also clear `pane.qa` and run `cleanup-stale-panes`
 12. Output:
 
 ```

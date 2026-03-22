@@ -11,14 +11,18 @@
    - AUTH: step 标注的 level
    - PANE: 新建 or 复用 — 如 review→fix 转换，必须新 pane（C2 不变量）
 
-2. 通过 utility_pane 写入 dispatch_audit entry（必须走 generation-guarded helper）：
+2. 确认本次 dispatch 的**实际目标 pane_id**：
+   - `PANE = new` 时：先创建 pane，拿到 `work_pane_id`，但**还不要发送任务包**
+   - `PANE = reuse` 时：直接使用现有 pane_id
+
+3. 通过 utility_pane 写入 dispatch_audit entry（必须走 generation-guarded helper，且 `pane` 必须是真实 pane ID）：
 
 ```bash
 current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
-tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"{phase}\" \"{llm}\" \"{auth}\" \"{pane}\" \"{pane_reuse_reason}\" \"{PASS|FAIL}\" \"C2:{llm}/{phase}={OK|FAIL}, AUTH:{level}={OK|FAIL}, PANE:{new|reuse}={OK|FAIL}\"" Enter
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"{phase}\" \"{llm}\" \"{auth}\" \"{actual_pane_id}\" \"{pane_reuse_reason}\" \"{PASS|FAIL}\" \"C2:{llm}/{phase}={OK|FAIL}, AUTH:{level}={OK|FAIL}, PANE:{new|reuse}={OK|FAIL}\"" Enter
 ```
 
-3. 执行 dispatch
+4. 执行 dispatch
    - 多行任务包发给 Claude 时，先 paste，再单独发送 `Enter`
    - Paste 后立即记录 `dispatch_state = packet_pasted`
    - 只有在 pane 不再显示 `❯ [Pasted text #…]` 后，才记录 `dispatch_state = packet_submitted`

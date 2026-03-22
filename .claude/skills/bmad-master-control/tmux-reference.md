@@ -100,14 +100,31 @@ work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{comman
 tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'
 ```
 
+**Top-layer pane 也必须启用 pipe-pane，尤其是 commander：**
+```bash
+tmux pipe-pane -t {commander_pane} -o 'cat >> {mc_log_dir}/pane-{commander_pane}.log'
+tmux pipe-pane -t {inspector_pane} -o 'cat >> {mc_log_dir}/pane-{inspector_pane}.log'
+tmux pipe-pane -t {utility_pane} -o 'cat >> {mc_log_dir}/pane-{utility_pane}.log'
+```
+
+**恢复后重挂 logging：**
+```bash
+for pane in "{commander_pane}" "{inspector_pane}" "{utility_pane}" "{bottom_anchor}" $(tmux list-panes -t "{current_session}" -F '#{pane_title} #{pane_id}' | awk '/^mc-story-/{print $2}'); do
+  [ -n "${pane}" ] || continue
+  pane_num="${pane#%}"
+  tmux pipe-pane -t "${pane}" -o "cat >> ${mc_log_dir}/pane-${pane_num}.log"
+done
+```
+
 ## 消息发送
 
 ```bash
 # 发送任务到 pane
 tmux send-keys -t {pane_id} '命令内容' Enter
 
-# 多行任务包发给 Claude：先 paste，再单独 Enter，并通过 utility pane 持久化 dispatch_state
+# 多行任务包发给 Claude：先拿到真实 pane_id，写 dispatch_audit，再 paste + Enter
 current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"{phase}\" \"{llm}\" \"{auth}\" \"{pane_id}\" \"{pane_reuse_reason}\" \"PASS\" \"{constitution_detail}\"" Enter
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" mark-dispatch-state \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"packet_pasted\"" Enter
 tmux send-keys -t {pane_id} Enter
 
@@ -172,19 +189,28 @@ REPORT_EOF" Enter
 ## Session Journal 写入（通过 utility pane）
 
 ```bash
-# 追加 dispatch_audit 条目（带 generation fencing）
+# 追加 dispatch_audit 条目（带 generation fencing；pane 必须是真实 pane ID）
 current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
-tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"{{phase}}\" \"{{llm}}\" \"{{auth}}\" \"{{pane}}\" \"{{pane_reuse_reason}}\" \"PASS\" \"{{constitution_detail}}\"" Enter
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-dispatch-audit \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"{{phase}}\" \"{{llm}}\" \"{{auth}}\" \"{{pane_id}}\" \"{{pane_reuse_reason}}\" \"PASS\" \"{{constitution_detail}}\"" Enter
 
 # 追加 correction 条目（带 generation fencing）
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-correction \"{project_root}\" \"${current_generation}\" \"{{trigger}}\" \"{{description}}\" \"{{violated_rule}}\" \"{{correct_action}}\" \"{{step}}\" \"{{story_id}}\"" Enter
 
+# 更新 story runtime 状态 / pane registry
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" upsert-story-state \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"phase={{phase}}\" \"current_llm={{llm}}\" \"dispatch_state={{dispatch_state}}\" \"pane.{{role}}={{pane_id_or_null}}\"" Enter
+
 # 更新 dispatch_state（Step 3 recovery-safe）
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" mark-dispatch-state \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"packet_submitted\"" Enter
+
+# 更新 inspector_state
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" set-inspector-state \"{project_root}\" \"${current_generation}\" \"busy_audit\"" Enter
 
 # 同步当前 session 的 top-layer pane IDs
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" sync-runtime-panes \"{project_root}\" \"${current_generation}\" \"{{utility_pane}}\" \"{{inspector_pane}}\" \"{{bottom_anchor}}\"" Enter
 
-# 同步 watchdog 可观测状态
-tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" sync-watchdog \"{project_root}\" \"${current_generation}\" \"{{pid}}\" \"{{last_heartbeat}}\" \"{{status}}\"" Enter
+# 清理已关闭 pane 的残留引用
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" cleanup-stale-panes \"{project_root}\" \"${current_generation}\" \"{{current_session}}\"" Enter
+
+# 从 watchdog pid / heartbeat 文件同步可观测状态
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" sync-watchdog-from-files \"{project_root}\" \"${current_generation}\"" Enter
 ```

@@ -25,5 +25,7 @@ playwright-report/
 _bmad-output/evolution/
 _bmad-output/implementation-artifacts/watchdog.pid
 _bmad-output/implementation-artifacts/watchdog-heartbeat.yaml
+_bmad-output/implementation-artifacts/watchdog-alerts.yaml
+_bmad-output/implementation-artifacts/watchdog-alert-cache.txt
 .serena/
 nohup.out

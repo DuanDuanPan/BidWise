@@ -1,0 +1,159 @@
+---
+batch_id: batch-2026-03-21-4
+entries:
+- seq: 1
+  timestamp: '2026-03-21T17:07:25Z'
+  type: dispatch_audit
+  story_id: 1-8
+  phase: review
+  llm: claude
+  auth: L0
+  pane: "%105"
+  pane_reuse_reason: fresh-context-claude-review
+  constitution_check: PASS
+  constitution_detail: C2:claude/review=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 2
+  timestamp: '2026-03-21T17:07:25Z'
+  type: dispatch_audit
+  story_id: 2-5
+  phase: review
+  llm: claude
+  auth: L0
+  pane: "%108"
+  pane_reuse_reason: fresh-context-claude-review
+  constitution_check: PASS
+  constitution_detail: C2:claude/review=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 3
+  timestamp: '2026-03-21T17:07:26Z'
+  type: dispatch_audit
+  story_id: 3-1
+  phase: review
+  llm: claude
+  auth: L0
+  pane: "%109"
+  pane_reuse_reason: fresh-context-claude-review
+  constitution_check: PASS
+  constitution_detail: C2:claude/review=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 4
+  timestamp: '2026-03-21T17:19:59Z'
+  type: dispatch_audit
+  story_id: 1-8
+  phase: fixing
+  llm: codex
+  auth: L0
+  pane: "%119"
+  pane_reuse_reason: C2-override-user-codex-fix
+  constitution_check: PASS
+  constitution_detail: C2:codex/fixing=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 5
+  timestamp: '2026-03-21T17:19:59Z'
+  type: dispatch_audit
+  story_id: 2-5
+  phase: fixing
+  llm: codex
+  auth: L0
+  pane: "%120"
+  pane_reuse_reason: C2-override-user-codex-fix
+  constitution_check: PASS
+  constitution_detail: C2:codex/fixing=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 6
+  timestamp: '2026-03-21T17:21:59Z'
+  type: dispatch_audit
+  story_id: 3-1
+  phase: fixing
+  llm: codex
+  auth: L0
+  pane: "%121"
+  pane_reuse_reason: C2-override-user-codex-fix
+  constitution_check: PASS
+  constitution_detail: C2:codex/fixing=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 7
+  timestamp: '2026-03-21T17:34:36Z'
+  type: dispatch_audit
+  story_id: 1-8
+  phase: review
+  llm: claude
+  auth: L0
+  pane: "%122"
+  pane_reuse_reason: fresh-context-claude-review-c2
+  constitution_check: PASS
+  constitution_detail: C2:claude/review=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 8
+  timestamp: '2026-03-21T17:34:36Z'
+  type: dispatch_audit
+  story_id: 2-5
+  phase: review
+  llm: claude
+  auth: L0
+  pane: "%123"
+  pane_reuse_reason: fresh-context-claude-review-c2
+  constitution_check: PASS
+  constitution_detail: C2:claude/review=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 9
+  timestamp: '2026-03-21T17:49:42Z'
+  type: dispatch_audit
+  story_id: 3-1
+  phase: review
+  llm: claude
+  auth: L0
+  pane: "%124"
+  pane_reuse_reason: fresh-context-claude-review-c2
+  constitution_check: PASS
+  constitution_detail: C2:claude/review=OVERRIDE-USER, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 10
+  timestamp: '2026-03-21T17:56:25Z'
+  type: dispatch_audit
+  story_id: 1-8
+  phase: qa
+  llm: codex
+  auth: L0
+  pane: "%127"
+  pane_reuse_reason: fresh-context-qa
+  constitution_check: PASS
+  constitution_detail: C2:codex/qa=OK, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 11
+  timestamp: '2026-03-21T17:57:07Z'
+  type: dispatch_audit
+  story_id: 2-5
+  phase: qa
+  llm: codex
+  auth: L0
+  pane: "%128"
+  pane_reuse_reason: fresh-context-qa
+  constitution_check: PASS
+  constitution_detail: C2:codex/qa=OK, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 12
+  timestamp: '2026-03-21T18:18:50Z'
+  type: dispatch_audit
+  story_id: 2-5
+  phase: qa
+  llm: codex
+  auth: L0
+  pane: "%130"
+  pane_reuse_reason: fresh-context-qa-retry
+  constitution_check: PASS
+  constitution_detail: C2:codex/qa=OK, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0
+- seq: 13
+  timestamp: '2026-03-21T18:33:14Z'
+  type: dispatch_audit
+  story_id: 3-1
+  phase: qa
+  llm: codex
+  auth: L0
+  pane: "%131"
+  pane_reuse_reason: fresh-context-qa
+  constitution_check: PASS
+  constitution_detail: C2:codex/qa=OK, AUTH:L0=OK, PANE:new=OK
+  session_generation: 0

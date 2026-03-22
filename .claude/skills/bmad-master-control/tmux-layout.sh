@@ -38,6 +38,14 @@ dump_geometry() {
   tmux list-panes -t "$session" -F 'pane=#{pane_id} title=#{pane_title} top=#{pane_top} left=#{pane_left} size=#{pane_width}x#{pane_height}'
 }
 
+list_top_panes() {
+  local session="${1:?session required}"
+  tmux list-panes -t "$session" -F '#{pane_id} #{pane_top} #{pane_left}' |
+    awk '$2 == 0 {print $1, $3}' |
+    sort -k2n |
+    awk '{print $1}'
+}
+
 is_shell_command() {
   case "${1:-}" in
     bash|zsh|sh|fish) return 0 ;;
@@ -109,14 +117,35 @@ validate_top_titles() {
   return "$ok"
 }
 
+heal_top_titles() {
+  local session="${1:?session required}"
+  local -a top_panes=()
+  local pane_id
+
+  while IFS= read -r pane_id; do
+    [[ -n "$pane_id" ]] && top_panes+=("$pane_id")
+  done < <(list_top_panes "$session")
+
+  [[ "${#top_panes[@]}" -eq 3 ]] || return 1
+
+  echo "tmux-layout.sh: reapplying top titles after title drift" >&2
+  set_top_titles "${top_panes[0]}" "${top_panes[1]}" "${top_panes[2]}"
+}
+
 validate_init() {
   local session="${1:?session required}"
   local bottom_anchor="${2:?bottom_anchor required}"
   local top left
 
   validate_top_titles "$session" || {
-    dump_geometry "$session" >&2
-    return 1
+    heal_top_titles "$session" || {
+      dump_geometry "$session" >&2
+      return 1
+    }
+    validate_top_titles "$session" || {
+      dump_geometry "$session" >&2
+      return 1
+    }
   }
 
   top="$(get_pane_field "$bottom_anchor" '#{pane_top}')"
@@ -130,7 +159,10 @@ validate_work() {
   local session="${1:?session required}"
   local ok=0
 
-  validate_top_titles "$session" || ok=1
+  validate_top_titles "$session" || {
+    heal_top_titles "$session" || ok=1
+    validate_top_titles "$session" || ok=1
+  }
 
   while IFS= read -r line; do
     local title top

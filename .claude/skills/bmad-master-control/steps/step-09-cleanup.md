@@ -11,19 +11,22 @@ utility_pane: ''
 ## GUARDS
 - Read `../constitution.md` before proceeding
 - Read `session-journal.yaml` if it exists
-- **AUTH: L0** for cleanup | **L2** for next batch decision
+- **AUTH: L0** for cleanup / archive / batch review | **L2** only for next batch decision
 - **ROLE:** 指挥官通过子窗格执行 cleanup
 
 ## RULES
 1. Cleanup 只针对已 merge + regression PASS 的 story
 2. Gate-state 必须归档保存（审计 trail）
 3. Session-journal 中的 corrections 必须评估是否提升为 forbidden-list
+4. **进入 Step 9 后，steps 1-9 全部属于 L0 自动执行。禁止在 cleanup / archive / batch review 之前询问用户。**
+5. **禁止输出“做 cleanup 还是结束 batch”之类的二选一话术。** 结束 batch 不是独立分支；cleanup 完成后，若没有下一批候选，只输出完成信息。
+6. 唯一允许的提问点是 step 11：`more batch candidates exist` 时的下一批决策（L2）
 
 ## INSTRUCTIONS
 
 ### Worktree Cleanup
-1. Read gate-state.yaml → 确认所有 merged stories 的 G11 == PASS
-2. For each merged story:
+1. Read gate-state.yaml → 确认所有 merged stories 的 G11 == PASS，且 `merge_state.queue` 为空
+2. **Auto-execute cleanup now (L0; no user prompt):** For each merged story:
    - `./scripts/worktree.sh remove {story_id}`
    - Verify: `./scripts/worktree.sh list` should not show the story
 3. Output (L1): "🧹 Cleanup 完成 — {count} 个 worktree 已清理"
@@ -48,11 +51,12 @@ utility_pane: ''
 
 ### Next Batch Decision
 10. Re-read sprint-status.yaml
-11. If more batch candidates exist:
+11. **Only after steps 1-9 have completed**, decide next batch
+12. If more batch candidates exist:
     - Output: "📋 还有可开发的 Story，是否继续下一个 batch？"
     - Ask (L2): "继续？输入 '是' 开始下一轮，或 '否' 结束。"
     - If user confirms → **Read `./step-01-assessment.md`**
-12. If no more candidates:
+13. If no more candidates:
     - Output: "🏁 所有已选 Story 处理完毕。"
 
 ## CHECKPOINT

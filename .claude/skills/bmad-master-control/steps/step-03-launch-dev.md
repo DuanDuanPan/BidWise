@@ -34,16 +34,22 @@ bottom_anchor: ''
 4. For each story, set:
    - `story_registry[story_id].worktree_path = ../BidWise-story-{story_id}`
    - `story_registry[story_id].story_file_worktree = ../BidWise-story-{story_id}/{story_file_rel}`
+   - Persist full durable runtime schema via helper:
+     ```bash
+     current_generation="$("${STATE_CONTROL_HELPER}" get-generation "{project_root}")"
+     tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" upsert-story-state \"{project_root}\" \"${current_generation}\" \"{story_id}\" \"phase=dev\" \"current_llm=claude\" \"worktree_path={story_registry[story_id].worktree_path}\" \"story_file_main={story_registry[story_id].story_file_main}\" \"story_file_rel={story_registry[story_id].story_file_rel}\" \"story_key={story_registry[story_id].story_key}\" \"is_ui={true|false}\" \"validation_cycle=0\" \"auto_qa_cycle=0\"" Enter
+     ```
 
 ### Launch Dev Panes
 5. For each story:
-   - Execute pre-dispatch (Read `../pre-dispatch-checklist.md`):
+   - Decide pre-dispatch parameters (Read `../pre-dispatch-checklist.md`):
      LLM = claude, AUTH = L0, EXECUTOR = sub-pane, PANE = fresh worker slot
    - Open claude sub-pane:
      `work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "mc-story-{story_id}-dev" "../BidWise-story-{story_id}" "claude --dangerously-skip-permissions" "{project_root}" "{current_generation}" "{story_id}")"`
    - Enable pipe-pane logging: `tmux pipe-pane -t {work_pane_id} -o 'cat >> {mc_log_dir}/pane-{work_pane_id}.log'`
    - `register-worker-pane` 完成后，story `dispatch_state` 应为 `pane_opened`
    - Wait for Claude prompt (❯)
+   - 通过 utility pane 写入 `dispatch_audit`，`pane` 必须为真实 `work_pane_id`（不要写 `new` 占位值）
    - Paste task packet:
      ```
      Skill: bmad-dev-story
@@ -69,15 +75,14 @@ bottom_anchor: ''
      - reference PNG dir: {project_root}/_bmad-output/implementation-artifacts/prototypes/story-{story_id}/
      - visual baseline: Story 1.4 design system + ux-design-specification
      ```
-   - 通过 helper 记录：`dispatch_state = "packet_pasted"`
+   - Paste 后立即通过 helper 记录：`dispatch_state = "packet_pasted"`
    - **Send a dedicated `Enter` after the multiline paste. Do not treat `❯ [Pasted text #…]` as dispatched.**
    - Re-capture pane:
      - If still shows `❯ [Pasted text #…]` → send one more `Enter`, wait 1s, capture again
      - If still shows `❯ [Pasted text #…]` after retry → HALT（这是半提交态，禁止前进到 G6）
    - Once the pane no longer shows `❯ [Pasted text #…]`, 通过 helper 记录：`dispatch_state = "packet_submitted"`
-   - 只有在 worker 已真正收到任务后，才把该 story 视为 active dev
-   - Record panes.stories[story_id] = { dev: {work_pane_id} }
-   - Update gate-state.yaml with generation-guarded write path（use `STATE_CONTROL_HELPER` / utility pane; do not write raw YAML directly）
+   - 只有在 worker 已真正收到任务后，才把该 story 视为 active dev；此时 `dispatch_audit`、`dispatch_state`、`panes.stories[story_id].dev` 三者必须一致
+   - 后续 Step 4 首轮 poll 若确认 worker 已实际运行，应把 `dispatch_state` 推进为 `worker_running`
 
 6. After all dev panes launch, optionally run:
    - `"{TMUX_LAYOUT_HELPER}" rebalance-bottom "{current_session}" "{commander_pane}"`

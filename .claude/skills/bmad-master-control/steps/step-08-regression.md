@@ -94,4 +94,6 @@ bottom_anchor: ''
 - L1/L2/L3 results: {results}
 
 ## NEXT
-Return to `./step-07-merge.md` to merge next story in queue, or `./step-09-cleanup.md` if queue empty.
+Return to `./step-07-merge.md` to merge next story in queue, or immediately read `./step-09-cleanup.md` if queue empty.
+- `queue empty -> step-09` is an L0 auto-transition.
+- Do not ask the user whether to cleanup, finish the batch, or stop here.

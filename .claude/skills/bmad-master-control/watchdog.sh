@@ -14,22 +14,51 @@ PROJECT_ROOT="${3:?}"
 SESSION_NAME="${4:?}"
 SESSION_GENERATION="${5:-0}"
 ALERT_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/watchdog-alerts.yaml"
+ALERT_CACHE_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/watchdog-alert-cache.txt"
 JOURNAL_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/session-journal.yaml"
 GATE_STATE_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/gate-state.yaml"
 SENTINEL_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/restart-eligible.yaml"
 PID_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/watchdog.pid"
 HEARTBEAT_FILE="${PROJECT_ROOT}/_bmad-output/implementation-artifacts/watchdog-heartbeat.yaml"
-CHECK_INTERVAL=60
-SESSION_MAX_SECONDS=3600  # 1 小时
+CHECK_INTERVAL="${WATCHDOG_CHECK_INTERVAL:-60}"
+SESSION_MAX_SECONDS="${WATCHDOG_SESSION_MAX_SECONDS:-3600}"  # 1 小时
 
-# 确保 alert 文件存在
-mkdir -p "$(dirname "$ALERT_FILE")"
-[ -f "$ALERT_FILE" ] || echo "alerts: []" > "$ALERT_FILE"
+ensure_alert_file() {
+  mkdir -p "$(dirname "$ALERT_FILE")"
+
+  if [ ! -f "$ALERT_FILE" ]; then
+    printf 'alerts:\n' > "$ALERT_FILE"
+    return
+  fi
+
+  if [ "$(head -n 1 "$ALERT_FILE" 2>/dev/null || true)" = "alerts: []" ]; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    {
+      printf 'alerts:\n'
+      tail -n +2 "$ALERT_FILE"
+    } > "$tmp_file"
+    mv "$tmp_file" "$ALERT_FILE"
+  fi
+}
+
+count_existing_alerts() {
+  awk 'BEGIN { count = 0 } /^  - timestamp:/ { count++ } END { print count }' "$ALERT_FILE" 2>/dev/null
+}
 
 # 会话计时器
 SESSION_START=$(date +%s)
 sentinel_written=false
 ALERT_COUNT=0
+
+ensure_alert_file
+mkdir -p "$(dirname "$ALERT_CACHE_FILE")"
+: > "$ALERT_CACHE_FILE"
+ALERT_COUNT="$(count_existing_alerts)"
+
+if [ -f "$SENTINEL_FILE" ]; then
+  sentinel_written=true
+fi
 
 cleanup() {
   rm -f "$PID_FILE"
@@ -47,6 +76,39 @@ current_generation() {
     fi
   fi
   printf '%s\n' "$generation"
+}
+
+alert_cache_key() {
+  local alert_type="$1"
+  local evidence="$2"
+  local generation
+  generation="$(current_generation)"
+
+  printf '%s' "${generation}|${alert_type}|${evidence}" | shasum -a 256 | awk '{print $1}'
+}
+
+alert_seen() {
+  local key
+  key="$(alert_cache_key "$1" "$2")"
+  grep -Fxq "$key" "$ALERT_CACHE_FILE" 2>/dev/null
+}
+
+remember_alert() {
+  local key
+  key="$(alert_cache_key "$1" "$2")"
+  printf '%s\n' "$key" >> "$ALERT_CACHE_FILE"
+}
+
+notify_inspector() {
+  local message="$1"
+
+  if tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -Fxq "$INSPECTOR_PANE"; then
+    tmux send-keys -t "$INSPECTOR_PANE" "$message" Enter || true
+    sleep 1
+    tmux send-keys -t "$INSPECTOR_PANE" Enter || true
+  else
+    echo "[watchdog] inspector pane '${INSPECTOR_PANE}' missing; alert recorded without notify."
+  fi
 }
 
 write_heartbeat() {
@@ -71,6 +133,13 @@ log_alert() {
   local alert_type="$1"
   local evidence="$2"
   local ts
+
+  [ -n "$evidence" ] || return 0
+
+  if alert_seen "$alert_type" "$evidence"; then
+    return 0
+  fi
+
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   ALERT_COUNT=$((ALERT_COUNT + 1))
 
@@ -80,11 +149,8 @@ log_alert() {
     evidence: "${evidence}"
 EOF
 
-  # 通知监察官
-  tmux send-keys -t "$INSPECTOR_PANE" \
-    "WATCHDOG ALERT [${alert_type}]: ${evidence}. 请读取 ${ALERT_FILE} 和 ${JOURNAL_FILE} 验证。" Enter
-  sleep 1
-  tmux send-keys -t "$INSPECTOR_PANE" Enter
+  remember_alert "$alert_type" "$evidence"
+  notify_inspector "WATCHDOG ALERT [${alert_type}]: ${evidence}. 请读取 ${ALERT_FILE} 和 ${JOURNAL_FILE} 验证。"
   write_heartbeat
 }
 
@@ -92,19 +158,41 @@ EOF
 check_llm_phase_mismatch() {
   [ -f "$GATE_STATE_FILE" ] || return 0
 
-  ruby - "$GATE_STATE_FILE" <<'RUBY' | while IFS= read -r line; do
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    log_alert "llm_mismatch" "$line"
+  done < <(ruby - "$GATE_STATE_FILE" "$JOURNAL_FILE" <<'RUBY'
 require "yaml"
 begin
   state = YAML.load_file(ARGV[0]) || {}
+  journal = File.exist?(ARGV[1]) ? (YAML.load_file(ARGV[1]) || {}) : {}
   story_states = state.fetch("story_states", {})
+  entries = Array(journal.fetch("entries", []))
+  latest_dispatch = {}
+
+  entries.each do |entry|
+    next unless entry.fetch("type", "") == "dispatch_audit"
+    latest_dispatch[entry.fetch("story_id", "")] = entry
+  end
+
+  override_user = lambda do |entry, llm, phase|
+    next false unless entry.is_a?(Hash)
+
+    constitution_check = entry.fetch("constitution_check", "")
+    constitution_detail = entry.fetch("constitution_detail", "").to_s
+    constitution_check == "PASS" && constitution_detail.include?("C2:#{llm}/#{phase}=OVERRIDE-USER")
+  end
+
   story_states.each do |sid, ss|
     phase = ss.fetch("phase", "")
     llm = ss.fetch("current_llm", "")
     rc = Integer(ss.fetch("review_cycle", 0)) rescue 0
-    if phase == "fixing" && llm == "codex" && rc < 2
+    dispatch_entry = latest_dispatch[sid]
+
+    if phase == "fixing" && llm == "codex" && rc < 2 && !override_user.call(dispatch_entry, llm, phase)
       puts "story #{sid}: phase=#{phase} llm=#{llm} review_cycle=#{rc} (should be claude per C2)"
     end
-    if phase == "review" && llm == "claude"
+    if phase == "review" && llm == "claude" && !override_user.call(dispatch_entry, llm, phase)
       puts "story #{sid}: phase=#{phase} llm=#{llm} (should be codex per C2)"
     end
   end
@@ -112,20 +200,29 @@ rescue StandardError => e
   puts "watchdog_parse_error: #{e.class}: #{e.message}"
 end
 RUBY
-    log_alert "llm_mismatch" "$line"
-  done
+)
 }
 
 # ─── Check 1b: dispatch_audit 中的固定 phase/LLM 契约 ───
 check_dispatch_contract_mismatch() {
   [ -f "$JOURNAL_FILE" ] || return 0
 
-  ruby - "$JOURNAL_FILE" <<'RUBY' | while IFS= read -r line; do
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    log_alert "dispatch_contract_mismatch" "$line"
+  done < <(ruby - "$JOURNAL_FILE" <<'RUBY'
 require "yaml"
 begin
   data = YAML.load_file(ARGV[0]) || {}
   entries = Array(data.fetch("entries", []))
   seen = {}
+
+  override_user = lambda do |entry, llm, phase|
+    constitution_check = entry.fetch("constitution_check", "")
+    constitution_detail = entry.fetch("constitution_detail", "").to_s
+    constitution_check == "PASS" && constitution_detail.include?("C2:#{llm}/#{phase}=OVERRIDE-USER")
+  end
+
   entries.last(20).each do |entry|
     next unless entry.fetch("type", "") == "dispatch_audit"
     phase = entry.fetch("phase", "")
@@ -135,10 +232,10 @@ begin
     key = [seq, story_id, phase, llm]
     next if seen[key]
     seen[key] = true
-    if ["validate", "review", "qa", "regression"].include?(phase) && llm != "codex"
+    if ["validate", "review", "qa", "regression"].include?(phase) && llm != "codex" && !override_user.call(entry, llm, phase)
       puts "seq #{seq} story #{story_id}: phase=#{phase} llm=#{llm} (should be codex)"
     end
-    if ["create", "prototype", "dev"].include?(phase) && llm != "claude"
+    if ["create", "prototype", "dev"].include?(phase) && llm != "claude" && !override_user.call(entry, llm, phase)
       puts "seq #{seq} story #{story_id}: phase=#{phase} llm=#{llm} (should be claude)"
     end
   end
@@ -146,8 +243,7 @@ rescue StandardError => e
   puts "watchdog_parse_error: #{e.class}: #{e.message}"
 end
 RUBY
-    log_alert "dispatch_contract_mismatch" "$line"
-  done
+)
 }
 
 # ─── Check 2: Pre-dispatch 审计缺口（感知当前阶段，避免长任务误报）───
@@ -155,7 +251,11 @@ check_predispatch_gap() {
   [ -f "$JOURNAL_FILE" ] || return 0
   [ -f "$GATE_STATE_FILE" ] || return 0
 
-  ruby - "$GATE_STATE_FILE" "$JOURNAL_FILE" <<'RUBY' | while IFS= read -r line; do
+  while IFS= read -r line; do
+    if [ -n "$line" ]; then
+      log_alert "predispatch_gap" "$line"
+    fi
+  done < <(ruby - "$GATE_STATE_FILE" "$JOURNAL_FILE" <<'RUBY'
 require "yaml"
 require "time"
 begin
@@ -191,10 +291,7 @@ rescue StandardError => e
   puts "watchdog_parse_error: #{e.class}: #{e.message}"
 end
 RUBY
-    if [ -n "$line" ]; then
-      log_alert "predispatch_gap" "$line"
-    fi
-  done
+)
 }
 
 # ─── Check 3: 会话超时 → 写入 restart-eligible 标记 ───
