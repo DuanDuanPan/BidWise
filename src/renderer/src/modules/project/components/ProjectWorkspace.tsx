@@ -20,8 +20,10 @@ import { WorkspaceLayout } from './WorkspaceLayout'
 import { OutlinePanel } from './OutlinePanel'
 import { AnnotationPanel } from './AnnotationPanel'
 import { StatusBar } from './StatusBar'
+import { AutoSaveIndicator } from '@modules/editor/components/AutoSaveIndicator'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
+import { useDocumentStore } from '@renderer/stores'
 import { SOP_STAGES } from '../types'
 
 export function ProjectWorkspace(): React.JSX.Element {
@@ -96,9 +98,12 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   const { outlineCollapsed, sidebarCollapsed, isCompact, toggleOutline, toggleSidebar } =
     useWorkspaceLayout()
+  const autoSave = useDocumentStore((s) => s.autoSave)
+  const saveDocument = useDocumentStore((s) => s.saveDocument)
   useWorkspaceKeyboard(toggleSidebar, toggleOutline)
 
   const currentStageName = SOP_STAGES.find((s) => s.key === currentStageKey)?.label
+  const showAutoSaveIndicator = currentStageKey === 'proposal-writing' && Boolean(projectId)
 
   if (loading && !currentProject) {
     return (
@@ -193,7 +198,21 @@ export function ProjectWorkspace(): React.JSX.Element {
             onToggle={toggleSidebar}
           />
         }
-        statusBar={<StatusBar currentStageName={currentStageName} />}
+        statusBar={
+          <StatusBar
+            currentStageName={currentStageName}
+            leftExtra={
+              showAutoSaveIndicator && projectId ? (
+                <AutoSaveIndicator
+                  autoSave={autoSave}
+                  onRetry={() => {
+                    void saveDocument(projectId)
+                  }}
+                />
+              ) : undefined
+            }
+          />
+        }
       />
     </div>
   )

@@ -11,6 +11,9 @@ export type {
 export { useTodoStore } from './todoStore'
 export type { TodoStore, TodoState, TodoActions } from './todoStore'
 
+export { useDocumentStore } from './documentStore'
+export type { DocumentStore, DocumentState, DocumentActions } from './documentStore'
+
 export { useAnalysisStore } from './analysisStore'
 export {
   EMPTY_ANALYSIS_PROJECT_STATE,

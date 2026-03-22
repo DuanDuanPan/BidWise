@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ApiResponse, IpcChannelMap, PreloadApi, FullPreloadApi } from '@shared/ipc-types'
+import type {
+  ApiResponse,
+  DocumentSaveOutput,
+  DocumentSaveSyncInput,
+  FullPreloadApi,
+  IpcChannelMap,
+  PreloadApi,
+} from '@shared/ipc-types'
 import { IPC_CHANNELS } from '@shared/ipc-types'
 import type { TaskProgressEvent } from '@shared/ai-types'
 
@@ -9,6 +16,10 @@ function typedInvoke<C extends keyof IpcChannelMap>(
   ...args: IpcChannelMap[C]['input'] extends void ? [] : [IpcChannelMap[C]['input']]
 ): Promise<ApiResponse<IpcChannelMap[C]['output']>> {
   return ipcRenderer.invoke(channel, ...args) as Promise<ApiResponse<IpcChannelMap[C]['output']>>
+}
+
+function typedSendSync<TInput, TOutput>(channel: string, input: TInput): ApiResponse<TOutput> {
+  return ipcRenderer.sendSync(channel, input) as ApiResponse<TOutput>
 }
 
 // Request-response methods — satisfies PreloadApi ensures every IpcChannel has a method.
@@ -70,6 +81,15 @@ const requestApi = {
 
   analysisConfirmScoringModel: (input: IpcChannelMap['analysis:confirm-scoring-model']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_CONFIRM_SCORING_MODEL, input),
+
+  documentLoad: (input: IpcChannelMap['document:load']['input']) =>
+    typedInvoke(IPC_CHANNELS.DOCUMENT_LOAD, input),
+
+  documentSave: (input: IpcChannelMap['document:save']['input']) =>
+    typedInvoke(IPC_CHANNELS.DOCUMENT_SAVE, input),
+
+  documentGetMetadata: (input: IpcChannelMap['document:get-metadata']['input']) =>
+    typedInvoke(IPC_CHANNELS.DOCUMENT_GET_METADATA, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer
@@ -85,10 +105,16 @@ const eventApi = {
   },
 }
 
+const syncApi = {
+  documentSaveSync: (input: DocumentSaveSyncInput): ApiResponse<DocumentSaveOutput> =>
+    typedSendSync(IPC_CHANNELS.DOCUMENT_SAVE_SYNC, input),
+}
+
 // Combined API exposed to renderer
 const api: FullPreloadApi = {
   ...requestApi,
   ...eventApi,
+  ...syncApi,
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { ProjectWorkspace } from '@modules/project/components/ProjectWorkspace'
 import { CommandPaletteProvider } from '@renderer/shared/command-palette/CommandPaletteProvider'
 import { commandRegistry } from '@renderer/shared/command-palette'
-import { useProjectStore } from '@renderer/stores'
+import { useDocumentStore, useProjectStore } from '@renderer/stores'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
@@ -88,6 +88,12 @@ describe('@story-1-6 ProjectWorkspace', () => {
       loading: false,
       error: null,
       projects: [],
+    })
+    useDocumentStore.setState({
+      content: '',
+      loading: false,
+      error: null,
+      autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
     })
     vi.stubGlobal('api', {
       projectGet: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
@@ -213,6 +219,12 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       error: null,
       projects: [],
     })
+    useDocumentStore.setState({
+      content: '',
+      loading: false,
+      error: null,
+      autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+    })
     vi.stubGlobal('api', {
       projectGet: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
       projectUpdate: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
@@ -295,5 +307,33 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
     renderWorkspace()
     await screen.findByTestId('project-workspace')
     expect(screen.getByTestId('status-sop-stage')).toHaveTextContent('需求分析')
+  })
+
+  it('@p0 shows auto-save retry UI for proposal-writing stage failures', async () => {
+    const saveDocument = vi.fn().mockResolvedValue(undefined)
+    useDocumentStore.setState({
+      autoSave: {
+        dirty: true,
+        saving: false,
+        lastSavedAt: null,
+        error: '保存失败',
+      },
+      saveDocument,
+    })
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
+
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+
+    expect(screen.getByTestId('auto-save-status')).toHaveTextContent('保存失败')
+    fireEvent.click(screen.getByTestId('auto-save-retry'))
+    expect(saveDocument).toHaveBeenCalledWith('p1')
   })
 })

@@ -45,3 +45,17 @@ export class TaskQueueError extends BidWiseError {
     this.name = 'TaskQueueError'
   }
 }
+
+export class DocumentNotFoundError extends BidWiseError {
+  constructor(message: string, cause?: unknown) {
+    super(ErrorCode.DOCUMENT_NOT_FOUND, message, cause)
+    this.name = 'DocumentNotFoundError'
+  }
+}
+
+export class DocumentSaveError extends BidWiseError {
+  constructor(message: string, cause?: unknown) {
+    super(ErrorCode.DOCUMENT_SAVE_FAILED, message, cause)
+    this.name = 'DocumentSaveError'
+  }
+}
