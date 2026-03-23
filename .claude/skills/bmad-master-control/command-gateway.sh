@@ -27,6 +27,7 @@ require "open3"
 require "fileutils"
 require "tempfile"
 require "shellwords"
+require "etc"
 require "time"
 require "timeout"
 
@@ -72,6 +73,41 @@ def artifacts_dir(project_root)
   Pathname(project_root) + "_bmad-output" + "implementation-artifacts"
 end
 
+def diag_log_path(project_root)
+  artifacts_dir(project_root) + "master-control-diagnostics.log"
+end
+
+def diag_log(project_root, event, fields = {})
+  path = diag_log_path(project_root)
+  path.dirname.mkpath
+  entry = {
+    "ts" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%S.%3NZ"),
+    "script" => "command-gateway.sh",
+    "pid" => Process.pid,
+    "event" => event,
+  }.merge(fields)
+
+  File.open(path.to_s, File::WRONLY | File::CREAT | File::APPEND, 0o644) do |file|
+    file.flock(File::LOCK_EX)
+    file.puts(JSON.generate(entry))
+  end
+rescue StandardError
+  nil
+end
+
+def pane_diag_snapshot(session_name)
+  list_session_panes(session_name).map do |pane|
+    {
+      "pane_id" => pane["pane_id"],
+      "top" => pane["top"],
+      "left" => pane["left"],
+      "title" => pane["title"],
+    }
+  end
+rescue StandardError
+  []
+end
+
 def generation_lock_path(project_root)
   artifacts_dir(project_root) + "generation.lock"
 end
@@ -96,6 +132,37 @@ def runtime_pane_log_file(project_root, session_name, generation, pane_id)
   File.join(runtime_mc_logs_dir(project_root, session_name, generation), "pane-#{pane_id.to_s.delete('%')}.log")
 end
 
+def event_log_path(project_root)
+  artifacts_dir(project_root) + "event-log.yaml"
+end
+
+def cold_start_event_log?(project_root)
+  path = event_log_path(project_root)
+  return true unless path.exist?
+
+  log = YAML.safe_load(File.read(path)) rescue {}
+  events = log["events"]
+  !events.is_a?(Array) || events.empty?
+end
+
+def cleanup_cold_start_state(project_root, expected_gen, session_name)
+  return false unless cold_start_event_log?(project_root)
+
+  diag_log(project_root, "cold_start_cleanup.begin", {
+    "session_name" => session_name.to_s,
+    "expected_generation" => expected_gen,
+    "event_log_exists" => event_log_path(project_root).exist?,
+  })
+  runtime_manager = script_path("runtime-manager.sh")
+  Open3.capture3("bash", runtime_manager, "stop", project_root.to_s, session_name.to_s, expected_gen.to_s)
+  run_script("event-bus.sh", "init", project_root, expected_gen.to_s, "--force")
+  diag_log(project_root, "cold_start_cleanup.complete", {
+    "session_name" => session_name.to_s,
+    "expected_generation" => expected_gen,
+  })
+  true
+end
+
 def runtime_consumer_name(project_root, expected_gen, base = "commander")
   gs_path = File.join(project_root, "_bmad-output", "implementation-artifacts", "gate-state.yaml")
   gs = File.exist?(gs_path) ? (YAML.safe_load(File.read(gs_path)) rescue {}) : {}
@@ -110,6 +177,20 @@ end
 
 def shell_script?(path)
   File.extname(path) == ".sh"
+end
+
+def placeholder_shell_command
+  shell = Etc.getpwuid.shell rescue "/bin/zsh"
+  shell = "/bin/zsh" if shell.to_s.empty? || !File.executable?(shell)
+  "exec #{Shellwords.escape(shell)} -il"
+end
+
+def require_batch_selection!(gs, action_name)
+  batch_id = gs["batch_id"].to_s.strip
+  batch_stories = Array(gs["batch_stories"]).map(&:to_s).map(&:strip).reject(&:empty?)
+  return {"batch_id" => batch_id, "batch_stories" => batch_stories} unless batch_id.empty? || batch_stories.empty?
+
+  die("BATCH_NOT_SELECTED: run command-gateway.sh <project_root> <gen> BATCH select <story_csv> before #{action_name}")
 end
 
 def run_script(name, *args)
@@ -146,8 +227,8 @@ def clean_terminal_output(text)
 end
 
 def command_matches?(actual, expected)
-  actual_name = actual.to_s.strip
-  expected_name = expected.to_s.strip
+  actual_name = actual.to_s.strip.downcase
+  expected_name = expected.to_s.strip.downcase
   return false if actual_name.empty? || expected_name.empty?
   actual_name == expected_name || actual_name.start_with?("#{expected_name}-") || actual_name.include?(expected_name)
 end
@@ -192,6 +273,25 @@ rescue StandardError
   ""
 end
 
+def wait_for_log_idle(log_file, timeout_sec: 15, stable_sec: 2)
+  deadline = Time.now + timeout_sec
+  last_size = pane_log_size(log_file)
+  stable_since = Time.now
+
+  loop do
+    current_size = pane_log_size(log_file)
+    if current_size == last_size
+      return true if Time.now - stable_since >= stable_sec
+    else
+      last_size = current_size
+      stable_since = Time.now
+    end
+
+    return false if Time.now >= deadline
+    sleep 0.5
+  end
+end
+
 def wait_for_log_pattern(log_file, pattern, timeout_sec: 30, start_pos: 0)
   deadline = Time.now + timeout_sec
   loop do
@@ -233,6 +333,10 @@ def inspector_input_ready_seen?(text)
   false
 end
 
+def codex_agent_command
+  ENV["MC_CODEX_AGENT_COMMAND"].to_s.empty? ? "codex --no-alt-screen --search --dangerously-bypass-approvals-and-sandbox" : ENV["MC_CODEX_AGENT_COMMAND"]
+end
+
 def paste_block_to_pane(pane_id, text, buffer_prefix, submit_key: "Enter", post_paste_delay: 0.2)
   buffer_name = "#{buffer_prefix}-#{$$}"
   Tempfile.create([buffer_prefix, ".txt"]) do |tmp|
@@ -261,13 +365,17 @@ def list_session_panes(session_name)
   end
 end
 
+def shell_command_name?(command)
+  %w[bash zsh sh fish].include?(command.to_s)
+end
+
 def bootstrap_layout(session_name)
   panes = list_session_panes(session_name)
   die("cannot bootstrap empty tmux session '#{session_name}'") if panes.empty?
 
   commander_pane = panes.select { |p| p["top"] == 0 }.sort_by { |p| p["left"] }.first&.dig("pane_id") || panes.first["pane_id"]
   unless panes.any? { |p| p["top"] > 0 }
-    bottom_anchor = `tmux split-window -t "#{commander_pane}" -v -l 40% -P -F '\#{pane_id}' 2>/dev/null`.strip
+    bottom_anchor = `tmux split-window -t "#{commander_pane}" -v -l 40% -P -F '\#{pane_id}' #{Shellwords.escape(placeholder_shell_command)} 2>/dev/null`.strip
     unless bottom_anchor.empty?
       system("tmux", "select-pane", "-t", bottom_anchor, "-T", "mc-bottom-anchor")
       system("tmux", "set-option", "-p", "-t", bottom_anchor, "allow-rename", "off")
@@ -277,22 +385,29 @@ def bootstrap_layout(session_name)
   panes = list_session_panes(session_name)
   top_panes = panes.select { |p| p["top"] == 0 }.sort_by { |p| p["left"] }
   if top_panes.length == 1
-    `tmux split-window -t "#{top_panes[0]["pane_id"]}" -h -l 55% -P -F '\#{pane_id}' 2>/dev/null`.strip
+    `tmux split-window -t "#{top_panes[0]["pane_id"]}" -h -l 55% -P -F '\#{pane_id}' #{Shellwords.escape(placeholder_shell_command)} 2>/dev/null`.strip
   end
 
   panes = list_session_panes(session_name)
   top_panes = panes.select { |p| p["top"] == 0 }.sort_by { |p| p["left"] }
   if top_panes.length == 2
-    `tmux split-window -t "#{top_panes[1]["pane_id"]}" -h -l 45% -P -F '\#{pane_id}' 2>/dev/null`.strip
+    `tmux split-window -t "#{top_panes[1]["pane_id"]}" -h -l 45% -P -F '\#{pane_id}' #{Shellwords.escape(placeholder_shell_command)} 2>/dev/null`.strip
   end
 end
 
-def resolve_layout_context(session_name)
+def resolve_layout_context(session_name, allow_bootstrap: false, project_root: nil, reason: nil)
   panes = list_session_panes(session_name)
   die("cannot inspect panes for session '#{session_name}'") if panes.empty?
+  diag_log(project_root, "resolve_layout_context.begin", {
+    "session_name" => session_name.to_s,
+    "allow_bootstrap" => allow_bootstrap,
+    "reason" => reason.to_s,
+    "panes" => panes,
+  }) if project_root
 
   top_panes = panes.select { |p| p["top"] == 0 }.sort_by { |p| p["left"] }
   if top_panes.length < 3 || !panes.any? { |p| p["top"] > 0 }
+    die("LAYOUT_MISSING: top-layer layout bootstrap is only allowed via BATCH select") unless allow_bootstrap
     bootstrap_layout(session_name)
     panes = list_session_panes(session_name)
     top_panes = panes.select { |p| p["top"] == 0 }.sort_by { |p| p["left"] }
@@ -304,28 +419,43 @@ def resolve_layout_context(session_name)
   utility_pane = top_panes[2]["pane_id"]
   run_script("tmux-layout.sh", "set-top-titles", commander_pane, inspector_pane, utility_pane)
 
-  bottom_anchor = panes
+  bottom_candidates = panes
     .select { |p| p["top"] > 0 }
     .sort_by { |p| [p["left"], p["top"]] }
+
+  bottom_anchor = bottom_candidates
     .find { |p| p["title"] == "mc-bottom-anchor" }&.dig("pane_id")
 
-  bottom_anchor ||= panes
-    .select { |p| p["top"] > 0 }
-    .sort_by { |p| [p["left"], p["top"]] }
+  bottom_anchor ||= bottom_candidates
     .find { |p| p["left"] == 0 }&.dig("pane_id")
 
   unless bottom_anchor.to_s.empty?
-    system("tmux", "select-pane", "-t", bottom_anchor.to_s, "-T", "mc-bottom-anchor")
-    system("tmux", "set-option", "-p", "-t", bottom_anchor.to_s, "allow-rename", "off")
+    pane_command = `tmux display-message -p -t "#{bottom_anchor}" '\#{pane_current_command}' 2>/dev/null`.strip
+    pane_title = panes.find { |p| p["pane_id"] == bottom_anchor.to_s }&.dig("title").to_s
+    if shell_command_name?(pane_command) && !pane_title.start_with?("mc-story-")
+      system("tmux", "select-pane", "-t", bottom_anchor.to_s, "-T", "mc-bottom-anchor")
+      system("tmux", "set-option", "-p", "-t", bottom_anchor.to_s, "allow-rename", "off")
+    end
   end
 
-  {
+  result = {
     "session_name" => session_name,
     "commander_pane" => commander_pane,
     "inspector_pane" => inspector_pane,
     "utility_pane" => utility_pane,
     "bottom_anchor" => bottom_anchor.to_s,
   }
+  diag_log(project_root, "resolve_layout_context.end", {
+    "session_name" => session_name.to_s,
+    "reason" => reason.to_s,
+    "commander_pane" => commander_pane.to_s,
+    "inspector_pane" => inspector_pane.to_s,
+    "utility_pane" => utility_pane.to_s,
+    "bottom_anchor" => bottom_anchor.to_s,
+    "bottom_candidates" => bottom_candidates,
+    "panes_after" => pane_diag_snapshot(session_name),
+  }) if project_root
+  result
 end
 
 def inspector_standing_order(batch_id, stories, current_phase)
@@ -367,6 +497,7 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
         ["MC_STATE INSPECTOR_READY", "INSPECTOR READY", "BASELINE AUDIT:"], timeout_sec: 60)
       die("INSPECTOR_PROTOCOL_TIMEOUT") unless ready
     end
+    wait_for_log_idle(log_file, timeout_sec: 20, stable_sec: 2)
     marker = inspector_marker_path(rt_dir)
     die("INSPECTOR_BOOT_TOKEN_MISSING: cannot resolve marker path") unless marker
     ok = send_standing_order_via_fifo(rt_dir, marker, batch_id, stories, current_phase)
@@ -381,6 +512,7 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
         ["INSPECTOR READY", "BASELINE AUDIT:"], timeout_sec: 30)
       die("INSPECTOR_PROTOCOL_TIMEOUT") unless ready
     end
+    wait_for_log_idle(log_file, timeout_sec: 20, stable_sec: 2)
     marker = legacy_marker_path(rt_dir, log_file)
     if marker.nil?
       # No INSPECTOR READY token in log — kill and fall through to Branch C on next call
@@ -419,7 +551,7 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
   launch_cmd = [
     "cd #{Shellwords.escape(project_root)} &&",
     "python3 #{Shellwords.escape(wrapper)}",
-    "--agent-command #{Shellwords.escape("codex --no-alt-screen --search --dangerously-bypass-approvals-and-sandbox")}",
+    "--agent-command #{Shellwords.escape(codex_agent_command)}",
     "--packet-file #{Shellwords.escape(packet_file)}",
     "--ready-timeout 90",
     "--control-fifo #{Shellwords.escape(control_fifo)}",
@@ -433,6 +565,7 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
   ready = wait_for_log_substrings(log_file,
     ["MC_STATE INSPECTOR_READY", "INSPECTOR READY", "BASELINE AUDIT:"], timeout_sec: 120)
   die("INSPECTOR_BOOT_TIMEOUT") unless ready
+  wait_for_log_idle(log_file, timeout_sec: 20, stable_sec: 2)
 
   # Boot token now exists (written by wrapper at startup)
   marker = inspector_marker_path(rt_dir)
@@ -710,12 +843,28 @@ def handle_transition(project_root, expected_gen, cmd)
 end
 
 def handle_dispatch(project_root, expected_gen, cmd)
+  diag_log(project_root, "dispatch.invoke.begin", {
+    "expected_generation" => expected_gen,
+    "story_id" => cmd.story_id.to_s,
+    "phase" => cmd.phase.to_s,
+    "trigger_seq" => cmd.trigger_seq,
+    "override_llm" => cmd.override_llm.to_s,
+    "override_reason" => cmd.override_reason.to_s,
+    "fresh_pane" => cmd.fresh_pane == true,
+  })
   args = ["dispatch", project_root, expected_gen.to_s, cmd.story_id, cmd.phase,
           "--trigger-seq", cmd.trigger_seq.to_s]
   args += ["--override-llm", cmd.override_llm] if cmd.override_llm
   args += ["--override-reason", cmd.override_reason] if cmd.override_reason
   args << "--fresh-pane" if cmd.fresh_pane
   result = run_script("transition-engine.sh", *args)
+  diag_log(project_root, "dispatch.invoke.complete", {
+    "expected_generation" => expected_gen,
+    "story_id" => cmd.story_id.to_s,
+    "phase" => cmd.phase.to_s,
+    "trigger_seq" => cmd.trigger_seq,
+    "result" => result,
+  })
   puts result
 end
 
@@ -750,9 +899,15 @@ def handle_batch(project_root, expected_gen, cmd)
     stories = stories_csv.split(",").map(&:strip)
     session_name = `tmux display-message -p '\#{session_name}' 2>/dev/null`.strip rescue ""
     die("cannot resolve tmux session for batch select") if session_name.empty?
+    cleanup_cold_start_state(project_root, expected_gen, session_name)
 
     batch_id = "batch-#{Time.now.utc.strftime('%Y-%m-%d')}-#{rand(1000)}"
-    layout = resolve_layout_context(session_name)
+    layout = resolve_layout_context(
+      session_name,
+      allow_bootstrap: true,
+      project_root: project_root,
+      reason: "batch.select"
+    )
     layout = ensure_inspector_ready(
       project_root,
       layout,
@@ -837,6 +992,13 @@ def handle_record_gate(project_root, expected_gen, cmd)
   puts result
 end
 
+def synthetic_trigger_seq_for(project_root)
+  log_path = File.join(project_root, "_bmad-output", "implementation-artifacts", "event-log.yaml")
+  data = File.exist?(log_path) ? (YAML.safe_load(File.read(log_path)) rescue {}) : {}
+  max_seq = Array(data["events"]).map { |e| Integer(e["seq"]) rescue 0 }.max || 0
+  max_seq + 1_000_000
+end
+
 def handle_health(project_root, expected_gen, cmd)
   has_seq = !cmd.trigger_seq.nil?
   has_pro = cmd.proactive == true
@@ -876,12 +1038,24 @@ def handle_health(project_root, expected_gen, cmd)
         payload["inspector_pane"] = inspector_pane
         payload["pane_command"] = pane_cmd
 
-        if !command_matches?(pane_cmd, "codex")
+        rt_dir = runtime_dir(project_root, session_name, generation)
+        wrapper_mode = wrapper_running?(rt_dir, inspector_pane)
+
+        if wrapper_mode
+          payload["inspector_mode"] = "wrapper"
+          if clean_tail.include?("INSPECTOR READY") || clean_tail.include?("BASELINE AUDIT:")
+            payload["result"] = "ready"
+          else
+            payload["result"] = "warming"
+            payload["warning"] = "wrapper inspector pane is live but readiness sentinel not observed"
+          end
+        elsif !command_matches?(pane_cmd, "codex")
           payload["result"] = "not_ready"
-          payload["warning"] = "inspector pane exists but is running '#{pane_cmd}' instead of codex"
+          payload["warning"] = "inspector pane exists but is running '#{pane_cmd}' instead of codex/wrapper"
         elsif clean_tail.include?("INSPECTOR READY") || clean_tail.include?("BASELINE AUDIT:")
           payload["result"] = "ready"
         else
+          payload["inspector_mode"] = "legacy"
           payload["result"] = "warming"
           payload["warning"] = "codex inspector pane exists but readiness sentinel not observed"
         end
@@ -900,10 +1074,16 @@ def handle_health(project_root, expected_gen, cmd)
       gs = File.exist?(gs_path) ? (YAML.safe_load(File.read(gs_path)) rescue {}) : {}
       session_name = gs["session_name"] || `tmux display-message -p '\#{session_name}' 2>/dev/null`.strip rescue ""
       die("cannot resolve session for ensure_inspector") if session_name.to_s.empty?
+      batch_ctx = require_batch_selection!(gs, "HEALTH ensure_inspector")
 
-      layout = resolve_layout_context(session_name)
-      batch_id = gs["batch_id"] || "batch-unknown"
-      stories = gs["batch_stories"] || []
+      layout = resolve_layout_context(
+        session_name,
+        allow_bootstrap: true,
+        project_root: project_root,
+        reason: "health.ensure_inspector"
+      )
+      batch_id = batch_ctx["batch_id"]
+      stories = batch_ctx["batch_stories"]
       current_phase = gs.dig("story_states")&.values&.map { |s| s["phase"] }&.compact&.first || "runtime_repair"
       layout = ensure_inspector_ready(
         project_root,
@@ -911,6 +1091,15 @@ def handle_health(project_root, expected_gen, cmd)
         batch_id: batch_id,
         stories: stories,
         current_phase: current_phase
+      )
+      run_local_script(
+        script_path("state-control.sh"),
+        "sync-runtime-panes",
+        project_root,
+        expected_gen.to_s,
+        layout["utility_pane"],
+        layout["inspector_pane"],
+        layout["bottom_anchor"]
       )
       payload["result"] = "ready"
       payload["inspector_pane"] = layout["inspector_pane"]
@@ -925,14 +1114,29 @@ def handle_health(project_root, expected_gen, cmd)
       gs = File.exist?(gs_path) ? (YAML.safe_load(File.read(gs_path)) rescue {}) : {}
       session_name = gs["session_name"] || `tmux display-message -p '\#{session_name}' 2>/dev/null`.strip rescue ""
       die("cannot resolve session for ensure_runtime") if session_name.to_s.empty?
+      batch_ctx = require_batch_selection!(gs, "HEALTH ensure_runtime")
 
-      layout = resolve_layout_context(session_name)
+      layout = resolve_layout_context(
+        session_name,
+        allow_bootstrap: true,
+        project_root: project_root,
+        reason: "health.ensure_runtime"
+      )
       layout = ensure_inspector_ready(
         project_root,
         layout,
-        batch_id: gs["batch_id"] || "batch-unknown",
-        stories: gs["batch_stories"] || [],
+        batch_id: batch_ctx["batch_id"],
+        stories: batch_ctx["batch_stories"],
         current_phase: gs.dig("story_states")&.values&.map { |s| s["phase"] }&.compact&.first || "runtime_repair"
+      )
+      run_local_script(
+        script_path("state-control.sh"),
+        "sync-runtime-panes",
+        project_root,
+        expected_gen.to_s,
+        layout["utility_pane"],
+        layout["inspector_pane"],
+        layout["bottom_anchor"]
       )
 
       runtime_manager = script_path("runtime-manager.sh")
@@ -986,9 +1190,11 @@ def handle_health(project_root, expected_gen, cmd)
       "qa_running" => "qa", "regression" => "regression",
     }[fsm_phase] || fsm_phase
     # Re-dispatch with fresh pane
+    dispatch_trigger_seq = has_seq ? trigger_seq_str : synthetic_trigger_seq_for(project_root).to_s
     pane_result = run_script("transition-engine.sh", "dispatch", project_root, expected_gen.to_s,
-                              cmd.story_id, dispatch_phase, "--trigger-seq", trigger_seq_str, "--fresh-pane")
+                              cmd.story_id, dispatch_phase, "--trigger-seq", dispatch_trigger_seq, "--fresh-pane")
     payload["result"] = "rebuilt"
+    payload["dispatch_trigger_seq"] = dispatch_trigger_seq
     payload["pane_result"] = pane_result
 
   when "check_logging"

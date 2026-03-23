@@ -42,7 +42,7 @@ utility_pane: ''
 ### 2a: Create missing story files (backlog only, PARALLEL)
 4. For each story in `stories_to_create`, dispatch ALL in parallel:
    - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> create --trigger-seq <N>`
-     (transition-engine handles pane creation, task packet, and completion detection)
+     (transition-engine handles resident worker bootstrap, FIFO task delivery, ACK handshake, and completion detection)
 5. Wait for ALL PANE_SIGNAL_DETECTED events (MC_DONE signals) via PEEK_EVENTS — poll until every story in `stories_to_create` has a MC_DONE CREATE signal
 6. 全部完成后批量回填 story_registry[story_id] 路径
 
@@ -99,7 +99,7 @@ utility_pane: ''
 ### 2c: Validate entire batch (PARALLEL, codex)
 6. For each story in batch, dispatch validation in parallel:
    - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> validate --trigger-seq <N>`
-   (transition-engine opens codex panes, sends task packets)
+   (transition-engine ensures/reuses resident codex workers, delivers TASK blocks over FIFO, and waits for ACK)
 7. Wait for PANE_SIGNAL_DETECTED events (MC_DONE signals) via PEEK_EVENTS for all stories. Collect PASS/FAIL per story.
 8. If any FAIL:
    - Dispatch fix: `command-gateway.sh <project_root> <gen> DISPATCH <story_id> fixing --trigger-seq <N>`

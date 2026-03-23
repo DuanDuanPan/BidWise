@@ -28,6 +28,8 @@
 
 | F16 | **禁止指挥官直接 `capture-pane` 读取 worker pane 内容**（即使 event-bus 为空、task-monitor 故障、或怀疑假阳性） | 指挥官唯一的信息入口是 `PEEK_EVENTS`。如果 task-monitor 未运行或事件流异常：(1) 通过 `monitor-control.sh ensure-running` 重启 task-monitor；(2) 如果重启失败，`REQUEST_HUMAN "task-monitor down"`。**绝不降级为手动 capture-pane 巡逻**——这会消耗 context、产生 TUI 解析错误、并违反 C1 角色边界 | 2026-03-22: 指挥官因 task-monitor 崩溃（bash 3.2 不支持 declare -A）收不到事件，降级为手动 capture-pane 轮询 10 次，消耗大量 context 在 TUI 解析上，且误判 worker 状态 |
 
+| F17 | **禁止在 cold start / empty event-log 状态手工 `split-window` 创建 top-layer panes**（即使只是“先搭布局再继续”） | `event-bus.sh init` 之后，唯一合法初始化路径是：等待用户确认 batch → `command-gateway.sh <project_root> <gen> BATCH select <story_csv>`。`HEALTH ensure_*` 只能修复已存在 batch 的 runtime，不得承担首次 bootstrap | 2026-03-23: 指挥官在调试会话中执行 `tmux split-window ... "bash"` 手工创建 `%11/%12/%13`，绕过 `BATCH select` 和 `placeholder_shell_command`，导致 `mc-*` panes 全部落在 bash |
+
 <!-- FORBIDDEN_LIST_END — 新条目追加到此标记之前 -->
 
 ## 自动更新机制

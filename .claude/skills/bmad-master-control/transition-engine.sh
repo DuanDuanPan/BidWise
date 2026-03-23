@@ -24,6 +24,7 @@ require "fileutils"
 require "open3"
 require "tempfile"
 require "shellwords"
+require "timeout"
 
 SCRIPT_DIR = ENV["SCRIPT_DIR"] || File.dirname($PROGRAM_NAME)
 
@@ -248,6 +249,99 @@ def runtime_mc_logs_dir(project_root, session_name, generation)
   runtime_dir(project_root, session_name, generation) + "mc-logs"
 end
 
+def runtime_pane_log_file(project_root, session_name, generation, pane_id)
+  runtime_mc_logs_dir(project_root, session_name, generation) + "pane-#{pane_id.to_s.delete('%')}.log"
+end
+
+def diag_log_path(project_root)
+  artifacts_dir(project_root) + "master-control-diagnostics.log"
+end
+
+def diag_log(project_root, event, fields = {})
+  path = diag_log_path(project_root)
+  path.dirname.mkpath
+  entry = {
+    "ts" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%S.%3NZ"),
+    "script" => "transition-engine.sh",
+    "pid" => Process.pid,
+    "event" => event,
+  }.merge(fields)
+
+  File.open(path.to_s, File::WRONLY | File::CREAT | File::APPEND, 0o644) do |file|
+    file.flock(File::LOCK_EX)
+    file.puts(JSON.generate(entry))
+  end
+rescue StandardError
+  nil
+end
+
+def pane_diag_snapshot(session_name)
+  list_session_panes(session_name).map do |pane|
+    {
+      "pane_id" => pane["pane_id"],
+      "top" => pane["top"],
+      "left" => pane["left"],
+      "title" => pane["title"],
+      "command" => pane["command"],
+    }
+  end
+rescue StandardError
+  []
+end
+
+def pane_diag_summary(pane)
+  return nil unless pane.is_a?(Hash)
+
+  {
+    "pane_id" => pane["pane_id"],
+    "top" => pane["top"],
+    "left" => pane["left"],
+    "title" => pane["title"],
+    "command" => pane["command"],
+  }
+end
+
+def log_excerpt(text, max_lines: 20, max_chars: 1200)
+  lines = text.to_s.lines.last(max_lines).join
+  return lines if lines.length <= max_chars
+
+  lines[-max_chars, max_chars]
+end
+
+def worker_slug(story_id, phase)
+  "#{story_id}-#{phase}".gsub(/[^A-Za-z0-9._-]/, "_")
+end
+
+def worker_runtime_dir(project_root, session_name, generation, story_id, phase)
+  runtime_dir(project_root, session_name, generation) + "workers" + worker_slug(story_id, phase)
+end
+
+def worker_control_fifo(project_root, session_name, generation, story_id, phase)
+  worker_runtime_dir(project_root, session_name, generation, story_id, phase) + "control.fifo"
+end
+
+def worker_boot_token_file(project_root, session_name, generation, story_id, phase)
+  worker_runtime_dir(project_root, session_name, generation, story_id, phase) + "worker-boot.token"
+end
+
+def worker_bootstrap_file(project_root, session_name, generation, story_id, phase)
+  worker_runtime_dir(project_root, session_name, generation, story_id, phase) + "bootstrap.txt"
+end
+
+def worker_id_for(story_id, phase)
+  "#{story_id}:#{phase}"
+end
+
+def worker_title_for(story_id, phase)
+  "mc-story-#{story_id}-#{phase}"
+end
+
+def worker_role_for_dispatch(phase, fresh_pane: false)
+  return "dev" if phase == "fixing" && !fresh_pane
+
+  phase
+end
+
 def gate_state_path(project_root)
   artifacts_dir(project_root) + "gate-state.yaml"
 end
@@ -262,6 +356,305 @@ end
 
 def load_gate_state(project_root)
   load_yaml_safe(gate_state_path(project_root))
+end
+
+def clean_terminal_output(text)
+  text.to_s
+    .dup
+    .force_encoding(Encoding::UTF_8)
+    .scrub
+    .gsub(/\e\[[0-9;?]*[ -\/]*[@-~]/, "")
+    .gsub(/\e\][^\a]*(?:\a|\e\\)/, "")
+    .gsub(/\r/, "\n")
+end
+
+def pane_log_size(log_file)
+  File.exist?(log_file) ? File.size(log_file) : 0
+rescue StandardError
+  0
+end
+
+def pane_log_text(log_file)
+  return "" unless File.exist?(log_file)
+  clean_terminal_output(File.binread(log_file))
+rescue StandardError
+  ""
+end
+
+def wait_for_log_condition(log_file, timeout_sec: 30, start_pos: 0)
+  deadline = Time.now + timeout_sec
+  loop do
+    text = if File.exist?(log_file)
+      raw = File.binread(log_file)
+      chunk = raw.byteslice(start_pos, raw.bytesize - start_pos) || "".b
+      clean_terminal_output(chunk)
+    else
+      ""
+    end
+    result = yield text
+    return result unless result.nil? || result == false
+    return nil if Time.now >= deadline
+    sleep 1
+  end
+end
+
+def wait_for_log_substrings(log_file, substrings, timeout_sec: 30, start_pos: 0)
+  wait_for_log_condition(log_file, timeout_sec: timeout_sec, start_pos: start_pos) do |text|
+    Array(substrings).find { |needle| text.include?(needle) }
+  end
+end
+
+def parse_boot_token(path)
+  return {} unless File.exist?(path)
+  File.read(path).each_line.with_object({}) do |line, acc|
+    key, value = line.strip.split("=", 2)
+    acc[key] = value if key && value
+  end
+rescue StandardError
+  {}
+end
+
+def process_alive?(pid_str)
+  Process.kill(0, Integer(pid_str))
+  true
+rescue StandardError
+  false
+end
+
+def pane_alive?(session_name, pane_id)
+  stdout, = Open3.capture2("tmux", "list-panes", "-t", session_name.to_s, "-F", '#{pane_id}')
+  stdout.lines.map(&:strip).include?(pane_id.to_s)
+rescue StandardError
+  false
+end
+
+def shell_command_name?(command)
+  %w[bash zsh sh fish].include?(command.to_s)
+end
+
+def list_session_panes(session_name)
+  stdout, stderr, status = Open3.capture3(
+    "tmux", "list-panes", "-t", session_name.to_s,
+    "-F", "\#{pane_id}\t\#{pane_top}\t\#{pane_left}\t\#{pane_title}\t\#{pane_current_command}"
+  )
+  die("cannot inspect panes for session '#{session_name}': #{stderr.strip}") unless status.success?
+
+  stdout.lines.map do |line|
+    pane_id, top, left, title, command = line.chomp.split("\t", 5)
+    {
+      "pane_id" => pane_id.to_s,
+      "top" => Integer(top || 0),
+      "left" => Integer(left || 0),
+      "title" => title.to_s,
+      "command" => command.to_s,
+    }
+  end
+end
+
+def placeholder_shell_command
+  shell = ENV["SHELL"].to_s
+  shell = "/bin/zsh" if shell.empty?
+  "exec #{Shellwords.escape(shell)} -il"
+end
+
+def sync_runtime_panes(project_root, expected_gen, utility_pane, inspector_pane, bottom_anchor)
+  return if utility_pane.to_s.empty? || inspector_pane.to_s.empty? || bottom_anchor.to_s.empty?
+
+  state_control = File.join(SCRIPT_DIR, "state-control.sh")
+  stdout, stderr, status = Open3.capture3(
+    "bash", state_control, "sync-runtime-panes",
+    project_root.to_s, expected_gen.to_s, utility_pane.to_s, inspector_pane.to_s, bottom_anchor.to_s
+  )
+  die("state-control sync-runtime-panes failed: #{stderr.strip.empty? ? stdout.strip : stderr.strip}") unless status.success?
+end
+
+def ensure_live_bottom_anchor(project_root:, expected_gen:, session_name:, commander_pane:,
+                              inspector_pane:, utility_pane:, current_bottom_anchor:)
+  panes = list_session_panes(session_name)
+  bottom_panes = panes.select { |p| p["top"] > 0 }.sort_by { |p| [p["left"], p["top"]] }
+  diag_log(project_root, "ensure_live_bottom_anchor.begin", {
+    "expected_generation" => expected_gen,
+    "session_name" => session_name.to_s,
+    "commander_pane" => commander_pane.to_s,
+    "inspector_pane" => inspector_pane.to_s,
+    "utility_pane" => utility_pane.to_s,
+    "current_bottom_anchor" => current_bottom_anchor.to_s,
+    "bottom_panes" => bottom_panes.map { |pane| pane_diag_summary(pane) },
+  })
+
+  selection_reason = nil
+  anchor =
+    if current_bottom_anchor && bottom_panes.any? { |p| p["pane_id"] == current_bottom_anchor }
+      selection_reason = "current_anchor_alive"
+      current_bottom_anchor
+    else
+      selection_reason = bottom_panes.empty? ? "recreate_from_commander" : "fallback_first_bottom"
+      bottom_panes.first&.dig("pane_id")
+    end
+
+  if anchor.to_s.empty?
+    stdout, stderr, status = Open3.capture3(
+      "tmux", "split-window",
+      "-t", commander_pane.to_s,
+      "-v",
+      "-l", "40%",
+      "-P",
+      "-F", '#{pane_id}',
+      placeholder_shell_command
+    )
+    die("failed to recreate bottom anchor: #{stderr.strip.empty? ? stdout.strip : stderr.strip}") unless status.success?
+    anchor = stdout.strip
+    panes = list_session_panes(session_name)
+    diag_log(project_root, "ensure_live_bottom_anchor.recreated", {
+      "expected_generation" => expected_gen,
+      "session_name" => session_name.to_s,
+      "commander_pane" => commander_pane.to_s,
+      "selected_anchor" => anchor.to_s,
+      "stdout" => stdout.strip,
+      "stderr" => stderr.strip,
+      "exit_status" => status.exitstatus,
+      "panes_after" => pane_diag_snapshot(session_name),
+    })
+  end
+
+  anchor_pane = panes.find { |p| p["pane_id"] == anchor.to_s }
+  anchor_is_placeholder = anchor_pane && shell_command_name?(anchor_pane["command"]) && !anchor_pane["title"].to_s.start_with?("mc-story-")
+  if anchor_is_placeholder
+    system("tmux", "select-pane", "-t", anchor, "-T", "mc-bottom-anchor")
+    system("tmux", "set-option", "-p", "-t", anchor, "allow-rename", "off")
+  end
+  diag_log(project_root, "ensure_live_bottom_anchor.selected", {
+    "expected_generation" => expected_gen,
+    "session_name" => session_name.to_s,
+    "current_bottom_anchor" => current_bottom_anchor.to_s,
+    "selected_anchor" => anchor.to_s,
+    "selection_reason" => selection_reason.to_s,
+    "anchor_changed" => current_bottom_anchor.to_s != anchor.to_s,
+    "anchor_is_placeholder" => anchor_is_placeholder,
+    "anchor_pane" => pane_diag_summary(anchor_pane),
+    "panes_after" => pane_diag_snapshot(session_name),
+  })
+  sync_runtime_panes(project_root, expected_gen, utility_pane, inspector_pane, anchor)
+  diag_log(project_root, "ensure_live_bottom_anchor.synced", {
+    "expected_generation" => expected_gen,
+    "session_name" => session_name.to_s,
+    "selected_anchor" => anchor.to_s,
+    "utility_pane" => utility_pane.to_s,
+    "inspector_pane" => inspector_pane.to_s,
+  })
+  anchor
+end
+
+def release_worker_pane(pane_id:, bottom_anchor:)
+  return if pane_id.to_s.empty?
+
+  if pane_id.to_s == bottom_anchor.to_s
+    stdout, stderr, status = Open3.capture3(
+      "tmux", "respawn-pane", "-k", "-t", pane_id.to_s, placeholder_shell_command
+    )
+    die("failed to restore bottom anchor #{pane_id}: #{stderr.strip.empty? ? stdout.strip : stderr.strip}") unless status.success?
+    system("tmux", "select-pane", "-t", pane_id.to_s, "-T", "mc-bottom-anchor")
+    system("tmux", "set-option", "-p", "-t", pane_id.to_s, "allow-rename", "off")
+  else
+    system("tmux", "kill-pane", "-t", pane_id.to_s, [:out, :err] => "/dev/null")
+  end
+end
+
+def wrapper_running?(session_name, pane_id, boot_token_file)
+  return false unless pane_alive?(session_name, pane_id)
+  token = parse_boot_token(boot_token_file)
+  return false if token["wrapper_pid"].to_s.empty?
+  process_alive?(token["wrapper_pid"])
+end
+
+def ensure_fifo(path)
+  FileUtils.mkdir_p(File.dirname(path))
+  File.delete(path) if File.exist?(path) && !File.ftype(path).eql?("fifo")
+  system("mkfifo", path.to_s) unless File.exist?(path)
+end
+
+def agent_command_for(llm)
+  case llm
+  when "codex"
+    ENV["MC_CODEX_AGENT_COMMAND"].to_s.empty? ? "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox" : ENV["MC_CODEX_AGENT_COMMAND"]
+  else
+    ENV["MC_CLAUDE_AGENT_COMMAND"].to_s.empty? ? "claude --dangerously-skip-permissions" : ENV["MC_CLAUDE_AGENT_COMMAND"]
+  end
+end
+
+def worker_ready_timeout_sec
+  Integer(ENV.fetch("MC_WORKER_READY_TIMEOUT", "120"))
+rescue ArgumentError
+  120
+end
+
+def worker_reuse_ready_timeout_sec
+  Integer(ENV.fetch("MC_WORKER_REUSE_READY_TIMEOUT", "30"))
+rescue ArgumentError
+  30
+end
+
+def worker_bootstrap_timeout_sec
+  Integer(ENV.fetch("MC_WORKER_BOOTSTRAP_TIMEOUT", "10"))
+rescue ArgumentError
+  10
+end
+
+def worker_bootstrap_retries_count
+  Integer(ENV.fetch("MC_WORKER_BOOTSTRAP_RETRIES", "3"))
+rescue ArgumentError
+  3
+end
+
+def worker_ack_timeout_sec
+  Integer(ENV.fetch("MC_WORKER_ACK_TIMEOUT", "20"))
+rescue ArgumentError
+  20
+end
+
+def worker_begin_timeout_sec
+  Integer(ENV.fetch("MC_WORKER_BEGIN_TIMEOUT", "120"))
+rescue ArgumentError
+  120
+end
+
+def write_task_monitor_log_cursor(project_root, session_name, generation, pane_id, cursor_value)
+  cursor_file = runtime_dir(project_root, session_name, generation) + "task-monitor-log-cursors.tmp"
+  FileUtils.mkdir_p(File.dirname(cursor_file))
+  existing = File.exist?(cursor_file) ? File.read(cursor_file).lines : []
+  kept = existing.reject { |line| line.start_with?("#{pane_id}=") }
+  File.write(cursor_file, kept.join + "#{pane_id}=#{cursor_value}\n")
+end
+
+def resolve_story_key(project_root, story_id)
+  development_status = load_yaml_safe(artifacts_dir(project_root) + "sprint-status.yaml", {})["development_status"]
+  return story_id if development_status.is_a?(Hash) && development_status.key?(story_id)
+  return nil unless development_status.is_a?(Hash)
+
+  matched_key = development_status.keys.find do |key|
+    key_str = key.to_s
+    key_str == story_id || key_str.start_with?("#{story_id}-")
+  end
+  matched_key&.to_s
+end
+
+def split_protocol_token(token)
+  case token
+  when /^MC_(.+)$/
+    %("MC" followed immediately by "_#{$1}")
+  when /^HALT/
+    %("HA" followed immediately by "LT")
+  else
+    %("#{token}")
+  end
+end
+
+def protocol_literal(line)
+  parts = line.split(" ", 2)
+  token = parts.first
+  rest = parts[1]
+  return split_protocol_token(token) if rest.to_s.empty?
+  %(#{split_protocol_token(token)} then a single space and "#{rest}")
 end
 
 def event_bus(*args)
@@ -463,39 +856,24 @@ end
 
 # ─── Execute Transition ──────────────────────────────────────────────────────
 
-def cmd_execute(project_root, expected_gen, story_id, intent, trigger_seq)
-  # 1. Dedup: check if this trigger-seq already produced a STORY_PHASE_CHANGED
-  existing = find_event_in_log(project_root, "STORY_PHASE_CHANGED", trigger_seq, story_id)
-  if existing
-    puts JSON.generate({"success" => true, "already_applied" => true, "event_seq" => existing["seq"], "phase" => existing.dig("payload", "to_phase")})
-    return
-  end
-
-  # 2. Load state
-  state = load_gate_state(project_root)
-  config = state["config"] || DEFAULT_CONFIG
+def prepare_transition_commit(project_root, state, story_id, intent, config, overrides = {})
   ss = state.dig("story_states", story_id)
   die("unknown story: #{story_id}") unless ss
 
   current_phase = ss["phase"] || "queued"
-
-  # 3. Look up transition
   transition = ALL_TRANSITIONS[[current_phase, intent]]
   die("INVALID_TRANSITION: no transition from '#{current_phase}' via '#{intent}'") unless transition
 
-  # 4. Evaluate preconditions
   transition[:preconditions].each do |precond|
     unless evaluate_precondition(precond, project_root, state, story_id, config)
       die("PRECONDITION_FAILED: #{precond} for story #{story_id} in phase #{current_phase}")
     end
   end
 
-  # 5. Compute target state in memory
   target = ss.dup
   target["phase"] = transition[:target]
   target["dispatch_state"] = nil if transition[:side_effects].include?(:clear_dispatch_state)
 
-  # Handle cycle increments/resets in target state
   if transition[:side_effects].include?(:increment_validation_cycle)
     target["validation_cycle"] = (target["validation_cycle"] || 0) + 1
   end
@@ -509,11 +887,56 @@ def cmd_execute(project_root, expected_gen, story_id, intent, trigger_seq)
     target["review_cycle"] = 0
   end
 
-  # 6. Run invariants on target state (BEFORE commit point)
+  overrides.each do |key, value|
+    target[key] = value
+  end
+
   invariant_errors = check_invariants(target, story_id, config)
   unless invariant_errors.empty?
     die("INVARIANT_VIOLATION: #{invariant_errors.join('; ')}")
   end
+
+  {
+    "current_phase" => current_phase,
+    "transition" => transition,
+    "target" => target,
+  }
+end
+
+def append_story_phase_changed(project_root, expected_gen, story_id, intent, current_phase, target, trigger_seq)
+  payload = {
+    "story_id" => story_id,
+    "from_phase" => current_phase,
+    "to_phase" => target["phase"],
+    "intent" => intent,
+    "review_cycle" => target["review_cycle"] || 0,
+    "regression_cycle" => target["regression_cycle"] || 0,
+    "auto_qa_cycle" => target["auto_qa_cycle"] || 0,
+    "validation_cycle" => target["validation_cycle"] || 0,
+    "current_llm" => target["current_llm"] || "claude",
+    "dispatch_state" => target["dispatch_state"],
+    "c2_override" => target["c2_override"] || false,
+  }
+
+  event_bus("append", project_root, expected_gen.to_s, "STORY_PHASE_CHANGED",
+            "transition_engine", trigger_seq.to_s, JSON.generate(payload))
+end
+
+def cmd_execute(project_root, expected_gen, story_id, intent, trigger_seq)
+  # 1. Dedup: check if this trigger-seq already produced a STORY_PHASE_CHANGED
+  existing = find_event_in_log(project_root, "STORY_PHASE_CHANGED", trigger_seq, story_id)
+  if existing
+    puts JSON.generate({"success" => true, "already_applied" => true, "event_seq" => existing["seq"], "phase" => existing.dig("payload", "to_phase")})
+    return
+  end
+
+  # 2. Load state
+  state = load_gate_state(project_root)
+  config = state["config"] || DEFAULT_CONFIG
+  transition_plan = prepare_transition_commit(project_root, state, story_id, intent, config)
+  current_phase = transition_plan.fetch("current_phase")
+  transition = transition_plan.fetch("transition")
+  target = transition_plan.fetch("target")
 
   # 7. Execute side effects
   #    Irreversible effects (merge) execute BEFORE commit point with verification
@@ -535,26 +958,11 @@ def cmd_execute(project_root, expected_gen, story_id, intent, trigger_seq)
 
   # Pane actions
   (transition[:pane_actions] || []).each do |action|
-    execute_side_effect(action, project_root, expected_gen, state, story_id, trigger_seq)
-  end
+      execute_side_effect(action, project_root, expected_gen, state, story_id, trigger_seq)
+    end
 
   # 8. Write STORY_PHASE_CHANGED event (commit point)
-  payload = {
-    "story_id" => story_id,
-    "from_phase" => current_phase,
-    "to_phase" => transition[:target],
-    "intent" => intent,
-    "review_cycle" => target["review_cycle"] || 0,
-    "regression_cycle" => target["regression_cycle"] || 0,
-    "auto_qa_cycle" => target["auto_qa_cycle"] || 0,
-    "validation_cycle" => target["validation_cycle"] || 0,
-    "current_llm" => target["current_llm"] || "claude",
-    "dispatch_state" => target["dispatch_state"],
-    "c2_override" => target["c2_override"] || false,
-  }
-
-  event_bus("append", project_root, expected_gen.to_s, "STORY_PHASE_CHANGED",
-            "transition_engine", trigger_seq.to_s, JSON.generate(payload))
+  append_story_phase_changed(project_root, expected_gen, story_id, intent, current_phase, target, trigger_seq)
 
   # 9. Materialize gate-state
   event_bus("materialize", project_root)
@@ -582,50 +990,99 @@ DISPATCH_INTENT_MAP = {
   # review/fixing: phase already advanced by prior TRANSITION (review_fail, g7_pass)
 }.freeze
 
-# Task packet templates per phase (structured prompt sent to the worker)
-def build_task_packet(phase, story_id, project_root, state, opts)
+DISPATCH_TARGET_PHASE = {
+  "create" => "creating",
+  "prototype" => "prototyping",
+  "validate" => "validating",
+  "dev" => "dev",
+  "qa" => "qa_running",
+  "regression" => "regression",
+}.freeze
+
+# Worker bootstrap packet — puts the pane into resident protocol mode.
+def build_worker_bootstrap(worker_role, story_id, worker_id)
+  <<~BOOTSTRAP
+    You are entering BidWise master-control worker protocol mode.
+    Worker id: #{worker_id}
+    Worker role: #{worker_role} for story #{story_id}.
+
+    Stay resident in this terminal until explicitly interrupted.
+    When you are ready to accept tasks, print exactly one line formed by #{protocol_literal("MC_WORKER_READY #{worker_id}")}.
+
+    After that, wait for task blocks in this exact envelope:
+    TASK <task_id> <phase> <story_id>
+    <payload lines>
+    END_TASK
+
+    For every task block:
+    - Immediately print exactly one line formed by #{protocol_literal("MC_ACK <task_id>")}.
+    - When you actually begin executing the task, print exactly one line formed by #{protocol_literal("MC_BEGIN <task_id>")}.
+    - Follow the payload instructions autonomously.
+    - Never ask the user follow-up questions. If required input is missing or inconsistent, stop and print exactly one line formed by #{protocol_literal("HALT <task_id> <REASON>")}. Use machine-readable reason tokens such as MISSING_INPUT, INVALID_TARGET, TOOL_FAILURE, BLOCKED, or CONTRACT_VIOLATION.
+    - On success, finish with exactly one line formed by #{protocol_literal("MC_DONE <phase> <story_id> <RESULT>")}. Keep the phase and story_id from the TASK header. RESULT must be a single machine-readable token.
+    - Never exit after a task. Return to waiting for the next TASK block.
+  BOOTSTRAP
+end
+
+# Task payload templates per phase (business instructions inside TASK ... END_TASK).
+def build_task_payload(phase, story_id, project_root, state, opts)
   ss = state.dig("story_states", story_id) || {}
   story_file = ss["story_file_rel"] || "_bmad-output/implementation-artifacts/story-#{story_id}.md"
+  story_key = ss["story_key"] || resolve_story_key(project_root, story_id) || story_id
   worktree = ss["worktree_path"] || "../BidWise-story-#{story_id}"
   is_ui = ss["is_ui"]
   review_cycle = ss["review_cycle"] || 0
+  artifacts_root = File.join(project_root, "_bmad-output", "implementation-artifacts")
+  story_output_path = File.join(project_root, story_file)
+  sprint_status_path = File.join(artifacts_root, "sprint-status.yaml")
 
   case phase
   when "create"
-    <<~PACKET
-      /bmad-create-story #{story_id}
-      When done, print exactly this as the final line with nothing after it:
-      MC_DONE CREATE #{story_id} CREATED
-    PACKET
+    <<~PAYLOAD
+      Headless create-story worker task.
+      Run `/bmad-create-story #{story_id}`.
+
+      Mandatory headless inputs:
+      - headless_worker_mode: true
+      - story_id: #{story_id}
+      - story_key: #{story_key}
+      - output_path: #{story_output_path}
+      - artifacts_root: #{artifacts_root}
+      - sprint_status_path: #{sprint_status_path}
+
+      Contract:
+      - Do not auto-discover or auto-select any other story.
+      - Do not ask follow-up questions.
+      - If any mandatory input is missing or inconsistent, stop with reason token MISSING_INPUT.
+      - Keep all writes under #{artifacts_root}.
+      - Success result token: CREATED
+    PAYLOAD
   when "prototype"
-    <<~PACKET
+    <<~PAYLOAD
       Create a UI prototype for story #{story_id}.
       Story file: #{story_file}
       Use Pencil MCP tools to create the .pen file and export PNG.
-      When done, print exactly this as the final line with nothing after it:
-      MC_DONE PROTOTYPE #{story_id} PROTOTYPED
-    PACKET
+      If required inputs are missing, stop with reason token MISSING_INPUT.
+      Success result token: PROTOTYPED
+    PAYLOAD
   when "validate"
-    <<~PACKET
+    <<~PAYLOAD
       Validate story #{story_id} against acceptance criteria.
       Story file: #{story_file}
       Check: story completeness, acceptance criteria clarity, dependency correctness.
-      Final line must be exactly one of:
-      MC_DONE VALIDATE #{story_id} PASS
-      MC_DONE VALIDATE #{story_id} FAIL
-    PACKET
+      Allowed result tokens: PASS or FAIL.
+    PAYLOAD
   when "dev"
     ui_line = is_ui ? "\nThis is a UI story — also use frontend-design skill." : ""
-    <<~PACKET
+    <<~PAYLOAD
       /bmad-dev-story #{story_file}#{ui_line}
-      When done, print exactly this as the final line with nothing after it:
-      MC_DONE DEV #{story_id} REVIEW_READY
-    PACKET
+      Success result token: REVIEW_READY
+    PAYLOAD
   when "review"
     findings_cycle = review_cycle + 1
     findings_output = File.join(File.expand_path(project_root), "_bmad-output", "implementation-artifacts",
                                 "review-findings-#{story_id}-cycle-#{findings_cycle}.md")
-    <<~PACKET
+    <<~PAYLOAD
       /bmad-code-review
       Review story implementation against main in fresh context.
       Story id: #{story_id}
@@ -641,52 +1098,328 @@ def build_task_packet(phase, story_id, project_root, state, opts)
       - [ ] issue description (file:line)
       ## Suggestions (non-blocking)
       - suggestion description
-      Final line must be exactly one of:
-      MC_DONE REVIEW #{story_id} REVIEW_PASS
-      MC_DONE REVIEW #{story_id} REVIEW_FAIL
-    PACKET
+      Allowed result tokens: REVIEW_PASS or REVIEW_FAIL.
+    PAYLOAD
   when "fixing"
     findings_file = File.join(File.expand_path(project_root), "_bmad-output", "implementation-artifacts",
                               "review-findings-#{story_id}-cycle-#{review_cycle}.md")
-    <<~PACKET
+    <<~PAYLOAD
       Fix code review findings for story #{story_id}.
       Findings: #{findings_file}
       Worktree: #{worktree}
-      When done, print exactly this as the final line with nothing after it:
-      MC_DONE FIXING #{story_id} FIX_COMPLETE
-    PACKET
+      Success result token: FIX_COMPLETE
+    PAYLOAD
   when "qa"
-    <<~PACKET
+    <<~PAYLOAD
       /bmad-qa-generate-e2e-tests
       Story: #{story_id}
       Worktree: #{worktree}
       Spec file: #{story_file}
       Run tests after generating.
-      Final line must be exactly one of:
-      MC_DONE QA #{story_id} QA_PASS
-      MC_DONE QA #{story_id} QA_FAIL
-    PACKET
+      Allowed result tokens: QA_PASS or QA_FAIL.
+    PAYLOAD
   when "regression"
-    <<~PACKET
+    <<~PAYLOAD
       Run full regression tests after merge of story #{story_id}.
       Layer 1: pnpm test (unit + integration)
       Layer 2: pnpm lint
       Layer 3: pnpm build
-      Final line must be exactly one of:
-      MC_DONE REGRESSION #{story_id} PASS
-      MC_DONE REGRESSION #{story_id} FAIL
-    PACKET
+      Allowed result tokens: PASS or FAIL.
+    PAYLOAD
   when "noop"
-    <<~PACKET
+    <<~PAYLOAD
       This is a dry-run runtime verification task for story #{story_id}.
       Do not create, modify, delete, or commit any project files.
       Do not run tests or build commands.
-      Simply acknowledge the task and then print exactly this as the final line:
-      MC_DONE NOOP #{story_id} PASS
-    PACKET
+      Success result token: PASS
+    PAYLOAD
   else
-    "echo 'Unknown phase: #{phase}'\nMC_DONE #{phase.upcase} #{story_id} UNKNOWN"
+    "Unknown phase #{phase}. Stop with reason token INVALID_PHASE."
   end
+end
+
+def build_task_block(task_id, phase, story_id, payload)
+  <<~TASK
+    TASK #{task_id} #{phase.upcase} #{story_id}
+    #{payload}
+    END_TASK
+  TASK
+end
+
+def wait_for_worker_ready(log_file, worker_id, timeout_sec: 90, start_pos: 0, boot_token_file: nil)
+  wait_for_log_condition(log_file, timeout_sec: timeout_sec, start_pos: start_pos) do |text|
+    token = boot_token_file ? parse_boot_token(boot_token_file) : {}
+    status = token["status"].to_s
+    next({"source" => "boot_token", "status" => status}) if status == "worker_ready"
+
+    if text.include?("MC_STATE WORKER_READY")
+      {"source" => "pane_log", "marker" => "MC_STATE WORKER_READY"}
+    elsif text.include?("MC_WORKER_READY #{worker_id}")
+      {"source" => "pane_log", "marker" => "MC_WORKER_READY #{worker_id}"}
+    end
+  end
+end
+
+def wait_for_task_ack(log_file, task_id, timeout_sec: 20, start_pos: 0)
+  wait_for_log_condition(log_file, timeout_sec: timeout_sec, start_pos: start_pos) do |text|
+    lines = text.lines.map(&:strip).reject(&:empty?)
+    halt_line = lines.reverse.find { |line| line.match?(/^HALT(?:\s|$)/) }
+    next({"result" => "halt", "line" => halt_line}) if halt_line
+
+    ack_seen = lines.any? do |line|
+      line == "MC_STATE TASK_ACKED" || line == "MC_ACK #{task_id}"
+    end
+    next nil unless ack_seen
+
+    started_seen = lines.any? do |line|
+      line == "MC_STATE TASK_STARTED" || line == "MC_BEGIN #{task_id}"
+    end
+    {"result" => "acked", "started" => started_seen}
+  end
+end
+
+def send_task_to_worker(control_fifo, task_block)
+  Timeout.timeout(5) do
+    File.open(control_fifo, "w") do |f|
+      f.write(task_block)
+      f.flush
+    end
+  end
+  true
+rescue StandardError
+  false
+end
+
+def ensure_pipe_logging(log_file, pane_id)
+  FileUtils.mkdir_p(File.dirname(log_file))
+  system("tmux", "pipe-pane", "-t", pane_id.to_s, "-o", "cat >> #{log_file}")
+end
+
+def ensure_protocol_worker(project_root:, expected_gen:, state:, session_name:, commander_pane:, bottom_anchor:,
+                           story_id:, phase:, worker_role:, llm:, workdir:, fresh_pane:, trigger_seq:)
+  title = worker_title_for(story_id, worker_role)
+  worker_id = worker_id_for(story_id, worker_role)
+  worker_dir = worker_runtime_dir(project_root, session_name, expected_gen, story_id, worker_role)
+  control_fifo = worker_control_fifo(project_root, session_name, expected_gen, story_id, worker_role)
+  boot_token_file = worker_boot_token_file(project_root, session_name, expected_gen, story_id, worker_role)
+  bootstrap_file = worker_bootstrap_file(project_root, session_name, expected_gen, story_id, worker_role)
+  pane_id = state.dig("panes", "stories", story_id, worker_role)
+  log_file = pane_id ? runtime_pane_log_file(project_root, session_name, expected_gen, pane_id) : nil
+  diag_log(project_root, "ensure_protocol_worker.begin", {
+    "expected_generation" => expected_gen,
+    "session_name" => session_name.to_s,
+    "story_id" => story_id.to_s,
+    "phase" => phase.to_s,
+    "worker_role" => worker_role.to_s,
+    "worker_id" => worker_id.to_s,
+    "llm" => llm.to_s,
+    "workdir" => workdir.to_s,
+    "fresh_pane" => fresh_pane == true,
+    "trigger_seq" => trigger_seq,
+    "bottom_anchor" => bottom_anchor.to_s,
+    "existing_pane_id" => pane_id.to_s,
+    "registered_story_panes" => state.dig("panes", "stories", story_id),
+    "panes" => pane_diag_snapshot(session_name),
+  })
+
+  if fresh_pane && pane_id && pane_alive?(session_name, pane_id)
+    diag_log(project_root, "ensure_protocol_worker.fresh_pane_release", {
+      "story_id" => story_id.to_s,
+      "phase" => phase.to_s,
+      "pane_id" => pane_id.to_s,
+      "bottom_anchor" => bottom_anchor.to_s,
+    })
+    release_worker_pane(pane_id: pane_id, bottom_anchor: bottom_anchor)
+    close_payload = {"story_id" => story_id, "role" => worker_role, "pane_id" => pane_id}
+    event_bus("append", project_root, expected_gen.to_s, "PANE_CLOSED", "transition_engine", trigger_seq.to_s, JSON.generate(close_payload))
+    pane_id = nil
+  end
+
+  1.upto(2) do
+    if pane_id && wrapper_running?(session_name, pane_id, boot_token_file)
+      log_file ||= runtime_pane_log_file(project_root, session_name, expected_gen, pane_id)
+      ensure_pipe_logging(log_file, pane_id)
+      token = parse_boot_token(boot_token_file)
+      if token["status"] == "worker_ready" || pane_log_text(log_file).include?("MC_STATE WORKER_READY")
+        diag_log(project_root, "ensure_protocol_worker.reuse_ready", {
+          "story_id" => story_id.to_s,
+          "phase" => phase.to_s,
+          "pane_id" => pane_id.to_s,
+          "worker_id" => worker_id.to_s,
+          "boot_token_status" => token["status"].to_s,
+        })
+        return {"pane_id" => pane_id, "log_file" => log_file, "control_fifo" => control_fifo, "worker_id" => worker_id, "created" => false}
+      end
+
+      ready_result = wait_for_worker_ready(
+        log_file,
+        worker_id,
+        timeout_sec: worker_reuse_ready_timeout_sec,
+        start_pos: 0,
+        boot_token_file: boot_token_file
+      )
+      diag_log(project_root, "ensure_protocol_worker.reuse_wait", {
+        "story_id" => story_id.to_s,
+        "phase" => phase.to_s,
+        "pane_id" => pane_id.to_s,
+        "worker_id" => worker_id.to_s,
+        "ready" => !!ready_result,
+        "ready_source" => ready_result.is_a?(Hash) ? ready_result["source"].to_s : "",
+        "boot_token_status" => parse_boot_token(boot_token_file)["status"].to_s,
+        "log_excerpt" => log_excerpt(pane_log_text(log_file)),
+      })
+      return {"pane_id" => pane_id, "log_file" => log_file, "control_fifo" => control_fifo, "worker_id" => worker_id, "created" => false} if ready_result
+
+      diag_log(project_root, "ensure_protocol_worker.reuse_release", {
+        "story_id" => story_id.to_s,
+        "phase" => phase.to_s,
+        "pane_id" => pane_id.to_s,
+        "bottom_anchor" => bottom_anchor.to_s,
+      })
+      release_worker_pane(pane_id: pane_id, bottom_anchor: bottom_anchor)
+      pane_id = nil
+    end
+
+    FileUtils.mkdir_p(worker_dir)
+    File.delete(boot_token_file) if File.exist?(boot_token_file)
+    File.write(bootstrap_file, build_worker_bootstrap(worker_role, story_id, worker_id))
+    ensure_fifo(control_fifo)
+
+    wrapper = File.join(SCRIPT_DIR, "agent-wrapper.py")
+    agent_command = agent_command_for(llm)
+    command_string = [
+      "python3",
+      Shellwords.escape(wrapper),
+      "--agent-command", Shellwords.escape(agent_command),
+      "--packet-file", Shellwords.escape(bootstrap_file.to_s),
+      "--ready-timeout", "90",
+      "--control-fifo", Shellwords.escape(control_fifo.to_s),
+      "--boot-token-file", Shellwords.escape(boot_token_file.to_s),
+      "--protocol-worker",
+      "--worker-id", Shellwords.escape(worker_id),
+      "--bootstrap-timeout", worker_bootstrap_timeout_sec.to_s,
+      "--bootstrap-retries", worker_bootstrap_retries_count.to_s,
+      "--ack-timeout", worker_ack_timeout_sec.to_s,
+      "--begin-timeout", worker_begin_timeout_sec.to_s,
+      "--long-lived",
+    ].join(" ")
+
+    tmux_layout = File.join(SCRIPT_DIR, "tmux-layout.sh")
+    diag_env = {
+      "MC_DIAG_LOG_PATH" => diag_log_path(project_root).to_s,
+      "MC_DIAG_SESSION" => session_name.to_s,
+      "MC_DIAG_STORY_ID" => story_id.to_s,
+      "MC_DIAG_PHASE" => phase.to_s,
+      "MC_DIAG_WORKER_ID" => worker_id.to_s,
+    }
+    stdout, stderr, status = Open3.capture3(
+      diag_env,
+      tmux_layout, "open-worker",
+      session_name, commander_pane.to_s, bottom_anchor.to_s,
+      title, workdir, command_string
+    )
+    diag_log(project_root, "ensure_protocol_worker.open_worker", {
+      "story_id" => story_id.to_s,
+      "phase" => phase.to_s,
+      "worker_role" => worker_role.to_s,
+      "bottom_anchor" => bottom_anchor.to_s,
+      "stdout" => stdout.strip,
+      "stderr" => stderr.strip,
+      "exit_status" => status.exitstatus,
+      "panes_after" => pane_diag_snapshot(session_name),
+    })
+    die("tmux-layout.sh open-worker failed: #{stderr.strip.empty? ? stdout.strip : stderr.strip}") unless status.success?
+
+    raw_output = stdout.strip
+    pane_reused = raw_output.start_with?("REUSED:")
+    pane_id = raw_output.sub(/\A(REUSED|CREATED):/, "")
+    log_file = runtime_pane_log_file(project_root, session_name, expected_gen, pane_id)
+
+    if pane_reused
+      # Reused pane found by tmux title — verify wrapper health without deleting boot_token
+      ensure_pipe_logging(log_file, pane_id)
+      if wrapper_running?(session_name, pane_id, boot_token_file)
+        token = parse_boot_token(boot_token_file)
+        if token["status"] == "worker_ready" || pane_log_text(log_file).include?("MC_STATE WORKER_READY")
+          diag_log(project_root, "ensure_protocol_worker.reused_pane_ready", {
+            "story_id" => story_id.to_s,
+            "phase" => phase.to_s,
+            "pane_id" => pane_id.to_s,
+            "worker_id" => worker_id.to_s,
+            "boot_token_status" => token["status"].to_s,
+          })
+          return {"pane_id" => pane_id, "log_file" => log_file, "control_fifo" => control_fifo, "worker_id" => worker_id, "created" => false}
+        end
+        ready_result = wait_for_worker_ready(
+          log_file,
+          worker_id,
+          timeout_sec: worker_reuse_ready_timeout_sec,
+          start_pos: 0,
+          boot_token_file: boot_token_file
+        )
+        diag_log(project_root, "ensure_protocol_worker.reused_pane_wait", {
+          "story_id" => story_id.to_s,
+          "phase" => phase.to_s,
+          "pane_id" => pane_id.to_s,
+          "worker_id" => worker_id.to_s,
+          "ready" => !!ready_result,
+          "ready_source" => ready_result.is_a?(Hash) ? ready_result["source"].to_s : "",
+          "boot_token_status" => parse_boot_token(boot_token_file)["status"].to_s,
+          "log_excerpt" => log_excerpt(pane_log_text(log_file)),
+        })
+        return {"pane_id" => pane_id, "log_file" => log_file, "control_fifo" => control_fifo, "worker_id" => worker_id, "created" => false} if ready_result
+      end
+      # Reused pane is not usable — kill and retry next iteration
+      diag_log(project_root, "ensure_protocol_worker.reused_pane_release", {
+        "story_id" => story_id.to_s,
+        "phase" => phase.to_s,
+        "pane_id" => pane_id.to_s,
+        "bottom_anchor" => bottom_anchor.to_s,
+      })
+      release_worker_pane(pane_id: pane_id, bottom_anchor: bottom_anchor)
+      pane_id = nil
+    else
+      # New pane — clean slate: truncate any stale log and wait for ready.
+      File.truncate(log_file, 0) if File.exist?(log_file)
+      ensure_pipe_logging(log_file, pane_id)
+      ready_result = wait_for_worker_ready(
+        log_file,
+        worker_id,
+        timeout_sec: worker_ready_timeout_sec,
+        start_pos: 0,
+        boot_token_file: boot_token_file
+      )
+      diag_log(project_root, "ensure_protocol_worker.new_pane_wait", {
+        "story_id" => story_id.to_s,
+        "phase" => phase.to_s,
+        "pane_id" => pane_id.to_s,
+        "worker_id" => worker_id.to_s,
+        "ready" => !!ready_result,
+        "ready_source" => ready_result.is_a?(Hash) ? ready_result["source"].to_s : "",
+        "boot_token_status" => parse_boot_token(boot_token_file)["status"].to_s,
+        "log_excerpt" => log_excerpt(pane_log_text(log_file)),
+      })
+      return {"pane_id" => pane_id, "log_file" => log_file, "control_fifo" => control_fifo, "worker_id" => worker_id, "created" => true} if ready_result
+      diag_log(project_root, "ensure_protocol_worker.new_pane_release", {
+        "story_id" => story_id.to_s,
+        "phase" => phase.to_s,
+        "pane_id" => pane_id.to_s,
+        "bottom_anchor" => bottom_anchor.to_s,
+      })
+      release_worker_pane(pane_id: pane_id, bottom_anchor: bottom_anchor)
+      pane_id = nil
+    end
+  end
+
+  diag_log(project_root, "ensure_protocol_worker.boot_timeout", {
+    "story_id" => story_id.to_s,
+    "phase" => phase.to_s,
+    "worker_role" => worker_role.to_s,
+    "worker_id" => worker_id.to_s,
+    "bottom_anchor" => bottom_anchor.to_s,
+    "panes_after" => pane_diag_snapshot(session_name),
+  })
+  die("WORKER_BOOT_TIMEOUT: #{story_id} #{phase}")
 end
 
 def append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, dispatch_state)
@@ -713,30 +1446,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
     end
   end
 
-  # 2. Execute FSM transition if there's a matching *_dispatched intent
-  #    This validates preconditions and records side effects (gates, etc.)
-  intent = DISPATCH_INTENT_MAP[phase]
-  if intent
-    # Attempt the transition — this checks preconditions, invariants, and writes events
-    transition_result = nil
-    begin
-      # Temporarily capture output instead of printing
-      old_stdout = $stdout
-      $stdout = StringIO.new
-      cmd_execute(project_root, expected_gen, story_id, intent, trigger_seq)
-      transition_output = $stdout.string
-      $stdout = old_stdout
-      transition_result = JSON.parse(transition_output) rescue nil
-    rescue SystemExit => e
-      $stdout = old_stdout
-      # If transition failed (precondition, invariant), propagate the error
-      die("FSM transition #{intent} failed — check preconditions")
-    end
-
-    # If already_applied, the transition was already done; proceed with pane creation
-  end
-
-  # 3. Determine LLM + auto-escalation for fixing phase (design doc §3.2.1 Fix Cycle Pane Strategy)
+  # 2. Determine LLM + auto-escalation for fixing phase (design doc §3.2.1 Fix Cycle Pane Strategy)
   override_llm = opts[:override_llm]
   override_reason = opts[:override_reason]
   fresh_pane = opts[:fresh_pane]
@@ -755,12 +1465,47 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
 
   llm = override_llm || LLM_FOR_PHASE[phase] || "claude"
   c2_override = !override_llm.nil?
+  worker_role = worker_role_for_dispatch(phase, fresh_pane: !!fresh_pane)
+
+  # 3. Validate FSM transition up front, but do not commit it until dispatch is durable.
+  intent = DISPATCH_INTENT_MAP[phase]
+  transition_plan = nil
+  if intent
+    current_state = load_gate_state(project_root)
+    config = current_state["config"] || DEFAULT_CONFIG
+    current_phase = current_state.dig("story_states", story_id, "phase").to_s
+    unless current_phase == DISPATCH_TARGET_PHASE[phase]
+      transition_plan = prepare_transition_commit(
+        project_root,
+        current_state,
+        story_id,
+        intent,
+        config,
+        "current_llm" => llm,
+        "dispatch_state" => "worker_ready",
+        "c2_override" => c2_override
+      )
+    end
+  end
 
   # 4. Resolve session context
   state = load_gate_state(project_root)
   session_name = state["session_name"]
   commander_pane = state["commander_pane"]
   bottom_anchor = state["bottom_anchor"]
+  inspector_pane = state.dig("panes", "inspector")
+  utility_pane = state.dig("panes", "utility")
+  diag_log(project_root, "dispatch.context_loaded", {
+    "expected_generation" => expected_gen,
+    "story_id" => story_id.to_s,
+    "phase" => phase.to_s,
+    "session_name" => session_name.to_s,
+    "commander_pane" => commander_pane.to_s,
+    "inspector_pane" => inspector_pane.to_s,
+    "utility_pane" => utility_pane.to_s,
+    "bottom_anchor" => bottom_anchor.to_s,
+    "story_state" => state.dig("story_states", story_id),
+  })
   unless session_name && commander_pane && bottom_anchor
     session_name ||= `tmux display-message -p '\#{session_name}' 2>/dev/null`.strip
     commander_pane ||= `tmux display-message -p '\#{pane_id}' 2>/dev/null`.strip
@@ -768,6 +1513,15 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
       .find { |l| l.include?("mc-bottom-anchor") }&.split&.first&.strip
     die("cannot resolve session context") unless session_name && !session_name.empty?
   end
+  bottom_anchor = ensure_live_bottom_anchor(
+    project_root: project_root,
+    expected_gen: expected_gen,
+    session_name: session_name,
+    commander_pane: commander_pane,
+    inspector_pane: inspector_pane,
+    utility_pane: utility_pane,
+    current_bottom_anchor: bottom_anchor
+  )
 
   # 5. Determine workdir
   ss = state.dig("story_states", story_id) || {}
@@ -778,89 +1532,89 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
     File.expand_path(project_root)
   end
 
-  # 6. Create pane via tmux-layout.sh (command = the LLM binary)
-  tmux_layout = File.join(SCRIPT_DIR, "tmux-layout.sh")
-  title = "mc-#{story_id}-#{phase}"
-  agent_command = llm == "codex" ? "codex --no-alt-screen --dangerously-bypass-approvals-and-sandbox" : "claude --dangerously-skip-permissions"
-  runtime_dir = File.join(project_root, "_bmad-output", "implementation-artifacts", "runtime", "#{session_name}-g#{expected_gen}")
-  packet_dir = File.join(runtime_dir, "packets")
-  FileUtils.mkdir_p(packet_dir)
-  task_packet = build_task_packet(phase, story_id, project_root, state, opts)
-  packet_file = File.join(packet_dir, "#{story_id}-#{phase}-#{trigger_seq}.txt")
-  File.write(packet_file, task_packet)
-  wrapper = File.join(SCRIPT_DIR, "agent-wrapper.py")
-  command_string = [
-    "python3",
-    Shellwords.escape(wrapper),
-    "--agent-command", Shellwords.escape(agent_command),
-    "--packet-file", Shellwords.escape(packet_file),
-  ].join(" ")
-
-  # If fresh-pane requested, kill any existing pane with this title first
-  if fresh_pane
-    existing = `tmux list-panes -t "#{session_name}" -F '\#{pane_id} \#{pane_title}' 2>/dev/null`.lines
-      .find { |l| l.include?(title) } rescue nil
-    if existing
-      old_pane_id = existing.split.first
-      system("tmux", "kill-pane", "-t", old_pane_id, [:out, :err] => "/dev/null")
-      close_payload = {"story_id" => story_id, "role" => phase, "pane_id" => old_pane_id}
-      event_bus("append", project_root, expected_gen.to_s, "PANE_CLOSED", "transition_engine", trigger_seq.to_s, JSON.generate(close_payload))
-    end
-  end
-
-  # For fixing dispatch: also close the old dev pane to prevent stale signal pollution
-  if phase == "fixing"
-    state_now = load_gate_state(project_root)
-    old_dev_pane = state_now.dig("panes", "stories", story_id, "dev")
-    if old_dev_pane
-      system("tmux", "kill-pane", "-t", old_dev_pane, [:out, :err] => "/dev/null")
-      close_payload = {"story_id" => story_id, "role" => "dev", "pane_id" => old_dev_pane}
-      event_bus("append", project_root, expected_gen.to_s, "PANE_CLOSED", "transition_engine", trigger_seq.to_s, JSON.generate(close_payload))
-    end
-  end
-
-  stdout, stderr, status = Open3.capture3(
-    tmux_layout, "open-worker",
-    session_name, commander_pane.to_s, bottom_anchor.to_s,
-    title, workdir, command_string
+  # 6. Ensure resident worker and protocol readiness
+  worker = ensure_protocol_worker(
+    project_root: project_root,
+    expected_gen: expected_gen,
+    state: state,
+    session_name: session_name,
+    commander_pane: commander_pane,
+    bottom_anchor: bottom_anchor,
+    story_id: story_id,
+    phase: phase,
+    worker_role: worker_role,
+    llm: llm,
+    workdir: workdir,
+    fresh_pane: fresh_pane,
+    trigger_seq: trigger_seq
   )
-  unless status.success?
-    die("tmux-layout.sh open-worker failed: #{stderr.strip.empty? ? stdout.strip : stderr.strip}")
-  end
-  pane_id = stdout.strip
+  pane_id = worker.fetch("pane_id")
+  log_file = worker.fetch("log_file")
+  task_id = "#{story_id}-#{phase}-#{trigger_seq}".gsub(/[^A-Za-z0-9._:-]/, "_")
+  task_payload = build_task_payload(phase, story_id, project_root, state, opts)
+  task_block = build_task_block(task_id, phase, story_id, task_payload)
 
-  # 7. Enable pipe-pane logging
-  log_dir = runtime_mc_logs_dir(project_root, session_name, expected_gen).to_s
-  FileUtils.mkdir_p(log_dir)
-  log_file = File.join(log_dir, "pane-#{pane_id.delete('%')}.log")
-  system("tmux", "pipe-pane", "-t", pane_id, "-o", "cat >> #{log_file}")
-  append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, "pane_opened")
-
-  # 9. Write TASK_DISPATCHED event
+  # 7. Persist TASK_DISPATCHED / PANE_REGISTERED before enqueueing work
   dispatch_payload = {
     "story_id" => story_id,
     "phase" => phase,
     "llm" => llm,
     "pane_id" => pane_id,
+    "task_id" => task_id,
+    "worker_id" => worker["worker_id"],
     "c2_override" => c2_override,
     "override_reason" => override_reason,
     "constitution_check" => "PASS",
-    "dispatch_state" => "pane_opened",
+    "dispatch_state" => "worker_ready",
   }
   event_bus("append", project_root, expected_gen.to_s, "TASK_DISPATCHED",
             "transition_engine", trigger_seq.to_s, JSON.generate(dispatch_payload))
 
-  # 10. Write PANE_REGISTERED event
-  pane_payload = {
-    "story_id" => story_id,
-    "role" => phase,
-    "pane_id" => pane_id,
-    "title" => title,
-  }
-  event_bus("append", project_root, expected_gen.to_s, "PANE_REGISTERED",
-            "transition_engine", trigger_seq.to_s, JSON.generate(pane_payload))
+  if worker["created"]
+    pane_payload = {
+      "story_id" => story_id,
+      "role" => worker_role,
+      "pane_id" => pane_id,
+      "title" => worker_title_for(story_id, worker_role),
+    }
+    event_bus("append", project_root, expected_gen.to_s, "PANE_REGISTERED",
+              "transition_engine", trigger_seq.to_s, JSON.generate(pane_payload))
+  end
+  append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, "worker_ready")
 
-  # 11. Materialize
+  if transition_plan
+    append_story_phase_changed(
+      project_root,
+      expected_gen,
+      story_id,
+      intent,
+      transition_plan.fetch("current_phase"),
+      transition_plan.fetch("target"),
+      trigger_seq
+    )
+  end
+
+  event_bus("materialize", project_root)
+
+  # 8. Enqueue task through the worker FIFO and require protocol ACK before success.
+  send_start_pos = pane_log_size(log_file)
+  unless send_task_to_worker(worker.fetch("control_fifo"), task_block)
+    die("TASK_QUEUE_SEND_FAILED: #{story_id} #{phase}")
+  end
+
+  ack_result = wait_for_task_ack(log_file, task_id, timeout_sec: 20, start_pos: send_start_pos)
+  if ack_result.nil?
+    die("TASK_ACK_TIMEOUT: #{story_id} #{phase} #{task_id}")
+  end
+  if ack_result["result"] == "halt"
+    die("TASK_ACK_REJECTED: #{ack_result["line"]}")
+  end
+
+  append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, "task_acked")
+  append_dispatch_state(project_root, expected_gen, trigger_seq, story_id, pane_id, "task_started") if ack_result["started"]
+  write_task_monitor_log_cursor(project_root, session_name, expected_gen, pane_id, pane_log_size(log_file))
+
+  # 9. Materialize
   event_bus("materialize", project_root)
 
   puts JSON.generate({
@@ -870,6 +1624,8 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
     "pane_id" => pane_id,
     "llm" => llm,
     "c2_override" => c2_override,
+    "task_id" => task_id,
+    "worker_id" => worker["worker_id"],
   })
 end
 

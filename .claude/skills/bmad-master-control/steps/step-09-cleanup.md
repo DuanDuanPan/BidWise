@@ -48,6 +48,9 @@ utility_pane: ''
 9. Archive event-log + gate-state:
    `mv _bmad-output/implementation-artifacts/event-log.yaml _bmad-output/implementation-artifacts/event-log-{batch_id}.yaml`
    `mv _bmad-output/implementation-artifacts/gate-state.yaml _bmad-output/implementation-artifacts/gate-state-{batch_id}.yaml`
+10. Reset consumer cursors for next batch:
+    `event-bus.sh init <project_root> 0 --force`
+    (--force ensures stale cursors from the current session are wiped; prevents cursor > max_seq deadlock)
 
 ### Next Batch Decision
 10. Re-read sprint-status.yaml

@@ -53,7 +53,7 @@ EMITTED="$(analyze_pane "3-2" "$PANE_ID" "creating" "0")"
   exit 1
 }
 
-is_new_signal "$SCOPE_KEY" "STATE:WORKER_RUNNING" >/dev/null
+is_new_signal "$SCOPE_KEY" "STATE:TASK_STARTED" >/dev/null
 
 printf 'noise\nMC_DONE\x1b[1CCREATE\x1b[1C3-2\x1b[1CCREATED\r\n' >> "$LOG_FILE_PATH"
 CURSOR_VALUE="$(wc -c < "$LOG_FILE_PATH" | tr -d '[:space:]')"

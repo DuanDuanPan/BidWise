@@ -38,8 +38,8 @@ bottom_anchor: ''
 ### Launch Dev Panes
 5. For each story:
    - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> dev --trigger-seq <N>`
-     (transition-engine handles: pane creation, pipe-pane logging, task packet paste,
-      dispatch_state tracking, Enter-after-paste verification, and G6 recording)
+     (transition-engine handles: resident worker bootstrap, pipe-pane logging, FIFO task delivery,
+      ACK handshake, dispatch_state tracking, and G6 recording)
    - UI detection is automatic (transition-engine reads story's is_ui field)
    - Task monitor daemon will detect MC_DONE/HALT/idle and emit events
 
@@ -48,13 +48,13 @@ bottom_anchor: ''
 ## GATE G6: worktree → monitor
 - **Assert foreach batch_stories:** `test -d ../BidWise-story-{story_id}`
 - **Assert foreach batch_stories:** panes.stories[story_id].dev exists in gate-state
-- **Assert foreach batch_stories:** dispatch_state ∈ {`packet_submitted`, `worker_running`}
+- **Assert foreach batch_stories:** dispatch_state ∈ {`task_acked`, `task_started`}
 - **On pass:** G6 is recorded automatically by transition-engine during DISPATCH dev
 
 ## CHECKPOINT
 - Worktrees created: {list}
 - Dev panes launched: {pane_ids}
-- All dev stories have dispatch_state >= `packet_submitted`
+- All dev stories have dispatch_state >= `task_acked`
 
 ## NEXT
 Read fully and follow `./step-04-monitoring.md`

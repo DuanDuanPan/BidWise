@@ -35,6 +35,7 @@ sys.stdout.write("  gpt-5.4 xhigh · 100% left · ~/tmp/project\r\n")
 sys.stdout.flush()
 
 line = sys.stdin.readline().strip()
+line = line.replace("\x1b[200~", "").replace("\x1b[201~", "")
 sys.stdout.write(f"ACK {line}\r\n")
 sys.stdout.flush()
 time.sleep(0.05)

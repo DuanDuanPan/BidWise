@@ -106,8 +106,10 @@ MATERIALIZATION_RULES = {
     p = e["payload"]
     ss = state["story_states"][p["story_id"]] ||= {}
     ss["current_llm"] = p["llm"]
-    ss["dispatch_state"] = p["dispatch_state"] || "worker_running"
+    ss["dispatch_state"] = p["dispatch_state"] || "pane_opened"
     ss["c2_override"] = p["c2_override"] || false
+    ss["current_worker_id"] = p["worker_id"] if p["worker_id"]
+    ss["last_task_id"] = p["task_id"] if p["task_id"]
   },
 
   "DISPATCH_STATE_CHANGED" => ->(state, e) {
@@ -187,6 +189,14 @@ end
 
 def gate_state_path(project_root)
   artifacts_dir(project_root) + "gate-state.yaml"
+end
+
+def diag_log_path(project_root)
+  artifacts_dir(project_root) + "master-control-diagnostics.log"
+end
+
+def runtime_root_path(project_root)
+  artifacts_dir(project_root) + "runtime"
 end
 
 def watchdog_pid_path(project_root)
@@ -375,6 +385,13 @@ def build_materialized_state(project_root, events)
     end
   end
 
+  existing_panes = existing_state["panes"]
+  if existing_panes.is_a?(Hash)
+    state["panes"]["utility"] = existing_panes["utility"] if existing_panes["utility"]
+    state["panes"]["inspector"] = existing_panes["inspector"] if existing_panes["inspector"]
+  end
+  current_bottom_anchor = state.dig("panes", "bottom_anchor")
+  state["bottom_anchor"] = current_bottom_anchor if current_bottom_anchor
   state["last_updated"] = now_z
   state
 ensure
@@ -464,6 +481,15 @@ def cmd_peek(project_root, expected_gen, opts)
   log = load_event_log(project_root)
   cursors = load_cursors(project_root)
   cursor = Integer(cursors[consumer] || 0)
+
+  # Self-healing: if cursor is beyond max_seq, reset to 0
+  max_seq = log["events"].map { |e| Integer(e["seq"] || 0) rescue 0 }.max || 0
+  if cursor > max_seq && cursor > 0
+    warn "event-bus.sh: CURSOR_SELF_HEAL: consumer '#{consumer}' cursor #{cursor} > max_seq #{max_seq}, resetting to 0"
+    cursor = 0
+    cursors[consumer] = 0
+    write_yaml(cursors_path(project_root), cursors)
+  end
 
   events = log["events"].select do |e|
     Integer(e["seq"]) > cursor &&
@@ -612,29 +638,35 @@ def cmd_approve_failover(project_root, old_gen, new_gen, gate, verified_by, deta
   })
 end
 
-def cmd_init(project_root, generation = 0)
+def cmd_init(project_root, generation = 0, force: false)
   dir = artifacts_dir(project_root)
   dir.mkpath
 
+  if force
+    FileUtils.rm_f(gate_state_path(project_root))
+    FileUtils.rm_f(diag_log_path(project_root))
+    FileUtils.rm_rf(runtime_root_path(project_root))
+  end
+
   # Initialize generation.lock
   gen_path = generation_lock_path(project_root)
-  unless gen_path.exist?
+  if force || !gen_path.exist?
     gen_path.write(generation.to_s)
   end
 
   # Initialize event-log.yaml
   el_path = event_log_path(project_root)
-  unless el_path.exist?
+  if force || !el_path.exist?
     write_yaml(el_path, {"schema_version" => 2, "events" => []})
   end
 
-  # Initialize consumer-cursors.yaml
+  # Initialize consumer-cursors.yaml — force wipes ALL cursors (including dynamic names)
   cur_path = cursors_path(project_root)
-  unless cur_path.exist?
+  if force || !cur_path.exist?
     write_yaml(cur_path, {"commander" => 0, "watchdog" => 0, "task_monitor" => 0})
   end
 
-  puts JSON.generate({"success" => true, "initialized" => true, "generation" => generation})
+  puts JSON.generate({"success" => true, "initialized" => true, "generation" => generation, "force" => force})
 end
 
 # ─── Argument Parsing ────────────────────────────────────────────────────────
@@ -711,8 +743,10 @@ when "approve-failover"
   cmd_approve_failover(ARGV[0], ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5], ARGV[6])
 
 when "init"
-  die("usage: init <project_root> [generation]") unless [1, 2].include?(ARGV.length)
-  cmd_init(ARGV[0], Integer(ARGV[1] || 0))
+  die("usage: init <project_root> [generation] [--force]") unless (1..3).cover?(ARGV.length)
+  force = ARGV.include?("--force")
+  init_args = ARGV.reject { |a| a == "--force" }
+  cmd_init(init_args[0], Integer(init_args[1] || 0), force: force)
 
 else
   die("unknown command: #{cmd}. Valid: append, peek, ack, materialize, stats, approve-failover, init")

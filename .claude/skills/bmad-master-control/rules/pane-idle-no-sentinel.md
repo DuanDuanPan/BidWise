@@ -11,10 +11,10 @@ IDLE without MC_DONE is AMBIGUOUS — do NOT auto-transition.
 ## Diagnostic Procedure
 
 ### Step 1: Check dispatch_state
-- `packet_pasted` → dispatch may have failed before worker started
-  - The paste may not have been accepted by the Claude instance
-  - Action: Investigate pane output before deciding
-- `worker_running` → worker was active but stopped without signaling
+- `worker_ready` → task was never ACKed
+  - Treat this as submission failure, not normal idle
+  - Action: inspect pane output for protocol drift, then rebuild/re-dispatch if safe
+- `task_acked` or `task_started` → worker was active but stopped without signaling
   - May have truly completed without MC_DONE (rare but possible)
   - May have hit rate limit or content filter silently
   - Action: Capture and analyze full pane output

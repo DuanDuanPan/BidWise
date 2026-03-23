@@ -156,12 +156,21 @@ get_active_panes() {
       story_panes = panes[sid]
       next unless story_panes.is_a?(Hash)
 
-      # Map phase to the role we should monitor
+      # Map phase to the role we should monitor.
+      # fixing prefers a dedicated fixing pane when present, otherwise it falls back to dev.
       active_role = case phase
                     when "creating" then "create"
                     when "prototyping" then "prototype"
                     when "validating" then "validate"
-                    when "dev", "fixing" then nil  # monitor whatever role exists
+                    when "dev" then "dev"
+                    when "fixing"
+                      if story_panes["fixing"] && !story_panes["fixing"].to_s.empty?
+                        "fixing"
+                      elsif story_panes["dev"] && !story_panes["dev"].to_s.empty?
+                        "dev"
+                      else
+                        nil
+                      end
                     when "review" then "review"
                     when "qa_running" then "qa"
                     when "regression" then "regression"
@@ -262,11 +271,9 @@ check_log_for_sentinel() {
   local pane_num="${pane_id#%}"
   local logfile="$MC_LOG_DIR/pane-${pane_num}.log"
   [[ -f "$logfile" ]] || return 1
-  # Search a recent tail slice for terminal sentinels even if the incremental
-  # cursor missed them. MC_DONE is required to be the final worker line.
   tail -400 "$logfile" 2>/dev/null \
     | normalize_terminal_stream \
-    | grep -E '^[[:space:]]*MC_DONE[[:space:]]+|^[[:space:]]*HALT' \
+    | grep -E '^[[:space:]]*MC_DONE[[:space:]]+|^[[:space:]]*HALT([[:space:]]|$)' \
     | sed 's/^[[:space:]]*//' \
     | tail -1
 }
@@ -307,34 +314,104 @@ process_log_chunk() {
     [[ -n "$line" ]] || continue
 
     if [[ "$line" =~ ^MC_STATE[[:space:]]+([A-Z_]+)$ ]]; then
-      # Discard intermediate signals once terminal state is reached
       if "$skip_intermediate"; then
         continue
       fi
       local state_name="${BASH_REMATCH[1]}"
+      local mapped_state=""
+      case "$state_name" in
+        WORKER_READY) mapped_state="worker_ready" ;;
+        TASK_ACKED)   mapped_state="task_acked" ;;
+        TASK_STARTED) mapped_state="task_started" ;;
+        *)            mapped_state="" ;;
+      esac
+      [[ -n "$mapped_state" ]] || continue
+      if dispatch_state_is_regression "$scope_key" "$mapped_state"; then
+        continue
+      fi
       if is_new_signal "$scope_key" "STATE:${state_name}"; then
-        local mapped_state
-        mapped_state="$(echo "$state_name" | tr '[:upper:]' '[:lower:]')"
         emit_dispatch_state_event "$gen" "$story_id" "$pane_id" "$mapped_state"
         ((count++))
       fi
       continue
     fi
 
-    if [[ "$line" =~ ^MC_DONE[[:space:]] || "$line" =~ ^HALT ]]; then
-      if [[ "$line" =~ ^MC_DONE[[:space:]] ]] && ! worker_running_seen "$scope_key"; then
+    if [[ "$line" =~ ^MC_DONE[[:space:]] || "$line" =~ ^HALT([[:space:]]|$) ]]; then
+      if [[ "$line" =~ ^MC_DONE[[:space:]] ]] && ! task_acked_seen "$scope_key"; then
         continue
       fi
       clear_idle_fired "$scope_key"
       if is_new_signal "$scope_key" "LOG:${line}"; then
         emit_signal_from_line "$gen" "$story_id" "$pane_id" "$line"
         ((count++))
+        ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
       fi
       continue
     fi
   done <<< "$chunk"
 
   echo "$count"
+}
+
+# ---------------------------------------------------------------------------
+# Push notification to commander pane (reactive model)
+# ---------------------------------------------------------------------------
+LAST_NOTIFY_TS=0
+NOTIFY_DEBOUNCE_SECS="${NOTIFY_DEBOUNCE_SECS:-10}"
+NOTIFY_SENT_FILE="$RUNTIME_DIR/task-monitor-notify-sent.tmp"
+ACTIONABLE_THIS_CYCLE="${ACTIONABLE_THIS_CYCLE:-0}"
+
+resolve_commander_pane() {
+  if [[ ! -f "$GATE_STATE" ]]; then
+    return 1
+  fi
+  ruby -ryaml -e '
+    gs = YAML.safe_load(File.read(ARGV[0])) rescue {}
+    puts gs["commander_pane"].to_s
+  ' "$GATE_STATE" 2>/dev/null
+}
+
+notify_commander() {
+  local event_count="$1"
+  local event_summary="${2:-}"
+  local now
+  now=$(date +%s)
+
+  # Debounce: skip if last notification was recent
+  if (( now - LAST_NOTIFY_TS < NOTIFY_DEBOUNCE_SECS )); then
+    log_info "Skipping commander notification (debounce: ${NOTIFY_DEBOUNCE_SECS}s)"
+    return
+  fi
+
+  local commander_pane
+  commander_pane=$(resolve_commander_pane) || true
+  if [[ -z "$commander_pane" ]]; then
+    log_warn "Cannot resolve commander_pane from gate-state.yaml"
+    return
+  fi
+
+  # Verify pane exists in our session
+  if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    log_warn "Session $SESSION_NAME not found for notification"
+    return
+  fi
+
+  # Build summary message for commander LLM
+  local message="[MC-NOTIFY] ${event_count} new event(s) detected."
+  if [[ -n "$event_summary" ]]; then
+    message="${message} ${event_summary}"
+  fi
+  message="${message} Run PEEK_EVENTS to process."
+
+  # Send as user input to commander pane
+  tmux send-keys -t "$commander_pane" "$message" Enter 2>/dev/null || {
+    log_error "Failed to send notification to commander pane $commander_pane"
+    return
+  }
+
+  LAST_NOTIFY_TS=$now
+  echo "$now|$event_count|$commander_pane" >> "$NOTIFY_SENT_FILE" 2>/dev/null || true
+  log_info "Notified commander pane $commander_pane: $event_count event(s)"
 }
 
 # ---------------------------------------------------------------------------
@@ -382,11 +459,64 @@ last_seen_signal() {
   grep "^${escaped_scope_key}=" "$DEDUP_FILE" 2>/dev/null | head -1 | sed "s/^${escaped_scope_key}=//" || true
 }
 
-worker_running_seen() {
+dispatch_state_rank() {
+  case "$1" in
+    pane_opened)  echo 1 ;;
+    worker_ready) echo 2 ;;
+    task_acked)   echo 3 ;;
+    task_started) echo 4 ;;
+    *)            echo 0 ;;
+  esac
+}
+
+materialized_dispatch_state() {
+  local story_id="$1"
+  [[ -f "$GATE_STATE" ]] || return 0
+  ruby -ryaml -e '
+    gs = YAML.safe_load(File.read(ARGV[0])) rescue {}
+    puts gs.dig("story_states", ARGV[1], "dispatch_state").to_s
+  ' "$GATE_STATE" "$story_id" 2>/dev/null || true
+}
+
+current_dispatch_state_for_scope() {
   local scope_key="$1"
   local prev
   prev="$(last_seen_signal "$scope_key")"
-  [[ "$prev" == "STATE:WORKER_RUNNING" || "$prev" == LOG:MC_DONE* || "$prev" == MC_DONE* ]]
+  case "$prev" in
+    STATE:WORKER_READY) echo "worker_ready" ;;
+    STATE:TASK_ACKED)   echo "task_acked" ;;
+    STATE:TASK_STARTED) echo "task_started" ;;
+    LOG:MC_DONE*|LOG:HALT*|MC_DONE*|HALT*) echo "terminal" ;;
+    *)
+      local story_id
+      story_id="${scope_key%%|*}"
+      materialized_dispatch_state "$story_id"
+      ;;
+  esac
+}
+
+dispatch_state_is_regression() {
+  local scope_key="$1"
+  local next_state="$2"
+  local current_state
+  current_state="$(current_dispatch_state_for_scope "$scope_key")"
+  [[ "$current_state" == "terminal" ]] && return 0
+  local current_rank next_rank
+  current_rank=$(dispatch_state_rank "$current_state")
+  next_rank=$(dispatch_state_rank "$next_state")
+  (( next_rank > 0 && next_rank <= current_rank ))
+}
+
+task_acked_seen() {
+  local scope_key="$1"
+  local current_state
+  current_state="$(current_dispatch_state_for_scope "$scope_key")"
+  [[ "$current_state" == "task_acked" || "$current_state" == "task_started" || "$current_state" == "terminal" ]]
+}
+
+terminal_signal_seen() {
+  local scope_key="$1"
+  [[ "$(current_dispatch_state_for_scope "$scope_key")" == "terminal" ]]
 }
 
 read_exit_count() {
@@ -499,9 +629,10 @@ get_idle_indicator() {
 parse_pane_output() {
   local captured="$1"
 
-  # Priority 0: HALT sentinel
+  # Priority 0: HALT sentinel — must be a standalone word at line start
+  # (not substring match; "asphalt" or "→ HALT" in docs must not trigger)
   local halt_line
-  halt_line=$(echo "$captured" | grep -F "HALT" | tail -1 || true)
+  halt_line=$(echo "$captured" | grep -E '^\s*HALT(\s|$)' | tail -1 || true)
   if [[ -n "$halt_line" ]]; then
     echo "HALT" "$halt_line"
     return
@@ -623,7 +754,7 @@ analyze_pane() {
   local log_signal
   log_signal=$(check_log_for_sentinel "$pane_id" || true)
   if [[ -n "$log_signal" ]]; then
-    if [[ "$log_signal" =~ ^MC_DONE[[:space:]] ]] && ! worker_running_seen "$scope_key"; then
+    if [[ "$log_signal" =~ ^MC_DONE[[:space:]] ]] && ! task_acked_seen "$scope_key"; then
       echo "0"
       return
     fi
@@ -631,6 +762,7 @@ analyze_pane() {
     reset_exit_count "$scope_key"
     if is_new_signal "$scope_key" "LOG:${log_signal}"; then
       emit_signal_from_line "$gen" "$story_id" "$pane_id" "$log_signal"
+      ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
       echo "1"
       return
     fi
@@ -650,6 +782,7 @@ analyze_pane() {
     if is_new_signal "$scope_key" "PANE_EXIT"; then
       clear_idle_fired "$scope_key"
       emit_signal_event "$gen" "$story_id" "$pane_id" "PANE_EXIT" "pane no longer alive after ${seen_count} consecutive checks" "" "P1"
+      ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
       log_info "PANE_EXIT detected for $story_id (pane $pane_id) after ${seen_count} checks"
       echo "1"
       return
@@ -678,6 +811,7 @@ analyze_pane() {
       clear_idle_fired "$scope_key"
       if is_new_signal "$scope_key" "HALT:${detail}"; then
         emit_signal_event "$gen" "$story_id" "$pane_id" "HALT" "$detail" "" "P0"
+        ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
         log_warn "HALT detected for $story_id (pane $pane_id)"
         echo "1"
         return
@@ -685,11 +819,16 @@ analyze_pane() {
       ;;
 
     MC_DONE_*)
+      if ! task_acked_seen "$scope_key"; then
+        echo "0"
+        return
+      fi
       clear_idle_fired "$scope_key"
       if is_new_signal "$scope_key" "${signal}:${detail}"; then
         local mc_result
         mc_result=$(echo "$detail" | awk '{print $4}')
         emit_signal_event "$gen" "$story_id" "$pane_id" "$signal" "$detail" "$mc_result" "P1"
+        ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
         log_info "$signal detected for $story_id (pane $pane_id)"
         echo "1"
         return
@@ -700,6 +839,7 @@ analyze_pane() {
       clear_idle_fired "$scope_key"
       if is_new_signal "$scope_key" "ERROR:${detail}"; then
         emit_signal_event "$gen" "$story_id" "$pane_id" "ERROR" "$detail" "" "P2"
+        ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
         log_warn "ERROR detected for $story_id (pane $pane_id): $detail"
         echo "1"
         return
@@ -707,6 +847,10 @@ analyze_pane() {
       ;;
 
     NONE)
+      if terminal_signal_seen "$scope_key"; then
+        echo "0"
+        return
+      fi
       if is_actively_working "$captured"; then
         clear_idle_fired "$scope_key"
         echo "0"
@@ -723,10 +867,13 @@ analyze_pane() {
         local idle_ind
         idle_ind=$(get_idle_indicator "$captured")
         if is_new_signal "$scope_key" "IDLE:${idle_ind}"; then
+          local dispatch_state_at_detection
+          dispatch_state_at_detection="$(current_dispatch_state_for_scope "$scope_key")"
           local payload
           payload=$(printf '{"story_id":"%s","pane_id":"%s","idle_indicator":"%s","dispatch_state_at_detection":"%s","_priority":"P2"}' \
-            "$story_id" "$pane_id" "$idle_ind" "$phase")
+            "$story_id" "$pane_id" "$idle_ind" "${dispatch_state_at_detection:-unknown}")
           emit_event "$gen" "PANE_IDLE_NO_SENTINEL" "$payload"
+          ACTIONABLE_THIS_CYCLE=$((ACTIONABLE_THIS_CYCLE + 1))
           mark_idle_fired "$scope_key"
           log_info "IDLE detected for $story_id (pane $pane_id), indicator=$idle_ind"
           echo "1"
@@ -821,6 +968,7 @@ main() {
     cycle_count=$((cycle_count + 1))
     local events_this_cycle=0
     local monitored_count=0
+    ACTIONABLE_THIS_CYCLE=0
 
     if (( cycle_count % 10 == 0 )); then
       if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
@@ -868,6 +1016,12 @@ main() {
 
     # Write heartbeat
     write_heartbeat "$cycle_count" "$monitored_count" "$events_this_cycle"
+
+    # Push notification to commander only for actionable events
+    # (MC_DONE, HALT, ERROR, PANE_EXIT, IDLE, TIMEOUT — not DISPATCH_STATE_CHANGED)
+    if (( ACTIONABLE_THIS_CYCLE > 0 )); then
+      notify_commander "$ACTIONABLE_THIS_CYCLE" "($events_this_cycle total)"
+    fi
 
     if (( cycle_count % 20 == 0 )); then
       log_info "Heartbeat: cycle=$cycle_count, monitored=$monitored_count, events=$events_this_cycle"

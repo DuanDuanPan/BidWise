@@ -32,9 +32,9 @@ utility_pane: ''
 4. Collect all stories with phase == `auto_qa_pending`
 5. For **each** story, dispatch QA via command-gateway:
    - `command-gateway.sh <project_root> <gen> DISPATCH <story_id> qa --trigger-seq <N>`
-     (transition-engine opens codex pane, sends task packet, records state)
+     (transition-engine ensures/reuses a resident codex worker, delivers the TASK block over FIFO, waits for ACK, and records state)
    - Check if story-scoped Playwright tests exist: `tests/e2e/stories/story-{story_id}*.spec.ts`
-   - Send task packet:
+   - Send task payload:
      ```
      Skill: bmad-qa-generate-e2e-tests
      Goal: Create or refresh story-scoped automated QA, then run it

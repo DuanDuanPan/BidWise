@@ -20,7 +20,7 @@
 
 ```
 Phase 1: 批量准备 (main 分支，按阶段批处理)
-├─ create-story × M (仅 backlog story；交互式，最小必要串行)
+├─ create-story × M (master-control 走 headless worker mode 可并行；手工直跑仍是交互式串行)
 ├─ Pencil UI/UX × K (仅缺原型的 UI story；每个 story 独立 `.pen`)
 ├─ validate-story × N (batch 全量复核，含 ready-for-dev story)
 └─ single batch commit to main
@@ -70,10 +70,12 @@ Phase 8: 顺序合并 (merge 到 main)
 ```bash
 # 0. 先选 batch：可混合 backlog + ready-for-dev
 
-# 1. Claude Code 中逐个创建缺失的 story（仅 backlog；交互式，无法并行）
+# 1. 手工模式下，Claude Code 中逐个创建缺失的 story（仅 backlog；交互式）
 /bmad-create-story   # Story A
 /bmad-create-story   # Story B
 # Story C 如果已是 ready-for-dev，则跳过 create-story
+
+# 1b. 若通过 master-control 批量准备，则 create phase 使用 headless worker contract + ACK 握手并行派发
 
 # 2. 如需 UI/UX，只为缺原型的 UI story 补 Pencil 设计（逐个）
 

@@ -126,6 +126,28 @@ def artifacts_dir(project_root)
   Pathname(project_root) + "_bmad-output" + "implementation-artifacts"
 end
 
+def diag_log_path(project_root)
+  artifacts_dir(project_root) + "master-control-diagnostics.log"
+end
+
+def diag_log(project_root, event, fields = {})
+  path = diag_log_path(project_root)
+  path.dirname.mkpath
+  entry = {
+    "ts" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%S.%3NZ"),
+    "script" => "state-control.sh",
+    "pid" => Process.pid,
+    "event" => event,
+  }.merge(fields)
+
+  File.open(path.to_s, File::WRONLY | File::CREAT | File::APPEND, 0o644) do |file|
+    file.flock(File::LOCK_EX)
+    file.puts(JSON.generate(entry))
+  end
+rescue StandardError
+  nil
+end
+
 def state_path(project_root)
   artifacts_dir(project_root) + "gate-state.yaml"
 end
@@ -421,6 +443,13 @@ end
 
 def register_worker_pane(project_root, expected_generation, story_id, pane_id, pane_title)
   state = ensure_generation(project_root, expected_generation)
+  diag_log(project_root, "register_worker_pane.begin", {
+    "expected_generation" => expected_generation,
+    "story_id" => story_id.to_s,
+    "pane_id" => pane_id.to_s,
+    "pane_title" => pane_title.to_s,
+    "existing_story_panes" => state.dig("panes", "stories", story_id),
+  })
   state["last_updated"] = now_z
   story_state = ensure_story_state(state, project_root, story_id)
   story_state["phase"] ||= "dev"
@@ -429,6 +458,13 @@ def register_worker_pane(project_root, expected_generation, story_id, pane_id, p
   story_state["dispatch_state"] ||= "pane_opened"
   set_story_pane(state, story_id, "dev", pane_id)
   write_yaml(state_path(project_root), state)
+  diag_log(project_root, "register_worker_pane.complete", {
+    "expected_generation" => expected_generation,
+    "story_id" => story_id.to_s,
+    "pane_id" => pane_id.to_s,
+    "pane_title" => pane_title.to_s,
+    "updated_story_panes" => state.dig("panes", "stories", story_id),
+  })
   puts "worker pane #{pane_id} (#{pane_title}) registered for story #{story_id}"
 end
 
@@ -480,12 +516,30 @@ end
 
 def sync_runtime_panes(project_root, expected_generation, utility_pane, inspector_pane, bottom_anchor)
   state = ensure_generation(project_root, expected_generation)
+  diag_log(project_root, "sync_runtime_panes.begin", {
+    "expected_generation" => expected_generation,
+    "previous_bottom_anchor" => state["bottom_anchor"].to_s,
+    "previous_panes_bottom_anchor" => state.dig("panes", "bottom_anchor").to_s,
+    "previous_utility_pane" => state.dig("panes", "utility").to_s,
+    "previous_inspector_pane" => state.dig("panes", "inspector").to_s,
+    "next_bottom_anchor" => bottom_anchor.to_s,
+    "next_utility_pane" => utility_pane.to_s,
+    "next_inspector_pane" => inspector_pane.to_s,
+  })
   state["last_updated"] = now_z
   state["panes"] ||= {}
   state["panes"]["utility"] = utility_pane
   state["panes"]["inspector"] = inspector_pane
   state["panes"]["bottom_anchor"] = bottom_anchor
+  state["bottom_anchor"] = bottom_anchor
   write_yaml(state_path(project_root), state)
+  diag_log(project_root, "sync_runtime_panes.complete", {
+    "expected_generation" => expected_generation,
+    "written_bottom_anchor" => state["bottom_anchor"].to_s,
+    "written_panes_bottom_anchor" => state.dig("panes", "bottom_anchor").to_s,
+    "written_utility_pane" => state.dig("panes", "utility").to_s,
+    "written_inspector_pane" => state.dig("panes", "inspector").to_s,
+  })
   puts "runtime panes synced"
 end
 

@@ -75,6 +75,8 @@ All commands go through: `command-gateway.sh <project_root> <expected_gen> <COMM
 1. **Environment Verification** — verify tmux, codex, worktree.sh, git clean
 2. **Initialize Event Bus** — `event-bus.sh init <project_root> 0`
 3. **Pane Layout** — ensure commander/inspector/utility + bottom anchor exist
+   - After `event-bus.sh init`, the only legal top-layer bootstrap path is `command-gateway.sh <project_root> <gen> BATCH select <story_csv>`
+   - 指挥官不得手工执行 `tmux split-window` / `new-window` 创建 `mc-inspector` / `mc-util` / `mc-bottom-anchor`
 4. **Start Runtime** — `runtime-manager.sh ensure-running <project_root> <expected_gen> <session_name> <commander_pane> <inspector_pane>`
 5. **Enable Pipe-pane Logging** — for all panes
 6. **Resume Check** — if event-log.yaml exists, run `event-bus.sh materialize` → read gate-state → route to correct step
@@ -92,33 +94,76 @@ Read gate-state.yaml:
 
 ---
 
-## COMMANDER WORK LOOP (replaces polling)
+## COMMANDER EVENT PROCESSING (reactive, push-based)
 
-This is the core loop. Repeat until all stories reach `done`:
+指挥官是**被动响应**的。它不轮询，不运行 sleep/poll 循环。
+
+### 触发机制
+
+task-monitor daemon 检测到新事件（MC_DONE, HALT, IDLE, ERROR, PANE_EXIT）后，
+通过 `tmux send-keys` 向 commander pane 发送 `[MC-NOTIFY]` 消息。
+该消息对 Claude Code 来说等同于用户输入，触发新一轮响应。
+
+### 收到 `[MC-NOTIFY]` 后的处理流程
 
 ```
 1. PEEK_EVENTS --priority --limit 10
-   → If empty: sleep 15s, then re-peek (max 3 consecutive empty peeks)
+   → If empty (false alarm / already processed): 停止，等待下一个 [MC-NOTIFY]
    → If events: proceed to step 2
-   → After 3 consecutive empty peeks: `HEALTH ensure_runtime --proactive`
-     verifies monitor/watchdog/inspector together. If still unhealthy →
-     REQUEST_HUMAN "task-monitor down". NEVER fall back to manual
-     capture-pane (F16).
 
-2. For each event (highest priority first):
+2. For each event (highest priority first), ONE AT A TIME (serial):
    a. context-assembler.sh build <project_root> <gen>
       → Returns decision packet with: event, state, rules, available_commands
-   b. Read applicable_rules
+   b. Read applicable_rules from the decision packet
    c. Decide: pick the correct command from available_commands
    d. Execute: command-gateway.sh <project_root> <gen> <COMMAND>
+   e. Wait for command to complete before processing next event
+   f. If command fails: STOP processing, go to step 3
 
-3. ACK_EVENTS --seq <last_processed_seq>
+3. ACK_EVENTS --seq <last_successfully_processed_seq>
+   → CRITICAL: Only ACK after ALL transitions in step 2 succeed
+   → If a TRANSITION fails mid-batch: ACK only up to the last successful seq
+   → If the first event fails: do NOT ACK at all — REQUEST_HUMAN instead
 
-4. Repeat from step 1
+4. Stop. Wait for the next [MC-NOTIFY] message.
+```
+
+### 启动/恢复时
+
+收到第一条 `[MC-NOTIFY]` 或在 INITIALIZATION 完成后，做 ONE initial PEEK
+以处理指挥官不活跃期间积压的事件。
+
+### SERIAL TRANSITION RULE (mandatory)
+
+所有 command-gateway 调用必须**串行执行**，逐个等待结果：
+- 处理 event 1 → 等待 command-gateway 返回 → 再处理 event 2 → 等待 → ...
+- **禁止并行调用多个 TRANSITION**
+- 原因：Claude Code 的并行 tool call 机制中，一个调用失败会导致所有并行调用被取消，
+  造成系统状态不一致。
+
+### ACK-AFTER-SUCCESS RULE (mandatory)
+
+ACK_EVENTS 推进 cursor，cursor 之前的事件永远不会再被读到。因此：
+
+1. 先处理 PEEK 返回的所有事件，再 ACK
+2. 串行执行 TRANSITION；如果某个失败，立即 STOP
+3. ACK 仅设为**最后一个成功处理的事件的 seq**
+4. 如果第一个事件就失败：不 ACK，REQUEST_HUMAN
+
+```
+示例：
+  PEEK returns events seq=5,6,7
+  Process seq=5: TRANSITION succeeds
+  Process seq=6: TRANSITION succeeds
+  Process seq=7: TRANSITION fails → REQUEST_HUMAN
+  ACK --seq 6 (NOT 7)
+
+反模式：先 ACK --seq 7 再处理 → 事件 5,6,7 永远丢失
 ```
 
 **CRITICAL: 指挥官的唯一信息入口是 PEEK_EVENTS。**
 指挥官绝不直接 `tmux capture-pane` 读取 worker pane（F9 + F16）。
+指挥官绝不运行 sleep/poll 循环（Claude Code 无法自唤醒）。
 如果事件流中断，修复 task-monitor 或 REQUEST_HUMAN——不降级为手动巡逻。
 
 ---
@@ -131,6 +176,7 @@ Steps are reference for what transitions/dispatches are appropriate in each phas
 - Read sprint-status.yaml → select stories
 - `BATCH select <story_csv>` → initializes event-log with BATCH_SELECTED
 - Record G1 gate
+- Cold start with empty event-log: do not use `HEALTH ensure_*` or raw tmux commands to create layout; wait for user batch confirmation, then run `BATCH select`
 
 ### Step 2: Batch Prep (queued → dev_ready)
 - For each story: `TRANSITION` through pre-dev phases
@@ -178,6 +224,7 @@ Steps are reference for what transitions/dispatches are appropriate in each phas
 ## FORBIDDEN ACTIONS (enforced by allowed-tools)
 
 - Direct tmux commands (use command-gateway DISPATCH/HEALTH)
+- Manual top-layer bootstrap on cold start (event-bus init → raw tmux split-window)
 - Direct state-control.sh calls (use command-gateway TRANSITION)
 - Direct file editing (dispatch to sub-panes)
 - Skipping trigger-seq on event-driven commands

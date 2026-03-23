@@ -80,15 +80,11 @@ read_gate_state_runtime() {
     return
   fi
 
-  python3 - "$GATE_STATE_FILE" <<'PY'
-import sys, yaml
-path = sys.argv[1]
-try:
-    data = yaml.safe_load(open(path, "r", encoding="utf-8")) or {}
-except Exception:
-    data = {}
-print(f"{data.get('session_name', '')}|{data.get('session_generation', '')}")
-PY
+  ruby -ryaml -e '
+    data = YAML.safe_load(File.read(ARGV[0])) rescue {}
+    data = {} unless data.is_a?(Hash)
+    puts "#{data.fetch("session_name", "")}|#{data.fetch("session_generation", "")}"
+  ' "$GATE_STATE_FILE" 2>/dev/null || printf '|\n'
 }
 
 read_generation_lock() {

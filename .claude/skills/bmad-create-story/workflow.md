@@ -52,6 +52,19 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 <workflow>
 
 <step n="1" goal="Determine target story">
+  <check if="user explicitly provides headless_worker_mode, headless worker mode, or a non-interactive worker contract">
+    <critical>HEADLESS WORKER MODE — no questions, no auto-discovery, no fallback story selection</critical>
+    <action>Read explicit inputs from the user message: story_id, story_key, output_path, artifacts_root, sprint_status_path</action>
+    <check if="any required input is missing: story_id, story_key, output_path, or artifacts_root">
+      <action>HALT - MISSING_INPUT</action>
+    </check>
+    <action>Parse {{story_id}} into {{epic_num}} and {{story_num}}</action>
+    <action>Set {{story_key}} from the explicit worker input</action>
+    <action>Set {{default_output_file}} from explicit output_path</action>
+    <action>Use explicit sprint_status_path when provided; if it is absent or invalid, HALT with MISSING_INPUT instead of asking the user</action>
+    <action>GOTO step 2a</action>
+  </check>
+
   <check if="{{story_path}} is provided by user or user provided the epic and story number such as 2-4 or 1.6 or epic 1 story 5">
     <action>Parse user-provided story path: extract epic_num, story_num, story_title from format like "1-2-user-auth"</action>
     <action>Set {{epic_num}}, {{story_num}}, {{story_key}} from user input</action>
@@ -356,6 +369,11 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     <action>Update development_status[{{story_key}}] = "ready-for-dev"</action>
     <action>Update last_updated field to current date</action>
     <action>Save file, preserving ALL comments and structure including STATUS DEFINITIONS</action>
+  </check>
+
+  <check if="running in headless worker mode">
+    <action>Do not ask for review, confirmation, or next-step choices</action>
+    <action>Return control to the caller immediately after the story file and sprint status are saved</action>
   </check>
 
   <action>Report completion</action>

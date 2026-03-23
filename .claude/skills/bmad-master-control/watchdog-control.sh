@@ -218,6 +218,7 @@ restart_detached_cmd() {
 
   rm -f "$pid_file" "$heartbeat_file"
   link_runtime_compat_artifacts "$project_root" "$session_name" "$session_generation"
+  : > "$log_file"
 
   MC_RUNTIME_DIR="$runtime_dir" \
   MC_SESSION_GENERATION="$session_generation" \

@@ -33,8 +33,8 @@ bottom_anchor: ''
 3. Increment review_cycle
 4. Dispatch review via command-gateway:
    `command-gateway.sh <project_root> <gen> DISPATCH <story_id> review --trigger-seq <N>`
-   (transition-engine opens fresh codex pane, sends task packet, records dispatch)
-5. Task packet sent by transition-engine:
+   (transition-engine ensures/reuses a resident codex worker, delivers the TASK block over FIFO, waits for ACK, then records dispatch)
+5. Task payload delivered by transition-engine:
    ```
    Skill: bmad-code-review
    Goal: Review story implementation against main in fresh context
@@ -73,8 +73,8 @@ bottom_anchor: ''
 
 #### Normal Fix (review_cycle < 2): Claude
 5. `command-gateway.sh <project_root> <gen> DISPATCH <story_id> fixing --trigger-seq <N>`
-   (transition-engine handles: LLM=claude, reuses dev pane if alive, opens new if not)
-6. Fix task packet:
+   (transition-engine handles: LLM=claude, resident worker reuse when possible, ACK handshake before success)
+6. Fix task payload:
      ```
      Skill: debugging-strategies
      Goal: Fix all must-fix review findings
@@ -91,8 +91,8 @@ bottom_anchor: ''
 
 #### Escalated Fix (review_cycle >= 2): Codex
 8. `command-gateway.sh <project_root> <gen> DISPATCH <story_id> fixing --trigger-seq <N> --override-llm codex --override-reason "review_cycle>=2"`
-   (transition-engine handles: fresh codex pane, closes old dev pane)
-9. Escalated fix task packet:
+   (transition-engine handles: fresh codex worker, closes old dev pane, ACK handshake before success)
+9. Escalated fix task payload:
     ```
     Skill: debugging-strategies
     Goal: Solve stubborn review failures with fresh model perspective

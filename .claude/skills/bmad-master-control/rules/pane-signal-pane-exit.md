@@ -12,20 +12,20 @@
 - Action: Log and monitor — no immediate action needed
 
 ### Crash Exit (unexpected termination)
-- dispatch_state was worker_running → worker was active when pane died
+- dispatch_state was task_started → worker was active when pane died
 - This is likely a crash, OOM kill, or terminal error
 - Action: HEALTH rebuild_pane to restore the worker environment
 - After rebuild: re-DISPATCH the current phase task
 
 ### Stale Exit (delivery incomplete)
-- dispatch_state was packet_submitted or packet_acked but pane exited before work stabilized
+- dispatch_state was worker_ready or task_acked but pane exited before work stabilized
 - Dispatch may have failed silently
 - Action: HEALTH rebuild_pane then re-DISPATCH
 
 ## Procedure
 1. Read dispatch_state from state_snapshot
-2. If worker_running → crash path: HEALTH rebuild_pane, then DISPATCH --retry
-3. If packet_submitted / packet_acked → stale path: HEALTH rebuild_pane, then DISPATCH --retry
+2. If task_started → crash path: HEALTH rebuild_pane, then DISPATCH --retry
+3. If worker_ready / task_acked → stale path: HEALTH rebuild_pane, then DISPATCH --retry
 4. If null/idle → normal path: log only, no action
 5. If uncertain: REQUEST_HUMAN with pane exit context
 

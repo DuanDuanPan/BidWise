@@ -48,7 +48,7 @@ printf 'noise before sentinel\nMC_DONE CREATE 3-2 CREATED\n' > "$LOG_FILE_PATH"
 # points at EOF, so only the tail fallback can recover the terminal signal.
 CURSOR_VALUE="$(wc -c < "$LOG_FILE_PATH" | tr -d '[:space:]')"
 write_log_cursor "$PANE_ID" "$CURSOR_VALUE"
-is_new_signal "$SCOPE_KEY" "STATE:WORKER_RUNNING" >/dev/null
+is_new_signal "$SCOPE_KEY" "STATE:TASK_STARTED" >/dev/null
 
 EMITTED="$(analyze_pane "3-2" "$PANE_ID" "creating" "0")"
 [[ "$EMITTED" == "1" ]] || {

@@ -3,6 +3,10 @@
 ## Applicable Rules
 - MC_DONE indicates the worker has completed its task
 - Match the signal phase to determine the correct TRANSITION intent
+- MC_DONE CREATE → TRANSITION create_complete
+- MC_DONE PROTOTYPE → TRANSITION prototype_complete
+- MC_DONE VALIDATE with PASS → TRANSITION validate_pass
+- MC_DONE VALIDATE with FAIL → TRANSITION validate_fail
 - MC_DONE DEV → TRANSITION dev_complete
 - MC_DONE REVIEW with REVIEW_PASS → TRANSITION review_pass
 - MC_DONE REVIEW with REVIEW_FAIL → TRANSITION review_fail
@@ -12,6 +16,11 @@
 - MC_DONE REGRESSION with PASS → TRANSITION regression_pass
 - MC_DONE REGRESSION with FAIL → TRANSITION regression_fail
 - Always use --trigger-seq from the event seq
+
+## Execution Rules
+- Execute TRANSITIONs **one at a time (serial)** — NEVER in parallel
+- ACK only AFTER all TRANSITIONs succeed (see ACK-AFTER-SUCCESS in workflow.md)
+- If a TRANSITION fails: STOP, do NOT process remaining events, REQUEST_HUMAN
 
 ## Validation
 - Verify the signal phase matches the story's current phase in gate-state

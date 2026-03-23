@@ -15,6 +15,43 @@ die() {
   exit 1
 }
 
+json_escape() {
+  local raw="${1-}"
+  raw="${raw//\\/\\\\}"
+  raw="${raw//\"/\\\"}"
+  raw="${raw//$'\n'/\\n}"
+  raw="${raw//$'\r'/\\r}"
+  raw="${raw//$'\t'/\\t}"
+  printf '%s' "$raw"
+}
+
+diag_log() {
+  local log_path="${MC_DIAG_LOG_PATH:-}"
+  [[ -n "$log_path" ]] || return 0
+
+  local event="${1:?event required}"
+  shift || true
+  local lock_dir="${log_path}.lock"
+  local line
+
+  mkdir -p "$(dirname "$log_path")"
+  line=$(printf '{"ts":"%s","script":"tmux-layout.sh","pid":%s,"event":"%s"' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$(json_escape "$event")")
+  while [[ $# -ge 2 ]]; do
+    line+=$(printf ',"%s":"%s"' "$(json_escape "$1")" "$(json_escape "$2")")
+    shift 2
+  done
+  line+='}'
+
+  if mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s\n' "$line" >>"$log_path"
+    rmdir "$lock_dir" 2>/dev/null || true
+  else
+    # Diagnostics must never block worker startup on missing lock support.
+    printf '%s\n' "$line" >>"$log_path"
+  fi
+}
+
 require_tmux() {
   command -v tmux >/dev/null 2>&1 || die "tmux not found"
 }
@@ -23,6 +60,11 @@ get_pane_field() {
   local pane_id="${1:?pane_id required}"
   local format="${2:?format required}"
   tmux display-message -p -t "$pane_id" "$format"
+}
+
+pane_exists() {
+  local pane_id="${1:?pane_id required}"
+  tmux display-message -p -t "$pane_id" '#{pane_id}' >/dev/null 2>&1
 }
 
 list_bottom_panes() {
@@ -53,8 +95,7 @@ is_shell_command() {
   esac
 }
 
-# Find an existing bottom-layer pane by title. Returns pane_id or empty.
-find_existing_worker() {
+lookup_pane_by_title() {
   local session="${1:?session required}"
   local pane_title="${2:?pane title required}"
   local existing_id title
@@ -62,6 +103,37 @@ find_existing_worker() {
     [[ -n "$existing_id" ]] || continue
     title="$(get_pane_field "$existing_id" '#{pane_title}')"
     if [[ "$title" == "$pane_title" ]]; then
+      printf '%s\n' "$existing_id"
+      return 0
+    fi
+  done < <(tmux list-panes -t "$session" -F '#{pane_id}')
+  return 1
+}
+
+# Find an existing bottom-layer pane by title. Returns pane_id or empty.
+# Kills dead or idle-shell panes to prevent stale reuse.
+find_existing_worker() {
+  local session="${1:?session required}"
+  local pane_title="${2:?pane title required}"
+  local existing_id title cmd pane_dead_flag
+  while IFS= read -r existing_id; do
+    [[ -n "$existing_id" ]] || continue
+    title="$(get_pane_field "$existing_id" '#{pane_title}')"
+    if [[ "$title" == "$pane_title" ]]; then
+      # Health check: skip and remove dead panes (remain-on-exit scenarios)
+      pane_dead_flag="$(get_pane_field "$existing_id" '#{pane_dead}')"
+      if [[ "$pane_dead_flag" == "1" ]]; then
+        echo "tmux-layout.sh: removing dead pane $existing_id ($pane_title)" >&2
+        tmux kill-pane -t "$existing_id" 2>/dev/null || true
+        continue
+      fi
+      # Health check: skip and remove panes whose worker process exited back to shell
+      cmd="$(get_pane_field "$existing_id" '#{pane_current_command}')"
+      if is_shell_command "$cmd"; then
+        echo "tmux-layout.sh: removing idle pane $existing_id ($pane_title, cmd=$cmd)" >&2
+        tmux kill-pane -t "$existing_id" 2>/dev/null || true
+        continue
+      fi
       printf '%s\n' "$existing_id"
       return 0
     fi
@@ -222,7 +294,7 @@ open_worker() {
   local existing_pane
   if existing_pane="$(find_existing_worker "$session" "$pane_title")"; then
     echo "tmux-layout.sh: reusing existing pane $existing_pane for $pane_title" >&2
-    printf '%s\n' "$existing_pane"
+    printf 'REUSED:%s\n' "$existing_pane"
     return 0
   fi
 
@@ -236,21 +308,54 @@ open_worker() {
 
   bottom_anchor_title="$(get_pane_field "$bottom_anchor" '#{pane_title}')"
   bottom_anchor_command="$(get_pane_field "$bottom_anchor" '#{pane_current_command}')"
+  diag_log "open_worker.begin" \
+    "session" "$session" \
+    "story_id" "${MC_DIAG_STORY_ID:-}" \
+    "phase" "${MC_DIAG_PHASE:-}" \
+    "worker_id" "${MC_DIAG_WORKER_ID:-}" \
+    "commander_pane" "$commander_pane" \
+    "bottom_anchor" "$bottom_anchor" \
+    "bottom_anchor_title" "$bottom_anchor_title" \
+    "bottom_anchor_command" "$bottom_anchor_command" \
+    "bottom_panes" "${bottom_panes[*]}" \
+    "pane_title" "$pane_title"
 
   if [[ "${#bottom_panes[@]}" -eq 1 ]] &&
      [[ "${bottom_panes[0]}" == "$bottom_anchor" ]] &&
      [[ ! "$bottom_anchor_title" == mc-story-* ]] &&
      is_shell_command "$bottom_anchor_command"; then
     pane_id="$bottom_anchor"
+    diag_log "open_worker.branch" \
+      "session" "$session" \
+      "branch" "reuse_bottom_anchor" \
+      "pane_id" "$pane_id" \
+      "bottom_anchor" "$bottom_anchor"
     tmux send-keys -t "$pane_id" "$run_cmd" Enter
   else
     rightmost_bottom="${bottom_panes[${#bottom_panes[@]}-1]}"
+    diag_log "open_worker.branch" \
+      "session" "$session" \
+      "branch" "split_rightmost_bottom" \
+      "rightmost_bottom" "$rightmost_bottom" \
+      "bottom_anchor" "$bottom_anchor" \
+      "bottom_panes" "${bottom_panes[*]}"
     pane_id="$(tmux split-window -t "$rightmost_bottom" -h -P -F '#{pane_id}' "$run_cmd")"
   fi
 
   tmux select-pane -t "$pane_id" -T "$pane_title"
   tmux set-option -p -t "$pane_id" allow-rename off
+  if ! pane_exists "$pane_id"; then
+    local stabilized_pane
+    stabilized_pane="$(lookup_pane_by_title "$session" "$pane_title" || true)"
+    [[ -n "$stabilized_pane" ]] || die "worker pane vanished before stabilization for $pane_title"
+    pane_id="$stabilized_pane"
+  fi
   rebalance_bottom "$session" "$commander_pane"
+  diag_log "open_worker.after_rebalance" \
+    "session" "$session" \
+    "pane_id" "$pane_id" \
+    "pane_title" "$pane_title" \
+    "bottom_anchor" "$bottom_anchor"
 
   # --- Fix 3: validate_work is non-fatal — warn but always output pane_id ---
   validate_work "$session" || echo "tmux-layout.sh: WARNING: validate_work failed after creating pane $pane_id" >&2
@@ -264,7 +369,12 @@ open_worker() {
       || echo "tmux-layout.sh: WARNING: failed to persist pane $pane_id to gate-state" >&2
   fi
 
-  printf '%s\n' "$pane_id"
+  diag_log "open_worker.complete" \
+    "session" "$session" \
+    "pane_id" "$pane_id" \
+    "pane_title" "$pane_title" \
+    "bottom_anchor" "$bottom_anchor"
+  printf 'CREATED:%s\n' "$pane_id"
 }
 
 main() {

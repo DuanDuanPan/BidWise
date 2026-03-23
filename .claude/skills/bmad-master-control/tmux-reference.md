@@ -1,5 +1,10 @@
 # TMUX Commands Reference
 
+**MECHANISM-ONLY:** 本文件是 gateway/helper 的实现与审计参考，不是指挥官的执行清单。
+指挥官不得直接执行本文中的 raw `tmux split-window` / `new-window` 命令。
+Top-layer layout bootstrap（`mc-inspector` / `mc-util` / `mc-bottom-anchor`）只能通过
+`command-gateway.sh <project_root> <gen> BATCH select <story_csv>` 触发。
+
 ## 标准布局（上下两区）
 
 ```
@@ -19,7 +24,7 @@
 **关键：所有 split 的 `-t` 目标必须是具体 pane ID（如 `%74`），禁止用 session 名。**
 用 session 名时 tmux 会 split 当前活跃 pane，一旦焦点变化布局就错。
 
-按需查阅。指挥官在需要具体 tmux 命令语法时 Read 此文件。
+按需查阅。仅在 helper 实现、几何审计、incident 复盘时参考本文；指挥官不得把本文命令逐条手工执行。
 
 推荐统一通过 helper 执行工作层操作：
 
@@ -48,15 +53,16 @@ STATE_CONTROL_HELPER="{project_root}/.claude/skills/bmad-master-control/state-co
 
 Helper 内部已实现，无需手写。
 
-### 打开第一个工作 pane（复用 bottom_anchor）
+### 打开工作 pane（始终从最右侧 bottom pane 横向分裂）
 
 ```bash
-work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "{command}")"
+raw_output="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "{command}")"
+work_pane_id="${raw_output#*:}"  # Strip REUSED: or CREATED: prefix
 ```
 
-### 打开后续工作 pane（从当前最右侧 bottom pane 横向分裂）
+`open-worker` 输出格式为 `CREATED:<pane_id>` 或 `REUSED:<pane_id>`。调用方必须解析前缀以区分新建与复用。首个 worker 会直接占用 `bottom_anchor`；之后 `bottom_anchor` 仍表示“左下工作层锚点”的 pane ID，不要求标题始终保持 `mc-bottom-anchor`。
 
-同样使用 `open-worker`。helper 会自动判断是复用 `bottom_anchor` 还是从当前最右侧 bottom pane 分裂。
+`find_existing_worker` 会对已有 pane 进行健康检查：自动清除死亡 pane（`pane_dead=1`）和回退到 shell 的空闲 pane。
 
 ## Bottom-Only Width Balancing
 
@@ -86,11 +92,13 @@ work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{comman
 ## Sub-Pane 创建（工作层）
 
 ```bash
-# Claude pane
-work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "claude --dangerously-skip-permissions" "{project_root}" "${current_generation}" "{story_id}")"
+# Claude pane — strip REUSED:/CREATED: prefix
+raw="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "claude --dangerously-skip-permissions" "{project_root}" "${current_generation}" "{story_id}")"
+work_pane_id="${raw#*:}"
 
 # Codex pane
-work_pane_id="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"
+raw="$("${TMUX_LAYOUT_HELPER}" open-worker "{current_session}" "{commander_pane}" "{bottom_anchor}" "{pane_title}" "{path}" "codex -c model_reasoning_summary_format=experimental --search --dangerously-bypass-approvals-and-sandbox")"
+work_pane_id="${raw#*:}"
 ```
 
 `open-worker` 内部已经执行 bottom-only balancing + geometry validation，不要再额外调用 `select-layout`。
@@ -200,7 +208,7 @@ tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" append-correction 
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" upsert-story-state \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"phase={{phase}}\" \"current_llm={{llm}}\" \"dispatch_state={{dispatch_state}}\" \"pane.{{role}}={{pane_id_or_null}}\"" Enter
 
 # 更新 dispatch_state（Step 3 recovery-safe）
-tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" mark-dispatch-state \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"packet_submitted\"" Enter
+tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" mark-dispatch-state \"{project_root}\" \"${current_generation}\" \"{{story_id}}\" \"task_acked\"" Enter
 
 # 更新 inspector_state
 tmux send-keys -t {utility_pane} "\"${STATE_CONTROL_HELPER}\" set-inspector-state \"{project_root}\" \"${current_generation}\" \"busy_audit\"" Enter
