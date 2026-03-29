@@ -398,6 +398,13 @@ def wait_for_log_condition(log_file, timeout_sec: 30, start_pos: 0)
   end
 end
 
+def task_ack_boot_snapshot(boot_token_file)
+  return {} unless boot_token_file && File.exist?(boot_token_file)
+  parse_boot_token(boot_token_file)
+rescue StandardError
+  {}
+end
+
 def wait_for_log_substrings(log_file, substrings, timeout_sec: 30, start_pos: 0)
   wait_for_log_condition(log_file, timeout_sec: timeout_sec, start_pos: start_pos) do |text|
     Array(substrings).find { |needle| text.include?(needle) }
@@ -1166,14 +1173,19 @@ def wait_for_task_ack(log_file, task_id, timeout_sec: 20, start_pos: 0)
     halt_line = lines.reverse.find { |line| line.match?(/^HALT(?:\s|$)/) }
     next({"result" => "halt", "line" => halt_line}) if halt_line
 
-    ack_seen = lines.any? do |line|
-      line == "MC_STATE TASK_ACKED" || line == "MC_ACK #{task_id}"
-    end
+    ack_seen =
+      text.match?(/MC_STATE TASK_ACKED(?:\s|$)/) ||
+      text.match?(/MC_ACK\s+#{Regexp.escape(task_id)}(?:\s|$)/) ||
+      text.match?(/MC_BEGIN\s+#{Regexp.escape(task_id)}(?:\s|$)/) ||
+      text.match?(/MC_DONE\s+\S+\s+\S+\s+\S+(?:\s|$)/) ||
+      text.match?(/HALT\s+#{Regexp.escape(task_id)}(?:\s|$)/)
     next nil unless ack_seen
 
-    started_seen = lines.any? do |line|
-      line == "MC_STATE TASK_STARTED" || line == "MC_BEGIN #{task_id}"
-    end
+    started_seen =
+      text.match?(/MC_STATE TASK_STARTED(?:\s|$)/) ||
+      text.match?(/MC_BEGIN\s+#{Regexp.escape(task_id)}(?:\s|$)/) ||
+      text.match?(/MC_DONE\s+\S+\s+\S+\s+\S+(?:\s|$)/) ||
+      text.match?(/HALT\s+#{Regexp.escape(task_id)}(?:\s|$)/)
     {"result" => "acked", "started" => started_seen}
   end
 end
@@ -1550,6 +1562,7 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
   )
   pane_id = worker.fetch("pane_id")
   log_file = worker.fetch("log_file")
+  boot_token_file = worker_boot_token_file(project_root, session_name, expected_gen, story_id, worker_role)
   task_id = "#{story_id}-#{phase}-#{trigger_seq}".gsub(/[^A-Za-z0-9._:-]/, "_")
   task_payload = build_task_payload(phase, story_id, project_root, state, opts)
   task_block = build_task_block(task_id, phase, story_id, task_payload)
@@ -1598,14 +1611,65 @@ def cmd_dispatch(project_root, expected_gen, story_id, phase, trigger_seq, opts 
 
   # 8. Enqueue task through the worker FIFO and require protocol ACK before success.
   send_start_pos = pane_log_size(log_file)
+  diag_log(project_root, "dispatch.task_send.begin", {
+    "story_id" => story_id.to_s,
+    "phase" => phase.to_s,
+    "pane_id" => pane_id.to_s,
+    "task_id" => task_id.to_s,
+    "worker_id" => worker["worker_id"].to_s,
+    "log_file" => log_file.to_s,
+    "send_start_pos" => send_start_pos,
+    "boot_token" => task_ack_boot_snapshot(boot_token_file),
+    "task_block_excerpt" => log_excerpt(task_block, max_lines: 18, max_chars: 1600),
+  })
   unless send_task_to_worker(worker.fetch("control_fifo"), task_block)
+    diag_log(project_root, "dispatch.task_send.failed", {
+      "story_id" => story_id.to_s,
+      "phase" => phase.to_s,
+      "pane_id" => pane_id.to_s,
+      "task_id" => task_id.to_s,
+      "worker_id" => worker["worker_id"].to_s,
+      "control_fifo" => worker.fetch("control_fifo").to_s,
+      "boot_token" => task_ack_boot_snapshot(boot_token_file),
+    })
     die("TASK_QUEUE_SEND_FAILED: #{story_id} #{phase}")
   end
+  diag_log(project_root, "dispatch.task_send.complete", {
+    "story_id" => story_id.to_s,
+    "phase" => phase.to_s,
+    "pane_id" => pane_id.to_s,
+    "task_id" => task_id.to_s,
+    "worker_id" => worker["worker_id"].to_s,
+    "log_size_after_send" => pane_log_size(log_file),
+    "boot_token" => task_ack_boot_snapshot(boot_token_file),
+  })
 
   ack_result = wait_for_task_ack(log_file, task_id, timeout_sec: 20, start_pos: send_start_pos)
   if ack_result.nil?
+    diag_log(project_root, "dispatch.task_ack.timeout", {
+      "story_id" => story_id.to_s,
+      "phase" => phase.to_s,
+      "pane_id" => pane_id.to_s,
+      "task_id" => task_id.to_s,
+      "worker_id" => worker["worker_id"].to_s,
+      "send_start_pos" => send_start_pos,
+      "log_size_at_timeout" => pane_log_size(log_file),
+      "boot_token" => task_ack_boot_snapshot(boot_token_file),
+      "log_excerpt" => log_excerpt(pane_log_text(log_file), max_lines: 40, max_chars: 2400),
+    })
     die("TASK_ACK_TIMEOUT: #{story_id} #{phase} #{task_id}")
   end
+  diag_log(project_root, "dispatch.task_ack.result", {
+    "story_id" => story_id.to_s,
+    "phase" => phase.to_s,
+    "pane_id" => pane_id.to_s,
+    "task_id" => task_id.to_s,
+    "worker_id" => worker["worker_id"].to_s,
+    "ack_result" => ack_result,
+    "log_size_after_ack" => pane_log_size(log_file),
+    "boot_token" => task_ack_boot_snapshot(boot_token_file),
+    "log_excerpt" => log_excerpt(pane_log_text(log_file), max_lines: 40, max_chars: 2400),
+  })
   if ack_result["result"] == "halt"
     die("TASK_ACK_REJECTED: #{ack_result["line"]}")
   end

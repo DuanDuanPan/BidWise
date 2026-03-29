@@ -226,6 +226,23 @@ def clean_terminal_output(text)
     .gsub(/\r/, "\n")
 end
 
+def excerpt(text, max_chars = 600)
+  value = text.to_s
+  return value if value.length <= max_chars
+  "#{value[0, max_chars / 2]}...#{value[-(max_chars / 2), max_chars / 2]}"
+end
+
+def head_tail_excerpt(text, head_lines: 8, tail_lines: 8, max_chars: 1800)
+  lines = text.to_s.lines
+  sample =
+    if lines.length <= head_lines + tail_lines
+      text.to_s
+    else
+      (lines.first(head_lines) + ["...\n"] + lines.last(tail_lines)).join
+    end
+  excerpt(sample, max_chars)
+end
+
 def command_matches?(actual, expected)
   actual_name = actual.to_s.strip.downcase
   expected_name = expected.to_s.strip.downcase
@@ -458,12 +475,43 @@ def resolve_layout_context(session_name, allow_bootstrap: false, project_root: n
   result
 end
 
+def markdown_section_by_heading(text, heading)
+  lines = text.lines
+  start_index = lines.index { |line| line.strip == heading }
+  return nil unless start_index
+
+  end_index = lines[(start_index + 1)..]&.find_index { |line| line.start_with?("## ") }
+  absolute_end = end_index ? start_index + 1 + end_index : lines.length
+  lines[(start_index + 1)...absolute_end].join
+end
+
+def outer_fenced_block(section, label)
+  lines = section.to_s.lines
+  fence_indexes = []
+  lines.each_with_index do |line, idx|
+    fence_indexes << idx if line.strip == "```"
+  end
+  die("failed to extract #{label}: fenced block not found") if fence_indexes.length < 2
+
+  lines[(fence_indexes.first + 1)...fence_indexes.last].join
+end
+
+def inspector_standing_order_diag_fields(order)
+  {
+    "chars" => order.length,
+    "lines" => order.lines.length,
+    "contains_ready_prompt" => order.include?("请确认就绪"),
+    "contains_reject_halt" => order.include?("REJECT → HALT"),
+    "contains_baseline_audit" => order.include?("BASELINE AUDIT"),
+    "excerpt" => head_tail_excerpt(order, head_lines: 10, tail_lines: 12, max_chars: 2400),
+  }
+end
+
 def inspector_standing_order(batch_id, stories, current_phase)
   protocol = File.read(script_path("inspector-protocol.md"))
-  section = protocol.split("## 驻场令（首条消息）", 2).last
+  section = markdown_section_by_heading(protocol, "## 驻场令（首条消息）")
   die("failed to locate inspector standing order") unless section
-  block = section[/```(.*?)```/m, 1]
-  die("failed to extract inspector standing order block") unless block
+  block = outer_fenced_block(section, "inspector standing order")
   block
     .gsub("{batch_id}", batch_id.to_s)
     .gsub("{stories}", Array(stories).join(","))
@@ -500,7 +548,21 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
     wait_for_log_idle(log_file, timeout_sec: 20, stable_sec: 2)
     marker = inspector_marker_path(rt_dir)
     die("INSPECTOR_BOOT_TOKEN_MISSING: cannot resolve marker path") unless marker
-    ok = send_standing_order_via_fifo(rt_dir, marker, batch_id, stories, current_phase)
+    order = inspector_standing_order(batch_id, stories, current_phase)
+    diag_log(project_root, "inspector.standing_order.prepared", {
+      "mode" => "wrapper",
+      "session_name" => session_name.to_s,
+      "inspector_pane" => inspector_pane.to_s,
+      "marker_exists" => File.exist?(marker),
+    }.merge(inspector_standing_order_diag_fields(order)))
+    ok = send_standing_order_via_fifo(rt_dir, marker, order)
+    diag_log(project_root, "inspector.standing_order.sent", {
+      "mode" => "wrapper",
+      "session_name" => session_name.to_s,
+      "inspector_pane" => inspector_pane.to_s,
+      "marker_file" => marker.to_s,
+      "success" => ok,
+    })
     die("INSPECTOR_STANDING_ORDER_FAILED: FIFO send failed for wrapper inspector") unless ok
     return context.merge("inspector_status" => "ready", "inspector_mode" => "wrapper")
   end
@@ -521,13 +583,27 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
       die("LEGACY_INSPECTOR_NO_TOKEN: no INSPECTOR READY found in log, restart required")
     end
     unless File.exist?(marker)
+      order = inspector_standing_order(batch_id, stories, current_phase)
+      diag_log(project_root, "inspector.standing_order.prepared", {
+        "mode" => "legacy",
+        "session_name" => session_name.to_s,
+        "inspector_pane" => inspector_pane.to_s,
+        "marker_exists" => false,
+      }.merge(inspector_standing_order_diag_fields(order)))
       paste_block_to_pane(
         inspector_pane,
-        inspector_standing_order(batch_id, stories, current_phase),
+        order,
         "mc-inspector-standing-order",
         submit_key: "Tab"
       )
       File.write(marker, Time.now.utc.iso8601)
+      diag_log(project_root, "inspector.standing_order.sent", {
+        "mode" => "legacy",
+        "session_name" => session_name.to_s,
+        "inspector_pane" => inspector_pane.to_s,
+        "marker_file" => marker.to_s,
+        "success" => true,
+      })
     end
     return context.merge("inspector_status" => "ready", "inspector_mode" => "legacy")
   end
@@ -570,7 +646,21 @@ def ensure_inspector_ready(project_root, context, batch_id:, stories:, current_p
   # Boot token now exists (written by wrapper at startup)
   marker = inspector_marker_path(rt_dir)
   die("INSPECTOR_BOOT_TOKEN_MISSING: wrapper did not write boot token") unless marker
-  ok = send_standing_order_via_fifo(rt_dir, marker, batch_id, stories, current_phase)
+  order = inspector_standing_order(batch_id, stories, current_phase)
+  diag_log(project_root, "inspector.standing_order.prepared", {
+    "mode" => "wrapper_fresh_boot",
+    "session_name" => session_name.to_s,
+    "inspector_pane" => inspector_pane.to_s,
+    "marker_exists" => File.exist?(marker),
+  }.merge(inspector_standing_order_diag_fields(order)))
+  ok = send_standing_order_via_fifo(rt_dir, marker, order)
+  diag_log(project_root, "inspector.standing_order.sent", {
+    "mode" => "wrapper_fresh_boot",
+    "session_name" => session_name.to_s,
+    "inspector_pane" => inspector_pane.to_s,
+    "marker_file" => marker.to_s,
+    "success" => ok,
+  })
   die("INSPECTOR_STANDING_ORDER_FAILED: FIFO send failed after fresh launch") unless ok
 
   context.merge("inspector_status" => "ready", "inspector_mode" => "wrapper")
@@ -660,13 +750,12 @@ def detect_inspector_mode(project_root, session_name, generation, inspector_pane
 end
 
 # Returns true if sent (or already sent), false if send failed
-def send_standing_order_via_fifo(rt_dir, marker_file, batch_id, stories, current_phase)
+def send_standing_order_via_fifo(rt_dir, marker_file, order)
   return true if marker_file && File.exist?(marker_file)
 
   fifo = File.join(rt_dir, "inspector-control.fifo")
   return false unless File.exist?(fifo)
 
-  order = inspector_standing_order(batch_id, stories, current_phase)
   begin
     Timeout.timeout(5) do
       File.open(fifo, "w") { |f| f.write(order + "\n"); f.flush }

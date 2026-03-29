@@ -620,10 +620,26 @@ def main() -> int:
                     if args.protocol_worker:
                         control_buffer += control_data.decode("utf-8", errors="ignore")
                         parsed_tasks, control_buffer = parse_task_blocks(control_buffer)
+                        diag_log(
+                            "control.message.received",
+                            message_kind="protocol_task",
+                            bytes=len(control_data),
+                            parsed_tasks=len(parsed_tasks),
+                            buffered_chars=len(control_buffer),
+                            task_ids=",".join(task["task_id"] for task in parsed_tasks),
+                        )
                         pending_tasks.extend(parsed_tasks)
                         maybe_start_next_task()
                     else:
-                        submit_paste(fd, control_data.decode("utf-8", errors="ignore"))
+                        message = control_data.decode("utf-8", errors="ignore")
+                        diag_log(
+                            "control.message.received",
+                            message_kind="inspector_message",
+                            bytes=len(control_data),
+                            chars=len(message),
+                            message_excerpt=excerpt(message, 1200),
+                        )
+                        submit_paste(fd, message)
             except OSError:
                 pass
 
