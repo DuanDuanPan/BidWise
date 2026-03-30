@@ -250,7 +250,7 @@ So that 我专注于内容而非 Markdown 语法，编辑体验接近最终 docx
     - 调用 `documentStore.loadDocument(projectId)` 加载文档
     - loading 时显示骨架屏（Ant Design `Skeleton`）
     - 加载完成后渲染 `PlateEditor` 组件，传入初始 Markdown 内容
-    - 顶部工具栏区域预留（本 Story 不实现富文本工具栏——Story 3.2 负责）
+    - 顶部工具栏区域预留（本 Story 不实现；后续是否在 Story 3.2 一并激活，以经 validation 的 Story 3.2 文件为准）
   - [ ] 9.2 创建 `src/renderer/src/modules/editor/hooks/useDocument.ts`：
     - 封装 `documentStore` 的常用操作组合
     - 自动保存状态监听

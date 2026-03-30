@@ -39,3 +39,9 @@ _bmad-output/implementation-artifacts/task-monitor.pid
 .claude/skills/bmad-master-control/__pycache__/
 .serena/
 nohup.out
+
+# ATO runtime
+.ato/
+.worktrees/
+ato.yaml
+ato.yaml.example

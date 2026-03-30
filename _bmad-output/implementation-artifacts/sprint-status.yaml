@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-03-22
+last_updated: 2026-03-30
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -73,7 +73,7 @@ development_status:
   # ── Epic 3: AI 方案生成与富文本编辑 (8 stories) ──
   epic-3: in-progress
   3-1-plate-editor-markdown-serialization: done
-  3-2-editor-workspace-doc-outline: backlog
+  3-2-editor-workspace-doc-outline: ready-for-dev
   3-3-template-driven-proposal-skeleton: backlog
   3-4-ai-chapter-generation: backlog
   3-5-source-attribution-baseline-validation: backlog
