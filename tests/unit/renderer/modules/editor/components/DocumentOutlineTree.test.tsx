@@ -35,12 +35,13 @@ describe('@story-3-2 DocumentOutlineTree', () => {
     expect(screen.getByText('Conclusion')).toBeInTheDocument()
   })
 
-  it('@p0 calls onNodeClick when a node is clicked', () => {
+  it('@p0 calls onNodeClick exactly once when a node is clicked', () => {
     const onClick = vi.fn()
     const node = makeNode({ key: 'heading-0', title: 'Click Me' })
     render(<DocumentOutlineTree outline={[node]} onNodeClick={onClick} />)
     fireEvent.click(screen.getByText('Click Me'))
     expect(onClick).toHaveBeenCalledWith(node)
+    expect(onClick).toHaveBeenCalledTimes(1)
   })
 
   it('@p1 truncates titles longer than 30 characters', () => {
@@ -74,9 +75,8 @@ describe('@story-3-2 DocumentOutlineTree', () => {
 
   it('@p0 renders tree with showLine connector lines', () => {
     const node = makeNode()
-    const { container } = render(
-      <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} />
-    )
+    const onClick = vi.fn()
+    const { container } = render(<DocumentOutlineTree outline={[node]} onNodeClick={onClick} />)
     // Ant Design Tree with showLine adds ant-tree-show-line class
     const tree = container.querySelector('.ant-tree-show-line')
     expect(tree).toBeInTheDocument()
@@ -84,9 +84,8 @@ describe('@story-3-2 DocumentOutlineTree', () => {
 
   it('@p0 maintains selectedKeys when a node is clicked', () => {
     const node = makeNode({ key: 'heading-0', title: 'Select Me' })
-    const { container } = render(
-      <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} />
-    )
+    const onClick = vi.fn()
+    const { container } = render(<DocumentOutlineTree outline={[node]} onNodeClick={onClick} />)
     fireEvent.click(screen.getByText('Select Me'))
     // Ant Design Tree marks selected nodes with ant-tree-treenode-selected
     const selected = container.querySelector('.ant-tree-treenode-selected')

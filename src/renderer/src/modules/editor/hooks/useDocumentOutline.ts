@@ -20,7 +20,7 @@ function stripInlineFormatting(text: string): string {
   return text
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links/images → keep text
     .replace(/\*{1,3}/g, '') // bold/italic (asterisks)
-    .replace(/(?<!\w)_{1,3}|_{1,3}(?!\w)/g, '') // emphasis underscores at word boundaries only
+    .replace(/(?<![\p{L}\p{N}_])_{1,3}|_{1,3}(?![\p{L}\p{N}_])/gu, '') // emphasis underscores at word boundaries (Unicode-aware)
     .replace(/~~/g, '') // strikethrough
     .replace(/`/g, '') // inline code
     .trim()

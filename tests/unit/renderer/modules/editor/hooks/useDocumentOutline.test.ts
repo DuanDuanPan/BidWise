@@ -73,6 +73,14 @@ describe('@story-3-2 useDocumentOutline / extractHeadings', () => {
     expect(headings[1].title).toBe('Bold API_v2')
   })
 
+  it('@p0 preserves underscores in Chinese and mixed CJK/ASCII headings', () => {
+    const md = '# 模块_名称\n## 标题_v2\n### 系统_设计_文档'
+    const headings = extractHeadings(md)
+    expect(headings[0].title).toBe('模块_名称')
+    expect(headings[1].title).toBe('标题_v2')
+    expect(headings[2].title).toBe('系统_设计_文档')
+  })
+
   it('@p1 returns empty for empty string', () => {
     expect(extractHeadings('')).toHaveLength(0)
   })

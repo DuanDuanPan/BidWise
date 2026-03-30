@@ -36,7 +36,7 @@ function buildNodeMap(nodes: OutlineNode[], map: Map<string, OutlineNode>): void
   }
 }
 
-function toTreeData(nodes: OutlineNode[], onNodeClick: (node: OutlineNode) => void): AntTreeNode[] {
+function toTreeData(nodes: OutlineNode[]): AntTreeNode[] {
   return nodes.map((node) => {
     const truncated = node.title.length > MAX_TITLE_LEN
     const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
@@ -44,7 +44,6 @@ function toTreeData(nodes: OutlineNode[], onNodeClick: (node: OutlineNode) => vo
     const titleNode = (
       <span
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onNodeClick(node)}
         className="cursor-pointer select-none"
         data-testid={`outline-node-${node.key}`}
         aria-label={`${node.level}级标题 ${node.title}`}
@@ -56,7 +55,7 @@ function toTreeData(nodes: OutlineNode[], onNodeClick: (node: OutlineNode) => vo
     return {
       key: node.key,
       title: titleNode,
-      children: toTreeData(node.children, onNodeClick),
+      children: toTreeData(node.children),
     }
   })
 }
@@ -66,14 +65,6 @@ export function DocumentOutlineTree({
   onNodeClick,
 }: DocumentOutlineTreeProps): React.JSX.Element {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
-
-  const handleNodeClick = useCallback(
-    (node: OutlineNode) => {
-      setSelectedKeys([node.key])
-      onNodeClick(node)
-    },
-    [onNodeClick]
-  )
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, OutlineNode>()
@@ -94,7 +85,7 @@ export function DocumentOutlineTree({
     [nodeMap, onNodeClick]
   )
 
-  const treeData = useMemo(() => toTreeData(outline, handleNodeClick), [outline, handleNodeClick])
+  const treeData = useMemo(() => toTreeData(outline), [outline])
   const expandedKeys = useMemo(() => collectKeys(outline), [outline])
 
   if (outline.length === 0) {
