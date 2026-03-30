@@ -73,7 +73,7 @@ ProjectWorkspace (3-column layout from Story 1.7)
 - **Trigger:** User clicks collapse toggle (Cmd/Ctrl + \)
 - **OutlinePanel:** Reuses the existing Story 1.7 collapsed shell (40px expand strip in implementation)
 - **MainContent:** Expands to fill available space
-- **Transition:** Smooth 200ms ease-in-out
+- **Transition:** Smooth 300ms ease-in-out (inherits current workspace shell token)
 
 ---
 
@@ -101,6 +101,7 @@ ProjectWorkspace (3-column layout from Story 1.7)
 
 - **Pipeline:** Editor onChange → 300ms debounce serialize → documentStore.content update → useMemo recalculate outline
 - **Total latency:** ~300-500ms (within AC2 requirement of 500ms)
+- **Expand behavior:** Keep nodes expanded via controlled `expandedKeys`; don't rely on `defaultExpandAll`, because the outline often starts empty and updates after initial render
 
 ### 4.3 Word Count Update
 
@@ -153,9 +154,12 @@ Implementation note:
 | Property | Value |
 |----------|-------|
 | Height | 32px |
-| Background | Dark (matches SOP bar) |
+| Background | Inherits current workspace shell chrome; prototype's dark shell is visual reference, not a separate theming requirement for this story |
 | Word count position | Right section |
 | Format | "字数 {count}" with exact count and thousands separator |
+
+Implementation note:
+- Auto-save status reuses the existing Story 3.1 `AutoSaveIndicator` copy (`已保存` / `保存中...` / `未保存更改` / `保存失败`). The PNG text "已自动保存" is illustrative only.
 
 ### 5.4 Empty State
 
@@ -164,7 +168,7 @@ Implementation note:
 | Text | "开始撰写后，文档大纲将自动生成" |
 | Alignment | Centered vertically and horizontally |
 | Color | var(--color-text-tertiary) |
-| Font size | 13px |
+| Font size | 12px (reuse current OutlinePanel placeholder typography) |
 
 ---
 
@@ -182,7 +186,7 @@ Implementation note:
 
 - Outline tree supports keyboard navigation (Arrow keys, Enter to select)
 - Cmd/Ctrl + \ keyboard shortcut to toggle outline panel
-- Screen reader: Tree nodes announce heading level and text
+- Screen reader: Title wrapper exposes `aria-label` with heading level + full text (e.g. `2级标题 系统架构设计`)
 - Focus management: Clicking outline node doesn't steal focus from editor
 
 ---
