@@ -1,0 +1,20 @@
+story_id: 3-2-editor-workspace-doc-outline
+story_file: _bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline.md
+ux_spec: ux-spec.md
+pen_file: prototype.pen
+snapshot_file: prototype.snapshot.json
+save_report_file: prototype.save-report.json
+reference_exports:
+- exports/DgeeX.png
+- exports/mVgex.png
+- exports/piz9Q.png
+primary_frames:
+- 'Screen A: Proposal Writing — With Content'
+- 'Screen B: Empty Document State'
+- 'Screen C: Outline Collapsed'
+dev_lookup_order:
+- Read story file design notes
+- Read this manifest
+- Open reference PNG for visual fidelity
+- Open .pen for structure and interaction detail
+notes: PNG 用于视觉对齐参考，.pen 用于结构与交互细节查阅。

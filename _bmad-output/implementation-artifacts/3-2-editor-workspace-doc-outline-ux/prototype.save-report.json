@@ -1,0 +1,20 @@
+{
+  "story_id": "3-2-editor-workspace-doc-outline",
+  "saved_at": "2026-03-30T12:00:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/prototype.snapshot.json",
+  "children_count": 7,
+  "new_screens": [
+    { "id": "mVgex", "name": "Screen A: Proposal Writing — With Content" },
+    { "id": "DgeeX", "name": "Screen B: Empty Document State" },
+    { "id": "piz9Q", "name": "Screen C: Outline Collapsed" }
+  ],
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 3,
+  "exported_files": [
+    "exports/mVgex.png",
+    "exports/DgeeX.png",
+    "exports/piz9Q.png"
+  ]
+}
