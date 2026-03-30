@@ -21,6 +21,8 @@ pnpm test:e2e:headed
 pnpm test:e2e:report
 ```
 
+The `pnpm test:e2e*` scripts are self-contained and will build Electron outputs before launching Playwright.
+
 ## Artifact Paths
 
 - HTML report: `playwright-report/`
