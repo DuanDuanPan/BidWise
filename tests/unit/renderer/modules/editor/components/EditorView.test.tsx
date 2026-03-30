@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
 import { EditorView } from '@modules/editor/components/EditorView'
 
 const mockLoadDocument = vi.fn().mockResolvedValue(undefined)
@@ -41,6 +41,10 @@ describe('@story-3-1 EditorView', () => {
     mockContent = ''
   })
 
+  afterEach(() => {
+    cleanup()
+  })
+
   it('should show skeleton when loading', () => {
     mockLoading = true
     render(<EditorView projectId="proj-1" />)
@@ -57,6 +61,14 @@ describe('@story-3-1 EditorView', () => {
     mockContent = '# Hello'
     render(<EditorView projectId="proj-1" />)
     expect(screen.getByTestId('mock-plate-editor')).toBeDefined()
+  })
+
+  it('@story-3-2 exposes the editor scroll container marker on the root element', () => {
+    render(<EditorView projectId="proj-1" />)
+    expect(screen.getByTestId('editor-view')).toHaveAttribute(
+      'data-editor-scroll-container',
+      'true'
+    )
   })
 
   it('should call loadDocument on mount', () => {

@@ -1,16 +1,18 @@
 import { useMemo } from 'react'
 
+type OutlineLevel = 1 | 2 | 3 | 4
+
 export interface OutlineNode {
   key: string
   title: string
-  level: number
+  level: OutlineLevel
   lineIndex: number
   occurrenceIndex: number
   children: OutlineNode[]
 }
 
-const HEADING_RE = /^(#{1,4})\s+(.+)$/
-const FENCE_START_RE = /^(`{3,}|~{3,})/
+const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
+const FENCE_RE = /^(\s*)(`{3,}|~{3,})/
 
 /**
  * Strips inline Markdown formatting from heading text so it matches
@@ -40,11 +42,11 @@ function extractHeadings(markdown: string): OutlineNode[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Track fenced code blocks
-    const fenceMatch = FENCE_START_RE.exec(line)
+    const fenceMatch = FENCE_RE.exec(line)
     if (fenceMatch) {
-      const char = fenceMatch[1][0]
-      const len = fenceMatch[1].length
+      const marker = fenceMatch[2]
+      const char = marker[0]
+      const len = marker.length
       if (inFence) {
         if (char === fenceChar && len >= fenceLen) {
           inFence = false
@@ -63,7 +65,7 @@ function extractHeadings(markdown: string): OutlineNode[] {
 
     const match = HEADING_RE.exec(line)
     if (match) {
-      const level = match[1].length
+      const level = match[1].length as OutlineLevel
       const title = stripInlineFormatting(match[2])
       const occKey = title
       const count = occurrenceCount.get(occKey) ?? 0
@@ -118,5 +120,4 @@ export function useDocumentOutline(markdown: string): OutlineNode[] {
   }, [markdown])
 }
 
-// Export internals for testing
 export { extractHeadings, buildTree }

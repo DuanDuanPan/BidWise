@@ -3,9 +3,16 @@ import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 interface OutlinePanelProps {
   collapsed: boolean
   onToggle: () => void
+  children?: React.ReactNode
 }
 
-export function OutlinePanel({ collapsed, onToggle }: OutlinePanelProps): React.JSX.Element {
+export function OutlinePanel({
+  collapsed,
+  onToggle,
+  children,
+}: OutlinePanelProps): React.JSX.Element {
+  const hasCustomContent = children !== undefined
+
   return (
     <aside
       id="outline-panel"
@@ -55,12 +62,26 @@ export function OutlinePanel({ collapsed, onToggle }: OutlinePanelProps): React.
             </button>
           </div>
 
-          {/* Content area — placeholder for Story 3.2 */}
-          <div className="flex flex-1 items-center justify-center p-4">
-            <p className="text-caption text-center" style={{ color: 'var(--color-text-tertiary)' }}>
-              大纲内容将在编辑器模块（Story 3.2）中加载
-            </p>
-          </div>
+          {hasCustomContent ? (
+            <div
+              className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+              data-testid="outline-panel-content"
+            >
+              {children}
+            </div>
+          ) : (
+            <div
+              className="flex flex-1 items-center justify-center p-4"
+              data-testid="outline-panel-placeholder"
+            >
+              <p
+                className="text-caption text-center"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                大纲内容将在编辑器模块（Story 3.2）中加载
+              </p>
+            </div>
+          )}
         </div>
       )}
     </aside>

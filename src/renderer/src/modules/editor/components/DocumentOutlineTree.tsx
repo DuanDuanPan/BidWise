@@ -1,6 +1,7 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Tree, Tooltip } from 'antd'
 import { FileTextOutlined } from '@ant-design/icons'
+import type { DataNode } from 'antd/es/tree'
 import type { OutlineNode } from '@modules/editor/hooks/useDocumentOutline'
 
 const MAX_TITLE_LEN = 30
@@ -8,12 +9,6 @@ const MAX_TITLE_LEN = 30
 interface DocumentOutlineTreeProps {
   outline: OutlineNode[]
   onNodeClick: (node: OutlineNode) => void
-}
-
-interface AntTreeNode {
-  key: string
-  title: React.ReactNode
-  children: AntTreeNode[]
 }
 
 function collectKeys(nodes: OutlineNode[]): string[] {
@@ -36,7 +31,7 @@ function buildNodeMap(nodes: OutlineNode[], map: Map<string, OutlineNode>): void
   }
 }
 
-function toTreeData(nodes: OutlineNode[]): AntTreeNode[] {
+function toTreeData(nodes: OutlineNode[]): DataNode[] {
   return nodes.map((node) => {
     const truncated = node.title.length > MAX_TITLE_LEN
     const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
@@ -44,9 +39,10 @@ function toTreeData(nodes: OutlineNode[]): AntTreeNode[] {
     const titleNode = (
       <span
         onMouseDown={(e) => e.preventDefault()}
-        className="cursor-pointer select-none"
+        className="text-caption cursor-pointer text-[var(--color-text-secondary)] select-none"
         data-testid={`outline-node-${node.key}`}
         aria-label={`${node.level}级标题 ${node.title}`}
+        title={node.title}
       >
         {truncated ? <Tooltip title={node.title}>{displayTitle}</Tooltip> : displayTitle}
       </span>
@@ -87,6 +83,10 @@ export function DocumentOutlineTree({
 
   const treeData = useMemo(() => toTreeData(outline), [outline])
   const expandedKeys = useMemo(() => collectKeys(outline), [outline])
+  const activeSelectedKeys = useMemo(
+    () => selectedKeys.filter((key) => nodeMap.has(key)),
+    [nodeMap, selectedKeys]
+  )
 
   if (outline.length === 0) {
     return (
@@ -103,19 +103,16 @@ export function DocumentOutlineTree({
   }
 
   return (
-    <div
-      className="flex-1 overflow-y-auto px-2 py-1"
-      aria-label="文档大纲树"
-      data-testid="outline-tree"
-    >
+    <div className="h-full px-2 py-1" aria-label="文档大纲树" data-testid="outline-tree">
       <Tree
         treeData={treeData}
         expandedKeys={expandedKeys}
-        selectedKeys={selectedKeys}
+        selectedKeys={activeSelectedKeys}
         onSelect={handleSelect}
         blockNode
         showLine
         showIcon={false}
+        className="h-full bg-transparent"
       />
     </div>
   )

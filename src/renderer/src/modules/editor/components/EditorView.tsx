@@ -53,7 +53,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   }
 
   return (
-    <div className="h-full overflow-y-auto" data-testid="editor-view">
+    <div
+      className="h-full overflow-y-auto"
+      data-testid="editor-view"
+      data-editor-scroll-container="true"
+    >
       {/* Toolbar area reserved for Story 3.2 */}
       <PlateEditor
         initialContent={content}

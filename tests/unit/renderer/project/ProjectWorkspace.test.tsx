@@ -9,6 +9,8 @@ import { commandRegistry } from '@renderer/shared/command-palette'
 import { useDocumentStore, useProjectStore } from '@renderer/stores'
 
 const mockNavigate = vi.fn()
+const mockScrollToHeading = vi.fn()
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
   return {
@@ -16,6 +18,34 @@ vi.mock('react-router-dom', async () => {
     useNavigate: () => mockNavigate,
   }
 })
+
+vi.mock('@modules/editor/components/EditorView', () => ({
+  EditorView: ({ projectId }: { projectId: string }) => (
+    <div data-testid="editor-view">editor:{projectId}</div>
+  ),
+}))
+
+vi.mock('@modules/editor/components/DocumentOutlineTree', () => ({
+  DocumentOutlineTree: ({
+    outline,
+    onNodeClick,
+  }: {
+    outline: Array<{ title: string; occurrenceIndex: number }>
+    onNodeClick: (node: { title: string; occurrenceIndex: number }) => void
+  }) => (
+    <button
+      type="button"
+      data-testid="document-outline-tree"
+      onClick={() => onNodeClick(outline[0])}
+    >
+      outline:{outline.length}
+    </button>
+  ),
+}))
+
+vi.mock('@modules/editor/lib/scrollToHeading', () => ({
+  scrollToHeading: (...args: unknown[]) => mockScrollToHeading(...args),
+}))
 
 const mockProject = {
   id: 'p1',
@@ -109,6 +139,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
       taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
+    mockScrollToHeading.mockReset()
   })
   afterEach(cleanup)
 
@@ -165,9 +196,10 @@ describe('@story-1-6 ProjectWorkspace', () => {
       projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
       analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
     })
+    useDocumentStore.setState({ content: '# 第一章\n## 第二章' })
     renderWorkspace()
-    const guide = await screen.findByTestId('stage-guide-placeholder')
-    expect(guide).toHaveAttribute('data-stage', 'proposal-writing')
+    expect(await screen.findByTestId('editor-view')).toHaveTextContent('editor:p1')
+    expect(screen.queryByTestId('stage-guide-placeholder')).not.toBeInTheDocument()
     expect(screen.getByTestId('sop-stage-proposal-writing')).toHaveAttribute('aria-current', 'step')
   })
 
@@ -264,12 +296,72 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       ...window.api,
       projectGet: vi.fn().mockResolvedValue({
         success: true,
-        data: { ...mockProject, sopStage: 'proposal-writing' },
+        data: { ...mockProject, sopStage: 'solution-design' },
       }),
     })
     renderWorkspace()
     const guide = await screen.findByTestId('stage-guide-placeholder')
     expect(guide).toBeInTheDocument()
+  })
+
+  it('@story-3-2 @p0 renders EditorView instead of StageGuidePlaceholder for proposal-writing', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
+    useDocumentStore.setState({ content: '# 项目概述' })
+
+    renderWorkspace()
+
+    expect(await screen.findByTestId('editor-view')).toBeInTheDocument()
+    expect(screen.queryByTestId('stage-guide-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('@story-3-2 @p0 injects outline content into OutlinePanel for proposal-writing', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
+    useDocumentStore.setState({ content: '# 项目概述\n## 系统设计' })
+
+    renderWorkspace()
+
+    expect(await screen.findByTestId('document-outline-tree')).toHaveTextContent('outline:1')
+    expect(screen.queryByTestId('outline-panel-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('@story-3-2 @p1 clicks outline node and forwards container + node to scrollToHeading', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
+    useDocumentStore.setState({ content: '# 项目概述' })
+
+    const container = document.createElement('div')
+    container.setAttribute('data-editor-scroll-container', 'true')
+    document.body.appendChild(container)
+
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('document-outline-tree'))
+
+    expect(mockScrollToHeading).toHaveBeenCalledWith(
+      container,
+      expect.objectContaining({
+        title: '项目概述',
+        occurrenceIndex: 0,
+      })
+    )
+
+    document.body.removeChild(container)
   })
 
   it('@p0 renders SOP progress bar and status bar together', async () => {

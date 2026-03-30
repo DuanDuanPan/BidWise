@@ -46,4 +46,20 @@ describe('@story-1-7 OutlinePanel', () => {
     const panel = screen.getByTestId('outline-panel')
     expect(panel.style.width).toBe('240px')
   })
+
+  it('@story-3-2 @p0 renders custom children when provided', () => {
+    render(
+      <OutlinePanel collapsed={false} onToggle={vi.fn()}>
+        <div data-testid="outline-custom">真实大纲</div>
+      </OutlinePanel>
+    )
+    expect(screen.getByTestId('outline-custom')).toHaveTextContent('真实大纲')
+    expect(screen.queryByTestId('outline-panel-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('@story-3-2 @p0 falls back to placeholder when children are undefined', () => {
+    render(<OutlinePanel collapsed={false} onToggle={vi.fn()} />)
+    expect(screen.getByTestId('outline-panel-placeholder')).toBeInTheDocument()
+    expect(screen.queryByTestId('outline-panel-content')).not.toBeInTheDocument()
+  })
 })

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { renderHook } from '@testing-library/react'
 import { extractHeadings, buildTree } from '@modules/editor/hooks/useDocumentOutline'
+import { useDocumentOutline } from '@modules/editor/hooks/useDocumentOutline'
 
 describe('@story-3-2 useDocumentOutline / extractHeadings', () => {
   it('@p0 extracts H1-H4 headings from markdown', () => {
@@ -142,5 +144,21 @@ describe('@story-3-2 useDocumentOutline / buildTree', () => {
 
   it('@p1 returns empty array for empty input', () => {
     expect(buildTree([])).toEqual([])
+  })
+})
+
+describe('@story-3-2 useDocumentOutline hook', () => {
+  it('@p0 updates the outline when markdown headings change', () => {
+    const { result, rerender } = renderHook(({ markdown }) => useDocumentOutline(markdown), {
+      initialProps: {
+        markdown: '# 第一章',
+      },
+    })
+
+    expect(result.current[0]?.title).toBe('第一章')
+
+    rerender({ markdown: '# 第二章' })
+
+    expect(result.current[0]?.title).toBe('第二章')
   })
 })

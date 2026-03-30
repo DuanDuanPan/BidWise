@@ -91,4 +91,20 @@ describe('@story-3-2 DocumentOutlineTree', () => {
     const selected = container.querySelector('.ant-tree-treenode-selected')
     expect(selected).toBeInTheDocument()
   })
+
+  it('@story-3-2 @p0 keeps nodes expanded when outline updates from empty to populated', () => {
+    const node = makeNode({
+      key: 'heading-0',
+      title: 'Parent',
+      children: [makeNode({ key: 'heading-1', title: 'Child', level: 2 })],
+    })
+    const { rerender, container } = render(
+      <DocumentOutlineTree outline={[]} onNodeClick={vi.fn()} />
+    )
+
+    rerender(<DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} />)
+
+    expect(container.querySelector('.ant-tree-switcher_open')).toBeInTheDocument()
+    expect(screen.getByText('Child')).toBeInTheDocument()
+  })
 })

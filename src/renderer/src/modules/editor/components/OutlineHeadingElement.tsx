@@ -1,15 +1,6 @@
 import { PlateElement } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
 
-/**
- * Custom heading element that injects a data-heading-text attribute
- * for outline scroll-to-heading navigation.
- */
-/**
- * Recursively extracts plain text from a Slate node tree,
- * handling inline formatting nodes (bold, italic, links, etc.)
- * that wrap text in nested children.
- */
 function extractText(node: unknown): string {
   if (typeof node !== 'object' || node === null) return ''
   const n = node as Record<string, unknown>
@@ -30,3 +21,8 @@ export function OutlineHeadingElement(props: PlateElementProps): React.JSX.Eleme
     </PlateElement>
   )
 }
+
+export const OutlineH1Element = OutlineHeadingElement
+export const OutlineH2Element = OutlineHeadingElement
+export const OutlineH3Element = OutlineHeadingElement
+export const OutlineH4Element = OutlineHeadingElement

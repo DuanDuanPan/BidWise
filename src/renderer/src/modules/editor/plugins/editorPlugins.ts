@@ -21,12 +21,13 @@ import { TablePlugin } from '@platejs/table/react'
 import { CodeBlockPlugin, CodeLinePlugin } from '@platejs/code-block/react'
 import { MarkdownPlugin } from '@platejs/markdown'
 import remarkGfm from 'remark-gfm'
+import { OutlineHeadingElement } from '@modules/editor/components/OutlineHeadingElement'
 
 export const editorPlugins = [
-  H1Plugin,
-  H2Plugin,
-  H3Plugin,
-  H4Plugin,
+  H1Plugin.withComponent(OutlineHeadingElement),
+  H2Plugin.withComponent(OutlineHeadingElement),
+  H3Plugin.withComponent(OutlineHeadingElement),
+  H4Plugin.withComponent(OutlineHeadingElement),
   BoldPlugin,
   ItalicPlugin,
   UnderlinePlugin,

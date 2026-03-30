@@ -20,7 +20,12 @@ import { WorkspaceLayout } from './WorkspaceLayout'
 import { OutlinePanel } from './OutlinePanel'
 import { AnnotationPanel } from './AnnotationPanel'
 import { StatusBar } from './StatusBar'
+import { EditorView } from '@modules/editor/components/EditorView'
 import { AutoSaveIndicator } from '@modules/editor/components/AutoSaveIndicator'
+import { DocumentOutlineTree } from '@modules/editor/components/DocumentOutlineTree'
+import { useDocumentOutline } from '@modules/editor/hooks/useDocumentOutline'
+import { useWordCount } from '@modules/editor/hooks/useWordCount'
+import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { useDocumentStore } from '@renderer/stores'
@@ -98,12 +103,16 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   const { outlineCollapsed, sidebarCollapsed, isCompact, toggleOutline, toggleSidebar } =
     useWorkspaceLayout()
+  const documentContent = useDocumentStore((s) => s.content)
   const autoSave = useDocumentStore((s) => s.autoSave)
   const saveDocument = useDocumentStore((s) => s.saveDocument)
   useWorkspaceKeyboard(toggleSidebar, toggleOutline)
 
   const currentStageName = SOP_STAGES.find((s) => s.key === currentStageKey)?.label
-  const showAutoSaveIndicator = currentStageKey === 'proposal-writing' && Boolean(projectId)
+  const isProposalWriting = currentStageKey === 'proposal-writing' && Boolean(projectId)
+  const outline = useDocumentOutline(isProposalWriting ? documentContent : '')
+  const wordCount = useWordCount(documentContent)
+  const showAutoSaveIndicator = isProposalWriting
 
   if (loading && !currentProject) {
     return (
@@ -183,10 +192,28 @@ export function ProjectWorkspace(): React.JSX.Element {
 
       {/* Three-column workspace layout */}
       <WorkspaceLayout
-        left={<OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline} />}
+        left={
+          <OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline}>
+            {isProposalWriting ? (
+              <DocumentOutlineTree
+                outline={outline}
+                onNodeClick={(node) => {
+                  scrollToHeading(
+                    document.querySelector(
+                      '[data-editor-scroll-container="true"]'
+                    ) as HTMLElement | null,
+                    node
+                  )
+                }}
+              />
+            ) : undefined}
+          </OutlinePanel>
+        }
         center={
           currentStageKey === 'requirements-analysis' && projectId ? (
             <AnalysisView projectId={projectId} />
+          ) : isProposalWriting && projectId ? (
+            <EditorView projectId={projectId} />
           ) : (
             <StageGuidePlaceholder stageKey={currentStageKey} />
           )
@@ -201,6 +228,7 @@ export function ProjectWorkspace(): React.JSX.Element {
         statusBar={
           <StatusBar
             currentStageName={currentStageName}
+            wordCount={isProposalWriting ? wordCount : undefined}
             leftExtra={
               showAutoSaveIndicator && projectId ? (
                 <AutoSaveIndicator
