@@ -73,7 +73,7 @@ export function PlateEditor({
         }
 
         if (typeof window.requestIdleCallback === 'function') {
-          idleCallbackRef.current = window.requestIdleCallback(runSerialization, { timeout: 300 })
+          idleCallbackRef.current = window.requestIdleCallback(runSerialization, { timeout: 150 })
           return
         }
 
