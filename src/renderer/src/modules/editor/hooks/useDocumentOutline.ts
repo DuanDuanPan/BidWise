@@ -19,9 +19,10 @@ const FENCE_START_RE = /^(`{3,}|~{3,})/
 function stripInlineFormatting(text: string): string {
   return text
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links/images → keep text
-    .replace(/\*{1,3}|_{1,3}/g, '')             // bold/italic
-    .replace(/~~/g, '')                          // strikethrough
-    .replace(/`/g, '')                           // inline code
+    .replace(/\*{1,3}/g, '') // bold/italic (asterisks)
+    .replace(/(?<!\w)_{1,3}|_{1,3}(?!\w)/g, '') // emphasis underscores at word boundaries only
+    .replace(/~~/g, '') // strikethrough
+    .replace(/`/g, '') // inline code
     .trim()
 }
 

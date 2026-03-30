@@ -27,10 +27,16 @@ function collectKeys(nodes: OutlineNode[]): string[] {
   return keys
 }
 
-function toTreeData(
-  nodes: OutlineNode[],
-  onNodeClick: (node: OutlineNode) => void
-): AntTreeNode[] {
+function buildNodeMap(nodes: OutlineNode[], map: Map<string, OutlineNode>): void {
+  for (const node of nodes) {
+    map.set(node.key, node)
+    if (node.children.length > 0) {
+      buildNodeMap(node.children, map)
+    }
+  }
+}
+
+function toTreeData(nodes: OutlineNode[], onNodeClick: (node: OutlineNode) => void): AntTreeNode[] {
   return nodes.map((node) => {
     const truncated = node.title.length > MAX_TITLE_LEN
     const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
@@ -69,6 +75,25 @@ export function DocumentOutlineTree({
     [onNodeClick]
   )
 
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, OutlineNode>()
+    buildNodeMap(outline, map)
+    return map
+  }, [outline])
+
+  const handleSelect = useCallback(
+    (keys: React.Key[]) => {
+      if (keys.length === 0) return
+      const key = String(keys[0])
+      const node = nodeMap.get(key)
+      if (node) {
+        setSelectedKeys([key])
+        onNodeClick(node)
+      }
+    },
+    [nodeMap, onNodeClick]
+  )
+
   const treeData = useMemo(() => toTreeData(outline, handleNodeClick), [outline, handleNodeClick])
   const expandedKeys = useMemo(() => collectKeys(outline), [outline])
 
@@ -96,6 +121,7 @@ export function DocumentOutlineTree({
         treeData={treeData}
         expandedKeys={expandedKeys}
         selectedKeys={selectedKeys}
+        onSelect={handleSelect}
         blockNode
         showLine
         showIcon={false}

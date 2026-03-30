@@ -12,8 +12,9 @@ function countCharacters(markdown: string): number {
   text = text.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?^\1\s*$/gm, '')
   // Remove heading markers
   text = text.replace(/^#{1,6}\s+/gm, '')
-  // Remove bold/italic markers
-  text = text.replace(/\*{1,3}|_{1,3}/g, '')
+  // Remove bold/italic markers (only strip underscores at word boundaries)
+  text = text.replace(/\*{1,3}/g, '')
+  text = text.replace(/(?<!\w)_{1,3}|_{1,3}(?!\w)/g, '')
   // Remove strikethrough
   text = text.replace(/~~/g, '')
   // Remove inline code backticks

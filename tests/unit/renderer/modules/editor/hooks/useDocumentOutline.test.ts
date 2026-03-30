@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  extractHeadings,
-  buildTree,
-} from '@modules/editor/hooks/useDocumentOutline'
+import { extractHeadings, buildTree } from '@modules/editor/hooks/useDocumentOutline'
 
 describe('@story-3-2 useDocumentOutline / extractHeadings', () => {
   it('@p0 extracts H1-H4 headings from markdown', () => {
@@ -60,6 +57,20 @@ describe('@story-3-2 useDocumentOutline / extractHeadings', () => {
     const md = '# [Click Here](http://url)'
     const headings = extractHeadings(md)
     expect(headings[0].title).toBe('Click Here')
+  })
+
+  it('@p0 preserves literal underscores in heading titles', () => {
+    const md = '# API_v2\n## my_module_name'
+    const headings = extractHeadings(md)
+    expect(headings[0].title).toBe('API_v2')
+    expect(headings[1].title).toBe('my_module_name')
+  })
+
+  it('@p0 strips emphasis underscores but preserves mid-word underscores', () => {
+    const md = '# _Italic Title_\n## __Bold__ API_v2'
+    const headings = extractHeadings(md)
+    expect(headings[0].title).toBe('Italic Title')
+    expect(headings[1].title).toBe('Bold API_v2')
   })
 
   it('@p1 returns empty for empty string', () => {

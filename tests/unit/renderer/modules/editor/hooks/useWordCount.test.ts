@@ -42,6 +42,16 @@ describe('@story-3-2 useWordCount / countCharacters', () => {
     expect(countCharacters(md)).toBe(0)
   })
 
+  it('@p0 preserves literal underscores in identifiers', () => {
+    // "API_v2" = 6 characters, underscore is not emphasis
+    expect(countCharacters('API_v2')).toBe(6)
+  })
+
+  it('@p0 strips emphasis underscores but preserves mid-word underscores', () => {
+    // "_italic_ API_v2" → "italic" + "API_v2" = 12
+    expect(countCharacters('_italic_ API_v2')).toBe(12)
+  })
+
   it('@p1 strips link syntax keeping text', () => {
     // "[click here](http://url)" → "clickhere" = 9 (whitespace stripped)
     expect(countCharacters('[click here](http://url)')).toBe(9)
