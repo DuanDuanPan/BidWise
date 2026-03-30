@@ -5,26 +5,33 @@ Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
 目标文档：`_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline.md`
 
 已核对工件：
+- `_bmad/bmm/config.yaml`
 - `_bmad-output/planning-artifacts/epics.md`
 - `_bmad-output/planning-artifacts/architecture.md`
 - `_bmad-output/planning-artifacts/prd.md`
 - `_bmad-output/planning-artifacts/ux-design-specification.md`
 - `_bmad-output/implementation-artifacts/story-1-7-workspace-layout-shell.md`
 - `_bmad-output/implementation-artifacts/story-3-1-plate-editor-markdown-serialization.md`
+- `package.json`
 - `src/renderer/src/modules/project/components/ProjectWorkspace.tsx`
 - `src/renderer/src/modules/project/components/OutlinePanel.tsx`
 - `src/renderer/src/modules/project/components/StatusBar.tsx`
 - `src/renderer/src/modules/project/components/WorkspaceLayout.tsx`
-- `src/renderer/src/modules/project/hooks/useWorkspaceLayout.ts`
+- `src/renderer/src/modules/project/types.ts`
 - `src/renderer/src/modules/editor/components/EditorView.tsx`
 - `src/renderer/src/modules/editor/components/PlateEditor.tsx`
+- `src/renderer/src/modules/editor/components/AutoSaveIndicator.tsx`
+- `src/renderer/src/modules/editor/hooks/useDocument.ts`
 - `src/renderer/src/modules/editor/plugins/editorPlugins.ts`
 - `src/renderer/src/stores/documentStore.ts`
+- `src/renderer/src/globals.css`
 - `tests/unit/renderer/project/ProjectWorkspace.test.tsx`
 - `tests/unit/renderer/project/OutlinePanel.test.tsx`
 - `tests/unit/renderer/project/StatusBar.test.tsx`
 - `tests/unit/renderer/modules/editor/components/EditorView.test.tsx`
 - `tests/unit/renderer/modules/editor/components/PlateEditor.test.tsx`
+- `tests/unit/renderer/modules/editor/components/AutoSaveIndicator.test.tsx`
+- `tests/unit/renderer/modules/editor/hooks/useDocument.test.tsx`
 - `tests/unit/renderer/modules/editor/plugins/editorPlugins.test.ts`
 - `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/prototype.manifest.yaml`
 - `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/ux-spec.md`
@@ -32,12 +39,16 @@ Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
 - `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/exports/mVgex.png`
 - `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/exports/piz9Q.png`
 - `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/prototype.pen`
+- `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/prototype.snapshot.json`
+- Ant Design Tree official docs（用于确认 `defaultExpandAll` 仅在初始化时生效）：https://ant.design/components/tree/
+
+`.pen` 结构查阅说明：本轮 Pencil app 连接不可用，改为直接读取 `prototype.pen` 与 `prototype.snapshot.json`，并结合 manifest + PNG 导出完成结构与交互核对；未形成剩余阻塞。
 
 结果：PASS
 
 ## 摘要
 
-本次按 `validate-create-story` 工作流重新执行了 story readiness 校验，并在文档内直接修复了可安全落地的问题。修正后，Story 3.2 的实现路径已与当前代码库真实结构、前置 Story 1.7/3.1 契约，以及 UX 原型状态对齐，可继续保持 `ready-for-dev`。
+本次按 `validate-create-story` 工作流重新执行 Story 3.2 的 readiness 校验，并在 story 与直接相关 UX 说明中原位修复了所有可安全落地的问题。修正后，文档已与当前代码库真实结构、Story 1.7/3.1 的现有契约、以及 UX 原型的关键交互行为对齐，可直接进入实现。
 
 ## 发现的关键问题
 
@@ -45,36 +56,24 @@ None
 
 ## 已应用增强
 
-- 修正了 AC2 的错误来源引用：原文错误引用 `UX-DR7`，现已改为 `ux-design-specification.md §长文档编辑体验`。
-- 修正了错误文件路径与错误导出假设：移除了并不存在的 `src/renderer/src/modules/editor/index.ts` / `components/index.ts` / `hooks/index.ts` barrel 依赖，明确使用当前仓库已采用的直连导入模式。
-- 修正了大纲滚动方案中的实现级错误：
-  - 不再要求使用 `workspace-main` 作为滚动容器，改为为 `EditorView` 根节点增加稳定的 `data-editor-scroll-container="true"` 标记。
-  - 不再使用把原始标题文本直接拼进 CSS selector 的 `querySelector('[data-heading-text=\"...\"]')` 方案，改为 `querySelectorAll` + attribute 精确比较。
-  - 不再接受“同名标题取第一个匹配”的歧义方案，补充 `occurrenceIndex` 作为滚动消歧字段。
-- 修正了 Plate.js API 假设：
-  - story 原文使用了与当前 Plate v52 不匹配的 `render.node` 写法。
-  - 现已改为基于官方当前模式的 `node.component` / `withComponent`，并补充 `OutlineHeadingElement.tsx` 作为自定义 heading DOM 包装组件。
-  - 去除了对未经本仓验证 helper 名称（如 `getNodeString`）的依赖，改为本地递归提取 heading 文本。
-- 修正了 `OutlineNode` 结构：原文的 `elementIndex` 不足以支撑可靠滚动定位，现改为 `lineIndex + occurrenceIndex`。
-- 修正了 `DocumentOutlineTree` 的交互说明：
-  - 增补 `selectedKeys` 本地状态，匹配 UX 原型中的选中节点高亮。
-  - 增补 `title` 自定义 `ReactNode` 包装与 `onMouseDown.preventDefault()`，以满足“点击大纲不抢编辑器焦点”的 UX 约束。
-  - 空状态说明补齐为“文件图标 + 文案”的组合，而不是纯文字。
-- 修正了 `StatusBar` 方案与 UX 原型之间的矛盾：
-  - 原文使用 `1.2k` 简写，与原型中的 `3,842` 精确计数冲突；现已统一为 `Intl.NumberFormat('zh-CN')` 精确数字格式。
-  - 原文未覆盖左右 cluster 布局；现已明确左侧为阶段名 + 自动保存，右侧为字数 / 合规分占位 / 质量分占位。
-  - 原文仍沿用 `合规 --` / `质量 --`；现已统一为 `合规分 --` / `质量分 --`。
-- 修正了测试路径与测试范围：
-  - `ProjectWorkspace` / `OutlinePanel` / `StatusBar` 的真实测试路径为 `tests/unit/renderer/project/...`，已从错误的 `tests/unit/renderer/modules/project/...` 改正。
-  - 增补了同名标题滚动、OutlinePanel children fallback、StatusBar 精确计数格式等缺失测试点。
-- 修正了 Story 1.7 / 3.2 / UX 原型之间的壳层尺寸冲突：
-  - 3.2 story 与本地 UX spec 现已明确：本 Story 继承 Story 1.7 已落地 shell（240px 展开、40px 折叠条、48px 标题栏），UX PNG / `.pen` 主要用于内容态与信息排布对齐，不重新定义 1.7 已交付的外层尺寸。
-- 修正了 Story 3.1 中关于“富文本工具栏由 Story 3.2 负责”的刚性措辞，避免 dev 同时读取 3.1 与 3.2 时得到冲突 scope。现已改为“是否在 3.2 一并激活，以经过 validation 的 3.2 文件为准”。
-- 同步更新了 `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/ux-spec.md`，使其与已验证 story 一致：
-  - 状态栏格式改为精确数字。
-  - duplicate heading 匹配改为 DOM 顺序 + occurrence index。
-  - collapsed outline state 改为继承 Story 1.7 已实现 shell。
-  - 交互描述改为“保持编辑器焦点 + outline selection 可见”，移除 story 未要求的“目标标题短暂高亮”。
+- 将大纲树展开策略从 `defaultExpandAll` 修正为受控 `expandedKeys`，明确覆盖“初次为空大纲，随后异步加载/编辑后出现节点”的真实运行场景，避免新节点不自动展开。
+- 为 `DocumentOutlineTree` 补充无障碍要求：标题包装节点需暴露包含层级信息的 `aria-label`，与 UX spec 中的可访问性要求对齐。
+- 修正 `OutlinePanel` 的集成说明：注入真实大纲内容时，内容区必须从原先的居中 placeholder 布局切换为顶部对齐的可滚动容器，避免开发者直接复用占位态样式导致 Tree 居中/不可滚动。
+- 补齐测试要求：
+  - `useDocumentOutline` 需覆盖 `~~~` fenced code block。
+  - `useWordCount` 需覆盖 fenced code block / 表格分隔行等结构标记不计数。
+  - `DocumentOutlineTree` 需覆盖 outline 从空到有内容时的默认展开行为，以及标题 `aria-label`。
+  - `editorPlugins.test.ts` 需增量验证 H1-H4 已接入 `OutlineHeadingElement`。
+  - `EditorView.test.tsx` 需增量验证 `data-editor-scroll-container="true"`。
+- 收敛状态栏视觉/文案歧义：
+  - 明确本 Story 的强制实现项是信息布局、指标顺序和精确数字格式，不单独开启工作空间 shell 主题重做。
+  - 明确自动保存状态复用 Story 3.1 已落地的 `AutoSaveIndicator` 文案（`已保存` / `保存中...` / `未保存更改` / `保存失败`），PNG 中“已自动保存”为示意，不再构成实现歧义。
+- 在 UX spec 中同步修正与当前仓库实现不一致的细项：
+  - 折叠过渡时长从 200ms 调整为继承现有 shell token 的 300ms。
+  - 状态栏背景描述改为继承当前工作空间 shell chrome，而非强制新的深色主题任务。
+  - 空态字体从 13px 调整为复用当前 `OutlinePanel` placeholder 的 12px。
+  - 补充 outline 受控展开的行为说明，避免 UX spec 与 story tasks 再次偏离。
+- 增补防偏航约束：明确本 Story 不额外引入 `@platejs/toc` 或其他 TOC 依赖，继续基于现有 `documentStore.content` 派生 outline，保持依赖面和实现边界可控。
 
 ## 剩余风险
 
@@ -82,4 +81,4 @@ None
 
 ## 最终结论
 
-经本轮 `validate-create-story` 校验与原位修正后，Story 3.2 已无剩余的可执行阻塞项。当前 story、直接相关 UX 说明、以及前置 Story 3.1 的边界表述已经对齐，结论为 **PASS**，可进入实现阶段。
+经本轮 `validate-create-story` 复核与原位修正后，Story 3.2 已无剩余的可执行阻塞项。当前 story、UX spec、前置 Story 3.1/1.7 契约、以及代码库现状已完成必要对齐，结论为 **PASS**。
