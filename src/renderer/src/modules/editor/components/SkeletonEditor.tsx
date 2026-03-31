@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from 'react'
 import { Tree, Tag, Button, Input, Modal, Dropdown, Typography } from 'antd'
+import type { InputRef } from 'antd'
 import { PlusOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
 import type { SkeletonSection } from '@shared/template-types'
 import type { DataNode, TreeProps } from 'antd/es/tree'
@@ -139,7 +140,7 @@ export function SkeletonEditor({
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
-  const inputRef = useRef<ReturnType<typeof Input>>(null)
+  const inputRef = useRef<InputRef>(null)
 
   // Derive expanded keys: all keys minus user-collapsed ones
   const expandedKeys = useMemo(() => {
