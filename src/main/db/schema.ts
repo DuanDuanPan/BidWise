@@ -57,9 +57,23 @@ export interface ScoringModelTable {
   updatedAt: string
 }
 
+export interface MandatoryItemTable {
+  id: string
+  projectId: string
+  content: string
+  sourceText: string
+  sourcePages: string // JSON array
+  confidence: number
+  status: string // 'detected' | 'confirmed' | 'dismissed'
+  linkedRequirementId: string | null
+  detectedAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
   requirements: RequirementTable
   scoringModels: ScoringModelTable
+  mandatoryItems: MandatoryItemTable
 }

@@ -133,3 +133,60 @@ export interface UpdateScoringModelInput {
 export interface ConfirmScoringModelInput {
   projectId: string
 }
+
+// ─── Story 2.6: Mandatory Item Detection ───
+
+export type MandatoryItemStatus = 'detected' | 'confirmed' | 'dismissed'
+
+export interface MandatoryItem {
+  id: string
+  content: string
+  sourceText: string
+  sourcePages: number[]
+  confidence: number
+  status: MandatoryItemStatus
+  linkedRequirementId: string | null
+  detectedAt: string
+  updatedAt: string
+}
+
+export interface MandatoryItemSummary {
+  total: number
+  confirmed: number
+  dismissed: number
+  pending: number
+}
+
+export interface MandatoryItemsSnapshot {
+  projectId: string
+  items: MandatoryItem[]
+  detectedAt: string
+}
+
+export interface DetectMandatoryInput {
+  projectId: string
+}
+
+export interface DetectMandatoryResult {
+  taskId: string
+}
+
+export interface GetMandatoryItemsInput {
+  projectId: string
+}
+
+export interface GetMandatorySummaryInput {
+  projectId: string
+}
+
+export interface UpdateMandatoryItemInput {
+  id: string
+  patch: Partial<Pick<MandatoryItem, 'status' | 'linkedRequirementId'>>
+}
+
+export interface AddMandatoryItemInput {
+  projectId: string
+  content: string
+  sourceText?: string
+  sourcePages?: number[]
+}

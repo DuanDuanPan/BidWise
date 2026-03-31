@@ -12,12 +12,13 @@ const PROGRESS_STALE_THRESHOLD = 10_000
 /** Polling interval for task status (ms) */
 const POLL_INTERVAL = 3_000
 
-type TaskKind = 'import' | 'extraction'
+type TaskKind = 'import' | 'extraction' | 'mandatory'
 
-/** Determine whether a taskId is an import or extraction task within a project */
+/** Determine whether a taskId is an import, extraction, or mandatory task within a project */
 function classifyTask(projectState: AnalysisProjectState, taskId: string): TaskKind | null {
   if (projectState.importTaskId === taskId) return 'import'
   if (projectState.extractionTaskId === taskId) return 'extraction'
+  if (projectState.mandatoryDetectionTaskId === taskId) return 'mandatory'
   return null
 }
 
@@ -37,6 +38,10 @@ export function useAnalysisTaskMonitor(): void {
   const setExtractionCompleted = useAnalysisStore((s) => s.setExtractionCompleted)
   const setError = useAnalysisStore((s) => s.setError)
   const reset = useAnalysisStore((s) => s.reset)
+  const updateMandatoryDetectionProgress = useAnalysisStore(
+    (s) => s.updateMandatoryDetectionProgress
+  )
+  const setMandatoryDetectionCompleted = useAnalysisStore((s) => s.setMandatoryDetectionCompleted)
 
   const lastProgressTimeRef = useRef<Record<string, number>>({})
   const terminalHandledRef = useRef<Set<string>>(new Set())
@@ -52,7 +57,11 @@ export function useAnalysisTaskMonitor(): void {
     const activeTaskIds = new Set<string>()
 
     for (const projectState of Object.values(projects)) {
-      for (const taskId of [projectState.importTaskId, projectState.extractionTaskId]) {
+      for (const taskId of [
+        projectState.importTaskId,
+        projectState.extractionTaskId,
+        projectState.mandatoryDetectionTaskId,
+      ]) {
         if (!taskId) continue
         activeTaskIds.add(taskId)
         if (lastProgressTimeRef.current[taskId] === undefined) {
@@ -88,7 +97,7 @@ export function useAnalysisTaskMonitor(): void {
             setParseTaskStatus(projectId, 'completed')
             await fetchTenderResult(projectId)
             message.success('招标文件解析完成')
-          } else {
+          } else if (kind === 'extraction') {
             await fetchRequirements(projectId)
             await fetchScoringModel(projectId)
             // Get the freshly fetched state
@@ -103,6 +112,10 @@ export function useAnalysisTaskMonitor(): void {
             } else {
               message.warning('需求抽取完成，但评分模型加载失败，请稍后重试')
             }
+          } else {
+            // mandatory
+            await setMandatoryDetectionCompleted(projectId)
+            message.success('必响应项检测完成')
           }
           clearTaskTracking(taskId)
           return
@@ -110,10 +123,15 @@ export function useAnalysisTaskMonitor(): void {
 
         if (task.status === 'failed') {
           terminalHandledRef.current.add(taskId)
-          const errMsg = task.error ?? (kind === 'import' ? '解析失败' : '抽取失败')
+          const errMsgMap: Record<TaskKind, string> = {
+            import: '解析失败',
+            extraction: '抽取失败',
+            mandatory: '*项检测失败',
+          }
+          const errMsg = task.error ?? errMsgMap[kind]
           setError(projectId, errMsg, kind)
           message.error({
-            content: kind === 'import' ? `解析失败：${errMsg}` : `抽取失败：${errMsg}`,
+            content: `${errMsgMap[kind]}：${errMsg}`,
             duration: 0,
           })
           clearTaskTracking(taskId)
@@ -142,6 +160,7 @@ export function useAnalysisTaskMonitor(): void {
       reset,
       setError,
       setExtractionCompleted,
+      setMandatoryDetectionCompleted,
       setParseTaskStatus,
     ]
   )
@@ -163,8 +182,10 @@ export function useAnalysisTaskMonitor(): void {
 
       if (kind === 'import') {
         updateParseProgress(projectId, event.progress, event.message ?? '')
-      } else {
+      } else if (kind === 'extraction') {
         updateExtractionProgress(projectId, event.progress, event.message ?? '')
+      } else {
+        updateMandatoryDetectionProgress(projectId, event.progress, event.message ?? '')
       }
 
       if (event.progress >= 100) {
@@ -173,7 +194,12 @@ export function useAnalysisTaskMonitor(): void {
     })
 
     return () => unlisten()
-  }, [checkTaskStatus, updateExtractionProgress, updateParseProgress])
+  }, [
+    checkTaskStatus,
+    updateExtractionProgress,
+    updateMandatoryDetectionProgress,
+    updateParseProgress,
+  ])
 
   // Poll for stale or completed tasks
   useEffect(() => {
@@ -203,6 +229,18 @@ export function useAnalysisTaskMonitor(): void {
 
           if (shouldPoll) {
             void checkTaskStatus(projectId, taskId, 'extraction')
+          }
+        }
+
+        // Check mandatory detection task
+        if (projectState.mandatoryDetectionTaskId) {
+          const taskId = projectState.mandatoryDetectionTaskId
+          const shouldPoll =
+            projectState.mandatoryDetectionProgress >= 100 ||
+            now - (lastProgressTimeRef.current[taskId] ?? now) > PROGRESS_STALE_THRESHOLD
+
+          if (shouldPoll) {
+            void checkTaskStatus(projectId, taskId, 'mandatory')
           }
         }
       }

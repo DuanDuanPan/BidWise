@@ -22,6 +22,14 @@ import type {
   UpdateRequirementInput,
   UpdateScoringModelInput,
   ConfirmScoringModelInput,
+  DetectMandatoryInput,
+  DetectMandatoryResult,
+  GetMandatoryItemsInput,
+  MandatoryItem,
+  GetMandatorySummaryInput,
+  MandatoryItemSummary,
+  UpdateMandatoryItemInput,
+  AddMandatoryItemInput,
 } from './analysis-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 
@@ -115,6 +123,11 @@ export const IPC_CHANNELS = {
   ANALYSIS_UPDATE_REQUIREMENT: 'analysis:update-requirement',
   ANALYSIS_UPDATE_SCORING_MODEL: 'analysis:update-scoring-model',
   ANALYSIS_CONFIRM_SCORING_MODEL: 'analysis:confirm-scoring-model',
+  ANALYSIS_DETECT_MANDATORY: 'analysis:detect-mandatory',
+  ANALYSIS_GET_MANDATORY_ITEMS: 'analysis:get-mandatory-items',
+  ANALYSIS_GET_MANDATORY_SUMMARY: 'analysis:get-mandatory-summary',
+  ANALYSIS_UPDATE_MANDATORY_ITEM: 'analysis:update-mandatory-item',
+  ANALYSIS_ADD_MANDATORY_ITEM: 'analysis:add-mandatory-item',
   DOCUMENT_LOAD: 'document:load',
   DOCUMENT_SAVE: 'document:save',
   DOCUMENT_SAVE_SYNC: 'document:save-sync',
@@ -154,6 +167,14 @@ export type IpcChannelMap = {
   'analysis:update-requirement': { input: UpdateRequirementInput; output: RequirementItem }
   'analysis:update-scoring-model': { input: UpdateScoringModelInput; output: ScoringModel }
   'analysis:confirm-scoring-model': { input: ConfirmScoringModelInput; output: ScoringModel }
+  'analysis:detect-mandatory': { input: DetectMandatoryInput; output: DetectMandatoryResult }
+  'analysis:get-mandatory-items': { input: GetMandatoryItemsInput; output: MandatoryItem[] | null }
+  'analysis:get-mandatory-summary': {
+    input: GetMandatorySummaryInput
+    output: MandatoryItemSummary | null
+  }
+  'analysis:update-mandatory-item': { input: UpdateMandatoryItemInput; output: MandatoryItem }
+  'analysis:add-mandatory-item': { input: AddMandatoryItemInput; output: MandatoryItem }
   'document:load': { input: { projectId: string }; output: ProposalDocument }
   'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
   'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }
