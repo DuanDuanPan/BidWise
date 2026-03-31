@@ -241,6 +241,46 @@ describe('ScoringExtractor', () => {
     expect(progressUpdates[progressUpdates.length - 1].progress).toBe(100)
   })
 
+  it('should rewrite mandatory snapshot even when there are no mandatory items', async () => {
+    let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | null = null
+    mockExecute.mockImplementation(
+      (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+        capturedExecutor = executor
+        return Promise.resolve({})
+      }
+    )
+
+    await extractor.extract({ projectId: 'proj-1' })
+
+    mockAgentExecute.mockResolvedValue({ taskId: 'inner-task-1' })
+    mockGetAgentStatus.mockResolvedValue({
+      status: 'completed',
+      result: { content: mockLlmResponse },
+      progress: 100,
+    })
+    mockMandatoryFindByProject.mockResolvedValue([])
+
+    const ctx = {
+      taskId: 'task-1',
+      input: { projectId: 'proj-1', rootPath: '/projects/proj-1' },
+      signal: new AbortController().signal,
+      updateProgress: vi.fn(),
+      setCheckpoint: vi.fn(),
+    }
+
+    await capturedExecutor!(ctx)
+
+    const mandatorySnapshotCall = mockWriteFile.mock.calls.find(
+      ([filePath]) => filePath === '/projects/proj-1/tender/mandatory-items.json'
+    )
+
+    expect(mandatorySnapshotCall).toBeTruthy()
+    expect(JSON.parse(mandatorySnapshotCall![1] as string)).toMatchObject({
+      projectId: 'proj-1',
+      items: [],
+    })
+  })
+
   it('should handle LLM response wrapped in markdown code fence', async () => {
     let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | null = null
     mockExecute.mockImplementation(
