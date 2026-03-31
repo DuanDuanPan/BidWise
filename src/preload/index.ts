@@ -82,6 +82,21 @@ const requestApi = {
   analysisConfirmScoringModel: (input: IpcChannelMap['analysis:confirm-scoring-model']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_CONFIRM_SCORING_MODEL, input),
 
+  analysisDetectMandatory: (input: IpcChannelMap['analysis:detect-mandatory']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_DETECT_MANDATORY, input),
+
+  analysisGetMandatoryItems: (input: IpcChannelMap['analysis:get-mandatory-items']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_MANDATORY_ITEMS, input),
+
+  analysisGetMandatorySummary: (input: IpcChannelMap['analysis:get-mandatory-summary']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_MANDATORY_SUMMARY, input),
+
+  analysisUpdateMandatoryItem: (input: IpcChannelMap['analysis:update-mandatory-item']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_UPDATE_MANDATORY_ITEM, input),
+
+  analysisAddMandatoryItem: (input: IpcChannelMap['analysis:add-mandatory-item']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_ADD_MANDATORY_ITEM, input),
+
   documentLoad: (input: IpcChannelMap['document:load']['input']) =>
     typedInvoke(IPC_CHANNELS.DOCUMENT_LOAD, input),
 

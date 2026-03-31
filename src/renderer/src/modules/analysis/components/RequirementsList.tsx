@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Table, Tag, Select, Input, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { RequirementItem, RequirementCategory } from '@shared/analysis-types'
+import type { RequirementItem, RequirementCategory, MandatoryItem } from '@shared/analysis-types'
 
 const CATEGORY_LABELS: Record<RequirementCategory, { label: string; color: string }> = {
   technical: { label: '技术要求', color: 'blue' },
@@ -27,6 +27,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 export interface RequirementsListProps {
   requirements: RequirementItem[]
+  mandatoryItems?: MandatoryItem[] | null
   onUpdate: (
     id: string,
     patch: Partial<Pick<RequirementItem, 'description' | 'category' | 'priority' | 'status'>>
@@ -35,8 +36,15 @@ export interface RequirementsListProps {
 
 export function RequirementsList({
   requirements,
+  mandatoryItems,
   onUpdate,
 }: RequirementsListProps): React.JSX.Element {
+  // Build a set of requirement IDs that are linked to mandatory items
+  const mandatoryLinkedIds = new Set(
+    (mandatoryItems ?? [])
+      .filter((m) => m.linkedRequirementId && m.status !== 'dismissed')
+      .map((m) => m.linkedRequirementId!)
+  )
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingDesc, setEditingDesc] = useState('')
 
@@ -125,6 +133,11 @@ export function RequirementsList({
             data-testid={`desc-${record.id}`}
           >
             {text}
+            {mandatoryLinkedIds.has(record.id) && (
+              <Tag color="red" style={{ marginLeft: 6, fontSize: 11 }}>
+                *项
+              </Tag>
+            )}
           </span>
         )
       },

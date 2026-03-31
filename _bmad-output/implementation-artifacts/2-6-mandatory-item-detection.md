@@ -365,10 +365,27 @@ So that 我绝不会因为遗漏*项而废标。
 
 ### Agent Model Used
 
-(待实施时填写)
+GPT-5 Codex
 
 ### Debug Log References
 
+- `pnpm exec vitest run tests/unit/main/services/document-parser/scoring-extractor.test.ts tests/unit/renderer/analysis/MandatoryItemsList.test.tsx tests/unit/main/services/document-parser/mandatory-item-detector.test.ts tests/unit/main/repositories/mandatory-item-repo.test.ts tests/unit/main/services/agent-orchestrator/agents/extract-agent.test.ts tests/unit/main/ipc/analysis-handlers.test.ts tests/unit/renderer/modules/analysis/useAnalysis.test.ts tests/unit/main/db/migrations.test.ts`
+- `pnpm typecheck`
+- `pnpm build`
+
 ### Completion Notes List
 
+- 修复了需求重新抽取后的 `mandatory-items.json` 同步逻辑：即使当前 DB 中 0 条 *项，也会重写快照文件，避免旧快照残留导致“已执行但 0 项”与“未执行”语义漂移。
+- 修复了 `MandatoryItemsList` 的错误态渲染：首次检测失败仍显示可重试错误态；重新检测失败时保留 0 结果态或已审核列表，并在顶部展示错误横幅而不是清空上下文。
+- 补充了针对上述两个回归点的单元测试，并完成 typecheck 与生产构建验证。
+
 ### File List
+
+- `src/main/services/document-parser/scoring-extractor.ts`
+- `src/renderer/src/modules/analysis/components/MandatoryItemsList.tsx`
+- `tests/unit/main/services/document-parser/scoring-extractor.test.ts`
+- `tests/unit/renderer/analysis/MandatoryItemsList.test.tsx`
+
+### Change Log
+
+- 2026-03-31 — fixing phase recovery：补齐 mandatory snapshot 空结果重写逻辑，修正 *项列表错误态保留行为，并补充对应回归测试与构建验证。

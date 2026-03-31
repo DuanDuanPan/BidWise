@@ -1,5 +1,9 @@
 import { createIpcHandler } from './create-handler'
-import { tenderImportService, scoringExtractor } from '@main/services/document-parser'
+import {
+  tenderImportService,
+  scoringExtractor,
+  mandatoryItemDetector,
+} from '@main/services/document-parser'
 import type { IpcChannel } from '@shared/ipc-types'
 
 type AnalysisChannel = Extract<IpcChannel, `analysis:${string}`>
@@ -32,6 +36,24 @@ const analysisHandlerMap: { [C in AnalysisChannel]: () => void } = {
   'analysis:confirm-scoring-model': () =>
     createIpcHandler('analysis:confirm-scoring-model', (input) =>
       scoringExtractor.confirmScoringModel(input.projectId)
+    ),
+  'analysis:detect-mandatory': () =>
+    createIpcHandler('analysis:detect-mandatory', (input) => mandatoryItemDetector.detect(input)),
+  'analysis:get-mandatory-items': () =>
+    createIpcHandler('analysis:get-mandatory-items', (input) =>
+      mandatoryItemDetector.getItems(input.projectId)
+    ),
+  'analysis:get-mandatory-summary': () =>
+    createIpcHandler('analysis:get-mandatory-summary', (input) =>
+      mandatoryItemDetector.getSummary(input.projectId)
+    ),
+  'analysis:update-mandatory-item': () =>
+    createIpcHandler('analysis:update-mandatory-item', (input) =>
+      mandatoryItemDetector.updateItem(input.id, input.patch)
+    ),
+  'analysis:add-mandatory-item': () =>
+    createIpcHandler('analysis:add-mandatory-item', (input) =>
+      mandatoryItemDetector.addItem(input)
     ),
 }
 

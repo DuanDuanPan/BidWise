@@ -5,6 +5,8 @@ import type {
   RequirementItem,
   ScoringModel,
   ScoringCriterion,
+  MandatoryItem,
+  MandatoryItemSummary,
 } from '@shared/analysis-types'
 import type { TaskStatus } from '@shared/ai-types'
 
@@ -24,6 +26,14 @@ export interface AnalysisProjectState {
   extractionProgress: number
   extractionMessage: string
   extractionLoading: boolean
+  // Story 2.6: mandatory detection state
+  mandatoryItems: MandatoryItem[] | null
+  mandatorySummary: MandatoryItemSummary | null
+  mandatoryDetectionTaskId: string | null
+  mandatoryDetectionProgress: number
+  mandatoryDetectionMessage: string
+  mandatoryDetectionLoading: boolean
+  mandatoryDetectionError: string | null
 }
 
 export interface AnalysisState {
@@ -36,7 +46,11 @@ export interface AnalysisActions {
   updateParseProgress: (projectId: string, progress: number, message: string) => void
   setParseTaskStatus: (projectId: string, status: TaskStatus | null) => void
   setParseCompleted: (projectId: string, result: ParsedTender) => void
-  setError: (projectId: string, error: string, taskKind?: 'import' | 'extraction') => void
+  setError: (
+    projectId: string,
+    error: string,
+    taskKind?: 'import' | 'extraction' | 'mandatory'
+  ) => void
   reset: (projectId?: string) => void
   // Story 2.5: extraction actions
   extractRequirements: (projectId: string) => Promise<void>
@@ -57,6 +71,23 @@ export interface AnalysisActions {
     projectId: string,
     result: { requirements: RequirementItem[]; scoringModel: ScoringModel | null }
   ) => void
+  // Story 2.6: mandatory detection actions
+  detectMandatoryItems: (projectId: string) => Promise<void>
+  fetchMandatoryItems: (projectId: string) => Promise<void>
+  fetchMandatorySummary: (projectId: string) => Promise<void>
+  updateMandatoryItem: (
+    id: string,
+    patch: Partial<Pick<MandatoryItem, 'status' | 'linkedRequirementId'>>
+  ) => Promise<void>
+  addMandatoryItem: (
+    projectId: string,
+    content: string,
+    sourceText?: string,
+    sourcePages?: number[]
+  ) => Promise<void>
+  updateMandatoryDetectionProgress: (projectId: string, progress: number, message?: string) => void
+  setMandatoryDetectionCompleted: (projectId: string) => Promise<void>
+  setMandatoryDetectionError: (projectId: string, error: string) => void
 }
 
 export type AnalysisStore = AnalysisState & AnalysisActions
@@ -80,6 +111,13 @@ export const EMPTY_ANALYSIS_PROJECT_STATE: Readonly<AnalysisProjectState> = Obje
   extractionProgress: 0,
   extractionMessage: '',
   extractionLoading: false,
+  mandatoryItems: null,
+  mandatorySummary: null,
+  mandatoryDetectionTaskId: null,
+  mandatoryDetectionProgress: 0,
+  mandatoryDetectionMessage: '',
+  mandatoryDetectionLoading: false,
+  mandatoryDetectionError: null,
 })
 
 function createProjectState(overrides: Partial<AnalysisProjectState> = {}): AnalysisProjectState {
@@ -116,12 +154,25 @@ export function findAnalysisProjectIdByTaskId(
   taskId: string
 ): string | null {
   for (const [projectId, projectState] of Object.entries(state.projects)) {
-    if (projectState.importTaskId === taskId || projectState.extractionTaskId === taskId) {
+    if (
+      projectState.importTaskId === taskId ||
+      projectState.extractionTaskId === taskId ||
+      projectState.mandatoryDetectionTaskId === taskId
+    ) {
       return projectId
     }
   }
 
   return null
+}
+
+function computeMandatorySummary(items: MandatoryItem[]): MandatoryItemSummary {
+  return {
+    total: items.length,
+    confirmed: items.filter((i) => i.status === 'confirmed').length,
+    dismissed: items.filter((i) => i.status === 'dismissed').length,
+    pending: items.filter((i) => i.status === 'detected').length,
+  }
 }
 
 export const useAnalysisStore = create<AnalysisStore>((set) => ({
@@ -265,12 +316,18 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (projectState) => ({
         ...projectState,
-        error,
+        error: taskKind === 'mandatory' ? projectState.error : error,
         loading: false,
         importTaskId: taskKind === 'import' ? null : projectState.importTaskId,
         extractionTaskId: taskKind === 'extraction' ? null : projectState.extractionTaskId,
         extractionLoading: taskKind === 'extraction' ? false : projectState.extractionLoading,
         taskStatus: taskKind === 'import' ? 'failed' : projectState.taskStatus,
+        mandatoryDetectionTaskId:
+          taskKind === 'mandatory' ? null : projectState.mandatoryDetectionTaskId,
+        mandatoryDetectionLoading:
+          taskKind === 'mandatory' ? false : projectState.mandatoryDetectionLoading,
+        mandatoryDetectionError:
+          taskKind === 'mandatory' ? error : projectState.mandatoryDetectionError,
       })),
     }))
   },
@@ -450,6 +507,184 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         extractionProgress: 100,
         extractionMessage: '抽取完成',
         extractionLoading: false,
+      })),
+    }))
+  },
+
+  // ─── Story 2.6: Mandatory Detection Actions ───
+
+  detectMandatoryItems: async (projectId: string) => {
+    // Guard: prevent concurrent detection
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (current.mandatoryDetectionLoading || current.mandatoryDetectionTaskId) return
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        mandatoryDetectionLoading: true,
+        mandatoryDetectionProgress: 0,
+        mandatoryDetectionMessage: '正在启动*项检测...',
+        mandatoryDetectionTaskId: null,
+        mandatoryDetectionError: null,
+      })),
+    }))
+
+    try {
+      const res = await window.api.analysisDetectMandatory({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            mandatoryDetectionTaskId: res.data.taskId,
+            mandatoryDetectionLoading: false,
+          })),
+        }))
+      } else {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            mandatoryDetectionError: res.error.message,
+            mandatoryDetectionLoading: false,
+            mandatoryDetectionTaskId: null,
+          })),
+        }))
+      }
+    } catch (err) {
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => ({
+          ...prev,
+          mandatoryDetectionError: (err as Error).message,
+          mandatoryDetectionLoading: false,
+          mandatoryDetectionTaskId: null,
+        })),
+      }))
+    }
+  },
+
+  fetchMandatoryItems: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetMandatoryItems({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            mandatoryItems: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail — data may not exist yet
+    }
+  },
+
+  fetchMandatorySummary: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetMandatorySummary({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            mandatorySummary: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail
+    }
+  },
+
+  updateMandatoryItem: async (id, patch) => {
+    try {
+      const res = await window.api.analysisUpdateMandatoryItem({ id, patch })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+
+      // Update in-place and recompute summary
+      set((state) => {
+        const newProjects = { ...state.projects }
+        for (const [pid, ps] of Object.entries(newProjects)) {
+          if (ps.mandatoryItems) {
+            const idx = ps.mandatoryItems.findIndex((m) => m.id === id)
+            if (idx !== -1) {
+              const updated = [...ps.mandatoryItems]
+              updated[idx] = res.data
+              const summary = computeMandatorySummary(updated)
+              newProjects[pid] = { ...ps, mandatoryItems: updated, mandatorySummary: summary }
+              break
+            }
+          }
+        }
+        return { projects: newProjects }
+      })
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  addMandatoryItem: async (projectId, content, sourceText, sourcePages) => {
+    try {
+      const res = await window.api.analysisAddMandatoryItem({
+        projectId,
+        content,
+        sourceText,
+        sourcePages,
+      })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => {
+          const items = [...(prev.mandatoryItems ?? []), res.data]
+          return {
+            ...prev,
+            mandatoryItems: items,
+            mandatorySummary: computeMandatorySummary(items),
+          }
+        }),
+      }))
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  updateMandatoryDetectionProgress: (projectId, progress, message) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        mandatoryDetectionProgress: progress,
+        mandatoryDetectionMessage: message ?? prev.mandatoryDetectionMessage,
+      })),
+    }))
+  },
+
+  setMandatoryDetectionCompleted: async (projectId) => {
+    // Fetch fresh data
+    const itemsRes = await window.api.analysisGetMandatoryItems({ projectId })
+    const summaryRes = await window.api.analysisGetMandatorySummary({ projectId })
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        mandatoryItems: itemsRes.success ? itemsRes.data : prev.mandatoryItems,
+        mandatorySummary: summaryRes.success ? summaryRes.data : prev.mandatorySummary,
+        mandatoryDetectionTaskId: null,
+        mandatoryDetectionProgress: 100,
+        mandatoryDetectionMessage: '*项检测完成',
+        mandatoryDetectionLoading: false,
+        mandatoryDetectionError: null,
+      })),
+    }))
+  },
+
+  setMandatoryDetectionError: (projectId, error) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        mandatoryDetectionError: error,
+        mandatoryDetectionTaskId: null,
+        mandatoryDetectionLoading: false,
       })),
     }))
   },

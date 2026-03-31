@@ -49,6 +49,13 @@ function makeEmptyProjectState(
     extractionProgress: 0,
     extractionMessage: '',
     extractionLoading: false,
+    mandatoryItems: null,
+    mandatorySummary: null,
+    mandatoryDetectionTaskId: null,
+    mandatoryDetectionProgress: 0,
+    mandatoryDetectionMessage: '',
+    mandatoryDetectionLoading: false,
+    mandatoryDetectionError: null,
     ...overrides,
   }
 }

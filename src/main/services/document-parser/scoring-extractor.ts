@@ -7,6 +7,7 @@ import { ErrorCode } from '@shared/constants'
 import { ProjectRepository } from '@main/db/repositories/project-repo'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
 import { ScoringModelRepository } from '@main/db/repositories/scoring-model-repo'
+import { MandatoryItemRepository } from '@main/db/repositories/mandatory-item-repo'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { taskQueue } from '@main/services/task-queue'
 import type { TaskExecutorContext } from '@main/services/task-queue'
@@ -18,6 +19,7 @@ import type {
   ScoringCriterion,
   ScoringSubItem,
   ExtractionTaskResult,
+  MandatoryItemsSnapshot,
 } from '@shared/analysis-types'
 
 const logger = createLogger('scoring-extractor')
@@ -145,6 +147,7 @@ export class ScoringExtractor {
   private projectRepo = new ProjectRepository()
   private requirementRepo = new RequirementRepository()
   private scoringModelRepo = new ScoringModelRepository()
+  private mandatoryItemRepo = new MandatoryItemRepository()
 
   async extract(input: { projectId: string }): Promise<ExtractionTaskResult> {
     const { projectId } = input
@@ -177,6 +180,7 @@ export class ScoringExtractor {
     // Fire-and-forget execution
     const requirementRepo = this.requirementRepo
     const scoringModelRepo = this.scoringModelRepo
+    const mandatoryItemRepo = this.mandatoryItemRepo
     const rootPath = project.rootPath
     taskQueue
       .execute(taskId, async (ctx: TaskExecutorContext) => {
@@ -241,6 +245,23 @@ export class ScoringExtractor {
         const result = parseExtractionResponse(agentResult, projectId)
 
         // Step 4: Clean old data and persist
+        // Clear mandatory item links before deleting requirements to prevent dangling references
+        await mandatoryItemRepo.clearLinkedRequirements(projectId)
+
+        // Always rewrite the snapshot so older drifted files self-heal even when DB is empty.
+        const mandatoryItems = await mandatoryItemRepo.findByProject(projectId)
+        const mandatorySnapshot: MandatoryItemsSnapshot = {
+          projectId,
+          items: mandatoryItems,
+          detectedAt: new Date().toISOString(),
+        }
+        const mandatorySnapshotPath = path.join(rootPath, 'tender', 'mandatory-items.json')
+        await fs.writeFile(
+          mandatorySnapshotPath,
+          JSON.stringify(mandatorySnapshot, null, 2),
+          'utf-8'
+        )
+
         await requirementRepo.deleteByProject(projectId)
         await requirementRepo.create(projectId, result.requirements)
         await scoringModelRepo.upsert(result.scoringModel)

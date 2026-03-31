@@ -36,6 +36,15 @@ vi.mock('@main/db/repositories/scoring-model-repo', () => ({
   },
 }))
 
+const mockClearLinkedRequirements = vi.fn()
+const mockMandatoryFindByProject = vi.fn()
+vi.mock('@main/db/repositories/mandatory-item-repo', () => ({
+  MandatoryItemRepository: class {
+    clearLinkedRequirements = mockClearLinkedRequirements
+    findByProject = mockMandatoryFindByProject
+  },
+}))
+
 const mockEnqueue = vi.fn()
 const mockExecute = vi.fn()
 vi.mock('@main/services/task-queue', () => ({
@@ -73,7 +82,19 @@ vi.mock('@main/utils/errors', () => {
       this.cause = cause
     }
   }
-  return { BidWiseError }
+  class DatabaseError extends BidWiseError {
+    constructor(message: string, cause?: unknown) {
+      super('DATABASE', message, cause)
+      this.name = 'DatabaseError'
+    }
+  }
+  class NotFoundError extends BidWiseError {
+    constructor(message: string, cause?: unknown) {
+      super('NOT_FOUND', message, cause)
+      this.name = 'NotFoundError'
+    }
+  }
+  return { BidWiseError, DatabaseError, NotFoundError }
 })
 
 vi.mock('uuid', () => ({ v4: () => 'mock-uuid' }))
@@ -140,6 +161,8 @@ describe('ScoringExtractor', () => {
     mockReqDeleteByProject.mockResolvedValue(undefined)
     mockScoringUpsert.mockResolvedValue({})
     mockScoringFindByProject.mockResolvedValue(null)
+    mockClearLinkedRequirements.mockResolvedValue(undefined)
+    mockMandatoryFindByProject.mockResolvedValue([])
   })
 
   it('should enqueue task and return taskId', async () => {
@@ -204,6 +227,9 @@ describe('ScoringExtractor', () => {
       })
     )
 
+    // Verify mandatory item links cleared before requirements deleted
+    expect(mockClearLinkedRequirements).toHaveBeenCalledWith('proj-1')
+
     // Verify persistence
     expect(mockReqDeleteByProject).toHaveBeenCalledWith('proj-1')
     expect(mockReqCreate).toHaveBeenCalled()
@@ -213,6 +239,46 @@ describe('ScoringExtractor', () => {
     // Verify progress was reported
     expect(progressUpdates.length).toBeGreaterThan(0)
     expect(progressUpdates[progressUpdates.length - 1].progress).toBe(100)
+  })
+
+  it('should rewrite mandatory snapshot even when there are no mandatory items', async () => {
+    let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | null = null
+    mockExecute.mockImplementation(
+      (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+        capturedExecutor = executor
+        return Promise.resolve({})
+      }
+    )
+
+    await extractor.extract({ projectId: 'proj-1' })
+
+    mockAgentExecute.mockResolvedValue({ taskId: 'inner-task-1' })
+    mockGetAgentStatus.mockResolvedValue({
+      status: 'completed',
+      result: { content: mockLlmResponse },
+      progress: 100,
+    })
+    mockMandatoryFindByProject.mockResolvedValue([])
+
+    const ctx = {
+      taskId: 'task-1',
+      input: { projectId: 'proj-1', rootPath: '/projects/proj-1' },
+      signal: new AbortController().signal,
+      updateProgress: vi.fn(),
+      setCheckpoint: vi.fn(),
+    }
+
+    await capturedExecutor!(ctx)
+
+    const mandatorySnapshotCall = mockWriteFile.mock.calls.find(
+      ([filePath]) => filePath === '/projects/proj-1/tender/mandatory-items.json'
+    )
+
+    expect(mandatorySnapshotCall).toBeTruthy()
+    expect(JSON.parse(mandatorySnapshotCall![1] as string)).toMatchObject({
+      projectId: 'proj-1',
+      items: [],
+    })
   })
 
   it('should handle LLM response wrapped in markdown code fence', async () => {

@@ -7,6 +7,8 @@ import { ParseProgressPanel } from './ParseProgressPanel'
 import { TenderResultSummary } from './TenderResultSummary'
 import { RequirementsList } from './RequirementsList'
 import { ScoringModelEditor } from './ScoringModelEditor'
+import { MandatoryItemsList } from './MandatoryItemsList'
+import { MandatoryItemsBadge } from './MandatoryItemsBadge'
 import type { AnalysisViewProps } from '../types'
 
 export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Element {
@@ -19,6 +21,11 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const updateRequirement = useAnalysisStore((s) => s.updateRequirement)
   const updateScoringCriterion = useAnalysisStore((s) => s.updateScoringCriterion)
   const confirmScoringModel = useAnalysisStore((s) => s.confirmScoringModel)
+  const detectMandatoryItems = useAnalysisStore((s) => s.detectMandatoryItems)
+  const fetchMandatoryItems = useAnalysisStore((s) => s.fetchMandatoryItems)
+  const fetchMandatorySummary = useAnalysisStore((s) => s.fetchMandatorySummary)
+  const updateMandatoryItem = useAnalysisStore((s) => s.updateMandatoryItem)
+  const addMandatoryItem = useAnalysisStore((s) => s.addMandatoryItem)
 
   const {
     parsedTender,
@@ -34,6 +41,12 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     extractionProgress,
     extractionMessage,
     extractionLoading,
+    mandatoryItems,
+    mandatorySummary,
+    mandatoryDetectionTaskId,
+    mandatoryDetectionProgress,
+    mandatoryDetectionMessage,
+    mandatoryDetectionError,
   } = projectState
 
   // On mount / project change: check for existing data
@@ -41,7 +54,16 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     void fetchTenderResult(projectId)
     void fetchRequirements(projectId)
     void fetchScoringModel(projectId)
-  }, [projectId, fetchTenderResult, fetchRequirements, fetchScoringModel])
+    void fetchMandatoryItems(projectId)
+    void fetchMandatorySummary(projectId)
+  }, [
+    projectId,
+    fetchTenderResult,
+    fetchRequirements,
+    fetchScoringModel,
+    fetchMandatoryItems,
+    fetchMandatorySummary,
+  ])
 
   const handleCancel = async (): Promise<void> => {
     if (!importTaskId) return
@@ -61,6 +83,10 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     await extractRequirements(projectId)
   }
 
+  const handleDetectMandatory = async (): Promise<void> => {
+    await detectMandatoryItems(projectId)
+  }
+
   // Determine view state
   const isParsing = importTaskId !== null
   const isParseCompleted =
@@ -68,6 +94,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const hasParsedResult = parsedTender !== null
   const hasExtractionResult = requirements !== null
   const isExtracting = extractionTaskId !== null && !hasExtractionResult
+  const isMandatoryDetecting =
+    mandatoryDetectionTaskId !== null || projectState.mandatoryDetectionLoading
 
   // Error state (no parsed result)
   if (!hasParsedResult && error && !isParsing) {
@@ -183,7 +211,11 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
                 key: 'requirements',
                 label: `需求清单 (${requirements.length})`,
                 children: (
-                  <RequirementsList requirements={requirements} onUpdate={updateRequirement} />
+                  <RequirementsList
+                    requirements={requirements}
+                    mandatoryItems={mandatoryItems}
+                    onUpdate={updateRequirement}
+                  />
                 ),
               },
               {
@@ -199,6 +231,25 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
                   />
                 ) : (
                   <div className="text-text-secondary p-8 text-center">评分模型数据加载中...</div>
+                ),
+              },
+              {
+                key: 'mandatory',
+                label: <MandatoryItemsBadge summary={mandatorySummary} />,
+                children: (
+                  <MandatoryItemsList
+                    items={mandatoryItems}
+                    summary={mandatorySummary}
+                    detecting={isMandatoryDetecting}
+                    progress={mandatoryDetectionProgress}
+                    progressMessage={mandatoryDetectionMessage}
+                    error={mandatoryDetectionError}
+                    onDetect={handleDetectMandatory}
+                    onUpdate={updateMandatoryItem}
+                    onAdd={(content, sourceText, sourcePages) =>
+                      addMandatoryItem(projectId, content, sourceText, sourcePages)
+                    }
+                  />
                 ),
               },
             ]}
