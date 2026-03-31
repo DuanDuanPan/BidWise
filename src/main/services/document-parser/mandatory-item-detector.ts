@@ -371,9 +371,20 @@ export class MandatoryItemDetector {
     const now = new Date().toISOString()
     const pages = input.sourcePages ? [...new Set(input.sourcePages)].sort((a, b) => a - b) : []
 
+    const trimmedContent = input.content.trim()
+
+    // Pre-check for duplicate content
+    const exists = await this.mandatoryItemRepo.contentExists(input.projectId, trimmedContent)
+    if (exists) {
+      throw new BidWiseError(
+        ErrorCode.MANDATORY_DETECTION_FAILED,
+        `该必响应项已存在，请勿重复添加: ${trimmedContent.slice(0, 50)}`
+      )
+    }
+
     const item: MandatoryItem = {
       id: uuidv4(),
-      content: input.content.trim(),
+      content: trimmedContent,
       sourceText: (input.sourceText ?? '').trim(),
       sourcePages: pages,
       confidence: 1.0,

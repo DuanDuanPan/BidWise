@@ -46,6 +46,17 @@ export function MandatoryItemsList({
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [form] = Form.useForm()
 
+  const confirmRedetect = (): void => {
+    Modal.confirm({
+      title: '确认重新检测',
+      icon: <ExclamationCircleOutlined />,
+      content: '重新检测将清除现有的必响应项及其审核结果，是否继续？',
+      okText: '确认重新检测',
+      cancelText: '取消',
+      onOk: onDetect,
+    })
+  }
+
   const handleConfirm = async (id: string): Promise<void> => {
     try {
       await onUpdate(id, { status: 'confirmed' })
@@ -65,15 +76,15 @@ export function MandatoryItemsList({
   const handleAdd = async (): Promise<void> => {
     try {
       const values = await form.validateFields()
-      const sourcePages = values.sourcePages
+      const sourcePages: number[] | undefined = values.sourcePages
         ? [
-            ...new Set(
+            ...new Set<number>(
               values.sourcePages
                 .split(/[,，\s]+/)
                 .map((s: string) => parseInt(s.trim(), 10))
                 .filter((n: number) => !isNaN(n))
             ),
-          ].sort((a: number, b: number) => a - b)
+          ].sort((a, b) => a - b)
         : undefined
 
       await onAdd(values.content, values.sourceText, sourcePages)
@@ -162,7 +173,7 @@ export function MandatoryItemsList({
         <div className="flex gap-3">
           <Button
             icon={<ReloadOutlined />}
-            onClick={onDetect}
+            onClick={confirmRedetect}
             disabled={detecting}
             loading={detecting}
             data-testid="mandatory-redetect-btn"
@@ -347,7 +358,7 @@ export function MandatoryItemsList({
           <Button
             size="small"
             icon={<ReloadOutlined />}
-            onClick={onDetect}
+            onClick={confirmRedetect}
             disabled={detecting}
             loading={detecting}
             data-testid="mandatory-redetect-btn"

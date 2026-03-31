@@ -21,20 +21,39 @@ export class MandatoryItemRepository {
 
     try {
       if (rows.length === 0) return
-      await getDb()
-        .insertInto('mandatoryItems')
-        .values(rows)
-        .onConflict((oc) => oc.columns(['projectId', 'content']).doNothing())
-        .execute()
+      await getDb().insertInto('mandatoryItems').values(rows).execute()
     } catch (err) {
       throw new DatabaseError(`必响应项批量插入失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  async contentExists(projectId: string, content: string): Promise<boolean> {
+    try {
+      const row = await getDb()
+        .selectFrom('mandatoryItems')
+        .select('id')
+        .where('projectId', '=', projectId)
+        .where('content', '=', content)
+        .executeTakeFirst()
+      return !!row
+    } catch (err) {
+      throw new DatabaseError(`必响应项查重失败: ${(err as Error).message}`, err)
     }
   }
 
   /** Atomically replace all items for a project (delete old + insert new in one transaction) */
   async replaceByProject(projectId: string, items: MandatoryItem[]): Promise<void> {
     const now = new Date().toISOString()
-    const rows = items.map((item) => ({
+
+    // Deduplicate by content within the batch (keep first occurrence)
+    const seen = new Set<string>()
+    const uniqueItems = items.filter((item) => {
+      if (seen.has(item.content)) return false
+      seen.add(item.content)
+      return true
+    })
+
+    const rows = uniqueItems.map((item) => ({
       id: item.id || uuidv4(),
       projectId,
       content: item.content,
@@ -53,11 +72,7 @@ export class MandatoryItemRepository {
         .execute(async (trx) => {
           await trx.deleteFrom('mandatoryItems').where('projectId', '=', projectId).execute()
           if (rows.length > 0) {
-            await trx
-              .insertInto('mandatoryItems')
-              .values(rows)
-              .onConflict((oc) => oc.columns(['projectId', 'content']).doNothing())
-              .execute()
+            await trx.insertInto('mandatoryItems').values(rows).execute()
           }
         })
     } catch (err) {
@@ -127,6 +142,20 @@ export class MandatoryItemRepository {
     } catch (err) {
       if (err instanceof NotFoundError) throw err
       throw new DatabaseError(`必响应项更新失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /** Null out all linkedRequirementId values for a project (used before requirement re-extraction) */
+  async clearLinkedRequirements(projectId: string): Promise<void> {
+    try {
+      await getDb()
+        .updateTable('mandatoryItems')
+        .set({ linkedRequirementId: null, updatedAt: new Date().toISOString() })
+        .where('projectId', '=', projectId)
+        .where('linkedRequirementId', 'is not', null)
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`清除必响应项关联失败: ${(err as Error).message}`, err)
     }
   }
 
