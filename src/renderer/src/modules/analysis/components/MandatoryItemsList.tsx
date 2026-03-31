@@ -98,8 +98,8 @@ export function MandatoryItemsList({
     }
   }
 
-  // Error state
-  if (error && !detecting) {
+  // Error state with no existing items — show error-only view
+  if (error && !detecting && !items) {
     return (
       <div data-testid="mandatory-items-list">
         <Alert
@@ -338,6 +338,29 @@ export function MandatoryItemsList({
 
   return (
     <div data-testid="mandatory-items-list">
+      {/* Error banner (shown above existing items when re-detection fails) */}
+      {error && !detecting && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          icon={<ExclamationCircleOutlined />}
+          message={`*项检测失败：${error}`}
+          className="mb-3"
+          action={
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={confirmRedetect}
+              data-testid="mandatory-retry-btn"
+            >
+              重新检测
+            </Button>
+          }
+          data-testid="mandatory-error"
+        />
+      )}
+
       {/* Summary bar */}
       <div className="mb-3 flex items-center justify-between" data-testid="mandatory-summary">
         <div className="text-text-secondary text-sm">

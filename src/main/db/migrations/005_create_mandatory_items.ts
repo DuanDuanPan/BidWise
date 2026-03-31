@@ -12,7 +12,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('source_pages', 'text', (col) => col.notNull().defaultTo('[]'))
     .addColumn('confidence', 'real', (col) => col.notNull().defaultTo(0))
     .addColumn('status', 'text', (col) => col.notNull().defaultTo('detected'))
-    .addColumn('linked_requirement_id', 'text')
+    .addColumn('linked_requirement_id', 'text', (col) =>
+      col.references('requirements.id').onDelete('set null')
+    )
     .addColumn('detected_at', 'text', (col) => col.notNull())
     .addColumn('updated_at', 'text', (col) => col.notNull())
     .addUniqueConstraint('mandatory_items_project_content_unique', ['project_id', 'content'])

@@ -19,6 +19,7 @@ import type {
   ScoringCriterion,
   ScoringSubItem,
   ExtractionTaskResult,
+  MandatoryItemsSnapshot,
 } from '@shared/analysis-types'
 
 const logger = createLogger('scoring-extractor')
@@ -246,6 +247,23 @@ export class ScoringExtractor {
         // Step 4: Clean old data and persist
         // Clear mandatory item links before deleting requirements to prevent dangling references
         await mandatoryItemRepo.clearLinkedRequirements(projectId)
+
+        // Sync mandatory items snapshot to reflect cleared links
+        const mandatoryItems = await mandatoryItemRepo.findByProject(projectId)
+        if (mandatoryItems.length > 0) {
+          const mandatorySnapshot: MandatoryItemsSnapshot = {
+            projectId,
+            items: mandatoryItems,
+            detectedAt: new Date().toISOString(),
+          }
+          const mandatorySnapshotPath = path.join(rootPath, 'tender', 'mandatory-items.json')
+          await fs.writeFile(
+            mandatorySnapshotPath,
+            JSON.stringify(mandatorySnapshot, null, 2),
+            'utf-8'
+          )
+        }
+
         await requirementRepo.deleteByProject(projectId)
         await requirementRepo.create(projectId, result.requirements)
         await scoringModelRepo.upsert(result.scoringModel)

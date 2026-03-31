@@ -36,6 +36,15 @@ vi.mock('@main/db/repositories/scoring-model-repo', () => ({
   },
 }))
 
+const mockClearLinkedRequirements = vi.fn()
+const mockMandatoryFindByProject = vi.fn()
+vi.mock('@main/db/repositories/mandatory-item-repo', () => ({
+  MandatoryItemRepository: class {
+    clearLinkedRequirements = mockClearLinkedRequirements
+    findByProject = mockMandatoryFindByProject
+  },
+}))
+
 const mockEnqueue = vi.fn()
 const mockExecute = vi.fn()
 vi.mock('@main/services/task-queue', () => ({
@@ -73,7 +82,19 @@ vi.mock('@main/utils/errors', () => {
       this.cause = cause
     }
   }
-  return { BidWiseError }
+  class DatabaseError extends BidWiseError {
+    constructor(message: string, cause?: unknown) {
+      super('DATABASE', message, cause)
+      this.name = 'DatabaseError'
+    }
+  }
+  class NotFoundError extends BidWiseError {
+    constructor(message: string, cause?: unknown) {
+      super('NOT_FOUND', message, cause)
+      this.name = 'NotFoundError'
+    }
+  }
+  return { BidWiseError, DatabaseError, NotFoundError }
 })
 
 vi.mock('uuid', () => ({ v4: () => 'mock-uuid' }))
@@ -140,6 +161,8 @@ describe('ScoringExtractor', () => {
     mockReqDeleteByProject.mockResolvedValue(undefined)
     mockScoringUpsert.mockResolvedValue({})
     mockScoringFindByProject.mockResolvedValue(null)
+    mockClearLinkedRequirements.mockResolvedValue(undefined)
+    mockMandatoryFindByProject.mockResolvedValue([])
   })
 
   it('should enqueue task and return taskId', async () => {
@@ -203,6 +226,9 @@ describe('ScoringExtractor', () => {
         agentType: 'extract',
       })
     )
+
+    // Verify mandatory item links cleared before requirements deleted
+    expect(mockClearLinkedRequirements).toHaveBeenCalledWith('proj-1')
 
     // Verify persistence
     expect(mockReqDeleteByProject).toHaveBeenCalledWith('proj-1')

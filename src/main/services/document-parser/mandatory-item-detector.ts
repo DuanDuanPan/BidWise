@@ -270,16 +270,24 @@ export class MandatoryItemDetector {
           }))
           .filter((item) => item.content.length > 0)
 
+        // Deduplicate by content (keep first occurrence) before persisting
+        const seenContent = new Set<string>()
+        const uniqueItems = items.filter((item) => {
+          if (seenContent.has(item.content)) return false
+          seenContent.add(item.content)
+          return true
+        })
+
         // Auto-link to requirements
-        autoLinkToRequirements(items, existingRequirements)
+        autoLinkToRequirements(uniqueItems, existingRequirements)
 
         // Step 4: Atomically replace old data (transaction: delete + insert)
-        await mandatoryItemRepo.replaceByProject(projectId, items)
+        await mandatoryItemRepo.replaceByProject(projectId, uniqueItems)
 
-        // Step 5: Write snapshot
+        // Step 5: Write snapshot (uses same deduplicated list to stay in sync with DB)
         const snapshot: MandatoryItemsSnapshot = {
           projectId,
-          items,
+          items: uniqueItems,
           detectedAt: now,
         }
         const snapshotPath = path.join(rootPath, 'tender', 'mandatory-items.json')
@@ -287,9 +295,9 @@ export class MandatoryItemDetector {
 
         ctx.updateProgress(100, '*项检测完成')
         logger.info(
-          `Mandatory item detection complete for project ${projectId}: ${items.length} items found`
+          `Mandatory item detection complete for project ${projectId}: ${uniqueItems.length} items found`
         )
-        return items
+        return uniqueItems
       })
       .catch((err) => {
         logger.error(`Mandatory detection task failed: ${taskId}`, err)
