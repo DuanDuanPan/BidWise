@@ -1,0 +1,20 @@
+{
+  "story_id": "3-3-template-driven-proposal-skeleton",
+  "saved_at": "2026-03-31T12:00:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/3-3-template-driven-proposal-skeleton-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/3-3-template-driven-proposal-skeleton-ux/prototype.snapshot.json",
+  "children_count": 7,
+  "screens": [
+    { "id": "bRcia", "name": "Screen 1 — Template Selection", "phase": "select-template" },
+    { "id": "nJSJc", "name": "Screen 2 — Skeleton Editor", "phase": "edit-skeleton" },
+    { "id": "gI1xx", "name": "Screen 3 — Existing Content", "phase": "has-content" }
+  ],
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 3,
+  "exported_files": [
+    "exports/bRcia.png",
+    "exports/nJSJc.png",
+    "exports/gI1xx.png"
+  ]
+}

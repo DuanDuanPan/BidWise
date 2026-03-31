@@ -1,0 +1,33 @@
+{
+  "story_id": "2-6-mandatory-item-detection",
+  "saved_at": "2026-03-31T10:30:00.000Z",
+  "pen_file": "prototype.pen",
+  "snapshot_file": "prototype.snapshot.json",
+  "children_count": 7,
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 3,
+  "frames": [
+    {
+      "id": "RsiE0",
+      "name": "Screen A — Empty State",
+      "export": "exports/RsiE0.png"
+    },
+    {
+      "id": "BsUfi",
+      "name": "Screen B — Detection Complete",
+      "export": "exports/BsUfi.png"
+    },
+    {
+      "id": "wIkDw",
+      "name": "Screen C — All Items Reviewed",
+      "export": "exports/wIkDw.png"
+    }
+  ],
+  "design_system_frames": [
+    { "id": "evdxs", "name": "Story 1.4 — 色彩系统" },
+    { "id": "XnWun", "name": "Story 1.4 — 字体系统与排版层级" },
+    { "id": "uIv6r", "name": "Story 1.4 — 间距系统" },
+    { "id": "oqdEG", "name": "Story 1.4 — 自定义图标集" }
+  ]
+}
