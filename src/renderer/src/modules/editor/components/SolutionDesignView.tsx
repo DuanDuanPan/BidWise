@@ -74,8 +74,18 @@ export function SolutionDesignView({
   const documentContent = useDocumentStore((s) => s.content)
   const documentLoading = useDocumentStore((s) => s.loading)
 
+  // Cancel any in-flight debounce timer and pending persist
+  const cancelPendingPersist = useCallback(() => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current)
+      persistTimerRef.current = null
+    }
+    pendingPersistRef.current = null
+  }, [])
+
   // Reset state when projectId changes to avoid stale phase from previous project
   useEffect(() => {
+    cancelPendingPersist()
     setPhase('checking')
     setError(null)
     setSkeleton([])
@@ -84,7 +94,7 @@ export function SolutionDesignView({
     setTemplateId('')
     setOverwriteConfirmed(false)
     setH1Titles([])
-  }, [projectId])
+  }, [projectId, cancelPendingPersist])
 
   // Step 1: Check if proposal has content
   useEffect(() => {
@@ -272,6 +282,7 @@ export function SolutionDesignView({
       okType: 'danger',
       cancelText: '取消',
       onOk: () => {
+        cancelPendingPersist()
         setPhase('select-template')
         setSkeleton([])
         setSelectedTemplateId(null)
@@ -279,7 +290,7 @@ export function SolutionDesignView({
         setOverwriteConfirmed(true)
       },
     })
-  }, [])
+  }, [cancelPendingPersist])
 
   const handleReselectFromHasContent = useCallback(() => {
     Modal.confirm({
@@ -289,20 +300,17 @@ export function SolutionDesignView({
       okType: 'danger',
       cancelText: '取消',
       onOk: () => {
+        cancelPendingPersist()
         setOverwriteConfirmed(true)
         setPhase('select-template')
       },
     })
-  }, [])
+  }, [cancelPendingPersist])
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      if (persistTimerRef.current) {
-        clearTimeout(persistTimerRef.current)
-      }
-    }
-  }, [])
+    return cancelPendingPersist
+  }, [cancelPendingPersist])
 
   // --- Render ---
 

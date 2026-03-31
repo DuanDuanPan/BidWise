@@ -344,26 +344,15 @@ export const templateService = {
     // Load template
     const template = await templateService.getTemplate(templateId)
 
-    // Check existing content
-    try {
-      const doc = await documentService.load(projectId)
-      if (doc.content.trim() && !overwriteExisting) {
-        throw new BidWiseError(
-          ErrorCode.SKELETON_OVERWRITE_REQUIRED,
-          '项目已有方案内容，需要确认覆盖'
-        )
-      }
-    } catch (err) {
-      if (err instanceof BidWiseError) {
-        // DOCUMENT_NOT_FOUND is OK — means empty, proceed with generation
-        if (err.code === ErrorCode.DOCUMENT_NOT_FOUND) {
-          // fall through
-        } else {
-          throw err
-        }
-      } else {
-        throw err
-      }
+    // Check existing content — documentService.load() returns empty content
+    // when proposal.md doesn't exist, so no special error handling needed.
+    // DOCUMENT_NOT_FOUND only fires when project.rootPath is missing (a real error).
+    const doc = await documentService.load(projectId)
+    if (doc.content.trim() && !overwriteExisting) {
+      throw new BidWiseError(
+        ErrorCode.SKELETON_OVERWRITE_REQUIRED,
+        '项目已有方案内容，需要确认覆盖'
+      )
     }
 
     // Get scoring model (direct service call, not IPC)
