@@ -90,6 +90,17 @@ const requestApi = {
 
   documentGetMetadata: (input: IpcChannelMap['document:get-metadata']['input']) =>
     typedInvoke(IPC_CHANNELS.DOCUMENT_GET_METADATA, input),
+
+  templateList: () => typedInvoke(IPC_CHANNELS.TEMPLATE_LIST),
+
+  templateGet: (input: IpcChannelMap['template:get']['input']) =>
+    typedInvoke(IPC_CHANNELS.TEMPLATE_GET, input),
+
+  templateGenerateSkeleton: (input: IpcChannelMap['template:generate-skeleton']['input']) =>
+    typedInvoke(IPC_CHANNELS.TEMPLATE_GENERATE_SKELETON, input),
+
+  templatePersistSkeleton: (input: IpcChannelMap['template:persist-skeleton']['input']) =>
+    typedInvoke(IPC_CHANNELS.TEMPLATE_PERSIST_SKELETON, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

@@ -8,7 +8,7 @@ const MAX_TITLE_LEN = 30
 
 interface DocumentOutlineTreeProps {
   outline: OutlineNode[]
-  onNodeClick: (node: OutlineNode) => void
+  onNodeClick?: (node: OutlineNode) => void
 }
 
 function collectKeys(nodes: OutlineNode[]): string[] {
@@ -31,7 +31,7 @@ function buildNodeMap(nodes: OutlineNode[], map: Map<string, OutlineNode>): void
   }
 }
 
-function toTreeData(nodes: OutlineNode[]): DataNode[] {
+function toTreeData(nodes: OutlineNode[], interactive: boolean): DataNode[] {
   return nodes.map((node) => {
     const truncated = node.title.length > MAX_TITLE_LEN
     const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
@@ -39,7 +39,7 @@ function toTreeData(nodes: OutlineNode[]): DataNode[] {
     const titleNode = (
       <span
         onMouseDown={(e) => e.preventDefault()}
-        className="text-caption cursor-pointer text-[var(--color-text-secondary)] select-none"
+        className={`text-caption text-[var(--color-text-secondary)] select-none ${interactive ? 'cursor-pointer' : 'cursor-default'}`}
         data-testid={`outline-node-${node.key}`}
         aria-label={`${node.level}级标题 ${node.title}`}
         title={node.title}
@@ -51,7 +51,7 @@ function toTreeData(nodes: OutlineNode[]): DataNode[] {
     return {
       key: node.key,
       title: titleNode,
-      children: toTreeData(node.children),
+      children: toTreeData(node.children, interactive),
     }
   })
 }
@@ -70,7 +70,7 @@ export function DocumentOutlineTree({
 
   const handleSelect = useCallback(
     (keys: React.Key[]) => {
-      if (keys.length === 0) return
+      if (keys.length === 0 || !onNodeClick) return
       const key = String(keys[0])
       const node = nodeMap.get(key)
       if (node) {
@@ -81,7 +81,8 @@ export function DocumentOutlineTree({
     [nodeMap, onNodeClick]
   )
 
-  const treeData = useMemo(() => toTreeData(outline), [outline])
+  const interactive = Boolean(onNodeClick)
+  const treeData = useMemo(() => toTreeData(outline, interactive), [outline, interactive])
   const expandedKeys = useMemo(() => collectKeys(outline), [outline])
   const activeSelectedKeys = useMemo(
     () => selectedKeys.filter((key) => nodeMap.has(key)),
@@ -107,8 +108,9 @@ export function DocumentOutlineTree({
       <Tree
         treeData={treeData}
         expandedKeys={expandedKeys}
-        selectedKeys={activeSelectedKeys}
-        onSelect={handleSelect}
+        selectedKeys={interactive ? activeSelectedKeys : []}
+        onSelect={interactive ? handleSelect : undefined}
+        selectable={interactive}
         blockNode
         showLine
         showIcon={false}

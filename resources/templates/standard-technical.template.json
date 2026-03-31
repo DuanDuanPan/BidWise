@@ -1,0 +1,233 @@
+{
+  "id": "standard-technical",
+  "name": "标准技术方案模板",
+  "description": "适用于一般 IT 系统集成项目的标准技术方案格式，涵盖需求理解、方案设计、实施计划等核心章节",
+  "version": "1.0",
+  "sections": [
+    {
+      "id": "s1",
+      "title": "项目概述",
+      "level": 1,
+      "guidanceText": "概述项目背景、目标和范围。",
+      "children": [
+        {
+          "id": "s1.1",
+          "title": "项目背景",
+          "level": 2,
+          "guidanceText": "阐述项目产生的背景和驱动因素。",
+          "children": []
+        },
+        {
+          "id": "s1.2",
+          "title": "项目目标",
+          "level": 2,
+          "guidanceText": "明确项目的具体目标和预期成果。",
+          "children": []
+        },
+        {
+          "id": "s1.3",
+          "title": "项目范围",
+          "level": 2,
+          "guidanceText": "界定项目的边界和交付物。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "title": "需求理解与分析",
+      "level": 1,
+      "guidanceText": "展示对甲方需求的深入理解。",
+      "children": [
+        {
+          "id": "s2.1",
+          "title": "业务需求分析",
+          "level": 2,
+          "guidanceText": "分析甲方的业务需求和痛点。",
+          "children": []
+        },
+        {
+          "id": "s2.2",
+          "title": "技术需求分析",
+          "level": 2,
+          "guidanceText": "分析技术层面的需求和约束。",
+          "children": []
+        },
+        {
+          "id": "s2.3",
+          "title": "需求响应矩阵",
+          "level": 2,
+          "guidanceText": "逐项响应招标文件中的需求条目。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "title": "系统架构设计",
+      "level": 1,
+      "guidanceText": "详细描述系统的整体架构设计方案。",
+      "children": [
+        {
+          "id": "s3.1",
+          "title": "总体架构",
+          "level": 2,
+          "guidanceText": "描述系统的分层架构和技术选型。",
+          "children": []
+        },
+        {
+          "id": "s3.2",
+          "title": "网络架构",
+          "level": 2,
+          "guidanceText": "描述网络拓扑和部署架构。",
+          "children": []
+        },
+        {
+          "id": "s3.3",
+          "title": "安全架构",
+          "level": 2,
+          "guidanceText": "描述信息安全策略和防护措施。",
+          "children": []
+        },
+        {
+          "id": "s3.4",
+          "title": "数据架构",
+          "level": 2,
+          "guidanceText": "描述数据模型、存储和流转方案。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "title": "功能设计",
+      "level": 1,
+      "guidanceText": "按模块描述系统的功能设计方案。",
+      "children": [
+        {
+          "id": "s4.1",
+          "title": "功能模块总览",
+          "level": 2,
+          "guidanceText": "列出系统主要功能模块及其关系。",
+          "children": []
+        },
+        {
+          "id": "s4.2",
+          "title": "核心功能详设",
+          "level": 2,
+          "guidanceText": "对核心功能模块进行详细设计描述。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "title": "项目实施方案",
+      "level": 1,
+      "guidanceText": "描述项目的实施策略和计划。",
+      "children": [
+        {
+          "id": "s5.1",
+          "title": "实施方法论",
+          "level": 2,
+          "guidanceText": "说明采用的项目管理方法和实施流程。",
+          "children": []
+        },
+        {
+          "id": "s5.2",
+          "title": "实施计划与里程碑",
+          "level": 2,
+          "guidanceText": "制定详细的实施时间表和关键里程碑。",
+          "children": []
+        },
+        {
+          "id": "s5.3",
+          "title": "风险管理",
+          "level": 2,
+          "guidanceText": "识别项目风险并制定应对措施。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s6",
+      "title": "项目管理",
+      "level": 1,
+      "guidanceText": "描述项目的管理体系和保障措施。",
+      "children": [
+        {
+          "id": "s6.1",
+          "title": "组织架构与人员配置",
+          "level": 2,
+          "guidanceText": "描述项目团队组织和关键角色。",
+          "children": []
+        },
+        {
+          "id": "s6.2",
+          "title": "质量管理",
+          "level": 2,
+          "guidanceText": "说明质量保障体系和质量控制措施。",
+          "children": []
+        },
+        {
+          "id": "s6.3",
+          "title": "沟通与协调机制",
+          "level": 2,
+          "guidanceText": "说明项目沟通渠道和协调流程。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s7",
+      "title": "售后服务与技术支持",
+      "level": 1,
+      "guidanceText": "描述交付后的运维和技术支持方案。",
+      "children": [
+        {
+          "id": "s7.1",
+          "title": "服务体系",
+          "level": 2,
+          "guidanceText": "说明售后服务组织架构和响应机制。",
+          "children": []
+        },
+        {
+          "id": "s7.2",
+          "title": "培训方案",
+          "level": 2,
+          "guidanceText": "制定用户培训计划和内容。",
+          "children": []
+        },
+        {
+          "id": "s7.3",
+          "title": "质保与维护",
+          "level": 2,
+          "guidanceText": "明确质保期限和维护承诺。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s8",
+      "title": "案例与资质",
+      "level": 1,
+      "guidanceText": "展示公司相关项目经验和资质。",
+      "children": [
+        {
+          "id": "s8.1",
+          "title": "类似项目案例",
+          "level": 2,
+          "guidanceText": "列举与本项目相关的成功案例。",
+          "children": []
+        },
+        {
+          "id": "s8.2",
+          "title": "公司资质与认证",
+          "level": 2,
+          "guidanceText": "列出公司相关资质证书和荣誉。",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

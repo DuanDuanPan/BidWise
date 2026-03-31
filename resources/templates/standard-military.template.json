@@ -1,0 +1,284 @@
+{
+  "id": "standard-military",
+  "name": "军工/政务技术方案模板",
+  "description": "适用于军工、政务类信息化项目，采用正式措辞，包含保密管理、国产化方案等专项章节",
+  "version": "1.0",
+  "sections": [
+    {
+      "id": "s1",
+      "title": "项目综述",
+      "level": 1,
+      "guidanceText": "概述项目建设背景、目标、意义和总体范围。",
+      "children": [
+        {
+          "id": "s1.1",
+          "title": "建设背景与意义",
+          "level": 2,
+          "guidanceText": "阐述项目建设的背景、必要性和战略意义。",
+          "children": []
+        },
+        {
+          "id": "s1.2",
+          "title": "建设目标",
+          "level": 2,
+          "guidanceText": "明确项目总体目标和分阶段目标。",
+          "children": []
+        },
+        {
+          "id": "s1.3",
+          "title": "建设范围与内容",
+          "level": 2,
+          "guidanceText": "界定本期建设范围和主要建设内容。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s2",
+      "title": "需求理解与响应",
+      "level": 1,
+      "guidanceText": "展示对用户需求的全面理解和逐项响应。",
+      "children": [
+        {
+          "id": "s2.1",
+          "title": "业务需求理解",
+          "level": 2,
+          "guidanceText": "分析用户业务流程和核心需求。",
+          "children": []
+        },
+        {
+          "id": "s2.2",
+          "title": "技术需求理解",
+          "level": 2,
+          "guidanceText": "分析技术层面的性能、接口和兼容性需求。",
+          "children": []
+        },
+        {
+          "id": "s2.3",
+          "title": "需求响应对照表",
+          "level": 2,
+          "guidanceText": "逐条对照招标要求进行响应说明。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s3",
+      "title": "总体技术方案",
+      "level": 1,
+      "guidanceText": "描述系统总体技术架构和关键技术路线。",
+      "children": [
+        {
+          "id": "s3.1",
+          "title": "总体架构设计",
+          "level": 2,
+          "guidanceText": "描述系统逻辑架构、物理架构和技术选型。",
+          "children": []
+        },
+        {
+          "id": "s3.2",
+          "title": "网络与通信设计",
+          "level": 2,
+          "guidanceText": "描述网络拓扑、通信协议和传输方案。",
+          "children": []
+        },
+        {
+          "id": "s3.3",
+          "title": "数据架构设计",
+          "level": 2,
+          "guidanceText": "描述数据模型、数据治理和存储方案。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s4",
+      "title": "详细功能设计",
+      "level": 1,
+      "guidanceText": "对系统各功能模块进行详细设计描述。",
+      "children": [
+        {
+          "id": "s4.1",
+          "title": "功能架构总览",
+          "level": 2,
+          "guidanceText": "描述系统功能模块划分和层次关系。",
+          "children": []
+        },
+        {
+          "id": "s4.2",
+          "title": "核心业务功能设计",
+          "level": 2,
+          "guidanceText": "对核心业务功能模块进行详细设计。",
+          "children": []
+        },
+        {
+          "id": "s4.3",
+          "title": "系统管理功能设计",
+          "level": 2,
+          "guidanceText": "对系统管理和运维功能进行设计。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s5",
+      "title": "信息安全方案",
+      "level": 1,
+      "guidanceText": "描述系统信息安全保障体系和防护措施。",
+      "children": [
+        {
+          "id": "s5.1",
+          "title": "安全体系架构",
+          "level": 2,
+          "guidanceText": "描述信息安全总体架构和等级保护方案。",
+          "children": []
+        },
+        {
+          "id": "s5.2",
+          "title": "安全防护措施",
+          "level": 2,
+          "guidanceText": "详述各层面的安全防护技术和措施。",
+          "children": []
+        },
+        {
+          "id": "s5.3",
+          "title": "安全管理制度",
+          "level": 2,
+          "guidanceText": "制定信息安全管理制度和应急预案。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s6",
+      "title": "保密管理方案",
+      "level": 1,
+      "guidanceText": "描述涉密信息保护措施和保密管理体系。",
+      "children": [
+        {
+          "id": "s6.1",
+          "title": "保密管理体系",
+          "level": 2,
+          "guidanceText": "说明保密管理组织架构和责任体系。",
+          "children": []
+        },
+        {
+          "id": "s6.2",
+          "title": "保密技术措施",
+          "level": 2,
+          "guidanceText": "描述数据加密、访问控制等保密技术手段。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s7",
+      "title": "国产化方案",
+      "level": 1,
+      "guidanceText": "描述软硬件国产化替代方案和兼容性保障。",
+      "children": [
+        {
+          "id": "s7.1",
+          "title": "国产化技术路线",
+          "level": 2,
+          "guidanceText": "说明国产化软硬件选型和技术路线。",
+          "children": []
+        },
+        {
+          "id": "s7.2",
+          "title": "兼容性与适配",
+          "level": 2,
+          "guidanceText": "描述国产化环境的兼容性测试和适配方案。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s8",
+      "title": "项目实施方案",
+      "level": 1,
+      "guidanceText": "描述项目实施策略、组织和计划安排。",
+      "children": [
+        {
+          "id": "s8.1",
+          "title": "实施方法与流程",
+          "level": 2,
+          "guidanceText": "说明项目实施方法论和标准化流程。",
+          "children": []
+        },
+        {
+          "id": "s8.2",
+          "title": "实施进度计划",
+          "level": 2,
+          "guidanceText": "制定详细的实施阶段划分和里程碑计划。",
+          "children": []
+        },
+        {
+          "id": "s8.3",
+          "title": "风险管控",
+          "level": 2,
+          "guidanceText": "识别项目风险并制定管控措施。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s9",
+      "title": "售后服务与技术支持",
+      "level": 1,
+      "guidanceText": "描述交付后的运维保障和技术支持方案。",
+      "children": [
+        {
+          "id": "s9.1",
+          "title": "服务保障体系",
+          "level": 2,
+          "guidanceText": "说明售后服务组织架构和响应承诺。",
+          "children": []
+        },
+        {
+          "id": "s9.2",
+          "title": "培训方案",
+          "level": 2,
+          "guidanceText": "制定分层次的用户培训计划。",
+          "children": []
+        },
+        {
+          "id": "s9.3",
+          "title": "质保与运维",
+          "level": 2,
+          "guidanceText": "明确质保期限、运维方式和维护承诺。",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "s10",
+      "title": "企业资质与业绩",
+      "level": 1,
+      "guidanceText": "展示企业资质、技术实力和相关项目业绩。",
+      "children": [
+        {
+          "id": "s10.1",
+          "title": "企业概况与资质",
+          "level": 2,
+          "guidanceText": "介绍企业基本情况和相关资质认证。",
+          "children": []
+        },
+        {
+          "id": "s10.2",
+          "title": "类似项目业绩",
+          "level": 2,
+          "guidanceText": "列举同类型项目的成功实施案例。",
+          "children": []
+        },
+        {
+          "id": "s10.3",
+          "title": "技术团队实力",
+          "level": 2,
+          "guidanceText": "介绍核心技术团队和专家资源。",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

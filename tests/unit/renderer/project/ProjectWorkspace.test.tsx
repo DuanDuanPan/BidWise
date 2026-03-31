@@ -25,6 +25,12 @@ vi.mock('@modules/editor/components/EditorView', () => ({
   ),
 }))
 
+vi.mock('@modules/editor/components/SolutionDesignView', () => ({
+  SolutionDesignView: ({ projectId }: { projectId: string }) => (
+    <div data-testid="solution-design-view">solution-design:{projectId}</div>
+  ),
+}))
+
 vi.mock('@modules/editor/components/DocumentOutlineTree', () => ({
   DocumentOutlineTree: ({
     outline,
@@ -291,12 +297,28 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
     expect(screen.getByTestId('workspace-main')).toBeInTheDocument()
   })
 
-  it('@p0 renders stage guide placeholder inside workspace layout', async () => {
+  it('@p0 renders SolutionDesignView for solution-design stage', async () => {
     vi.stubGlobal('api', {
       ...window.api,
       projectGet: vi.fn().mockResolvedValue({
         success: true,
         data: { ...mockProject, sopStage: 'solution-design' },
+      }),
+      templateList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
+    renderWorkspace()
+    const view = await screen
+      .findByTestId('solution-design-view', {}, { timeout: 3000 })
+      .catch(() => screen.findByTestId('solution-design-loading'))
+    expect(view).toBeInTheDocument()
+  })
+
+  it('@p0 renders stage guide placeholder for non-implemented stages', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'cost-estimation' },
       }),
     })
     renderWorkspace()

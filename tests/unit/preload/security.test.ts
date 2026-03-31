@@ -84,6 +84,10 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'documentSave',
       'documentSaveSync',
       'documentGetMetadata',
+      'templateList',
+      'templateGet',
+      'templateGenerateSkeleton',
+      'templatePersistSkeleton',
       'onTaskProgress',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)

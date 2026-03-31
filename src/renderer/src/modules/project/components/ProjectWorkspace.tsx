@@ -21,6 +21,7 @@ import { OutlinePanel } from './OutlinePanel'
 import { AnnotationPanel } from './AnnotationPanel'
 import { StatusBar } from './StatusBar'
 import { EditorView } from '@modules/editor/components/EditorView'
+import { SolutionDesignView } from '@modules/editor/components/SolutionDesignView'
 import { AutoSaveIndicator } from '@modules/editor/components/AutoSaveIndicator'
 import { DocumentOutlineTree } from '@modules/editor/components/DocumentOutlineTree'
 import { useDocumentOutline } from '@modules/editor/hooks/useDocumentOutline'
@@ -110,7 +111,10 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   const currentStageName = SOP_STAGES.find((s) => s.key === currentStageKey)?.label
   const isProposalWriting = currentStageKey === 'proposal-writing' && Boolean(projectId)
-  const outline = useDocumentOutline(isProposalWriting ? documentContent : '')
+  const isSolutionDesign = currentStageKey === 'solution-design' && Boolean(projectId)
+  const showOutline = (isProposalWriting || isSolutionDesign) && Boolean(projectId)
+  const showWordCount = isProposalWriting || isSolutionDesign
+  const outline = useDocumentOutline(showOutline ? documentContent : '')
   const wordCount = useWordCount(documentContent)
   const showAutoSaveIndicator = isProposalWriting
 
@@ -206,12 +210,19 @@ export function ProjectWorkspace(): React.JSX.Element {
                   )
                 }}
               />
+            ) : isSolutionDesign && outline.length > 0 ? (
+              <DocumentOutlineTree outline={outline} />
             ) : undefined}
           </OutlinePanel>
         }
         center={
           currentStageKey === 'requirements-analysis' && projectId ? (
             <AnalysisView projectId={projectId} />
+          ) : isSolutionDesign && projectId ? (
+            <SolutionDesignView
+              projectId={projectId}
+              onEnterProposalWriting={() => navigateToStage('proposal-writing')}
+            />
           ) : isProposalWriting && projectId ? (
             <EditorView projectId={projectId} />
           ) : (
@@ -228,7 +239,7 @@ export function ProjectWorkspace(): React.JSX.Element {
         statusBar={
           <StatusBar
             currentStageName={currentStageName}
-            wordCount={isProposalWriting ? wordCount : undefined}
+            wordCount={showWordCount ? wordCount : undefined}
             leftExtra={
               showAutoSaveIndicator && projectId ? (
                 <AutoSaveIndicator

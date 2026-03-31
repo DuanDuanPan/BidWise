@@ -24,6 +24,14 @@ import type {
   ConfirmScoringModelInput,
 } from './analysis-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
+import type {
+  TemplateSummary,
+  ProposalTemplate,
+  GenerateSkeletonInput,
+  GenerateSkeletonOutput,
+  PersistSkeletonInput,
+  PersistSkeletonOutput,
+} from './template-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -119,6 +127,10 @@ export const IPC_CHANNELS = {
   DOCUMENT_SAVE: 'document:save',
   DOCUMENT_SAVE_SYNC: 'document:save-sync',
   DOCUMENT_GET_METADATA: 'document:get-metadata',
+  TEMPLATE_LIST: 'template:list',
+  TEMPLATE_GET: 'template:get',
+  TEMPLATE_GENERATE_SKELETON: 'template:generate-skeleton',
+  TEMPLATE_PERSIST_SKELETON: 'template:persist-skeleton',
 } as const
 
 /** Filter for task:list queries */
@@ -157,6 +169,10 @@ export type IpcChannelMap = {
   'document:load': { input: { projectId: string }; output: ProposalDocument }
   'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
   'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }
+  'template:list': { input: void; output: TemplateSummary[] }
+  'template:get': { input: { templateId: string }; output: ProposalTemplate }
+  'template:generate-skeleton': { input: GenerateSkeletonInput; output: GenerateSkeletonOutput }
+  'template:persist-skeleton': { input: PersistSkeletonInput; output: PersistSkeletonOutput }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
