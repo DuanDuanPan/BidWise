@@ -52,6 +52,11 @@ function createWindow(): void {
   }
 }
 
+// Override userData before any path-dependent call (macOS ignores HOME env var)
+if (process.env.BIDWISE_USER_DATA_DIR) {
+  app.setPath('userData', process.env.BIDWISE_USER_DATA_DIR)
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.bidwise')
 

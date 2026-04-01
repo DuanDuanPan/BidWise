@@ -72,6 +72,23 @@ if (process.platform === 'darwin') {
 
 console.log(`Launching binary: ${binaryPath}`)
 
+// ── Step 2b: Re-sign on macOS to avoid dyld library-validation errors ──
+if (process.platform === 'darwin') {
+  // electron-builder --dir may produce an ad-hoc or partially-signed bundle.
+  // Re-sign with ad-hoc identity so macOS dyld accepts the binary.
+  const appBundle = binaryPath.replace(/\/Contents\/MacOS\/.*$/, '')
+  console.log(`Re-signing app bundle: ${appBundle}`)
+  try {
+    execSync(`codesign --force --deep --sign - "${appBundle}"`, {
+      cwd: root,
+      stdio: 'inherit',
+    })
+  } catch (signErr) {
+    console.error(`Code signing failed (non-fatal for local dev): ${signErr.message}`)
+    console.error('Cold-start timing may still succeed if SIP is relaxed.')
+  }
+}
+
 // ── Step 3: Launch and capture cold-start time ──────────────────────────
 const coldStartMs = await new Promise((resolve, reject) => {
   const child = spawn(binaryPath, [], {

@@ -45,6 +45,7 @@ async function launchStoryApp(): Promise<LaunchContext> {
     env: {
       ...process.env,
       HOME: sandboxHome,
+      BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
     },
   })
 

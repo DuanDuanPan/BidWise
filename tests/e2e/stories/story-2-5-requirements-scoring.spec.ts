@@ -34,6 +34,7 @@ async function launchStoryApp(existingHome?: string): Promise<LaunchContext> {
       LOCALAPPDATA: join(sandboxHome, 'AppData', 'Local'),
       XDG_CONFIG_HOME: join(sandboxHome, '.config'),
       XDG_DATA_HOME: join(sandboxHome, '.local', 'share'),
+      BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
     },
   })
 

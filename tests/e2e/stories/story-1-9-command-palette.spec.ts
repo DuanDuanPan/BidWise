@@ -21,6 +21,7 @@ async function withIsolatedApp(run: (window: Page) => Promise<void>): Promise<vo
       LOCALAPPDATA: join(testHome, 'AppData', 'Local'),
       XDG_CONFIG_HOME: join(testHome, '.config'),
       XDG_DATA_HOME: join(testHome, '.local', 'share'),
+      BIDWISE_USER_DATA_DIR: join(testHome, 'bidwise-data'),
     },
   })
 
