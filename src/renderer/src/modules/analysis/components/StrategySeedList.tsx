@@ -178,7 +178,7 @@ export function StrategySeedList({
           <div className="flex gap-2">
             <Button
               icon={<ReloadOutlined />}
-              onClick={() => setMaterialModalOpen(true)}
+              onClick={handleRegenerate}
               data-testid="seed-generate"
             >
               重新生成
