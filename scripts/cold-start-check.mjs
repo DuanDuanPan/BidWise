@@ -84,8 +84,13 @@ if (process.platform === 'darwin') {
       stdio: 'inherit',
     })
   } catch (signErr) {
-    console.error(`Code signing failed (non-fatal for local dev): ${signErr.message}`)
-    console.error('Cold-start timing may still succeed if SIP is relaxed.')
+    console.error(
+      `FAIL: Code signing failed — this is a signing/packaging issue, not a performance issue.`
+    )
+    console.error(`  App bundle: ${appBundle}`)
+    console.error(`  Error: ${signErr.message}`)
+    console.error(`  Fix: check Xcode command-line tools, SIP settings, or run with --no-sign.`)
+    process.exit(2)
   }
 }
 

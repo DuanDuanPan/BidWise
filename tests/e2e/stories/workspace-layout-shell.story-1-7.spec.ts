@@ -1,6 +1,8 @@
 import { test, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { _electron as electron } from 'playwright'
-import { resolve } from 'path'
+import { mkdtemp, rm } from 'fs/promises'
+import { join, resolve } from 'path'
+import { tmpdir } from 'os'
 
 const APP_ENTRY = resolve(__dirname, '../../../out/main/index.js')
 const RESIZE_SETTLE_MS = 450
@@ -9,11 +11,23 @@ interface WorkspaceSession {
   electronApp: ElectronApplication
   page: Page
   projectId: string
+  sandboxHome: string
 }
 
-async function launchElectronApp(): Promise<{ electronApp: ElectronApplication; page: Page }> {
+async function launchElectronApp(): Promise<{
+  electronApp: ElectronApplication
+  page: Page
+  sandboxHome: string
+}> {
+  const sandboxHome = await mkdtemp(join(tmpdir(), 'bidwise-story-1-7-'))
+
   const electronApp = await electron.launch({
     args: [APP_ENTRY],
+    env: {
+      ...process.env,
+      HOME: sandboxHome,
+      BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
+    },
   })
 
   await expect.poll(() => electronApp.windows().length, { timeout: 30000 }).toBeGreaterThan(0)
@@ -21,7 +35,7 @@ async function launchElectronApp(): Promise<{ electronApp: ElectronApplication; 
   const [page] = electronApp.windows()
   await page.waitForLoadState('domcontentloaded')
 
-  return { electronApp, page }
+  return { electronApp, page, sandboxHome }
 }
 
 async function createProject(page: Page, testTitle: string): Promise<string> {
@@ -98,7 +112,7 @@ async function launchWorkspaceSession(
   testTitle: string,
   size: { width: number; height: number }
 ): Promise<WorkspaceSession> {
-  const { electronApp, page } = await launchElectronApp()
+  const { electronApp, page, sandboxHome } = await launchElectronApp()
 
   await page.setViewportSize(size)
   await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(size.width)
@@ -106,7 +120,7 @@ async function launchWorkspaceSession(
   const projectId = await createProject(page, testTitle)
   await openWorkspaceFromKanban(page, projectId)
 
-  return { electronApp, page, projectId }
+  return { electronApp, page, projectId, sandboxHome }
 }
 
 async function cleanupSession(session: WorkspaceSession): Promise<void> {
@@ -117,6 +131,7 @@ async function cleanupSession(session: WorkspaceSession): Promise<void> {
   }
 
   await session.electronApp.close()
+  await rm(session.sandboxHome, { recursive: true, force: true })
 }
 
 async function getWidth(locator: Locator): Promise<number> {

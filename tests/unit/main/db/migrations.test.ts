@@ -36,7 +36,7 @@ describe('Database migrations', () => {
     await db.destroy()
   })
 
-  it('should run 001_initial_schema successfully', async () => {
+  it('should run all migrations successfully', async () => {
     const migrator = new Migrator({
       db,
       provider: { getMigrations: async () => migrations },
@@ -45,9 +45,17 @@ describe('Database migrations', () => {
 
     expect(error).toBeUndefined()
     expect(results).toHaveLength(6)
-    expect(results?.every((result) => result.status === 'Success')).toBe(true)
-    expect(results![0].migrationName).toBe('001_initial_schema')
-    expect(results![5].migrationName).toBe('006_create_strategy_seeds')
+    for (const result of results!) {
+      expect(result.status).toBe('Success')
+    }
+    expect(results!.map((r) => r.migrationName)).toEqual([
+      '001_initial_schema',
+      '002_add_industry',
+      '003_create_tasks',
+      '004_create_requirements_scoring',
+      '005_create_mandatory_items',
+      '006_create_strategy_seeds',
+    ])
   })
 
   it('should create projects table with correct columns', async () => {
@@ -95,6 +103,22 @@ describe('Database migrations', () => {
     expect(colMap.get('root_path')!.notnull).toBe(0)
 
     await rawDb.destroy()
+  })
+
+  it('should record 006_create_strategy_seeds in kysely_migration after full chain', async () => {
+    const migrator = new Migrator({
+      db,
+      provider: { getMigrations: async () => migrations },
+    })
+    await migrator.migrateToLatest()
+
+    const rows = await sql<{
+      name: string
+    }>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)
+    const names = rows.rows.map((r) => r.name)
+
+    expect(names).toContain('006_create_strategy_seeds')
+    expect(names).toHaveLength(6)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {
