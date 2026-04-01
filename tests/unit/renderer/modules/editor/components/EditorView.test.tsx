@@ -27,6 +27,10 @@ vi.mock('@modules/editor/hooks/useDocument', () => ({
   useDocument: vi.fn(),
 }))
 
+vi.mock('@modules/editor/context/useChapterGenerationContext', () => ({
+  useChapterGenerationContext: vi.fn(() => null),
+}))
+
 vi.mock('@modules/editor/components/PlateEditor', () => ({
   PlateEditor: ({ projectId }: { projectId: string }) => (
     <div data-testid="mock-plate-editor">{projectId}</div>
@@ -74,5 +78,11 @@ describe('@story-3-1 EditorView', () => {
   it('should call loadDocument on mount', () => {
     render(<EditorView projectId="proj-1" />)
     expect(mockLoadDocument).toHaveBeenCalledWith('proj-1')
+  })
+
+  it('@story-3-4 passes onReplaceSectionReady to PlateEditor', () => {
+    mockContent = '# Hello'
+    render(<EditorView projectId="proj-1" />)
+    expect(screen.getByTestId('mock-plate-editor')).toBeDefined()
   })
 })

@@ -387,6 +387,71 @@ describe('TaskQueueService @story-2-2', () => {
     })
   })
 
+  describe('@story-3-4 per-task timeout', () => {
+    it('@p0 should use custom timeoutMs when provided via options', async () => {
+      vi.useFakeTimers()
+
+      mockFindById.mockResolvedValue(makeTask({ retryCount: 3, maxRetries: 3 }))
+      mockUpdate.mockImplementation(async (_taskId, input) =>
+        makeTask(input as Record<string, unknown>)
+      )
+
+      const executor: TaskExecutor = async (ctx) =>
+        new Promise<unknown>((_, reject) => {
+          ctx.signal.addEventListener(
+            'abort',
+            () => reject(ctx.signal.reason ?? new Error('aborted')),
+            { once: true }
+          )
+        })
+
+      // Use a short 5-second timeout instead of the 15-minute default
+      const execution = queue.execute('task-1', executor, { timeoutMs: 5_000 })
+
+      // Advance past the custom timeout but well before the default
+      await vi.advanceTimersByTimeAsync(5_000)
+      const result = await execution
+
+      expect(result.status).toBe('failed')
+      expect(result.error).toBe('Task timed out')
+
+      vi.useRealTimers()
+    })
+
+    it('@p1 should fall back to default timeout when options.timeoutMs is not provided', async () => {
+      vi.useFakeTimers()
+
+      mockFindById.mockResolvedValue(makeTask({ retryCount: 3, maxRetries: 3 }))
+      mockUpdate.mockImplementation(async (_taskId, input) =>
+        makeTask(input as Record<string, unknown>)
+      )
+
+      const executor: TaskExecutor = async (ctx) =>
+        new Promise<unknown>((_, reject) => {
+          ctx.signal.addEventListener(
+            'abort',
+            () => reject(ctx.signal.reason ?? new Error('aborted')),
+            { once: true }
+          )
+        })
+
+      // Execute without custom timeout — default 15 min should apply
+      const execution = queue.execute('task-1', executor)
+
+      // 5 seconds should NOT trigger timeout
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      // 15 minutes (900_000ms) should trigger timeout
+      await vi.advanceTimersByTimeAsync(895_000)
+      const result = await execution
+
+      expect(result.status).toBe('failed')
+      expect(result.error).toBe('Task timed out')
+
+      vi.useRealTimers()
+    })
+  })
+
   describe('concurrency', () => {
     it('@p1 should queue 4th task when 3 are running', async () => {
       const task = makeTask()

@@ -162,6 +162,50 @@ describe('@story-3-1 PlateEditor', () => {
     })
   })
 
+  it('@story-3-4 registers a replaceSectionContent handler via onReplaceSectionReady', () => {
+    const onReplaceSectionReady = vi.fn()
+
+    render(
+      <PlateEditor
+        initialContent="# Heading"
+        projectId="proj-1"
+        onReplaceSectionReady={onReplaceSectionReady}
+      />
+    )
+
+    expect(onReplaceSectionReady).toHaveBeenCalledTimes(1)
+    expect(typeof onReplaceSectionReady.mock.calls[0]?.[0]).toBe('function')
+  })
+
+  it('@story-3-4 replaceSectionContent replaces target section and persists to store', () => {
+    const onReplaceSectionReady = vi.fn()
+    mockSerialize.mockReturnValue('## Chapter 1\n\nOld content\n\n## Chapter 2\n\nKeep this')
+    mockDeserialize.mockImplementation((_e: unknown, md: string) => [
+      { type: 'p', children: [{ text: md }] },
+    ])
+
+    render(
+      <PlateEditor
+        initialContent="## Chapter 1\n\nOld content\n\n## Chapter 2\n\nKeep this"
+        projectId="proj-1"
+        onReplaceSectionReady={onReplaceSectionReady}
+      />
+    )
+
+    const replaceSection = onReplaceSectionReady.mock.calls[0]?.[0] as
+      | ((target: { title: string; level: number; occurrenceIndex: number }, md: string) => void)
+      | undefined
+    expect(replaceSection).toBeDefined()
+
+    replaceSection?.({ title: 'Chapter 1', level: 2, occurrenceIndex: 0 }, 'New AI content')
+
+    expect(mockSetValue).toHaveBeenCalled()
+    expect(mockUpdateContent).toHaveBeenCalledWith(
+      expect.stringContaining('New AI content'),
+      'proj-1'
+    )
+  })
+
   it('serializes on change after debounce and updates the document store', async () => {
     vi.useFakeTimers()
 

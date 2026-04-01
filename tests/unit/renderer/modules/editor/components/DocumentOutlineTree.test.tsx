@@ -92,6 +92,62 @@ describe('@story-3-2 DocumentOutlineTree', () => {
     expect(selected).toBeInTheDocument()
   })
 
+  it('@story-3-4 @p0 renders status icon for generating phase', () => {
+    const node = makeNode({ key: 'heading-0', title: 'AI Chapter', level: 2, occurrenceIndex: 0 })
+    const chapterPhases = new Map([['2:AI Chapter:0', 'generating' as const]])
+    render(
+      <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} chapterPhases={chapterPhases} />
+    )
+    // LoadingOutlined renders an SVG with the anticon-loading class
+    const titleSpan = screen.getByTestId('outline-node-heading-0')
+    expect(titleSpan.querySelector('.anticon-loading')).toBeInTheDocument()
+  })
+
+  it('@story-3-4 @p0 renders status icon for queued phase', () => {
+    const node = makeNode({
+      key: 'heading-0',
+      title: 'Queued Chapter',
+      level: 2,
+      occurrenceIndex: 0,
+    })
+    const chapterPhases = new Map([['2:Queued Chapter:0', 'queued' as const]])
+    render(
+      <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} chapterPhases={chapterPhases} />
+    )
+    const titleSpan = screen.getByTestId('outline-node-heading-0')
+    expect(titleSpan.querySelector('.anticon-clock-circle')).toBeInTheDocument()
+  })
+
+  it('@story-3-4 @p1 renders green check for completed phase', () => {
+    const node = makeNode({ key: 'heading-0', title: 'Done', level: 2, occurrenceIndex: 0 })
+    const chapterPhases = new Map([['2:Done:0', 'completed' as const]])
+    render(
+      <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} chapterPhases={chapterPhases} />
+    )
+    const titleSpan = screen.getByTestId('outline-node-heading-0')
+    expect(titleSpan.querySelector('.anticon-check-circle')).toBeInTheDocument()
+  })
+
+  it('@story-3-4 @p1 renders warning icon for failed phase', () => {
+    const node = makeNode({ key: 'heading-0', title: 'Failed', level: 2, occurrenceIndex: 0 })
+    const chapterPhases = new Map([['2:Failed:0', 'failed' as const]])
+    render(
+      <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} chapterPhases={chapterPhases} />
+    )
+    const titleSpan = screen.getByTestId('outline-node-heading-0')
+    expect(titleSpan.querySelector('.anticon-warning')).toBeInTheDocument()
+  })
+
+  it('@story-3-4 @p1 does not render status icon when no chapterPhases provided', () => {
+    const node = makeNode({ key: 'heading-0', title: 'Normal', level: 2, occurrenceIndex: 0 })
+    render(<DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} />)
+    const titleSpan = screen.getByTestId('outline-node-heading-0')
+    expect(titleSpan.querySelector('.anticon-loading')).not.toBeInTheDocument()
+    expect(titleSpan.querySelector('.anticon-clock-circle')).not.toBeInTheDocument()
+    expect(titleSpan.querySelector('.anticon-check-circle')).not.toBeInTheDocument()
+    expect(titleSpan.querySelector('.anticon-warning')).not.toBeInTheDocument()
+  })
+
   it('@story-3-2 @p0 keeps nodes expanded when outline updates from empty to populated', () => {
     const node = makeNode({
       key: 'heading-0',
