@@ -1,0 +1,17 @@
+story_id: 2-7-strategy-seed-generation
+story_file: _bmad-output/implementation-artifacts/2-7-strategy-seed-generation.md
+ux_spec: ux-spec.md
+pen_file: prototype.pen
+snapshot_file: prototype.snapshot.json
+save_report_file: prototype.save-report.json
+reference_exports:
+- exports/4Kttd.png
+- exports/EHQ7k.png
+- exports/Jr2We.png
+primary_frames: []
+dev_lookup_order:
+- Read story file design notes
+- Read this manifest
+- Open reference PNG for visual fidelity
+- Open .pen for structure and interaction detail
+notes: PNG 用于视觉对齐参考，.pen 用于结构与交互细节查阅。

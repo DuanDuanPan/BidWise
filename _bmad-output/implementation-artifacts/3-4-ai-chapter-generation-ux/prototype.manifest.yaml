@@ -1,0 +1,26 @@
+story_id: 3-4-ai-chapter-generation
+story_file: _bmad-output/implementation-artifacts/3-4-ai-chapter-generation.md
+ux_spec: ux-spec.md
+pen_file: prototype.pen
+snapshot_file: prototype.snapshot.json
+save_report_file: prototype.save-report.json
+reference_exports:
+- exports/0D5kp.png
+- exports/AZ9bb.png
+- exports/ElQ7O.png
+- exports/WcNXo.png
+- exports/p5RRC.png
+- exports/qZz9d.png
+primary_frames:
+- Screen 1 — Empty Chapter
+- Screen 2 — Generation Progress
+- Screen 3 — Generation Complete
+- Screen 4 — Regenerate Dialog
+- Screen 5 — Error State
+- Screen 6 — Multi-chapter Parallel
+dev_lookup_order:
+- Read story file design notes
+- Read this manifest
+- Open reference PNG for visual fidelity
+- Open .pen for structure and interaction detail
+notes: PNG 用于视觉对齐参考，.pen 用于结构与交互细节查阅。

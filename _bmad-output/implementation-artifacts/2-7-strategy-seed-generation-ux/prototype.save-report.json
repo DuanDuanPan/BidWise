@@ -1,0 +1,32 @@
+{
+  "story_id": "2-7-strategy-seed-generation",
+  "saved_at": "2026-04-01T10:30:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/2-7-strategy-seed-generation-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/2-7-strategy-seed-generation-ux/prototype.snapshot.json",
+  "children_count": 7,
+  "screens": [
+    {
+      "id": "4Kttd",
+      "name": "Screen A — 策略种子 Empty State",
+      "description": "Empty state before seed generation with CTA button"
+    },
+    {
+      "id": "Jr2We",
+      "name": "Screen B — 沟通素材上传 Modal",
+      "description": "MaterialInputModal with sample meeting notes text"
+    },
+    {
+      "id": "EHQ7k",
+      "name": "Screen C — 策略种子 Cards (Primary)",
+      "description": "Primary state with 3 seed cards: confirmed, adjusted, pending"
+    }
+  ],
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 3,
+  "exported_files": [
+    "exports/4Kttd.png",
+    "exports/Jr2We.png",
+    "exports/EHQ7k.png"
+  ]
+}

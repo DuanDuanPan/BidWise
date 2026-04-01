@@ -1,0 +1,18 @@
+{
+  "story_id": "3-4-ai-chapter-generation",
+  "saved_at": "2026-04-01T09:30:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/prototype.snapshot.json",
+  "children_count": 6,
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 6,
+  "screens": [
+    {"id": "0D5kp", "name": "Screen 1 — Empty Chapter", "png": "exports/0D5kp.png"},
+    {"id": "qZz9d", "name": "Screen 2 — Generation Progress", "png": "exports/qZz9d.png"},
+    {"id": "AZ9bb", "name": "Screen 3 — Generation Complete", "png": "exports/AZ9bb.png"},
+    {"id": "p5RRC", "name": "Screen 4 — Regenerate Dialog", "png": "exports/p5RRC.png"},
+    {"id": "WcNXo", "name": "Screen 5 — Error State", "png": "exports/WcNXo.png"},
+    {"id": "ElQ7O", "name": "Screen 6 — Multi-chapter Parallel", "png": "exports/ElQ7O.png"}
+  ]
+}
