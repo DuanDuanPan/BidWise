@@ -42,7 +42,7 @@ async function createProject(window: Page, name: string, customerName: string): 
   await window.getByTestId('input-name').fill(name)
   await window.getByTestId('input-customer').fill(customerName)
   await window.getByRole('button', { name: '创建项目' }).click()
-  await expect(window.getByText(name)).toBeVisible()
+  await expect(window.getByTestId('project-kanban').getByText(name)).toBeVisible()
 }
 
 async function triggerShortcut(window: Page, key: string): Promise<void> {
@@ -87,24 +87,22 @@ test('@story-1-9 @p0 opens the command palette and supports stage jumps, project
     await expect(window.getByTestId('command-palette-list').getByText(projectAlpha)).toBeVisible()
     await window.getByTestId('command-palette-input').press('Enter')
     await expect(window.getByTestId('project-workspace')).toBeVisible()
-    await expect(window.getByText(projectAlpha)).toBeVisible()
+    await expect(window.getByTestId('project-workspace').getByText(projectAlpha)).toBeVisible()
 
     await openCommandPalette(window)
     await searchCommand(window, '方案设计')
     await expect(window.getByTestId('command-palette-list').getByText('方案设计阶段')).toBeVisible()
     await window.getByTestId('command-palette-input').press('Enter')
-    await expect(window.getByTestId('stage-guide-placeholder')).toHaveAttribute(
-      'data-stage',
-      'solution-design'
-    )
-    await expect(window.getByRole('heading', { name: '方案设计' })).toBeVisible()
+    await expect(
+      window.getByTestId('solution-design-view').or(window.getByTestId('solution-design-loading'))
+    ).toBeVisible()
 
     await openCommandPalette(window)
     await searchCommand(window, projectBeta)
     await expect(window.getByTestId('command-palette-list').getByText(projectBeta)).toBeVisible()
     await window.getByTestId('command-palette-input').press('Enter')
     await expect(window.getByTestId('project-workspace')).toBeVisible()
-    await expect(window.getByText(projectBeta)).toBeVisible()
+    await expect(window.getByTestId('project-workspace').getByText(projectBeta)).toBeVisible()
 
     await openCommandPalette(window)
     await searchCommand(window, '章节')

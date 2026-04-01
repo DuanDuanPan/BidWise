@@ -163,7 +163,7 @@ test('@story-1-7 @p0 renders the three-column workspace shell from the kanban fl
     await expect(page.getByRole('complementary', { name: '智能批注' })).toBeVisible()
     await expect(page.getByRole('status', { name: '项目状态栏' })).toBeVisible()
     await expect(page.getByTestId('sop-progress-bar')).toBeVisible()
-    await expect(page.getByTestId('stage-guide-placeholder')).toBeVisible()
+    await expect(page.getByTestId('analysis-view')).toBeVisible()
 
     expect(await getWidth(outlinePanel)).toBeGreaterThanOrEqual(230)
     expect(await getWidth(workspaceMain)).toBeGreaterThanOrEqual(600)

@@ -56,6 +56,20 @@ function findBinary() {
 }
 
 const binaryPath = findBinary()
+
+// ── Step 2b: Ad-hoc codesign on macOS ──────────────────────────────────
+// electron-builder --dir may produce bundles with mismatched Team IDs
+// between the app executable and Electron Framework, causing dyld to
+// reject the binary. Re-signing with ad-hoc identity (`-`) fixes this.
+if (process.platform === 'darwin') {
+  const appBundle = binaryPath.replace(/\/Contents\/MacOS\/.*$/, '')
+  console.log(`Ad-hoc codesigning: ${appBundle}`)
+  execSync(`codesign --force --deep -s - "${appBundle}"`, {
+    cwd: root,
+    stdio: 'inherit',
+  })
+}
+
 console.log(`Launching binary: ${binaryPath}`)
 
 // ── Step 3: Launch and capture cold-start time ──────────────────────────
