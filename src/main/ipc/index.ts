@@ -4,12 +4,14 @@ import { registerTaskHandlers } from './task-handlers'
 import { registerAnalysisHandlers } from './analysis-handlers'
 import { registerDocumentHandlers } from './document-handlers'
 import { registerTemplateHandlers } from './template-handlers'
+import { registerChapterHandlers } from './chapter-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
 import type { RegisteredTaskChannels } from './task-handlers'
 import type { RegisteredAnalysisChannels } from './analysis-handlers'
 import type { RegisteredDocumentChannels } from './document-handlers'
 import type { RegisteredTemplateChannels } from './template-handlers'
+import type { RegisteredChapterChannels } from './chapter-handlers'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Compile-time exhaustive check: every IpcChannel must be covered by a handler module.
@@ -22,6 +24,7 @@ type _AllRegistered =
   | RegisteredAnalysisChannels
   | RegisteredDocumentChannels
   | RegisteredTemplateChannels
+  | RegisteredChapterChannels
 type _Unregistered = Exclude<IpcChannel, _AllRegistered>
 void (true satisfies [_Unregistered] extends [never] ? true : never)
 
@@ -32,4 +35,5 @@ export function registerIpcHandlers(): void {
   registerAnalysisHandlers()
   registerDocumentHandlers()
   registerTemplateHandlers()
+  registerChapterHandlers()
 }

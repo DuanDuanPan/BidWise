@@ -97,9 +97,13 @@ export class TaskQueueService {
     logger.info(`Task executor registered: ${key}`)
   }
 
-  async execute(taskId: string, executor: TaskExecutor): Promise<TaskRecord> {
+  async execute(
+    taskId: string,
+    executor: TaskExecutor,
+    options?: { timeoutMs?: number }
+  ): Promise<TaskRecord> {
     const task = await this.repo.findById(taskId)
-    const timeoutMs = DEFAULT_TIMEOUT_MS
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
     // Store executor for retry / recovery before queueing.
     this.executors.set(taskId, executor)

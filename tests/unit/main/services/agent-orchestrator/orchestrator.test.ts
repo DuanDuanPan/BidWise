@@ -105,7 +105,9 @@ describe('AgentOrchestrator @story-2-2', () => {
         context: { rfpContent: 'test' },
       })
 
-      expect(mockExecute).toHaveBeenCalledWith('task-123', expect.any(Function))
+      expect(mockExecute).toHaveBeenCalledWith('task-123', expect.any(Function), {
+        timeoutMs: undefined,
+      })
     })
 
     it('@p0 should call handler and aiProxy.call in executor', async () => {

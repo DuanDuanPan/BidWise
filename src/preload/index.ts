@@ -134,6 +134,12 @@ const requestApi = {
 
   templatePersistSkeleton: (input: IpcChannelMap['template:persist-skeleton']['input']) =>
     typedInvoke(IPC_CHANNELS.TEMPLATE_PERSIST_SKELETON, input),
+
+  chapterGenerate: (input: IpcChannelMap['chapter:generate']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_GENERATE, input),
+
+  chapterRegenerate: (input: IpcChannelMap['chapter:regenerate']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_REGENERATE, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

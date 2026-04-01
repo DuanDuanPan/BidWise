@@ -1,14 +1,23 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Tree, Tooltip } from 'antd'
-import { FileTextOutlined } from '@ant-design/icons'
+import {
+  FileTextOutlined,
+  ClockCircleOutlined,
+  LoadingOutlined,
+  CheckCircleOutlined,
+  WarningOutlined,
+} from '@ant-design/icons'
 import type { DataNode } from 'antd/es/tree'
 import type { OutlineNode } from '@modules/editor/hooks/useDocumentOutline'
+import type { ChapterGenerationPhase } from '@shared/chapter-types'
 
 const MAX_TITLE_LEN = 30
 
 interface DocumentOutlineTreeProps {
   outline: OutlineNode[]
   onNodeClick?: (node: OutlineNode) => void
+  /** Map of "level:title:occurrenceIndex" → phase for status icon decoration */
+  chapterPhases?: Map<string, ChapterGenerationPhase>
 }
 
 function collectKeys(nodes: OutlineNode[]): string[] {
@@ -31,10 +40,50 @@ function buildNodeMap(nodes: OutlineNode[], map: Map<string, OutlineNode>): void
   }
 }
 
-function toTreeData(nodes: OutlineNode[], interactive: boolean): DataNode[] {
+function getStatusIcon(phase: ChapterGenerationPhase | undefined): React.ReactNode {
+  if (!phase) return null
+  switch (phase) {
+    case 'queued':
+      return (
+        <ClockCircleOutlined
+          style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 4 }}
+        />
+      )
+    case 'analyzing':
+    case 'matching-assets':
+    case 'generating':
+    case 'annotating-sources':
+      return (
+        <LoadingOutlined style={{ fontSize: 10, color: 'var(--color-brand)', marginLeft: 4 }} />
+      )
+    case 'completed':
+      return (
+        <CheckCircleOutlined
+          style={{ fontSize: 10, color: 'var(--color-success, #52c41a)', marginLeft: 4 }}
+        />
+      )
+    case 'failed':
+    case 'conflicted':
+      return (
+        <WarningOutlined
+          style={{ fontSize: 10, color: 'var(--color-error, #ff4d4f)', marginLeft: 4 }}
+        />
+      )
+    default:
+      return null
+  }
+}
+
+function toTreeData(
+  nodes: OutlineNode[],
+  interactive: boolean,
+  chapterPhases?: Map<string, ChapterGenerationPhase>
+): DataNode[] {
   return nodes.map((node) => {
     const truncated = node.title.length > MAX_TITLE_LEN
     const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
+    const phaseKey = `${node.level}:${node.title}:${node.occurrenceIndex}`
+    const phase = chapterPhases?.get(phaseKey)
 
     const titleNode = (
       <span
@@ -45,13 +94,14 @@ function toTreeData(nodes: OutlineNode[], interactive: boolean): DataNode[] {
         title={node.title}
       >
         {truncated ? <Tooltip title={node.title}>{displayTitle}</Tooltip> : displayTitle}
+        {getStatusIcon(phase)}
       </span>
     )
 
     return {
       key: node.key,
       title: titleNode,
-      children: toTreeData(node.children, interactive),
+      children: toTreeData(node.children, interactive, chapterPhases),
     }
   })
 }
@@ -59,6 +109,7 @@ function toTreeData(nodes: OutlineNode[], interactive: boolean): DataNode[] {
 export function DocumentOutlineTree({
   outline,
   onNodeClick,
+  chapterPhases,
 }: DocumentOutlineTreeProps): React.JSX.Element {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
 
@@ -82,7 +133,10 @@ export function DocumentOutlineTree({
   )
 
   const interactive = Boolean(onNodeClick)
-  const treeData = useMemo(() => toTreeData(outline, interactive), [outline, interactive])
+  const treeData = useMemo(
+    () => toTreeData(outline, interactive, chapterPhases),
+    [outline, interactive, chapterPhases]
+  )
   const expandedKeys = useMemo(() => collectKeys(outline), [outline])
   const activeSelectedKeys = useMemo(
     () => selectedKeys.filter((key) => nodeMap.has(key)),

@@ -49,6 +49,11 @@ import type {
   PersistSkeletonInput,
   PersistSkeletonOutput,
 } from './template-types'
+import type {
+  ChapterGenerateInput,
+  ChapterRegenerateInput,
+  ChapterGenerateOutput,
+} from './chapter-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -159,6 +164,8 @@ export const IPC_CHANNELS = {
   TEMPLATE_GET: 'template:get',
   TEMPLATE_GENERATE_SKELETON: 'template:generate-skeleton',
   TEMPLATE_PERSIST_SKELETON: 'template:persist-skeleton',
+  CHAPTER_GENERATE: 'chapter:generate',
+  CHAPTER_REGENERATE: 'chapter:regenerate',
 } as const
 
 /** Filter for task:list queries */
@@ -215,6 +222,8 @@ export type IpcChannelMap = {
   'template:get': { input: { templateId: string }; output: ProposalTemplate }
   'template:generate-skeleton': { input: GenerateSkeletonInput; output: GenerateSkeletonOutput }
   'template:persist-skeleton': { input: PersistSkeletonInput; output: PersistSkeletonOutput }
+  'chapter:generate': { input: ChapterGenerateInput; output: ChapterGenerateOutput }
+  'chapter:regenerate': { input: ChapterRegenerateInput; output: ChapterGenerateOutput }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

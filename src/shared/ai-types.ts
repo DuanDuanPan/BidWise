@@ -123,6 +123,8 @@ export interface TaskRecord {
 export interface AgentExecuteOptions {
   priority?: TaskPriority
   timeoutMs?: number
+  /** Max task-queue retries (0 = no queue-level retry, provider handles retries). */
+  maxRetries?: number
 }
 
 /** Request to execute an agent */

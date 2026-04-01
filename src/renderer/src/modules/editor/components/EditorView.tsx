@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { Skeleton, Alert, Button } from 'antd'
+import { Skeleton, Alert, Button, Modal } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { useDocument } from '@modules/editor/hooks/useDocument'
+import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
 import { PlateEditor } from './PlateEditor'
+import type { ReplaceSectionFn } from './PlateEditor'
 
 interface EditorViewProps {
   projectId: string
@@ -14,9 +16,15 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const content = useDocumentStore((s) => s.content)
   const loadDocument = useDocumentStore((s) => s.loadDocument)
   const syncFlushRef = useRef<(() => string) | null>(null)
+  const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
+  const chapterGen = useChapterGenerationContext()
 
   const registerSyncFlush = useCallback((flush: (() => string) | null): void => {
     syncFlushRef.current = flush
+  }, [])
+
+  const registerReplaceSection = useCallback((fn: ReplaceSectionFn | null): void => {
+    replaceSectionRef.current = fn
   }, [])
 
   const flushEditorContent = useCallback((): string | null => syncFlushRef.current?.() ?? null, [])
@@ -26,6 +34,34 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   useEffect(() => {
     loadDocument(projectId)
   }, [projectId, loadDocument])
+
+  // Watch for completed chapters and inject content into editor
+  useEffect(() => {
+    if (!chapterGen) return
+    for (const [, status] of chapterGen.statuses) {
+      if (status.phase === 'completed' && status.generatedContent && replaceSectionRef.current) {
+        replaceSectionRef.current(status.target, status.generatedContent)
+        chapterGen.dismissError(status.target)
+      }
+      if (status.phase === 'conflicted' && status.generatedContent) {
+        Modal.confirm({
+          title: '章节已被修改',
+          content: `章节 "${status.target.title}" 在 AI 生成期间被手动修改。是否仍要替换为 AI 生成的内容？`,
+          okText: '替换',
+          cancelText: '保留手动编辑',
+          onOk: () => {
+            if (replaceSectionRef.current && status.generatedContent) {
+              replaceSectionRef.current(status.target, status.generatedContent)
+            }
+            chapterGen.dismissError(status.target)
+          },
+          onCancel: () => {
+            chapterGen.dismissError(status.target)
+          },
+        })
+      }
+    }
+  }, [chapterGen])
 
   if (loading) {
     return (
@@ -58,11 +94,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
       data-testid="editor-view"
       data-editor-scroll-container="true"
     >
-      {/* Toolbar area reserved for Story 3.2 */}
       <PlateEditor
         initialContent={content}
         projectId={projectId}
         onSyncFlushReady={registerSyncFlush}
+        onReplaceSectionReady={registerReplaceSection}
       />
     </div>
   )

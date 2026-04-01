@@ -6,7 +6,7 @@ import {
   FileSearchOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useCurrentProject } from '../hooks/useCurrentProject'
 import { useContextRestore } from '../hooks/useContextRestore'
 import { useSopNavigation } from '../hooks/useSopNavigation'
@@ -26,11 +26,14 @@ import { AutoSaveIndicator } from '@modules/editor/components/AutoSaveIndicator'
 import { DocumentOutlineTree } from '@modules/editor/components/DocumentOutlineTree'
 import { useDocumentOutline } from '@modules/editor/hooks/useDocumentOutline'
 import { useWordCount } from '@modules/editor/hooks/useWordCount'
+import { useChapterGeneration } from '@modules/editor/hooks/useChapterGeneration'
+import { ChapterGenerationProvider } from '@modules/editor/context/ChapterGenerationContext'
 import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { useDocumentStore } from '@renderer/stores'
 import { SOP_STAGES } from '../types'
+import type { ChapterGenerationPhase } from '@shared/chapter-types'
 
 export function ProjectWorkspace(): React.JSX.Element {
   const navigate = useNavigate()
@@ -117,6 +120,16 @@ export function ProjectWorkspace(): React.JSX.Element {
   const outline = useDocumentOutline(showOutline ? documentContent : '')
   const wordCount = useWordCount(documentContent)
   const showAutoSaveIndicator = isProposalWriting
+  const chapterGen = useChapterGeneration()
+
+  // Build chapter phase map for outline tree status icons
+  const chapterPhases = useMemo(() => {
+    const map = new Map<string, ChapterGenerationPhase>()
+    for (const [key, status] of chapterGen.statuses) {
+      map.set(key, status.phase)
+    }
+    return map
+  }, [chapterGen.statuses])
 
   if (loading && !currentProject) {
     return (
@@ -201,6 +214,7 @@ export function ProjectWorkspace(): React.JSX.Element {
             {isProposalWriting ? (
               <DocumentOutlineTree
                 outline={outline}
+                chapterPhases={chapterPhases}
                 onNodeClick={(node) => {
                   scrollToHeading(
                     document.querySelector(
@@ -224,7 +238,9 @@ export function ProjectWorkspace(): React.JSX.Element {
               onEnterProposalWriting={() => navigateToStage('proposal-writing')}
             />
           ) : isProposalWriting && projectId ? (
-            <EditorView projectId={projectId} />
+            <ChapterGenerationProvider value={chapterGen}>
+              <EditorView projectId={projectId} />
+            </ChapterGenerationProvider>
           ) : (
             <StageGuidePlaceholder stageKey={currentStageKey} />
           )
@@ -234,6 +250,13 @@ export function ProjectWorkspace(): React.JSX.Element {
             collapsed={sidebarCollapsed}
             isCompact={isCompact}
             onToggle={toggleSidebar}
+            generatingCount={
+              isProposalWriting
+                ? [...chapterGen.statuses.values()].filter(
+                    (s) => !['completed', 'failed', 'conflicted'].includes(s.phase)
+                  ).length
+                : 0
+            }
           />
         }
         statusBar={

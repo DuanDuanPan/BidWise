@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { CommentOutlined } from '@ant-design/icons'
+import { CommentOutlined, RobotOutlined } from '@ant-design/icons'
 import { Badge, Tooltip } from 'antd'
 
 interface AnnotationPanelProps {
   collapsed: boolean
   isCompact: boolean
   onToggle: () => void
+  /** Number of chapters currently being generated */
+  generatingCount?: number
 }
 
 export function AnnotationPanel({
   collapsed,
   isCompact,
   onToggle,
+  generatingCount = 0,
 }: AnnotationPanelProps): React.JSX.Element {
   const [flyoutOpen, setFlyoutOpen] = useState(false)
   const flyoutRef = useRef<HTMLDivElement>(null)
@@ -220,7 +223,19 @@ export function AnnotationPanel({
         </div>
 
         {/* Content area — placeholder for Epic 4 */}
-        <div className="flex flex-1 items-center justify-center p-4">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
+          {generatingCount > 0 && (
+            <div
+              className="flex w-full items-center gap-2 rounded-md p-3"
+              style={{ backgroundColor: 'var(--color-bg-global)' }}
+              data-testid="annotation-generating-summary"
+            >
+              <RobotOutlined style={{ color: 'var(--color-brand)' }} />
+              <span className="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+                {generatingCount} 个章节正在生成...
+              </span>
+            </div>
+          )}
           <p className="text-caption text-center" style={{ color: 'var(--color-text-tertiary)' }}>
             批注面板将在批注模块（Epic 4）中加载
           </p>

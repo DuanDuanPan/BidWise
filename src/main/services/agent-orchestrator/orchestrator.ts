@@ -69,6 +69,9 @@ export class AgentOrchestrator {
         })
         throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
+        // Post-AI progress: annotating sources (Alpha placeholder — quick skip)
+        ctx.updateProgress(90, 'annotating-sources')
+
         const result: AgentExecuteResult = {
           content: response.content,
           usage: response.usage,
@@ -102,11 +105,13 @@ export class AgentOrchestrator {
       agentType: request.agentType,
       input: request.context,
       priority: request.options?.priority ?? 'normal',
+      maxRetries: request.options?.maxRetries,
     })
 
     // Fire-and-forget background execution
-    const executor = this.createExecutor(request.agentType, handler, request.options?.timeoutMs)
-    taskQueue.execute(taskId, executor).catch((err) => {
+    const timeoutMs = request.options?.timeoutMs
+    const executor = this.createExecutor(request.agentType, handler, timeoutMs)
+    taskQueue.execute(taskId, executor, { timeoutMs }).catch((err) => {
       // Background execution error — already handled by task-queue status
       logger.error(`Background task ${taskId} error:`, err)
     })

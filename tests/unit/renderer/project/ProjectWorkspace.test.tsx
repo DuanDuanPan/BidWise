@@ -143,6 +143,10 @@ describe('@story-1-6 ProjectWorkspace', () => {
       onTaskProgress: vi.fn().mockReturnValue(() => {}),
       taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
       taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
+      chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
+      agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
     })
     mockNavigate.mockClear()
     mockScrollToHeading.mockReset()
@@ -275,6 +279,10 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       onTaskProgress: vi.fn().mockReturnValue(() => {}),
       taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
       taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
+      chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
+      agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
     })
     mockNavigate.mockClear()
   })
