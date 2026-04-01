@@ -97,6 +97,24 @@ const requestApi = {
   analysisAddMandatoryItem: (input: IpcChannelMap['analysis:add-mandatory-item']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_ADD_MANDATORY_ITEM, input),
 
+  analysisGenerateSeeds: (input: IpcChannelMap['analysis:generate-seeds']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GENERATE_SEEDS, input),
+
+  analysisGetSeeds: (input: IpcChannelMap['analysis:get-seeds']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_SEEDS, input),
+
+  analysisGetSeedSummary: (input: IpcChannelMap['analysis:get-seed-summary']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_SEED_SUMMARY, input),
+
+  analysisUpdateSeed: (input: IpcChannelMap['analysis:update-seed']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_UPDATE_SEED, input),
+
+  analysisDeleteSeed: (input: IpcChannelMap['analysis:delete-seed']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_DELETE_SEED, input),
+
+  analysisAddSeed: (input: IpcChannelMap['analysis:add-seed']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_ADD_SEED, input),
+
   documentLoad: (input: IpcChannelMap['document:load']['input']) =>
     typedInvoke(IPC_CHANNELS.DOCUMENT_LOAD, input),
 

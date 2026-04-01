@@ -36,13 +36,32 @@ async function withIsolatedApp(run: (window: Page) => Promise<void>): Promise<vo
   }
 }
 
-async function createProject(window: Page, name: string, customerName: string): Promise<void> {
-  await window.getByTestId('create-project-btn').click()
-  await expect(window.getByTestId('input-name')).toBeVisible()
-  await window.getByTestId('input-name').fill(name)
-  await window.getByTestId('input-customer').fill(customerName)
-  await window.getByRole('button', { name: '创建项目' }).click()
-  await expect(window.getByTestId('project-kanban').getByText(name)).toBeVisible()
+async function createProject(window: Page, name: string, customerName: string): Promise<string> {
+  const response = await window.evaluate(
+    async ({ projectName, projectCustomer }) => {
+      return window.api.projectCreate({
+        name: projectName,
+        customerName: projectCustomer,
+        proposalType: 'presale-technical',
+      })
+    },
+    { projectName: name, projectCustomer: customerName }
+  )
+
+  expect(response.success, response.success ? undefined : response.error.message).toBeTruthy()
+
+  if (!response.success || !response.data?.id) {
+    throw new Error(
+      response.success ? 'projectCreate did not return an id' : response.error.message
+    )
+  }
+
+  await window.reload()
+  await window.waitForLoadState('domcontentloaded')
+  await expect(window.getByTestId('project-kanban')).toBeVisible()
+  await expect(window.getByTestId(`project-card-${response.data.id}`)).toBeVisible()
+
+  return response.data.id
 }
 
 async function triggerShortcut(window: Page, key: string): Promise<void> {

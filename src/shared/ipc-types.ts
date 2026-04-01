@@ -30,6 +30,15 @@ import type {
   MandatoryItemSummary,
   UpdateMandatoryItemInput,
   AddMandatoryItemInput,
+  GenerateSeedsInput,
+  GenerateSeedsResult,
+  GetSeedsInput,
+  StrategySeed,
+  GetSeedSummaryInput,
+  StrategySeedSummary,
+  UpdateSeedInput,
+  DeleteSeedInput,
+  AddSeedInput,
 } from './analysis-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 import type {
@@ -136,6 +145,12 @@ export const IPC_CHANNELS = {
   ANALYSIS_GET_MANDATORY_SUMMARY: 'analysis:get-mandatory-summary',
   ANALYSIS_UPDATE_MANDATORY_ITEM: 'analysis:update-mandatory-item',
   ANALYSIS_ADD_MANDATORY_ITEM: 'analysis:add-mandatory-item',
+  ANALYSIS_GENERATE_SEEDS: 'analysis:generate-seeds',
+  ANALYSIS_GET_SEEDS: 'analysis:get-seeds',
+  ANALYSIS_GET_SEED_SUMMARY: 'analysis:get-seed-summary',
+  ANALYSIS_UPDATE_SEED: 'analysis:update-seed',
+  ANALYSIS_DELETE_SEED: 'analysis:delete-seed',
+  ANALYSIS_ADD_SEED: 'analysis:add-seed',
   DOCUMENT_LOAD: 'document:load',
   DOCUMENT_SAVE: 'document:save',
   DOCUMENT_SAVE_SYNC: 'document:save-sync',
@@ -187,6 +202,12 @@ export type IpcChannelMap = {
   }
   'analysis:update-mandatory-item': { input: UpdateMandatoryItemInput; output: MandatoryItem }
   'analysis:add-mandatory-item': { input: AddMandatoryItemInput; output: MandatoryItem }
+  'analysis:generate-seeds': { input: GenerateSeedsInput; output: GenerateSeedsResult }
+  'analysis:get-seeds': { input: GetSeedsInput; output: StrategySeed[] | null }
+  'analysis:get-seed-summary': { input: GetSeedSummaryInput; output: StrategySeedSummary | null }
+  'analysis:update-seed': { input: UpdateSeedInput; output: StrategySeed }
+  'analysis:delete-seed': { input: DeleteSeedInput; output: void }
+  'analysis:add-seed': { input: AddSeedInput; output: StrategySeed }
   'document:load': { input: { projectId: string }; output: ProposalDocument }
   'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
   'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }

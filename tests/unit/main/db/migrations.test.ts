@@ -3,6 +3,11 @@ import Database from 'better-sqlite3'
 import { CamelCasePlugin, Kysely, Migrator, SqliteDialect, sql, type Migration } from 'kysely'
 import type { DB } from '@main/db/schema'
 import * as migration001 from '@main/db/migrations/001_initial_schema'
+import * as migration002 from '@main/db/migrations/002_add_industry'
+import * as migration003 from '@main/db/migrations/003_create_tasks'
+import * as migration004 from '@main/db/migrations/004_create_requirements_scoring'
+import * as migration005 from '@main/db/migrations/005_create_mandatory_items'
+import * as migration006 from '@main/db/migrations/006_create_strategy_seeds'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -13,6 +18,11 @@ function createTestDb(): Kysely<DB> {
 
 const migrations: Record<string, Migration> = {
   '001_initial_schema': migration001,
+  '002_add_industry': migration002,
+  '003_create_tasks': migration003,
+  '004_create_requirements_scoring': migration004,
+  '005_create_mandatory_items': migration005,
+  '006_create_strategy_seeds': migration006,
 }
 
 describe('Database migrations', () => {
@@ -34,9 +44,10 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(1)
-    expect(results![0].status).toBe('Success')
+    expect(results).toHaveLength(6)
+    expect(results?.every((result) => result.status === 'Success')).toBe(true)
     expect(results![0].migrationName).toBe('001_initial_schema')
+    expect(results![5].migrationName).toBe('006_create_strategy_seeds')
   })
 
   it('should create projects table with correct columns', async () => {
@@ -96,5 +107,46 @@ describe('Database migrations', () => {
 
     expect(error).toBeUndefined()
     expect(results).toHaveLength(0) // No new migrations
+  })
+
+  it('should create strategy_seeds table with the expected columns and unique constraint', async () => {
+    const rawDb = new Kysely<DB>({
+      dialect: new SqliteDialect({ database: new Database(':memory:') }),
+    })
+
+    try {
+      const rawMigrator = new Migrator({
+        db: rawDb,
+        provider: { getMigrations: async () => migrations },
+      })
+      await rawMigrator.migrateToLatest()
+
+      const columns = await sql<{
+        name: string
+        notnull: number
+        dflt_value: string | null
+      }>`PRAGMA table_info(strategy_seeds)`.execute(rawDb)
+
+      const colMap = new Map(columns.rows.map((column) => [column.name, column]))
+
+      expect(colMap.get('project_id')!.notnull).toBe(1)
+      expect(colMap.get('title')!.notnull).toBe(1)
+      expect(colMap.get('reasoning')!.notnull).toBe(1)
+      expect(colMap.get('suggestion')!.notnull).toBe(1)
+      expect(colMap.get('source_excerpt')!.dflt_value).toBe("''")
+      expect(colMap.get('confidence')!.dflt_value).toBe('0.5')
+      expect(colMap.get('status')!.dflt_value).toBe("'pending'")
+
+      const indexes = await sql<{
+        name: string
+        unique: number
+      }>`PRAGMA index_list(strategy_seeds)`.execute(rawDb)
+      expect(indexes.rows.some((index) => index.unique === 1)).toBe(true)
+      expect(indexes.rows.some((index) => index.name === 'strategy_seeds_project_id_idx')).toBe(
+        true
+      )
+    } finally {
+      await rawDb.destroy()
+    }
   })
 })

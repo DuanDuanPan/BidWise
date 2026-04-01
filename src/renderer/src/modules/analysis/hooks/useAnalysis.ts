@@ -12,13 +12,14 @@ const PROGRESS_STALE_THRESHOLD = 10_000
 /** Polling interval for task status (ms) */
 const POLL_INTERVAL = 3_000
 
-type TaskKind = 'import' | 'extraction' | 'mandatory'
+type TaskKind = 'import' | 'extraction' | 'mandatory' | 'seed'
 
-/** Determine whether a taskId is an import, extraction, or mandatory task within a project */
+/** Determine whether a taskId is an import, extraction, mandatory, or seed task within a project */
 function classifyTask(projectState: AnalysisProjectState, taskId: string): TaskKind | null {
   if (projectState.importTaskId === taskId) return 'import'
   if (projectState.extractionTaskId === taskId) return 'extraction'
   if (projectState.mandatoryDetectionTaskId === taskId) return 'mandatory'
+  if (projectState.seedGenerationTaskId === taskId) return 'seed'
   return null
 }
 
@@ -42,6 +43,8 @@ export function useAnalysisTaskMonitor(): void {
     (s) => s.updateMandatoryDetectionProgress
   )
   const setMandatoryDetectionCompleted = useAnalysisStore((s) => s.setMandatoryDetectionCompleted)
+  const updateSeedGenerationProgress = useAnalysisStore((s) => s.updateSeedGenerationProgress)
+  const setSeedGenerationCompleted = useAnalysisStore((s) => s.setSeedGenerationCompleted)
 
   const lastProgressTimeRef = useRef<Record<string, number>>({})
   const terminalHandledRef = useRef<Set<string>>(new Set())
@@ -61,6 +64,7 @@ export function useAnalysisTaskMonitor(): void {
         projectState.importTaskId,
         projectState.extractionTaskId,
         projectState.mandatoryDetectionTaskId,
+        projectState.seedGenerationTaskId,
       ]) {
         if (!taskId) continue
         activeTaskIds.add(taskId)
@@ -112,10 +116,13 @@ export function useAnalysisTaskMonitor(): void {
             } else {
               message.warning('需求抽取完成，但评分模型加载失败，请稍后重试')
             }
-          } else {
-            // mandatory
+          } else if (kind === 'mandatory') {
             await setMandatoryDetectionCompleted(projectId)
             message.success('必响应项检测完成')
+          } else {
+            // seed
+            await setSeedGenerationCompleted(projectId)
+            message.success('策略种子生成完成')
           }
           clearTaskTracking(taskId)
           return
@@ -127,6 +134,7 @@ export function useAnalysisTaskMonitor(): void {
             import: '解析失败',
             extraction: '抽取失败',
             mandatory: '*项检测失败',
+            seed: '策略种子生成失败',
           }
           const errMsg = task.error ?? errMsgMap[kind]
           setError(projectId, errMsg, kind)
@@ -162,6 +170,7 @@ export function useAnalysisTaskMonitor(): void {
       setExtractionCompleted,
       setMandatoryDetectionCompleted,
       setParseTaskStatus,
+      setSeedGenerationCompleted,
     ]
   )
 
@@ -184,8 +193,10 @@ export function useAnalysisTaskMonitor(): void {
         updateParseProgress(projectId, event.progress, event.message ?? '')
       } else if (kind === 'extraction') {
         updateExtractionProgress(projectId, event.progress, event.message ?? '')
-      } else {
+      } else if (kind === 'mandatory') {
         updateMandatoryDetectionProgress(projectId, event.progress, event.message ?? '')
+      } else {
+        updateSeedGenerationProgress(projectId, event.progress, event.message ?? '')
       }
 
       if (event.progress >= 100) {
@@ -198,6 +209,7 @@ export function useAnalysisTaskMonitor(): void {
     checkTaskStatus,
     updateExtractionProgress,
     updateMandatoryDetectionProgress,
+    updateSeedGenerationProgress,
     updateParseProgress,
   ])
 
@@ -241,6 +253,18 @@ export function useAnalysisTaskMonitor(): void {
 
           if (shouldPoll) {
             void checkTaskStatus(projectId, taskId, 'mandatory')
+          }
+        }
+
+        // Check seed generation task
+        if (projectState.seedGenerationTaskId) {
+          const taskId = projectState.seedGenerationTaskId
+          const shouldPoll =
+            projectState.seedGenerationProgress >= 100 ||
+            now - (lastProgressTimeRef.current[taskId] ?? now) > PROGRESS_STALE_THRESHOLD
+
+          if (shouldPoll) {
+            void checkTaskStatus(projectId, taskId, 'seed')
           }
         }
       }

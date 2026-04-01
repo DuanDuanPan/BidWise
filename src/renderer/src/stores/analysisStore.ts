@@ -7,6 +7,8 @@ import type {
   ScoringCriterion,
   MandatoryItem,
   MandatoryItemSummary,
+  StrategySeed,
+  StrategySeedSummary,
 } from '@shared/analysis-types'
 import type { TaskStatus } from '@shared/ai-types'
 
@@ -34,6 +36,14 @@ export interface AnalysisProjectState {
   mandatoryDetectionMessage: string
   mandatoryDetectionLoading: boolean
   mandatoryDetectionError: string | null
+  // Story 2.7: strategy seed state
+  seeds: StrategySeed[] | null
+  seedSummary: StrategySeedSummary | null
+  seedGenerationTaskId: string | null
+  seedGenerationProgress: number
+  seedGenerationMessage: string
+  seedGenerationLoading: boolean
+  seedGenerationError: string | null
 }
 
 export interface AnalysisState {
@@ -49,7 +59,7 @@ export interface AnalysisActions {
   setError: (
     projectId: string,
     error: string,
-    taskKind?: 'import' | 'extraction' | 'mandatory'
+    taskKind?: 'import' | 'extraction' | 'mandatory' | 'seed'
   ) => void
   reset: (projectId?: string) => void
   // Story 2.5: extraction actions
@@ -88,6 +98,24 @@ export interface AnalysisActions {
   updateMandatoryDetectionProgress: (projectId: string, progress: number, message?: string) => void
   setMandatoryDetectionCompleted: (projectId: string) => Promise<void>
   setMandatoryDetectionError: (projectId: string, error: string) => void
+  // Story 2.7: strategy seed actions
+  generateSeeds: (projectId: string, sourceMaterial: string) => Promise<void>
+  fetchSeeds: (projectId: string) => Promise<void>
+  fetchSeedSummary: (projectId: string) => Promise<void>
+  updateSeed: (
+    id: string,
+    patch: Partial<Pick<StrategySeed, 'title' | 'reasoning' | 'suggestion' | 'status'>>
+  ) => Promise<void>
+  deleteSeed: (id: string) => Promise<void>
+  addSeed: (
+    projectId: string,
+    title: string,
+    reasoning: string,
+    suggestion: string
+  ) => Promise<void>
+  updateSeedGenerationProgress: (projectId: string, progress: number, message?: string) => void
+  setSeedGenerationCompleted: (projectId: string) => Promise<void>
+  setSeedGenerationError: (projectId: string, error: string) => void
 }
 
 export type AnalysisStore = AnalysisState & AnalysisActions
@@ -118,6 +146,13 @@ export const EMPTY_ANALYSIS_PROJECT_STATE: Readonly<AnalysisProjectState> = Obje
   mandatoryDetectionMessage: '',
   mandatoryDetectionLoading: false,
   mandatoryDetectionError: null,
+  seeds: null,
+  seedSummary: null,
+  seedGenerationTaskId: null,
+  seedGenerationProgress: 0,
+  seedGenerationMessage: '',
+  seedGenerationLoading: false,
+  seedGenerationError: null,
 })
 
 function createProjectState(overrides: Partial<AnalysisProjectState> = {}): AnalysisProjectState {
@@ -157,13 +192,23 @@ export function findAnalysisProjectIdByTaskId(
     if (
       projectState.importTaskId === taskId ||
       projectState.extractionTaskId === taskId ||
-      projectState.mandatoryDetectionTaskId === taskId
+      projectState.mandatoryDetectionTaskId === taskId ||
+      projectState.seedGenerationTaskId === taskId
     ) {
       return projectId
     }
   }
 
   return null
+}
+
+function computeSeedSummary(seeds: StrategySeed[]): StrategySeedSummary {
+  return {
+    total: seeds.length,
+    confirmed: seeds.filter((s) => s.status === 'confirmed').length,
+    adjusted: seeds.filter((s) => s.status === 'adjusted').length,
+    pending: seeds.filter((s) => s.status === 'pending').length,
+  }
 }
 
 function computeMandatorySummary(items: MandatoryItem[]): MandatoryItemSummary {
@@ -316,7 +361,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (projectState) => ({
         ...projectState,
-        error: taskKind === 'mandatory' ? projectState.error : error,
+        error: taskKind === 'mandatory' || taskKind === 'seed' ? projectState.error : error,
         loading: false,
         importTaskId: taskKind === 'import' ? null : projectState.importTaskId,
         extractionTaskId: taskKind === 'extraction' ? null : projectState.extractionTaskId,
@@ -328,6 +373,9 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
           taskKind === 'mandatory' ? false : projectState.mandatoryDetectionLoading,
         mandatoryDetectionError:
           taskKind === 'mandatory' ? error : projectState.mandatoryDetectionError,
+        seedGenerationTaskId: taskKind === 'seed' ? null : projectState.seedGenerationTaskId,
+        seedGenerationLoading: taskKind === 'seed' ? false : projectState.seedGenerationLoading,
+        seedGenerationError: taskKind === 'seed' ? error : projectState.seedGenerationError,
       })),
     }))
   },
@@ -685,6 +733,203 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         mandatoryDetectionError: error,
         mandatoryDetectionTaskId: null,
         mandatoryDetectionLoading: false,
+      })),
+    }))
+  },
+
+  // ─── Story 2.7: Strategy Seed Actions ───
+
+  generateSeeds: async (projectId: string, sourceMaterial: string) => {
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (current.seedGenerationLoading || current.seedGenerationTaskId) return
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        seedGenerationLoading: true,
+        seedGenerationProgress: 0,
+        seedGenerationMessage: '正在启动策略种子生成...',
+        seedGenerationTaskId: null,
+        seedGenerationError: null,
+      })),
+    }))
+
+    try {
+      const res = await window.api.analysisGenerateSeeds({ projectId, sourceMaterial })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            seedGenerationTaskId: res.data.taskId,
+            seedGenerationLoading: false,
+          })),
+        }))
+      } else {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            seedGenerationError: res.error.message,
+            seedGenerationLoading: false,
+            seedGenerationTaskId: null,
+          })),
+        }))
+      }
+    } catch (err) {
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => ({
+          ...prev,
+          seedGenerationError: (err as Error).message,
+          seedGenerationLoading: false,
+          seedGenerationTaskId: null,
+        })),
+      }))
+    }
+  },
+
+  fetchSeeds: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetSeeds({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            seeds: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail — data may not exist yet
+    }
+  },
+
+  fetchSeedSummary: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetSeedSummary({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            seedSummary: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail
+    }
+  },
+
+  updateSeed: async (id, patch) => {
+    try {
+      const res = await window.api.analysisUpdateSeed({ id, patch })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+
+      set((state) => {
+        const newProjects = { ...state.projects }
+        for (const [pid, ps] of Object.entries(newProjects)) {
+          if (ps.seeds) {
+            const idx = ps.seeds.findIndex((s) => s.id === id)
+            if (idx !== -1) {
+              const updated = [...ps.seeds]
+              updated[idx] = res.data
+              const summary = computeSeedSummary(updated)
+              newProjects[pid] = { ...ps, seeds: updated, seedSummary: summary }
+              break
+            }
+          }
+        }
+        return { projects: newProjects }
+      })
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  deleteSeed: async (id) => {
+    try {
+      const res = await window.api.analysisDeleteSeed({ id })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+
+      set((state) => {
+        const newProjects = { ...state.projects }
+        for (const [pid, ps] of Object.entries(newProjects)) {
+          if (ps.seeds) {
+            const idx = ps.seeds.findIndex((s) => s.id === id)
+            if (idx !== -1) {
+              const updated = ps.seeds.filter((s) => s.id !== id)
+              const summary = computeSeedSummary(updated)
+              newProjects[pid] = { ...ps, seeds: updated, seedSummary: summary }
+              break
+            }
+          }
+        }
+        return { projects: newProjects }
+      })
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  addSeed: async (projectId, title, reasoning, suggestion) => {
+    try {
+      const res = await window.api.analysisAddSeed({ projectId, title, reasoning, suggestion })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => {
+          const seeds = [...(prev.seeds ?? []), res.data]
+          return {
+            ...prev,
+            seeds,
+            seedSummary: computeSeedSummary(seeds),
+          }
+        }),
+      }))
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  updateSeedGenerationProgress: (projectId, progress, message) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        seedGenerationProgress: progress,
+        seedGenerationMessage: message ?? prev.seedGenerationMessage,
+      })),
+    }))
+  },
+
+  setSeedGenerationCompleted: async (projectId) => {
+    const seedsRes = await window.api.analysisGetSeeds({ projectId })
+    const summaryRes = await window.api.analysisGetSeedSummary({ projectId })
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        seeds: seedsRes.success ? seedsRes.data : prev.seeds,
+        seedSummary: summaryRes.success ? summaryRes.data : prev.seedSummary,
+        seedGenerationTaskId: null,
+        seedGenerationProgress: 100,
+        seedGenerationMessage: '策略种子生成完成',
+        seedGenerationLoading: false,
+        seedGenerationError: null,
+      })),
+    }))
+  },
+
+  setSeedGenerationError: (projectId, error) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        seedGenerationError: error,
+        seedGenerationTaskId: null,
+        seedGenerationLoading: false,
       })),
     }))
   },

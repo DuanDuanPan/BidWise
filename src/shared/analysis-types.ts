@@ -190,3 +190,67 @@ export interface AddMandatoryItemInput {
   sourceText?: string
   sourcePages?: number[]
 }
+
+// ─── Story 2.7: Strategy Seed Generation ───
+
+export type StrategySeedStatus = 'pending' | 'confirmed' | 'adjusted'
+
+export interface StrategySeed {
+  id: string
+  title: string
+  reasoning: string
+  suggestion: string
+  sourceExcerpt: string
+  confidence: number
+  status: StrategySeedStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StrategySeedSummary {
+  total: number
+  confirmed: number
+  adjusted: number
+  pending: number
+}
+
+export interface StrategySeedSnapshot {
+  projectId: string
+  sourceMaterial: string
+  seeds: StrategySeed[]
+  generatedAt: string
+  updatedAt: string
+}
+
+export interface GenerateSeedsInput {
+  projectId: string
+  sourceMaterial: string
+}
+
+export interface GenerateSeedsResult {
+  taskId: string
+}
+
+export interface GetSeedsInput {
+  projectId: string
+}
+
+export interface GetSeedSummaryInput {
+  projectId: string
+}
+
+export interface UpdateSeedInput {
+  id: string
+  patch: Partial<Pick<StrategySeed, 'title' | 'reasoning' | 'suggestion' | 'status'>>
+}
+
+export interface DeleteSeedInput {
+  id: string
+}
+
+export interface AddSeedInput {
+  projectId: string
+  title: string
+  reasoning: string
+  suggestion: string
+}

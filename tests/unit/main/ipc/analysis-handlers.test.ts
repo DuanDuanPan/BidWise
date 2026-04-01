@@ -26,6 +26,17 @@ const mockGetScoringModel = vi.fn()
 const mockUpdateRequirement = vi.fn()
 const mockUpdateScoringModel = vi.fn()
 const mockConfirmScoringModel = vi.fn()
+const mockDetectMandatory = vi.fn()
+const mockGetMandatoryItems = vi.fn()
+const mockGetMandatorySummary = vi.fn()
+const mockUpdateMandatoryItem = vi.fn()
+const mockAddMandatoryItem = vi.fn()
+const mockGenerateSeeds = vi.fn()
+const mockGetSeeds = vi.fn()
+const mockGetSeedSummary = vi.fn()
+const mockUpdateSeed = vi.fn()
+const mockDeleteSeed = vi.fn()
+const mockAddSeed = vi.fn()
 
 vi.mock('@main/services/document-parser', () => ({
   tenderImportService: {
@@ -39,6 +50,21 @@ vi.mock('@main/services/document-parser', () => ({
     updateRequirement: (...args: unknown[]) => mockUpdateRequirement(...args),
     updateScoringCriterion: (...args: unknown[]) => mockUpdateScoringModel(...args),
     confirmScoringModel: (...args: unknown[]) => mockConfirmScoringModel(...args),
+  },
+  mandatoryItemDetector: {
+    detect: (...args: unknown[]) => mockDetectMandatory(...args),
+    getItems: (...args: unknown[]) => mockGetMandatoryItems(...args),
+    getSummary: (...args: unknown[]) => mockGetMandatorySummary(...args),
+    updateItem: (...args: unknown[]) => mockUpdateMandatoryItem(...args),
+    addItem: (...args: unknown[]) => mockAddMandatoryItem(...args),
+  },
+  strategySeedGenerator: {
+    generate: (...args: unknown[]) => mockGenerateSeeds(...args),
+    getSeeds: (...args: unknown[]) => mockGetSeeds(...args),
+    getSummary: (...args: unknown[]) => mockGetSeedSummary(...args),
+    updateSeed: (...args: unknown[]) => mockUpdateSeed(...args),
+    deleteSeed: (...args: unknown[]) => mockDeleteSeed(...args),
+    addSeed: (...args: unknown[]) => mockAddSeed(...args),
   },
 }))
 
@@ -61,6 +87,17 @@ describe('analysis-handlers', () => {
     expect(channels).toContain('analysis:update-requirement')
     expect(channels).toContain('analysis:update-scoring-model')
     expect(channels).toContain('analysis:confirm-scoring-model')
+    expect(channels).toContain('analysis:detect-mandatory')
+    expect(channels).toContain('analysis:get-mandatory-items')
+    expect(channels).toContain('analysis:get-mandatory-summary')
+    expect(channels).toContain('analysis:update-mandatory-item')
+    expect(channels).toContain('analysis:add-mandatory-item')
+    expect(channels).toContain('analysis:generate-seeds')
+    expect(channels).toContain('analysis:get-seeds')
+    expect(channels).toContain('analysis:get-seed-summary')
+    expect(channels).toContain('analysis:update-seed')
+    expect(channels).toContain('analysis:delete-seed')
+    expect(channels).toContain('analysis:add-seed')
   })
 
   it('analysis:import-tender dispatches to tenderImportService.importTender', async () => {
@@ -203,5 +240,59 @@ describe('analysis-handlers', () => {
 
     expect(result).toEqual({ success: true, data: confirmedModel })
     expect(mockConfirmScoringModel).toHaveBeenCalledWith('proj-2-5')
+  })
+
+  it('@story-2-7 dispatches seed generation requests to strategySeedGenerator.generate', async () => {
+    registerAnalysisHandlers()
+
+    const handler = mockHandle.mock.calls.find(
+      (c: unknown[]) => c[0] === 'analysis:generate-seeds'
+    )?.[1]
+    expect(handler).toBeDefined()
+
+    mockGenerateSeeds.mockResolvedValue({ taskId: 'seed-task-1' })
+
+    const result = await handler({}, { projectId: 'proj-2-7', sourceMaterial: '客户纪要' })
+
+    expect(result).toEqual({ success: true, data: { taskId: 'seed-task-1' } })
+    expect(mockGenerateSeeds).toHaveBeenCalledWith({
+      projectId: 'proj-2-7',
+      sourceMaterial: '客户纪要',
+    })
+  })
+
+  it('@story-2-7 dispatches seed updates to strategySeedGenerator.updateSeed', async () => {
+    registerAnalysisHandlers()
+
+    const handler = mockHandle.mock.calls.find(
+      (c: unknown[]) => c[0] === 'analysis:update-seed'
+    )?.[1]
+    expect(handler).toBeDefined()
+
+    const updatedSeed = {
+      id: 'seed-1',
+      title: '客户高度关注性能稳定性',
+      reasoning: '客户主动提及竞品性能问题。',
+      suggestion: '补充性能压测与容量规划。',
+      sourceExcerpt: '竞品性能问题',
+      confidence: 0.88,
+      status: 'adjusted',
+      createdAt: '2026-04-01T09:00:00.000Z',
+      updatedAt: '2026-04-01T09:05:00.000Z',
+    }
+    mockUpdateSeed.mockResolvedValue(updatedSeed)
+
+    const result = await handler(
+      {},
+      {
+        id: 'seed-1',
+        patch: { title: '客户高度关注性能稳定性' },
+      }
+    )
+
+    expect(result).toEqual({ success: true, data: updatedSeed })
+    expect(mockUpdateSeed).toHaveBeenCalledWith('seed-1', {
+      title: '客户高度关注性能稳定性',
+    })
   })
 })

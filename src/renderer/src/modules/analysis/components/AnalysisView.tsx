@@ -9,6 +9,8 @@ import { RequirementsList } from './RequirementsList'
 import { ScoringModelEditor } from './ScoringModelEditor'
 import { MandatoryItemsList } from './MandatoryItemsList'
 import { MandatoryItemsBadge } from './MandatoryItemsBadge'
+import { StrategySeedList } from './StrategySeedList'
+import { StrategySeedBadge } from './StrategySeedBadge'
 import type { AnalysisViewProps } from '../types'
 
 export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Element {
@@ -26,6 +28,12 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const fetchMandatorySummary = useAnalysisStore((s) => s.fetchMandatorySummary)
   const updateMandatoryItem = useAnalysisStore((s) => s.updateMandatoryItem)
   const addMandatoryItem = useAnalysisStore((s) => s.addMandatoryItem)
+  const generateSeeds = useAnalysisStore((s) => s.generateSeeds)
+  const fetchSeeds = useAnalysisStore((s) => s.fetchSeeds)
+  const fetchSeedSummary = useAnalysisStore((s) => s.fetchSeedSummary)
+  const updateSeed = useAnalysisStore((s) => s.updateSeed)
+  const deleteSeed = useAnalysisStore((s) => s.deleteSeed)
+  const addSeed = useAnalysisStore((s) => s.addSeed)
 
   const {
     parsedTender,
@@ -47,6 +55,12 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     mandatoryDetectionProgress,
     mandatoryDetectionMessage,
     mandatoryDetectionError,
+    seeds,
+    seedSummary,
+    seedGenerationTaskId,
+    seedGenerationProgress,
+    seedGenerationMessage,
+    seedGenerationError,
   } = projectState
 
   // On mount / project change: check for existing data
@@ -56,6 +70,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     void fetchScoringModel(projectId)
     void fetchMandatoryItems(projectId)
     void fetchMandatorySummary(projectId)
+    void fetchSeeds(projectId)
+    void fetchSeedSummary(projectId)
   }, [
     projectId,
     fetchTenderResult,
@@ -63,6 +79,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     fetchScoringModel,
     fetchMandatoryItems,
     fetchMandatorySummary,
+    fetchSeeds,
+    fetchSeedSummary,
   ])
 
   const handleCancel = async (): Promise<void> => {
@@ -96,6 +114,7 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const isExtracting = extractionTaskId !== null && !hasExtractionResult
   const isMandatoryDetecting =
     mandatoryDetectionTaskId !== null || projectState.mandatoryDetectionLoading
+  const isSeedGenerating = seedGenerationTaskId !== null || projectState.seedGenerationLoading
 
   // Error state (no parsed result)
   if (!hasParsedResult && error && !isParsing) {
@@ -249,6 +268,33 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
                     onAdd={(content, sourceText, sourcePages) =>
                       addMandatoryItem(projectId, content, sourceText, sourcePages)
                     }
+                  />
+                ),
+              },
+              {
+                key: 'seeds',
+                label: <StrategySeedBadge summary={seedSummary} />,
+                children: (
+                  <StrategySeedList
+                    seeds={seeds}
+                    summary={seedSummary}
+                    generating={isSeedGenerating}
+                    progress={seedGenerationProgress}
+                    progressMessage={seedGenerationMessage}
+                    error={seedGenerationError}
+                    onGenerate={(sourceMaterial) => generateSeeds(projectId, sourceMaterial)}
+                    onUpdate={updateSeed}
+                    onDelete={deleteSeed}
+                    onAdd={(title, reasoning, suggestion) =>
+                      addSeed(projectId, title, reasoning, suggestion)
+                    }
+                    onConfirmAll={async () => {
+                      if (!seeds) return
+                      const pendingSeeds = seeds.filter((s) => s.status === 'pending')
+                      for (const s of pendingSeeds) {
+                        await updateSeed(s.id, { status: 'confirmed' })
+                      }
+                    }}
                   />
                 ),
               },

@@ -56,6 +56,13 @@ function makeEmptyProjectState(
     mandatoryDetectionMessage: '',
     mandatoryDetectionLoading: false,
     mandatoryDetectionError: null,
+    seeds: null,
+    seedSummary: null,
+    seedGenerationTaskId: null,
+    seedGenerationProgress: 0,
+    seedGenerationMessage: '',
+    seedGenerationLoading: false,
+    seedGenerationError: null,
     ...overrides,
   }
 }

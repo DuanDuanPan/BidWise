@@ -70,10 +70,24 @@ export interface MandatoryItemTable {
   updatedAt: string
 }
 
+export interface StrategySeedTable {
+  id: string
+  projectId: string
+  title: string
+  reasoning: string
+  suggestion: string
+  sourceExcerpt: string
+  confidence: number
+  status: string // 'pending' | 'confirmed' | 'adjusted'
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
   requirements: RequirementTable
   scoringModels: ScoringModelTable
   mandatoryItems: MandatoryItemTable
+  strategySeeds: StrategySeedTable
 }

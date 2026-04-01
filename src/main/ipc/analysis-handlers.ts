@@ -3,6 +3,7 @@ import {
   tenderImportService,
   scoringExtractor,
   mandatoryItemDetector,
+  strategySeedGenerator,
 } from '@main/services/document-parser'
 import type { IpcChannel } from '@shared/ipc-types'
 
@@ -55,6 +56,24 @@ const analysisHandlerMap: { [C in AnalysisChannel]: () => void } = {
     createIpcHandler('analysis:add-mandatory-item', (input) =>
       mandatoryItemDetector.addItem(input)
     ),
+  'analysis:generate-seeds': () =>
+    createIpcHandler('analysis:generate-seeds', (input) => strategySeedGenerator.generate(input)),
+  'analysis:get-seeds': () =>
+    createIpcHandler('analysis:get-seeds', (input) =>
+      strategySeedGenerator.getSeeds(input.projectId)
+    ),
+  'analysis:get-seed-summary': () =>
+    createIpcHandler('analysis:get-seed-summary', (input) =>
+      strategySeedGenerator.getSummary(input.projectId)
+    ),
+  'analysis:update-seed': () =>
+    createIpcHandler('analysis:update-seed', (input) =>
+      strategySeedGenerator.updateSeed(input.id, input.patch)
+    ),
+  'analysis:delete-seed': () =>
+    createIpcHandler('analysis:delete-seed', (input) => strategySeedGenerator.deleteSeed(input.id)),
+  'analysis:add-seed': () =>
+    createIpcHandler('analysis:add-seed', (input) => strategySeedGenerator.addSeed(input)),
 }
 
 export type RegisteredAnalysisChannels = AnalysisChannel
