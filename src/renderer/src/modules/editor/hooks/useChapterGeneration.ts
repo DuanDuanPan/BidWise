@@ -5,6 +5,9 @@ import type {
   ChapterGenerationStatus,
 } from '@shared/chapter-types'
 import type { TaskProgressEvent } from '@shared/ai-types'
+import { useDocumentStore } from '@renderer/stores'
+
+const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
 
 /** Construct a stable map key from a heading locator */
 function locatorKey(locator: ChapterHeadingLocator): string {
@@ -24,20 +27,48 @@ function progressToPhase(progress: number, message?: string): ChapterGenerationP
   return 'analyzing'
 }
 
+/** Extract the content lines of a section identified by a heading locator */
+function extractSectionContent(markdown: string, locator: ChapterHeadingLocator): string {
+  const lines = markdown.split('\n')
+  let occurrence = 0
+  let headingLineIdx = -1
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = HEADING_RE.exec(lines[i])
+    if (match && match[1].length === locator.level && match[2].trim() === locator.title) {
+      if (occurrence === locator.occurrenceIndex) {
+        headingLineIdx = i
+        break
+      }
+      occurrence++
+    }
+  }
+
+  if (headingLineIdx === -1) return ''
+
+  let endLineIdx = lines.length
+  for (let i = headingLineIdx + 1; i < lines.length; i++) {
+    const match = HEADING_RE.exec(lines[i])
+    if (match && match[1].length <= locator.level) {
+      endLineIdx = i
+      break
+    }
+  }
+
+  return lines.slice(headingLineIdx + 1, endLineIdx).join('\n')
+}
+
 export interface UseChapterGenerationReturn {
+  currentProjectId: string
   statuses: Map<string, ChapterGenerationStatus>
-  startGeneration: (projectId: string, target: ChapterHeadingLocator) => Promise<void>
-  startRegeneration: (
-    projectId: string,
-    target: ChapterHeadingLocator,
-    additionalContext: string
-  ) => Promise<void>
-  retry: (projectId: string, target: ChapterHeadingLocator) => Promise<void>
+  startGeneration: (target: ChapterHeadingLocator) => Promise<void>
+  startRegeneration: (target: ChapterHeadingLocator, additionalContext: string) => Promise<void>
+  retry: (target: ChapterHeadingLocator) => Promise<void>
   dismissError: (target: ChapterHeadingLocator) => void
   getStatus: (target: ChapterHeadingLocator) => ChapterGenerationStatus | undefined
 }
 
-export function useChapterGeneration(): UseChapterGenerationReturn {
+export function useChapterGeneration(projectId: string): UseChapterGenerationReturn {
   const [statuses, setStatuses] = useState<Map<string, ChapterGenerationStatus>>(new Map())
   const taskToLocatorRef = useRef<Map<string, ChapterHeadingLocator>>(new Map())
 
@@ -68,12 +99,22 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
           if (!res.success) return
           const status = res.data
           if (status.status === 'completed' && status.result) {
-            updateStatus(key, (prev) => ({
-              ...prev,
-              phase: 'completed',
-              progress: 100,
-              generatedContent: status.result!.content,
-            }))
+            // Conflict detection: compare current section content with baseline
+            const currentContent = useDocumentStore.getState().content
+            const currentSectionContent = extractSectionContent(currentContent, locator)
+
+            updateStatus(key, (prev) => {
+              const hasConflict =
+                prev.baselineSectionContent !== undefined &&
+                currentSectionContent !== prev.baselineSectionContent
+
+              return {
+                ...prev,
+                phase: hasConflict ? 'conflicted' : 'completed',
+                progress: 100,
+                generatedContent: status.result!.content,
+              }
+            })
           } else if (status.status === 'failed') {
             updateStatus(key, (prev) => ({
               ...prev,
@@ -97,8 +138,10 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
     return unsubscribe
   }, [updateStatus])
 
-  // Restore active tasks on mount
+  // Restore active tasks on mount — scoped to current project
   useEffect(() => {
+    if (!projectId) return
+
     void window.api.taskList({ category: 'ai-agent', agentType: 'generate' }).then((res) => {
       if (!res.success) return
       const activeTasks = res.data.filter((t) => t.status === 'pending' || t.status === 'running')
@@ -108,16 +151,20 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
       for (const task of activeTasks) {
         try {
           const input = JSON.parse(task.input) as Record<string, unknown>
+          // Filter: only restore tasks belonging to this project
+          if (input.projectId !== projectId) continue
           const target = input.target as ChapterHeadingLocator | undefined
           if (!target) continue
           const key = locatorKey(target)
           taskToLocatorRef.current.set(task.id, target)
           restoredStatuses.set(key, {
             target,
-            phase: progressToPhase(task.progress),
+            // pending tasks should map to 'queued', not 'analyzing'
+            phase: task.status === 'pending' ? 'queued' : progressToPhase(task.progress),
             progress: task.progress,
             taskId: task.id,
             baselineDigest: input.baselineDigest as string | undefined,
+            baselineSectionContent: input.baselineSectionContent as string | undefined,
           })
         } catch {
           // Skip tasks with invalid input
@@ -134,11 +181,15 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
         })
       }
     })
-  }, [])
+  }, [projectId])
 
   const startGeneration = useCallback(
-    async (projectId: string, target: ChapterHeadingLocator) => {
+    async (target: ChapterHeadingLocator) => {
       const key = locatorKey(target)
+
+      // Capture baseline section content for conflict detection
+      const currentContent = useDocumentStore.getState().content
+      const baselineSectionContent = extractSectionContent(currentContent, target)
 
       // Set initial queued status
       setStatuses((prev) => {
@@ -148,6 +199,8 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
           phase: 'queued',
           progress: 0,
           taskId: '',
+          operationType: 'generate',
+          baselineSectionContent,
         })
         return next
       })
@@ -162,6 +215,8 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
             progress: 0,
             taskId: '',
             error: res.error.message,
+            operationType: 'generate',
+            baselineSectionContent,
           })
           return next
         })
@@ -171,12 +226,16 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
       taskToLocatorRef.current.set(res.data.taskId, target)
       updateStatus(key, (prev) => ({ ...prev, taskId: res.data.taskId }))
     },
-    [updateStatus]
+    [projectId, updateStatus]
   )
 
   const startRegeneration = useCallback(
-    async (projectId: string, target: ChapterHeadingLocator, additionalContext: string) => {
+    async (target: ChapterHeadingLocator, additionalContext: string) => {
       const key = locatorKey(target)
+
+      // Capture baseline section content for conflict detection
+      const currentContent = useDocumentStore.getState().content
+      const baselineSectionContent = extractSectionContent(currentContent, target)
 
       setStatuses((prev) => {
         const next = new Map(prev)
@@ -185,6 +244,9 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
           phase: 'queued',
           progress: 0,
           taskId: '',
+          operationType: 'regenerate',
+          additionalContext,
+          baselineSectionContent,
         })
         return next
       })
@@ -199,6 +261,9 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
             progress: 0,
             taskId: '',
             error: res.error.message,
+            operationType: 'regenerate',
+            additionalContext,
+            baselineSectionContent,
           })
           return next
         })
@@ -208,15 +273,22 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
       taskToLocatorRef.current.set(res.data.taskId, target)
       updateStatus(key, (prev) => ({ ...prev, taskId: res.data.taskId }))
     },
-    [updateStatus]
+    [projectId, updateStatus]
   )
 
   const retry = useCallback(
-    async (projectId: string, target: ChapterHeadingLocator) => {
-      // Retry is just a new generation call
-      await startGeneration(projectId, target)
+    async (target: ChapterHeadingLocator) => {
+      const key = locatorKey(target)
+      const currentStatus = statuses.get(key)
+
+      // Use the correct operation type for retry
+      if (currentStatus?.operationType === 'regenerate') {
+        await startRegeneration(target, currentStatus.additionalContext ?? '')
+      } else {
+        await startGeneration(target)
+      }
     },
-    [startGeneration]
+    [statuses, startGeneration, startRegeneration]
   )
 
   const dismissError = useCallback((target: ChapterHeadingLocator) => {
@@ -236,6 +308,7 @@ export function useChapterGeneration(): UseChapterGenerationReturn {
   )
 
   return {
+    currentProjectId: projectId,
     statuses,
     startGeneration,
     startRegeneration,

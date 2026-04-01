@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { PlateElement } from 'platejs/react'
+import { PlateElement, useEditorRef } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
 import { SyncOutlined } from '@ant-design/icons'
 import { Button, Tooltip } from 'antd'
@@ -42,9 +42,7 @@ function computeLocator(
       occurrence++
     }
   }
-  if (occurrence > 0) {
-    return { title, level: level as 1 | 2 | 3 | 4, occurrenceIndex: 0 }
-  }
+  // Do not silently fall back to occurrence 0 — return null if not found
   return null
 }
 
@@ -101,31 +99,42 @@ function getHeadingLevel(elementType: string): number {
   }
 }
 
-interface ChapterAwareHeadingProps extends PlateElementProps {
-  projectId?: string
-}
-
-function ChapterAwareHeading(props: ChapterAwareHeadingProps): React.JSX.Element {
+function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   const { children, element } = props
   const text = extractText(element).trim()
   const level = getHeadingLevel(element.type as string)
   const chapterGen = useChapterGenerationContext()
   const content = useDocumentStore((s) => s.content)
+  const editor = useEditorRef()
   const [hovering, setHovering] = useState(false)
   const [regenerateOpen, setRegenerateOpen] = useState(false)
 
-  // Compute locator
+  // Compute occurrence index by counting same-title-and-level headings before this element
+  const occurrenceIndex = useMemo(() => {
+    let count = 0
+    for (const node of editor.children) {
+      if (node === element) return count
+      const nodeType = (node as Record<string, unknown>).type
+      if (nodeType === element.type && extractText(node).trim() === text) {
+        count++
+      }
+    }
+    return 0
+  }, [editor.children, element, text])
+
+  // Compute locator — validate against markdown, include H2-H4
   const locator = useMemo(() => {
-    if (!text || level < 2 || level > 3) return null
-    return computeLocator(content, text, level, 0)
-  }, [content, text, level])
+    if (!text || level < 2 || level > 4) return null
+    return computeLocator(content, text, level, occurrenceIndex)
+  }, [content, text, level, occurrenceIndex])
 
   const statusKey = locator ? locatorKey(locator) : null
   const status = statusKey ? chapterGen?.statuses.get(statusKey) : undefined
   const isGenerating = status && !['completed', 'failed', 'conflicted'].includes(status.phase)
   const hasFailed = status?.phase === 'failed'
 
-  const projectId = props.projectId
+  // Get projectId from the chapter generation context
+  const projectId = chapterGen?.currentProjectId
 
   // Determine if chapter content is empty or guidance-only
   const chapterEmpty = useMemo(() => {
@@ -134,30 +143,30 @@ function ChapterAwareHeading(props: ChapterAwareHeadingProps): React.JSX.Element
   }, [content, locator])
 
   const handleGenerate = useCallback(() => {
-    if (!chapterGen || !locator || !projectId) return
-    void chapterGen.startGeneration(projectId, locator)
-  }, [chapterGen, locator, projectId])
+    if (!chapterGen || !locator) return
+    void chapterGen.startGeneration(locator)
+  }, [chapterGen, locator])
 
   const handleRegenerate = useCallback(
     (additionalContext: string) => {
-      if (!chapterGen || !locator || !projectId) return
-      void chapterGen.startRegeneration(projectId, locator, additionalContext)
+      if (!chapterGen || !locator) return
+      void chapterGen.startRegeneration(locator, additionalContext)
       setRegenerateOpen(false)
     },
-    [chapterGen, locator, projectId]
+    [chapterGen, locator]
   )
 
   const handleRetry = useCallback(() => {
-    if (!chapterGen || !locator || !projectId) return
-    void chapterGen.retry(projectId, locator)
-  }, [chapterGen, locator, projectId])
+    if (!chapterGen || !locator) return
+    void chapterGen.retry(locator)
+  }, [chapterGen, locator])
 
   const handleDismiss = useCallback(() => {
     if (!chapterGen || !locator) return
     chapterGen.dismissError(locator)
   }, [chapterGen, locator])
 
-  const canAct = chapterGen && locator && !isGenerating && !hasFailed && level >= 2
+  const canAct = chapterGen && locator && projectId && !isGenerating && !hasFailed && level >= 2
   const showGenerateButton = canAct && chapterEmpty
   const showRegenerateButton = canAct && !chapterEmpty
 

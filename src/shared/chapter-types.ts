@@ -49,4 +49,10 @@ export interface ChapterGenerationStatus {
   error?: string
   generatedContent?: string
   baselineDigest?: string
+  /** Tracks which operation started this task, so retry uses the correct path */
+  operationType?: 'generate' | 'regenerate'
+  /** Stored for regeneration retry */
+  additionalContext?: string
+  /** Snapshot of section content at task start, for conflict detection */
+  baselineSectionContent?: string
 }

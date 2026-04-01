@@ -17,7 +17,10 @@ import {
 import { CodeBlockPlugin, CodeLinePlugin } from '@platejs/code-block/react'
 import { TablePlugin } from '@platejs/table/react'
 import { editorPlugins } from '@modules/editor/plugins/editorPlugins'
-import { OutlineHeadingElement } from '@modules/editor/components/OutlineHeadingElement'
+import {
+  OutlineHeadingElement,
+  ChapterHeadingElement,
+} from '@modules/editor/components/OutlineHeadingElement'
 
 describe('@story-3-1 editorPlugins', () => {
   it('registers the rich-text plugins required by the story acceptance criteria', () => {
@@ -49,16 +52,20 @@ describe('@story-3-1 editorPlugins', () => {
     }
   })
 
-  it('@story-3-2 heading plugins use OutlineHeadingElement component for scroll matching', () => {
-    const headingKeys = ['h1', 'h2', 'h3', 'h4']
-    for (const key of headingKeys) {
+  it('@story-3-2 H1 uses OutlineHeadingElement, H2-H4 use ChapterHeadingElement', () => {
+    const expectedComponents: Record<string, unknown> = {
+      h1: OutlineHeadingElement,
+      h2: ChapterHeadingElement,
+      h3: ChapterHeadingElement,
+      h4: ChapterHeadingElement,
+    }
+    for (const [key, expectedComponent] of Object.entries(expectedComponents)) {
       const plugin = editorPlugins.find((p) => (p as { key?: string }).key === key)
       expect(plugin).toBeDefined()
-      // withComponent sets the render component on the plugin node config
       const nodeConfig = (plugin as Record<string, unknown>).node as
         | Record<string, unknown>
         | undefined
-      expect(nodeConfig?.component).toBe(OutlineHeadingElement)
+      expect(nodeConfig?.component).toBe(expectedComponent)
     }
   })
 })

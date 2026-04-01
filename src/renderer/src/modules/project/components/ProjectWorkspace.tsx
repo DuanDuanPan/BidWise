@@ -120,7 +120,7 @@ export function ProjectWorkspace(): React.JSX.Element {
   const outline = useDocumentOutline(showOutline ? documentContent : '')
   const wordCount = useWordCount(documentContent)
   const showAutoSaveIndicator = isProposalWriting
-  const chapterGen = useChapterGeneration()
+  const chapterGen = useChapterGeneration(projectId ?? '')
 
   // Build chapter phase map for outline tree status icons
   const chapterPhases = useMemo(() => {

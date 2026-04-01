@@ -3,6 +3,19 @@ import { renderHook, cleanup, act, waitFor } from '@testing-library/react'
 import { useChapterGeneration } from '@modules/editor/hooks/useChapterGeneration'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
+// Mock useDocumentStore for conflict detection
+const mockDocumentContent = { current: '' }
+vi.mock('@renderer/stores', () => ({
+  useDocumentStore: Object.assign(
+    vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
+      selector({ content: mockDocumentContent.current })
+    ),
+    {
+      getState: () => ({ content: mockDocumentContent.current }),
+    }
+  ),
+}))
+
 describe('@story-3-4 useChapterGeneration', () => {
   let progressListener:
     | ((event: { taskId: string; progress: number; message?: string }) => void)
@@ -14,8 +27,11 @@ describe('@story-3-4 useChapterGeneration', () => {
     occurrenceIndex: 0,
   }
 
+  const PROJECT_ID = 'proj-1'
+
   beforeEach(() => {
     progressListener = null
+    mockDocumentContent.current = '## 系统架构设计\n\n> 请描述系统架构\n'
 
     vi.stubGlobal('api', {
       chapterGenerate: vi.fn().mockResolvedValue({
@@ -53,20 +69,21 @@ describe('@story-3-4 useChapterGeneration', () => {
   })
 
   it('@p0 should start generation and track queued status', async () => {
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startGeneration('proj-1', mockTarget)
+      await result.current.startGeneration(mockTarget)
     })
 
     expect(window.api.chapterGenerate).toHaveBeenCalledWith({
-      projectId: 'proj-1',
+      projectId: PROJECT_ID,
       target: mockTarget,
     })
 
     const status = result.current.getStatus(mockTarget)
     expect(status).toBeDefined()
     expect(status!.taskId).toBe('task-gen-1')
+    expect(status!.operationType).toBe('generate')
   })
 
   it('@p0 should handle generation failure from IPC', async () => {
@@ -80,10 +97,10 @@ describe('@story-3-4 useChapterGeneration', () => {
       taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
     })
 
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startGeneration('proj-1', mockTarget)
+      await result.current.startGeneration(mockTarget)
     })
 
     const status = result.current.getStatus(mockTarget)
@@ -92,10 +109,10 @@ describe('@story-3-4 useChapterGeneration', () => {
   })
 
   it('@p0 should update phase on progress events', async () => {
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startGeneration('proj-1', mockTarget)
+      await result.current.startGeneration(mockTarget)
     })
 
     act(() => {
@@ -108,10 +125,10 @@ describe('@story-3-4 useChapterGeneration', () => {
   })
 
   it('@p0 should fetch result on completion progress event', async () => {
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startGeneration('proj-1', mockTarget)
+      await result.current.startGeneration(mockTarget)
     })
 
     await act(async () => {
@@ -125,18 +142,43 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
   })
 
-  it('@p0 should start regeneration with additional context', async () => {
-    const { result } = renderHook(() => useChapterGeneration())
+  it('@p0 should detect conflict when section content changed during generation', async () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startRegeneration('proj-1', mockTarget, '更多技术细节')
+      await result.current.startGeneration(mockTarget)
+    })
+
+    // Simulate user editing the section while AI is generating
+    mockDocumentContent.current = '## 系统架构设计\n\n用户手动编辑的内容\n'
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-gen-1', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status!.phase).toBe('conflicted')
+      expect(status!.generatedContent).toBe('# Generated Content')
+    })
+  })
+
+  it('@p0 should start regeneration with additional context', async () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startRegeneration(mockTarget, '更多技术细节')
     })
 
     expect(window.api.chapterRegenerate).toHaveBeenCalledWith({
-      projectId: 'proj-1',
+      projectId: PROJECT_ID,
       target: mockTarget,
       additionalContext: '更多技术细节',
     })
+
+    const status = result.current.getStatus(mockTarget)
+    expect(status!.operationType).toBe('regenerate')
+    expect(status!.additionalContext).toBe('更多技术细节')
   })
 
   it('@p0 should dismiss error and remove status', async () => {
@@ -150,10 +192,10 @@ describe('@story-3-4 useChapterGeneration', () => {
       taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
     })
 
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startGeneration('proj-1', mockTarget)
+      await result.current.startGeneration(mockTarget)
     })
 
     expect(result.current.getStatus(mockTarget)!.phase).toBe('failed')
@@ -165,7 +207,7 @@ describe('@story-3-4 useChapterGeneration', () => {
     expect(result.current.getStatus(mockTarget)).toBeUndefined()
   })
 
-  it('@p1 should restore active tasks on mount', async () => {
+  it('@p1 should restore active tasks on mount scoped to current project', async () => {
     vi.stubGlobal('api', {
       ...window.api,
       onTaskProgress: vi.fn().mockReturnValue(() => {}),
@@ -177,15 +219,25 @@ describe('@story-3-4 useChapterGeneration', () => {
             status: 'running',
             progress: 50,
             input: JSON.stringify({
+              projectId: PROJECT_ID,
               target: mockTarget,
               baselineDigest: 'abc123',
+            }),
+          },
+          {
+            id: 'task-other-project',
+            status: 'running',
+            progress: 30,
+            input: JSON.stringify({
+              projectId: 'other-project',
+              target: { title: '其他章节', level: 2, occurrenceIndex: 0 },
             }),
           },
         ],
       }),
     })
 
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await waitFor(() => {
       const status = result.current.getStatus(mockTarget)
@@ -193,13 +245,94 @@ describe('@story-3-4 useChapterGeneration', () => {
       expect(status!.taskId).toBe('task-restored-1')
       expect(status!.progress).toBe(50)
     })
+
+    // Other project's task should NOT be restored
+    const otherStatus = result.current.getStatus({
+      title: '其他章节',
+      level: 2,
+      occurrenceIndex: 0,
+    })
+    expect(otherStatus).toBeUndefined()
   })
 
-  it('@p1 should retry by starting a new generation', async () => {
-    const { result } = renderHook(() => useChapterGeneration())
+  it('@p1 should map pending tasks to queued phase on restore', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'task-pending-1',
+            status: 'pending',
+            progress: 0,
+            input: JSON.stringify({
+              projectId: PROJECT_ID,
+              target: mockTarget,
+            }),
+          },
+        ],
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status).toBeDefined()
+      expect(status!.phase).toBe('queued')
+    })
+  })
+
+  it('@p1 should retry regeneration using regenerate path', async () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    // First start a regeneration that fails
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterRegenerate: vi.fn().mockResolvedValue({
+        success: false,
+        error: { code: 'ERR', message: 'Provider 超时' },
+      }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
 
     await act(async () => {
-      await result.current.retry('proj-1', mockTarget)
+      await result.current.startRegeneration(mockTarget, '更多细节')
+    })
+
+    expect(result.current.getStatus(mockTarget)!.phase).toBe('failed')
+    expect(result.current.getStatus(mockTarget)!.operationType).toBe('regenerate')
+
+    // Now set up a successful regenerate for retry
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterRegenerate: vi.fn().mockResolvedValue({
+        success: true,
+        data: { taskId: 'task-retry-1' },
+      }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
+
+    await act(async () => {
+      await result.current.retry(mockTarget)
+    })
+
+    // Should have called chapterRegenerate, not chapterGenerate
+    expect(window.api.chapterRegenerate).toHaveBeenCalledWith({
+      projectId: PROJECT_ID,
+      target: mockTarget,
+      additionalContext: '更多细节',
+    })
+  })
+
+  it('@p1 should retry generation using generate path', async () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.retry(mockTarget)
     })
 
     expect(window.api.chapterGenerate).toHaveBeenCalledTimes(1)
@@ -225,10 +358,10 @@ describe('@story-3-4 useChapterGeneration', () => {
       taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
     })
 
-    const { result } = renderHook(() => useChapterGeneration())
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
     await act(async () => {
-      await result.current.startGeneration('proj-1', mockTarget)
+      await result.current.startGeneration(mockTarget)
     })
 
     await act(async () => {
@@ -240,5 +373,10 @@ describe('@story-3-4 useChapterGeneration', () => {
       expect(status!.phase).toBe('failed')
       expect(status!.error).toBe('Provider 超时')
     })
+  })
+
+  it('@p0 should expose currentProjectId', () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+    expect(result.current.currentProjectId).toBe(PROJECT_ID)
   })
 })
