@@ -55,6 +55,17 @@ export function StrategySeedList({
     await onGenerate(sourceMaterial)
   }
 
+  /** Show confirmation before re-generation when seeds already exist */
+  const handleRegenerate = (): void => {
+    Modal.confirm({
+      title: '确认重新生成',
+      content: '重新生成将覆盖当前种子，是否继续？',
+      okText: '继续',
+      cancelText: '取消',
+      onOk: () => setMaterialModalOpen(true),
+    })
+  }
+
   const handleConfirm = async (id: string): Promise<void> => {
     await onUpdate(id, { status: 'confirmed' })
   }
@@ -216,7 +227,7 @@ export function StrategySeedList({
           closable
           message={`重新生成失败：${error}`}
           action={
-            <Button size="small" onClick={() => setMaterialModalOpen(true)}>
+            <Button size="small" onClick={handleRegenerate}>
               重试
             </Button>
           }
@@ -245,11 +256,7 @@ export function StrategySeedList({
 
       {/* Action bar */}
       <div className="mb-4 flex items-center gap-2">
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={() => setMaterialModalOpen(true)}
-          data-testid="seed-generate"
-        >
+        <Button icon={<ReloadOutlined />} onClick={handleRegenerate} data-testid="seed-generate">
           重新生成
         </Button>
         <Button
