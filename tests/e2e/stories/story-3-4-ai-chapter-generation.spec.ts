@@ -355,6 +355,15 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
         { timeout: 30_000 }
       )
       .toBeGreaterThanOrEqual(2)
+
+    // Verify both chapters received the mock-generated content
+    // (MockAiProvider returns "方案概述" and "核心技术方案" sub-headings)
+    const generatedHeadings = window.getByText('方案概述')
+    await expect(generatedHeadings.first()).toBeVisible({ timeout: 10_000 })
+    // With two completed chapters, the mock content should appear at least twice
+    await expect
+      .poll(async () => generatedHeadings.count(), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(2)
   })
 
   test('@story-3-4 @p1 error recovery shows inline error bar with retry/manual-edit/skip', async () => {
@@ -383,6 +392,12 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     await expect(window.locator('[data-testid="chapter-retry-btn"]').first()).toBeVisible()
     await expect(window.locator('[data-testid="chapter-manual-edit-btn"]').first()).toBeVisible()
     await expect(window.locator('[data-testid="chapter-skip-btn"]').first()).toBeVisible()
+
+    // Exercise the "skip" action and verify the error bar is dismissed
+    await window.locator('[data-testid="chapter-skip-btn"]').first().click()
+    await expect(window.locator('[data-testid="chapter-error-bar"]')).not.toBeVisible({
+      timeout: 5_000,
+    })
   })
 
   test('@story-3-4 @p1 regeneration dialog for chapter with existing content', async () => {
@@ -426,6 +441,17 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
         { timeout: 10_000 }
       )
       .toBeGreaterThanOrEqual(1)
+
+    // Wait for the regeneration to complete (progress indicator disappears)
+    await expect(window.locator('[data-testid="chapter-generation-progress"]')).not.toBeVisible({
+      timeout: 30_000,
+    })
+
+    // Verify the regenerated content replaced the original chapter content.
+    // The mock returns "方案概述" heading — this should now appear in the
+    // chapter that previously contained the human-written text.
+    // The original text "分布式微服务架构" should have been replaced.
+    await expect(window.getByText('方案概述').first()).toBeVisible({ timeout: 10_000 })
   })
 
   test('@story-3-4 @p1 task restoration on workspace re-entry', async () => {
