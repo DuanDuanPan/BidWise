@@ -1,25 +1,23 @@
 import { test, expect, type Page } from '@playwright/test'
 import { _electron as electron } from 'playwright'
-import { mkdir, mkdtemp, rm } from 'fs/promises'
+import { mkdtemp, rm } from 'fs/promises'
 import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 
 /**
- * Story 3.4 E2E: AI chapter generation
+ * Story 3.4 E2E: AI chapter generation — real orchestration with mock AI provider.
  *
- * These tests verify the end-to-end flow of AI-powered chapter generation
- * in the proposal-writing workspace. They cover:
- * - Guidance-only chapter generation trigger
- * - Multi-chapter queuing
- * - Error recovery (retry / manual edit / skip)
- * - Conflict confirmation on edited chapters
- * - Task restoration on workspace re-entry
+ * Tests launch the app with BIDWISE_E2E_AI_MOCK=true, which activates a
+ * deterministic MockAiProvider in the main process (see mock-provider.ts).
+ * A proposal document with guidance-only chapters is saved via IPC, then
+ * the workspace navigates to the proposal-writing stage so the editor
+ * renders chapter-generate buttons.
  *
- * Tests launch the app in an isolated sandbox and create a project via IPC.
- * AI-provider-dependent assertions are guarded with conditional checks
- * (the provider is not mocked yet — those assertions become exercisable once
- * an AI mock harness is wired in).
+ * The mock provider returns canned Markdown content and throws when the
+ * prompt contains `__E2E_FORCE_ERROR__` to exercise error-recovery paths.
  */
+
+// ─── Types ──────────────────────────────────────────────────────────
 
 type LaunchContext = {
   electronApp: Awaited<ReturnType<typeof electron.launch>>
@@ -28,11 +26,57 @@ type LaunchContext = {
   projectId: string
 }
 
+type TaskProgressEvent = {
+  taskId: string
+  progress: number
+  message?: string
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyApi = Record<string, (...args: any[]) => any>
+
+// ─── Constants ──────────────────────────────────────────────────────
+
 const APP_ENTRY = resolve(process.cwd(), 'out/main/index.js')
+
+/**
+ * Proposal fixture with guidance-only chapters (generate button visible),
+ * one chapter with real content (regenerate button visible), and one chapter
+ * whose guidance contains the error marker (triggers mock AI failure).
+ */
+const PROPOSAL_FIXTURE = `# E2E 测试方案
+
+## 项目概述
+
+> 概述项目背景、目标和范围。
+
+## 系统架构设计
+
+> 描述系统的整体架构设计方案。
+
+## 技术实施方案
+
+> 详细说明技术实施方案和步骤。
+
+## 质量保障措施
+
+> 描述质量保障相关的措施和方法。
+
+## 已有内容章节
+
+本章节已包含人工撰写的内容，用于测试重新生成流程。
+
+当前方案采用分布式微服务架构，支持弹性伸缩。
+
+## 风险评估
+
+> __E2E_FORCE_ERROR__ 请详细分析项目风险。
+`
+
+// ─── Helpers ────────────────────────────────────────────────────────
 
 async function launchApp(): Promise<LaunchContext> {
   const sandboxHome = await mkdtemp(join(tmpdir(), 'bidwise-story-3-4-'))
-  await mkdir(join(sandboxHome, 'fixtures'), { recursive: true })
 
   const electronApp = await electron.launch({
     args: [APP_ENTRY],
@@ -40,6 +84,8 @@ async function launchApp(): Promise<LaunchContext> {
       ...process.env,
       HOME: sandboxHome,
       BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
+      BIDWISE_E2E_AI_MOCK: 'true',
+      BIDWISE_E2E_AI_MOCK_DELAY_MS: '300',
     },
   })
 
@@ -47,21 +93,33 @@ async function launchApp(): Promise<LaunchContext> {
   await window.waitForLoadState('domcontentloaded')
   await expect(window.getByTestId('project-kanban')).toBeVisible({ timeout: 30_000 })
 
-  // Create a project via IPC so we have a workspace to navigate into
-  const projectId = await createProject(window, 'Story 3.4 E2E')
+  const projectId = await createProject(window)
+
+  // Save a proposal document with guidance-only + mixed chapters
+  await saveProposalDocument(window, projectId, PROPOSAL_FIXTURE)
+
+  // Advance the SOP stage to proposal-writing via projectUpdate
+  await updateProjectStage(window, projectId, 'proposal-writing')
 
   // Navigate into the project workspace
-  await window.reload()
-  await window.waitForLoadState('domcontentloaded')
-  const projectCard = window.getByTestId(`project-card-${projectId}`)
-  await expect(projectCard).toBeVisible()
-  await projectCard.click()
-  await expect(window.getByTestId('project-workspace')).toBeVisible()
+  await window.evaluate((id) => {
+    window.location.hash = `#/project/${id}`
+  }, projectId)
+  await expect(window.getByTestId('project-workspace')).toBeVisible({ timeout: 30_000 })
+
+  // Click the proposal-writing tab in SOP progress bar
+  const sopTab = window.getByTestId('sop-stage-proposal-writing')
+  if (await sopTab.isVisible().catch(() => false)) {
+    await sopTab.click()
+  }
+
+  // Wait for the editor to render the document
+  await expect(window.getByTestId('editor-view')).toBeVisible({ timeout: 15_000 })
 
   return { electronApp, window, sandboxHome, projectId }
 }
 
-async function createProject(page: Page, testTitle: string): Promise<string> {
+async function createProject(page: Page): Promise<string> {
   const timestamp = Date.now()
   const response = await page.evaluate(
     async ({ name, customerName, industry }) => {
@@ -81,26 +139,82 @@ async function createProject(page: Page, testTitle: string): Promise<string> {
           }
         }
       ).api
-
-      return api.projectCreate({
-        name,
-        customerName,
-        industry,
-        proposalType: 'presale-technical',
-      })
+      return api.projectCreate({ name, customerName, industry, proposalType: 'presale-technical' })
     },
-    {
-      name: `Story 3-4 ${timestamp} ${testTitle}`,
-      customerName: '自动化测试客户',
-      industry: '军工',
-    }
+    { name: `Story 3-4 E2E ${timestamp}`, customerName: '自动化测试客户', industry: '军工' }
   )
 
   if (!response.success || !response.data?.id) {
     throw new Error(response.error?.message ?? 'projectCreate did not return an id')
   }
-
   return response.data.id
+}
+
+async function saveProposalDocument(page: Page, projectId: string, content: string): Promise<void> {
+  const response = await page.evaluate(
+    async ({ pId, md }) => {
+      const api = (window as Window & { api: AnyApi }).api
+      return api.documentSave({ projectId: pId, content: md }) as Promise<{
+        success: boolean
+        error?: { message?: string }
+      }>
+    },
+    { pId: projectId, md: content }
+  )
+  if (!response.success) {
+    throw new Error(response.error?.message ?? 'documentSave failed')
+  }
+}
+
+async function updateProjectStage(page: Page, projectId: string, stage: string): Promise<void> {
+  const response = await page.evaluate(
+    async ({ pId, sopStage }) => {
+      const api = (window as Window & { api: AnyApi }).api
+      return api.projectUpdate({ id: pId, sopStage }) as Promise<{
+        success: boolean
+        error?: { message?: string }
+      }>
+    },
+    { pId: projectId, sopStage: stage }
+  )
+  if (!response.success) {
+    throw new Error(response.error?.message ?? 'projectUpdate (sopStage) failed')
+  }
+}
+
+async function startTaskProgressCapture(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const g = window as Window & {
+      __e2eProgressEvents?: TaskProgressEvent[]
+      __e2eProgressUnlisten?: () => void
+    }
+    g.__e2eProgressUnlisten?.()
+    g.__e2eProgressEvents = []
+    g.__e2eProgressUnlisten = (window as Window & { api: AnyApi }).api.onTaskProgress(
+      (event: TaskProgressEvent) => {
+        g.__e2eProgressEvents?.push(event)
+      }
+    ) as () => void
+  })
+}
+
+async function getCapturedProgress(page: Page): Promise<TaskProgressEvent[]> {
+  return page.evaluate(() => {
+    return (
+      (window as Window & { __e2eProgressEvents?: TaskProgressEvent[] }).__e2eProgressEvents ?? []
+    )
+  })
+}
+
+async function getTaskStatus(page: Page, taskId: string): Promise<string | null> {
+  return page.evaluate(async (id) => {
+    const api = (window as Window & { api: AnyApi }).api
+    const res = (await api.taskGetStatus({ taskId: id })) as {
+      success: boolean
+      data?: { status: string }
+    }
+    return res.success ? (res.data?.status ?? null) : null
+  }, taskId)
 }
 
 async function cleanup(ctx: LaunchContext): Promise<void> {
@@ -108,7 +222,11 @@ async function cleanup(ctx: LaunchContext): Promise<void> {
   await rm(ctx.sandboxHome, { recursive: true, force: true })
 }
 
+// ─── Tests ──────────────────────────────────────────────────────────
+
 test.describe('Story 3.4: AI Chapter Generation E2E', () => {
+  test.describe.configure({ timeout: 120_000 })
+
   let ctx: LaunchContext | null = null
 
   test.afterEach(async () => {
@@ -118,114 +236,257 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     }
   })
 
-  test('@story-3-4 guidance-only chapter shows generate button and triggers AI generation', async () => {
+  test('@story-3-4 @p0 guidance-only chapter triggers AI generation and inserts content', async () => {
+    test.slow()
     ctx = await launchApp()
     const { window } = ctx
 
-    // Verify workspace loaded with the project
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
+    // Wait for plate editor content to be ready
+    await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
 
-    // The editor area should be present (proposal skeleton or template selector)
-    const hasEditor = await window
-      .getByTestId('skeleton-editor')
-      .isVisible()
-      .catch(() => false)
-    const hasTemplateSelector = await window
-      .getByTestId('generate-skeleton-btn')
-      .isVisible()
-      .catch(() => false)
+    // Start capturing task-progress events before triggering generation
+    await startTaskProgressCapture(window)
 
-    // At minimum the workspace rendered; chapter generate UI is available
-    // when a skeleton with guidance-only headings is loaded
-    if (hasEditor) {
-      // If the editor is loaded, look for chapter-level generate buttons
-      const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
-      const count = await generateBtns.count()
-      // Verify the button exists when guidance-only chapters are present
-      expect(count).toBeGreaterThanOrEqual(0)
-    }
-
-    // Template selector path: verify generate skeleton button is clickable
-    if (hasTemplateSelector) {
-      await expect(window.getByTestId('generate-skeleton-btn')).toBeEnabled()
-    }
-  })
-
-  test('@story-3-4 multiple chapters queue and execute with concurrency limit', async () => {
-    ctx = await launchApp()
-    const { window } = ctx
-
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
-
-    // Verify the progress component exists (rendered when generation tasks are active)
-    const progressEl = window.locator('[data-testid="chapter-generation-progress"]')
-    // Progress indicator should not be visible when no generation is in flight
-    expect(await progressEl.count()).toBe(0)
-
-    // Verify multiple generate buttons can coexist (one per guidance-only chapter)
+    // Guidance-only chapters should have generate buttons
     const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
+    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
+    const initialCount = await generateBtns.count()
+    expect(initialCount).toBeGreaterThanOrEqual(1)
+
+    // Click the first generate button to trigger AI chapter generation
+    await generateBtns.first().click()
+
+    // A progress indicator should appear for the generating chapter
+    await expect
+      .poll(
+        async () => {
+          const progress = window.locator('[data-testid="chapter-generation-progress"]')
+          return progress.count()
+        },
+        { timeout: 10_000 }
+      )
+      .toBeGreaterThanOrEqual(1)
+
+    // Task progress events should fire (analyzing → matching-assets → generating)
+    await expect
+      .poll(
+        async () => {
+          const events = await getCapturedProgress(window)
+          return events.length
+        },
+        { timeout: 15_000 }
+      )
+      .toBeGreaterThan(0)
+
+    // Verify at least one progress event has a recognisable phase message
+    await expect
+      .poll(
+        async () => {
+          const events = await getCapturedProgress(window)
+          return events.some((e) =>
+            ['analyzing', 'matching-assets', 'generating', 'annotating-sources'].includes(
+              e.message ?? ''
+            )
+          )
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true)
+
+    // Wait for the generation to complete (progress indicator disappears)
+    await expect
+      .poll(
+        async () => {
+          const events = await getCapturedProgress(window)
+          // A 100% progress event means the task completed
+          return events.some((e) => e.progress >= 100)
+        },
+        { timeout: 30_000 }
+      )
+      .toBe(true)
+
+    // The generated content should be visible in the editor
+    // (mock returns "方案概述" and "核心技术方案" headings)
+    await expect(window.getByText('方案概述')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('@story-3-4 @p1 multiple chapters queue and execute with progress tracking', async () => {
+    test.slow()
+    ctx = await launchApp()
+    const { window } = ctx
+
+    await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
+    await startTaskProgressCapture(window)
+
+    // There should be multiple guidance-only chapters with generate buttons
+    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
+    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
     const btnCount = await generateBtns.count()
-    // The concurrency queue is verified by triggering multiple generates;
-    // without AI mock, we verify the UI elements are ready to accept triggers
-    expect(btnCount).toBeGreaterThanOrEqual(0)
+    // Our fixture has at least 4 guidance-only chapters (项目概述, 系统架构设计, 技术实施方案, 质量保障措施)
+    // The error chapter (风险评估) also has a generate button
+    expect(btnCount).toBeGreaterThanOrEqual(2)
+
+    // Trigger generation for the first two guidance-only chapters in quick succession
+    // (click the first, then the second — they should queue)
+    await generateBtns.nth(0).click()
+    await generateBtns.nth(1).click()
+
+    // At least one progress indicator should appear
+    await expect
+      .poll(
+        async () => {
+          const progress = window.locator('[data-testid="chapter-generation-progress"]')
+          return progress.count()
+        },
+        { timeout: 10_000 }
+      )
+      .toBeGreaterThanOrEqual(1)
+
+    // Wait for both tasks to complete — both chapters receive progress events
+    await expect
+      .poll(
+        async () => {
+          const events = await getCapturedProgress(window)
+          const completedTasks = new Set(
+            events.filter((e) => e.progress >= 100).map((e) => e.taskId)
+          )
+          return completedTasks.size
+        },
+        { timeout: 30_000 }
+      )
+      .toBeGreaterThanOrEqual(2)
   })
 
-  test('@story-3-4 error recovery shows inline error bar with retry/manual-edit/skip actions', async () => {
+  test('@story-3-4 @p1 error recovery shows inline error bar with retry/manual-edit/skip', async () => {
+    test.slow()
     ctx = await launchApp()
     const { window } = ctx
 
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
+    await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
 
-    // The error bar component should NOT be visible in a clean state
-    const errorBar = window.locator('[data-testid="chapter-error-bar"]')
-    expect(await errorBar.count()).toBe(0)
+    // Find the generate button for the error-trigger chapter (风险评估).
+    // It's the last guidance-only chapter in our fixture.
+    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
+    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
+    const btnCount = await generateBtns.count()
 
-    // Verify the error bar action buttons are defined in the component tree
-    // (they render only on error — verified via unit tests; here we confirm clean state)
-    const retryBtn = window.locator('[data-testid="chapter-retry-btn"]')
-    const manualEditBtn = window.locator('[data-testid="chapter-manual-edit-btn"]')
-    const skipBtn = window.locator('[data-testid="chapter-skip-btn"]')
-    expect(await retryBtn.count()).toBe(0)
-    expect(await manualEditBtn.count()).toBe(0)
-    expect(await skipBtn.count()).toBe(0)
+    // The error chapter's generate button is the last one
+    await generateBtns.nth(btnCount - 1).click()
+
+    // The mock AI will throw because the guidance contains __E2E_FORCE_ERROR__.
+    // Wait for the inline error bar to appear.
+    await expect(window.locator('[data-testid="chapter-error-bar"]').first()).toBeVisible({
+      timeout: 30_000,
+    })
+
+    // Verify all three action buttons are present
+    await expect(window.locator('[data-testid="chapter-retry-btn"]').first()).toBeVisible()
+    await expect(window.locator('[data-testid="chapter-manual-edit-btn"]').first()).toBeVisible()
+    await expect(window.locator('[data-testid="chapter-skip-btn"]').first()).toBeVisible()
   })
 
-  test('@story-3-4 conflict confirmation when user edits during generation', async () => {
+  test('@story-3-4 @p1 regeneration dialog for chapter with existing content', async () => {
+    test.slow()
     ctx = await launchApp()
     const { window } = ctx
 
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
+    await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
 
-    // The regenerate dialog should NOT be visible in a clean state
-    const regenerateDialog = window.locator('[data-testid="regenerate-dialog"]')
-    expect(await regenerateDialog.count()).toBe(0)
-
-    // Regenerate button appears on chapter headings that have content
+    // The "已有内容章节" chapter has content → should show regenerate button
     const regenerateBtns = window.locator('[data-testid="chapter-regenerate-btn"]')
-    const regenCount = await regenerateBtns.count()
-    expect(regenCount).toBeGreaterThanOrEqual(0)
+    await expect(regenerateBtns.first()).toBeVisible({ timeout: 10_000 })
+
+    // Click regenerate → dialog should appear
+    await regenerateBtns.first().click()
+    await expect(window.getByTestId('regenerate-dialog')).toBeVisible({ timeout: 5_000 })
+
+    // Dialog should show a textarea for additional context
+    const textarea = window.getByTestId('regenerate-dialog').locator('textarea')
+    await expect(textarea).toBeVisible()
+
+    // Type additional context and confirm
+    await textarea.fill('请重点强调安全性和可扩展性')
+
+    // Find and click the confirm button within the dialog
+    const confirmBtn = window
+      .getByTestId('regenerate-dialog')
+      .locator('button:has-text("确认"), button:has-text("确定"), .ant-btn-primary')
+    await confirmBtn.first().click()
+
+    // Dialog should close and regeneration should start
+    await expect(window.getByTestId('regenerate-dialog')).not.toBeVisible({ timeout: 5_000 })
+
+    // A progress indicator should appear for the regenerating chapter
+    await expect
+      .poll(
+        async () => {
+          const progress = window.locator('[data-testid="chapter-generation-progress"]')
+          return progress.count()
+        },
+        { timeout: 10_000 }
+      )
+      .toBeGreaterThanOrEqual(1)
   })
 
-  test('@story-3-4 task restoration on workspace re-entry', async () => {
+  test('@story-3-4 @p1 task restoration on workspace re-entry', async () => {
+    test.slow()
     ctx = await launchApp()
     const { window, projectId } = ctx
 
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
+    await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
+    await startTaskProgressCapture(window)
+
+    // Trigger generation on a chapter
+    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
+    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
+    await generateBtns.first().click()
+
+    // Wait for at least one progress event (task is running)
+    await expect
+      .poll(
+        async () => {
+          const events = await getCapturedProgress(window)
+          return events.length
+        },
+        { timeout: 15_000 }
+      )
+      .toBeGreaterThan(0)
+
+    // Capture the task ID from progress events
+    const events = await getCapturedProgress(window)
+    const taskId = events[0]?.taskId
+    expect(taskId).toBeTruthy()
+
+    // Wait for the task to complete
+    await expect
+      .poll(async () => getTaskStatus(window, taskId!), { timeout: 30_000 })
+      .toBe('completed')
 
     // Navigate away from workspace back to kanban
     await window.evaluate(() => {
       window.location.hash = '#/'
     })
-    await expect(window.getByTestId('project-kanban')).toBeVisible()
+    await expect(window.getByTestId('project-kanban')).toBeVisible({ timeout: 15_000 })
 
     // Navigate back into the same project
     const projectCard = window.getByTestId(`project-card-${projectId}`)
-    await expect(projectCard).toBeVisible()
+    await expect(projectCard).toBeVisible({ timeout: 15_000 })
     await projectCard.click()
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
+    await expect(window.getByTestId('project-workspace')).toBeVisible({ timeout: 15_000 })
 
-    // Verify workspace re-entry renders correctly (no orphaned progress bars)
+    // Click proposal-writing stage tab
+    const sopTab = window.getByTestId('sop-stage-proposal-writing')
+    if (await sopTab.isVisible().catch(() => false)) {
+      await sopTab.click()
+    }
+
+    await expect(window.getByTestId('editor-view')).toBeVisible({ timeout: 15_000 })
+
+    // Verify: no orphaned progress bars (task already completed)
     const progressEl = window.locator('[data-testid="chapter-generation-progress"]')
     expect(await progressEl.count()).toBe(0)
+
+    // Verify: the previously generated content is still present in the editor
+    await expect(window.getByText('方案概述')).toBeVisible({ timeout: 10_000 })
   })
 })

@@ -47,6 +47,21 @@ class AiProxyService {
   private config: AiProxyConfig | null = null
 
   private async ensureProvider(): Promise<{ provider: AiProvider; config: AiProxyConfig }> {
+    // E2E mock: bypass encrypted config and real provider SDKs entirely
+    if (process.env.BIDWISE_E2E_AI_MOCK === 'true') {
+      if (!this.provider) {
+        const { MockAiProvider } = await import('./mock-provider')
+        this.provider = new MockAiProvider()
+        this.config = {
+          provider: 'claude',
+          anthropicApiKey: 'mock-key',
+          desensitizeEnabled: false,
+        }
+        logger.info('AI Proxy using MockAiProvider (BIDWISE_E2E_AI_MOCK=true)')
+      }
+      return { provider: this.provider, config: this.config! }
+    }
+
     if (!this.config) {
       this.config = await getAiProxyConfig()
     }
