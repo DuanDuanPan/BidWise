@@ -26,6 +26,22 @@ function progressToPhase(progress: number, message?: string): ChapterGenerationP
   return 'analyzing'
 }
 
+function resolveTerminalPhase(params: {
+  currentDigest: string
+  currentSectionContent: string
+  baselineDigest?: string
+  baselineSectionContent?: string
+}): Extract<ChapterGenerationPhase, 'completed' | 'conflicted'> {
+  const { currentDigest, currentSectionContent, baselineDigest, baselineSectionContent } = params
+  const hasConflict =
+    (baselineDigest !== undefined && currentDigest !== baselineDigest) ||
+    (baselineDigest === undefined &&
+      baselineSectionContent !== undefined &&
+      currentSectionContent !== baselineSectionContent)
+
+  return hasConflict ? 'conflicted' : 'completed'
+}
+
 export interface UseChapterGenerationReturn {
   currentProjectId: string
   statuses: Map<string, ChapterGenerationStatus>
@@ -79,15 +95,14 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             const currentDigest = createContentDigest(currentSectionContent)
 
             updateStatus(key, (prev) => {
-              const hasConflict =
-                (prev.baselineDigest !== undefined && currentDigest !== prev.baselineDigest) ||
-                (prev.baselineDigest === undefined &&
-                  prev.baselineSectionContent !== undefined &&
-                  currentSectionContent !== prev.baselineSectionContent)
-
               return {
                 ...prev,
-                phase: hasConflict ? 'conflicted' : 'completed',
+                phase: resolveTerminalPhase({
+                  currentDigest,
+                  currentSectionContent,
+                  baselineDigest: prev.baselineDigest,
+                  baselineSectionContent: prev.baselineSectionContent,
+                }),
                 progress: 100,
                 generatedContent: status.result!.content,
               }
@@ -161,6 +176,12 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             target
           )
           const currentDigest = createContentDigest(currentSectionContent)
+          const terminalPhase = resolveTerminalPhase({
+            currentDigest,
+            currentSectionContent,
+            baselineDigest,
+            baselineSectionContent,
+          })
 
           if (task.status === 'pending' || task.status === 'running') {
             const statusRes = await window.api.agentStatus(task.id)
@@ -169,7 +190,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               if (status.status === 'completed' && status.result) {
                 restoredStatuses.set(key, {
                   target,
-                  phase: 'completed',
+                  phase: terminalPhase,
                   progress: 100,
                   taskId: task.id,
                   generatedContent: status.result.content,
@@ -207,14 +228,6 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             continue
           }
 
-          if (
-            baselineDigest !== undefined &&
-            currentDocumentContent.length > 0 &&
-            currentDigest !== baselineDigest
-          ) {
-            continue
-          }
-
           const statusRes = await window.api.agentStatus(task.id)
           if (!statusRes.success) continue
           const status = statusRes.data
@@ -222,7 +235,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           if (status.status === 'completed' && status.result) {
             restoredStatuses.set(key, {
               target,
-              phase: 'completed',
+              phase: terminalPhase,
               progress: 100,
               taskId: task.id,
               generatedContent: status.result.content,

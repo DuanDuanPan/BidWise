@@ -21,6 +21,7 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const chapterGen = useChapterGenerationContext()
+  const chapterStatuses = chapterGen?.statuses
 
   const registerSyncFlush = useCallback((flush: (() => string) | null): void => {
     syncFlushRef.current = flush
@@ -41,10 +42,10 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
 
   // Watch for completed chapters and inject content into editor
   useEffect(() => {
-    if (!chapterGen) return
+    if (!chapterGen || !chapterStatuses) return
     const consumedKeys = consumedTerminalKeysRef.current
 
-    for (const [key, status] of chapterGen.statuses) {
+    for (const [key, status] of chapterStatuses) {
       if (!['completed', 'conflicted'].includes(status.phase)) {
         consumedKeys.delete(key)
         continue
@@ -70,6 +71,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
       }
 
       if (status.phase === 'conflicted' && status.generatedContent) {
+        if (!replaceSectionRef.current || loadedProjectId !== projectId || content.length === 0) {
+          consumedKeys.delete(key)
+          continue
+        }
+
         consumedKeys.add(key)
         Modal.confirm({
           title: '章节已被修改',
@@ -77,12 +83,14 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
           okText: '替换',
           cancelText: '保留手动编辑',
           onOk: () => {
-            if (replaceSectionRef.current && status.generatedContent) {
-              const didReplace = replaceSectionRef.current(status.target, status.generatedContent)
-              if (!didReplace) {
-                consumedKeys.delete(key)
-                return
-              }
+            if (!replaceSectionRef.current || !status.generatedContent) {
+              consumedKeys.delete(key)
+              return
+            }
+            const didReplace = replaceSectionRef.current(status.target, status.generatedContent)
+            if (!didReplace) {
+              consumedKeys.delete(key)
+              return
             }
             consumedKeys.delete(key)
             chapterGen.dismissError(status.target)
@@ -96,11 +104,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
     }
 
     for (const key of Array.from(consumedKeys)) {
-      if (!chapterGen.statuses.has(key)) {
+      if (!chapterStatuses.has(key)) {
         consumedKeys.delete(key)
       }
     }
-  }, [chapterGen, content, loadedProjectId, projectId, replaceSectionVersion])
+  }, [chapterGen, chapterStatuses, content, loadedProjectId, projectId, replaceSectionVersion])
 
   if (loading) {
     return (

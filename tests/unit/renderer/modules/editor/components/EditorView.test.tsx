@@ -150,6 +150,7 @@ describe('@story-3-1 EditorView', () => {
     const confirmSpy = vi
       .spyOn(Modal, 'confirm')
       .mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }) as never)
+    mockContent = '## 系统架构设计\n\n用户手动编辑的内容\n'
 
     mockChapterGen = {
       statuses: new Map([
@@ -169,6 +170,10 @@ describe('@story-3-1 EditorView', () => {
 
     const { rerender } = render(<EditorView projectId="proj-1" />)
 
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
     await waitFor(() => {
       expect(confirmSpy).toHaveBeenCalledTimes(1)
     })
@@ -179,6 +184,42 @@ describe('@story-3-1 EditorView', () => {
     }
 
     rerender(<EditorView projectId="proj-1" />)
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('@story-3-4 waits for the replace handler before opening the conflict modal', async () => {
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    const confirmSpy = vi
+      .spyOn(Modal, 'confirm')
+      .mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }) as never)
+
+    mockContent = '## 系统架构设计\n\n用户手动编辑的内容\n'
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'conflicted',
+            generatedContent: 'AI 生成内容',
+            progress: 100,
+            taskId: 'task-3',
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
 
     await waitFor(() => {
       expect(confirmSpy).toHaveBeenCalledTimes(1)

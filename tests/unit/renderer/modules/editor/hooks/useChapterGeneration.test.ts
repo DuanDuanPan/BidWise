@@ -418,6 +418,100 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
   })
 
+  it('@p1 should restore completed tasks as conflicted when the document changed since baseline', async () => {
+    const baselineSectionContent = '\n> 请描述系统架构\n'
+    const baselineDigest = createHash('sha256')
+      .update(baselineSectionContent)
+      .digest('hex')
+      .slice(0, 16)
+
+    mockDocumentContent.current = '## 系统架构设计\n\n用户手动编辑的内容\n'
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'task-restored-conflicted-completed',
+            status: 'completed',
+            progress: 100,
+            input: JSON.stringify({
+              projectId: PROJECT_ID,
+              target: mockTarget,
+              baselineDigest,
+            }),
+          },
+        ],
+      }),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-restored-conflicted-completed',
+          status: 'completed',
+          result: { content: '# Completed While Away' },
+        },
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status).toBeDefined()
+      expect(status!.phase).toBe('conflicted')
+      expect(status!.generatedContent).toBe('# Completed While Away')
+    })
+  })
+
+  it('@p1 should restore running tasks that already completed as conflicted when the document changed since baseline', async () => {
+    const baselineSectionContent = '\n> 请描述系统架构\n'
+    const baselineDigest = createHash('sha256')
+      .update(baselineSectionContent)
+      .digest('hex')
+      .slice(0, 16)
+
+    mockDocumentContent.current = '## 系统架构设计\n\n用户手动编辑的内容\n'
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'task-restored-running-now-complete',
+            status: 'running',
+            progress: 80,
+            input: JSON.stringify({
+              projectId: PROJECT_ID,
+              target: mockTarget,
+              baselineDigest,
+            }),
+          },
+        ],
+      }),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-restored-running-now-complete',
+          status: 'completed',
+          result: { content: '# Completed While Away' },
+        },
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status).toBeDefined()
+      expect(status!.phase).toBe('conflicted')
+      expect(status!.generatedContent).toBe('# Completed While Away')
+    })
+  })
+
   it('@p1 should retry regeneration using regenerate path', async () => {
     const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
