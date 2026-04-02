@@ -178,6 +178,16 @@ describe('@story-3-4 chapterGenerationService', () => {
       expect(request.context.adjacentChaptersAfter).toContain('实施计划')
     })
 
+    it('@p1 should not use parent headings as adjacent chapter summaries', async () => {
+      const target = { title: '项目概述', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.adjacentChaptersBefore).toBeUndefined()
+      expect(request.context.adjacentChaptersAfter).toContain('系统架构设计')
+    })
+
     it('@p1 should include requirements when available', async () => {
       mockFindRequirements.mockResolvedValue([
         { category: '技术', priority: '高', description: '支持高并发' },
@@ -324,6 +334,23 @@ describe('@story-3-4 chapterGenerationService', () => {
 
       const request = mockExecute.mock.calls[0][0]
       expect(request.context.chapterTitle).toBe('概述')
+    })
+
+    it('@p1 should match headings with inline markdown formatting', async () => {
+      mockLoad.mockResolvedValue({
+        content: `## **系统架构设计**
+
+> 请设计系统整体架构
+`,
+      })
+
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.chapterTitle).toBe('系统架构设计')
+      expect(request.context.guidanceText).toBe('请设计系统整体架构')
     })
   })
 })

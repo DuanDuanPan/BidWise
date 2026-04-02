@@ -206,6 +206,41 @@ describe('@story-3-1 PlateEditor', () => {
     )
   })
 
+  it('@story-3-4 replaceSectionContent ignores heading-like lines inside fenced code blocks', () => {
+    const onReplaceSectionReady = vi.fn()
+    mockSerialize.mockReturnValue(
+      '## Chapter 1\n\n```md\n## Fake Heading\n```\n\nReal content\n\n## Chapter 2\n\nKeep this'
+    )
+    mockDeserialize.mockImplementation((_e: unknown, md: string) => [
+      { type: 'p', children: [{ text: md }] },
+    ])
+
+    render(
+      <PlateEditor
+        initialContent={
+          '## Chapter 1\n\n```md\n## Fake Heading\n```\n\nReal content\n\n## Chapter 2\n\nKeep this'
+        }
+        projectId="proj-1"
+        onReplaceSectionReady={onReplaceSectionReady}
+      />
+    )
+
+    const replaceSection = onReplaceSectionReady.mock.calls[0]?.[0] as
+      | ((target: { title: string; level: number; occurrenceIndex: number }, md: string) => void)
+      | undefined
+
+    replaceSection?.({ title: 'Chapter 1', level: 2, occurrenceIndex: 0 }, 'New AI content')
+
+    expect(mockUpdateContent).toHaveBeenCalledWith(
+      expect.not.stringContaining('## Fake Heading'),
+      'proj-1'
+    )
+    expect(mockUpdateContent).toHaveBeenCalledWith(
+      expect.stringContaining('## Chapter 2'),
+      'proj-1'
+    )
+  })
+
   it('serializes on change after debounce and updates the document store', async () => {
     vi.useFakeTimers()
 

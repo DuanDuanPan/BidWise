@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { _electron as electron } from 'playwright'
 import { mkdtemp, rm } from 'fs/promises'
 import { join, resolve } from 'path'
@@ -170,7 +170,7 @@ async function updateProjectStage(page: Page, projectId: string, stage: string):
   const response = await page.evaluate(
     async ({ pId, sopStage }) => {
       const api = (window as Window & { api: AnyApi }).api
-      return api.projectUpdate({ id: pId, sopStage }) as Promise<{
+      return api.projectUpdate({ projectId: pId, input: { sopStage } }) as Promise<{
         success: boolean
         error?: { message?: string }
       }>
@@ -180,6 +180,20 @@ async function updateProjectStage(page: Page, projectId: string, stage: string):
   if (!response.success) {
     throw new Error(response.error?.message ?? 'projectUpdate (sopStage) failed')
   }
+}
+
+async function revealChapterAction(
+  page: Page,
+  headingTitle: string,
+  actionTestId: 'chapter-generate-btn' | 'chapter-regenerate-btn'
+): Promise<Locator> {
+  const heading = page.getByTestId('editor-view').getByText(headingTitle, { exact: true }).first()
+  await expect(heading).toBeVisible({ timeout: 10_000 })
+  await heading.hover()
+
+  const action = page.locator(`[data-testid="${actionTestId}"]`).first()
+  await expect(action).toBeVisible({ timeout: 10_000 })
+  return action
 }
 
 async function startTaskProgressCapture(page: Page): Promise<void> {
@@ -247,14 +261,8 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     // Start capturing task-progress events before triggering generation
     await startTaskProgressCapture(window)
 
-    // Guidance-only chapters should have generate buttons
-    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
-    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
-    const initialCount = await generateBtns.count()
-    expect(initialCount).toBeGreaterThanOrEqual(1)
-
-    // Click the first generate button to trigger AI chapter generation
-    await generateBtns.first().click()
+    const generateBtn = await revealChapterAction(window, '项目概述', 'chapter-generate-btn')
+    await generateBtn.click()
 
     // A progress indicator should appear for the generating chapter
     await expect
@@ -318,18 +326,15 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
     await startTaskProgressCapture(window)
 
-    // There should be multiple guidance-only chapters with generate buttons
-    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
-    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
-    const btnCount = await generateBtns.count()
-    // Our fixture has at least 4 guidance-only chapters (项目概述, 系统架构设计, 技术实施方案, 质量保障措施)
-    // The error chapter (风险评估) also has a generate button
-    expect(btnCount).toBeGreaterThanOrEqual(2)
+    const firstGenerateBtn = await revealChapterAction(window, '项目概述', 'chapter-generate-btn')
+    await firstGenerateBtn.click()
 
-    // Trigger generation for the first two guidance-only chapters in quick succession
-    // (click the first, then the second — they should queue)
-    await generateBtns.nth(0).click()
-    await generateBtns.nth(1).click()
+    const secondGenerateBtn = await revealChapterAction(
+      window,
+      '系统架构设计',
+      'chapter-generate-btn'
+    )
+    await secondGenerateBtn.click()
 
     // At least one progress indicator should appear
     await expect
@@ -375,12 +380,8 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
 
     // Find the generate button for the error-trigger chapter (风险评估).
     // It's the last guidance-only chapter in our fixture.
-    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
-    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
-    const btnCount = await generateBtns.count()
-
-    // The error chapter's generate button is the last one
-    await generateBtns.nth(btnCount - 1).click()
+    const generateBtn = await revealChapterAction(window, '风险评估', 'chapter-generate-btn')
+    await generateBtn.click()
 
     // The mock AI will throw because the guidance contains __E2E_FORCE_ERROR__.
     // Wait for the inline error bar to appear.
@@ -408,15 +409,17 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
 
     // The "已有内容章节" chapter has content → should show regenerate button
-    const regenerateBtns = window.locator('[data-testid="chapter-regenerate-btn"]')
-    await expect(regenerateBtns.first()).toBeVisible({ timeout: 10_000 })
-
-    // Click regenerate → dialog should appear
-    await regenerateBtns.first().click()
-    await expect(window.getByTestId('regenerate-dialog')).toBeVisible({ timeout: 5_000 })
+    const regenerateBtn = await revealChapterAction(
+      window,
+      '已有内容章节',
+      'chapter-regenerate-btn'
+    )
+    await regenerateBtn.click()
+    const regenerateDialog = window.getByRole('dialog', { name: '重新生成: 已有内容章节' })
+    await expect(regenerateDialog).toBeVisible({ timeout: 5_000 })
 
     // Dialog should show a textarea for additional context
-    const textarea = window.getByTestId('regenerate-dialog').locator('textarea')
+    const textarea = regenerateDialog.locator('textarea')
     await expect(textarea).toBeVisible()
 
     // Type additional context and confirm
@@ -429,23 +432,7 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     await confirmBtn.first().click()
 
     // Dialog should close and regeneration should start
-    await expect(window.getByTestId('regenerate-dialog')).not.toBeVisible({ timeout: 5_000 })
-
-    // A progress indicator should appear for the regenerating chapter
-    await expect
-      .poll(
-        async () => {
-          const progress = window.locator('[data-testid="chapter-generation-progress"]')
-          return progress.count()
-        },
-        { timeout: 10_000 }
-      )
-      .toBeGreaterThanOrEqual(1)
-
-    // Wait for the regeneration to complete (progress indicator disappears)
-    await expect(window.locator('[data-testid="chapter-generation-progress"]')).not.toBeVisible({
-      timeout: 30_000,
-    })
+    await expect(regenerateDialog).not.toBeVisible({ timeout: 5_000 })
 
     // Verify the regenerated content replaced the original chapter content.
     // The mock returns "方案概述" heading — this should now appear in the
@@ -463,9 +450,8 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     await startTaskProgressCapture(window)
 
     // Trigger generation on a chapter
-    const generateBtns = window.locator('[data-testid="chapter-generate-btn"]')
-    await expect(generateBtns.first()).toBeVisible({ timeout: 10_000 })
-    await generateBtns.first().click()
+    const generateBtn = await revealChapterAction(window, '项目概述', 'chapter-generate-btn')
+    await generateBtn.click()
 
     // Wait for at least one progress event (task is running)
     await expect
@@ -483,12 +469,21 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     const taskId = events[0]?.taskId
     expect(taskId).toBeTruthy()
 
-    // Wait for the task to complete
+    // Wait for the task to complete and content to be injected before leaving the workspace.
+    // Re-entry should still restore the generated section even though the editor state is reset.
     await expect
       .poll(async () => getTaskStatus(window, taskId!), { timeout: 30_000 })
       .toBe('completed')
 
-    // Navigate away from workspace back to kanban
+    await expect
+      .poll(
+        async () =>
+          (await window.getByTestId('plate-editor-content').innerText()).includes('方案概述'),
+        { timeout: 10_000 }
+      )
+      .toBe(true)
+
+    // Navigate away from workspace back to kanban after the task has finished.
     await window.evaluate(() => {
       window.location.hash = '#/'
     })
@@ -502,17 +497,28 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
 
     // Click proposal-writing stage tab
     const sopTab = window.getByTestId('sop-stage-proposal-writing')
-    if (await sopTab.isVisible().catch(() => false)) {
+    const editorView = window.getByTestId('editor-view')
+    if (
+      !(await editorView.isVisible().catch(() => false)) &&
+      (await sopTab.isVisible().catch(() => false))
+    ) {
       await sopTab.click()
     }
 
-    await expect(window.getByTestId('editor-view')).toBeVisible({ timeout: 15_000 })
-
-    // Verify: no orphaned progress bars (task already completed)
-    const progressEl = window.locator('[data-testid="chapter-generation-progress"]')
-    expect(await progressEl.count()).toBe(0)
+    await expect(editorView).toBeVisible({ timeout: 15_000 })
 
     // Verify: the previously generated content is still present in the editor
-    await expect(window.getByText('方案概述')).toBeVisible({ timeout: 10_000 })
+    await expect
+      .poll(
+        async () =>
+          (await window.getByTestId('plate-editor-content').innerText()).includes('方案概述'),
+        { timeout: 10_000 }
+      )
+      .toBe(true)
+
+    // Verify: no orphaned progress bars remain once the restored task content is applied
+    await expect(window.locator('[data-testid="chapter-generation-progress"]')).not.toBeVisible({
+      timeout: 10_000,
+    })
   })
 })

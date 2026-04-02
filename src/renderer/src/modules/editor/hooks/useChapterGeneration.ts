@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ChapterHeadingLocator,
   ChapterGenerationPhase,
   ChapterGenerationStatus,
 } from '@shared/chapter-types'
 import type { TaskProgressEvent } from '@shared/ai-types'
+import { createContentDigest, extractMarkdownSectionContent } from '@shared/chapter-markdown'
 import { useDocumentStore } from '@renderer/stores'
-
-const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
 
 /** Construct a stable map key from a heading locator */
 function locatorKey(locator: ChapterHeadingLocator): string {
@@ -27,37 +26,6 @@ function progressToPhase(progress: number, message?: string): ChapterGenerationP
   return 'analyzing'
 }
 
-/** Extract the content lines of a section identified by a heading locator */
-function extractSectionContent(markdown: string, locator: ChapterHeadingLocator): string {
-  const lines = markdown.split('\n')
-  let occurrence = 0
-  let headingLineIdx = -1
-
-  for (let i = 0; i < lines.length; i++) {
-    const match = HEADING_RE.exec(lines[i])
-    if (match && match[1].length === locator.level && match[2].trim() === locator.title) {
-      if (occurrence === locator.occurrenceIndex) {
-        headingLineIdx = i
-        break
-      }
-      occurrence++
-    }
-  }
-
-  if (headingLineIdx === -1) return ''
-
-  let endLineIdx = lines.length
-  for (let i = headingLineIdx + 1; i < lines.length; i++) {
-    const match = HEADING_RE.exec(lines[i])
-    if (match && match[1].length <= locator.level) {
-      endLineIdx = i
-      break
-    }
-  }
-
-  return lines.slice(headingLineIdx + 1, endLineIdx).join('\n')
-}
-
 export interface UseChapterGenerationReturn {
   currentProjectId: string
   statuses: Map<string, ChapterGenerationStatus>
@@ -71,6 +39,11 @@ export interface UseChapterGenerationReturn {
 export function useChapterGeneration(projectId: string): UseChapterGenerationReturn {
   const [statuses, setStatuses] = useState<Map<string, ChapterGenerationStatus>>(new Map())
   const taskToLocatorRef = useRef<Map<string, ChapterHeadingLocator>>(new Map())
+  const statusesRef = useRef(statuses)
+
+  useEffect(() => {
+    statusesRef.current = statuses
+  }, [statuses])
 
   const updateStatus = useCallback(
     (key: string, updater: (prev: ChapterGenerationStatus) => ChapterGenerationStatus) => {
@@ -92,8 +65,9 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       if (!locator) return
       const key = locatorKey(locator)
       const phase = progressToPhase(event.progress, event.message)
+      const hasTerminalMessage = event.message === 'failed' || event.message === 'cancelled'
 
-      if (phase === 'completed') {
+      if (phase === 'completed' || hasTerminalMessage) {
         // Fetch final result
         void window.api.agentStatus(event.taskId).then((res) => {
           if (!res.success) return
@@ -101,12 +75,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           if (status.status === 'completed' && status.result) {
             // Conflict detection: compare current section content with baseline
             const currentContent = useDocumentStore.getState().content
-            const currentSectionContent = extractSectionContent(currentContent, locator)
+            const currentSectionContent = extractMarkdownSectionContent(currentContent, locator)
+            const currentDigest = createContentDigest(currentSectionContent)
 
             updateStatus(key, (prev) => {
               const hasConflict =
-                prev.baselineSectionContent !== undefined &&
-                currentSectionContent !== prev.baselineSectionContent
+                (prev.baselineDigest !== undefined && currentDigest !== prev.baselineDigest) ||
+                (prev.baselineDigest === undefined &&
+                  prev.baselineSectionContent !== undefined &&
+                  currentSectionContent !== prev.baselineSectionContent)
 
               return {
                 ...prev,
@@ -115,6 +92,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
                 generatedContent: status.result!.content,
               }
             })
+            taskToLocatorRef.current.delete(event.taskId)
           } else if (status.status === 'failed') {
             updateStatus(key, (prev) => ({
               ...prev,
@@ -122,6 +100,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               progress: prev.progress,
               error: status.error?.message ?? '生成失败',
             }))
+            taskToLocatorRef.current.delete(event.taskId)
+          } else if (status.status === 'cancelled') {
+            updateStatus(key, (prev) => ({
+              ...prev,
+              phase: 'failed',
+              progress: prev.progress,
+              error: status.error?.message ?? '任务已取消',
+            }))
+            taskToLocatorRef.current.delete(event.taskId)
           }
         })
         return
@@ -142,13 +129,19 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
   useEffect(() => {
     if (!projectId) return
 
-    void window.api.taskList({ category: 'ai-agent', agentType: 'generate' }).then((res) => {
+    void window.api.taskList({ category: 'ai-agent', agentType: 'generate' }).then(async (res) => {
       if (!res.success) return
-      const activeTasks = res.data.filter((t) => t.status === 'pending' || t.status === 'running')
-      if (activeTasks.length === 0) return
+      const documentRes = await window.api.documentLoad({ projectId })
+      const persistedDocumentContent = documentRes.success
+        ? documentRes.data.content
+        : useDocumentStore.getState().content
+      const restorableTasks = res.data.filter((task) =>
+        ['pending', 'running', 'completed', 'failed', 'cancelled'].includes(task.status)
+      )
+      if (restorableTasks.length === 0) return
 
       const restoredStatuses = new Map<string, ChapterGenerationStatus>()
-      for (const task of activeTasks) {
+      for (const task of restorableTasks) {
         try {
           const input = JSON.parse(task.input) as Record<string, unknown>
           // Filter: only restore tasks belonging to this project
@@ -156,16 +149,102 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           const target = input.target as ChapterHeadingLocator | undefined
           if (!target) continue
           const key = locatorKey(target)
-          taskToLocatorRef.current.set(task.id, target)
-          restoredStatuses.set(key, {
-            target,
-            // pending tasks should map to 'queued', not 'analyzing'
-            phase: task.status === 'pending' ? 'queued' : progressToPhase(task.progress),
-            progress: task.progress,
-            taskId: task.id,
-            baselineDigest: input.baselineDigest as string | undefined,
-            baselineSectionContent: input.baselineSectionContent as string | undefined,
-          })
+          const baselineSectionContent = input.baselineSectionContent as string | undefined
+          const baselineDigest =
+            (input.baselineDigest as string | undefined) ??
+            (baselineSectionContent !== undefined
+              ? createContentDigest(baselineSectionContent)
+              : undefined)
+          const currentDocumentContent = persistedDocumentContent
+          const currentSectionContent = extractMarkdownSectionContent(
+            currentDocumentContent,
+            target
+          )
+          const currentDigest = createContentDigest(currentSectionContent)
+
+          if (task.status === 'pending' || task.status === 'running') {
+            const statusRes = await window.api.agentStatus(task.id)
+            if (statusRes.success) {
+              const status = statusRes.data
+              if (status.status === 'completed' && status.result) {
+                restoredStatuses.set(key, {
+                  target,
+                  phase: 'completed',
+                  progress: 100,
+                  taskId: task.id,
+                  generatedContent: status.result.content,
+                  baselineDigest,
+                  baselineSectionContent,
+                })
+                continue
+              }
+
+              if (status.status === 'failed' || status.status === 'cancelled') {
+                restoredStatuses.set(key, {
+                  target,
+                  phase: 'failed',
+                  progress: task.progress,
+                  taskId: task.id,
+                  error:
+                    status.error?.message ??
+                    (status.status === 'cancelled' ? '任务已取消' : '生成失败'),
+                  baselineDigest,
+                  baselineSectionContent,
+                })
+                continue
+              }
+            }
+
+            taskToLocatorRef.current.set(task.id, target)
+            restoredStatuses.set(key, {
+              target,
+              phase: task.status === 'pending' ? 'queued' : progressToPhase(task.progress),
+              progress: task.progress,
+              taskId: task.id,
+              baselineDigest,
+              baselineSectionContent,
+            })
+            continue
+          }
+
+          if (
+            baselineDigest !== undefined &&
+            currentDocumentContent.length > 0 &&
+            currentDigest !== baselineDigest
+          ) {
+            continue
+          }
+
+          const statusRes = await window.api.agentStatus(task.id)
+          if (!statusRes.success) continue
+          const status = statusRes.data
+
+          if (status.status === 'completed' && status.result) {
+            restoredStatuses.set(key, {
+              target,
+              phase: 'completed',
+              progress: 100,
+              taskId: task.id,
+              generatedContent: status.result.content,
+              baselineDigest,
+              baselineSectionContent,
+            })
+            continue
+          }
+
+          if (status.status === 'failed' || status.status === 'cancelled') {
+            restoredStatuses.set(key, {
+              target,
+              phase: 'failed',
+              progress: task.progress,
+              taskId: task.id,
+              error:
+                status.error?.message ??
+                (status.status === 'cancelled' ? '任务已取消' : '生成失败'),
+              baselineDigest,
+              baselineSectionContent,
+            })
+          }
         } catch {
           // Skip tasks with invalid input
         }
@@ -189,7 +268,8 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
 
       // Capture baseline section content for conflict detection
       const currentContent = useDocumentStore.getState().content
-      const baselineSectionContent = extractSectionContent(currentContent, target)
+      const baselineSectionContent = extractMarkdownSectionContent(currentContent, target)
+      const baselineDigest = createContentDigest(baselineSectionContent)
 
       // Set initial queued status
       setStatuses((prev) => {
@@ -200,6 +280,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           progress: 0,
           taskId: '',
           operationType: 'generate',
+          baselineDigest,
           baselineSectionContent,
         })
         return next
@@ -216,6 +297,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             taskId: '',
             error: res.error.message,
             operationType: 'generate',
+            baselineDigest,
             baselineSectionContent,
           })
           return next
@@ -235,7 +317,8 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
 
       // Capture baseline section content for conflict detection
       const currentContent = useDocumentStore.getState().content
-      const baselineSectionContent = extractSectionContent(currentContent, target)
+      const baselineSectionContent = extractMarkdownSectionContent(currentContent, target)
+      const baselineDigest = createContentDigest(baselineSectionContent)
 
       setStatuses((prev) => {
         const next = new Map(prev)
@@ -246,6 +329,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           taskId: '',
           operationType: 'regenerate',
           additionalContext,
+          baselineDigest,
           baselineSectionContent,
         })
         return next
@@ -263,6 +347,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             error: res.error.message,
             operationType: 'regenerate',
             additionalContext,
+            baselineDigest,
             baselineSectionContent,
           })
           return next
@@ -279,7 +364,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
   const retry = useCallback(
     async (target: ChapterHeadingLocator) => {
       const key = locatorKey(target)
-      const currentStatus = statuses.get(key)
+      const currentStatus = statusesRef.current.get(key)
 
       // Use the correct operation type for retry
       if (currentStatus?.operationType === 'regenerate') {
@@ -288,11 +373,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
         await startGeneration(target)
       }
     },
-    [statuses, startGeneration, startRegeneration]
+    [startGeneration, startRegeneration]
   )
 
   const dismissError = useCallback((target: ChapterHeadingLocator) => {
     const key = locatorKey(target)
+    const taskId = statusesRef.current.get(key)?.taskId
+    if (taskId) {
+      taskToLocatorRef.current.delete(taskId)
+    }
     setStatuses((prev) => {
       const next = new Map(prev)
       next.delete(key)
@@ -302,20 +391,23 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
 
   const getStatus = useCallback(
     (target: ChapterHeadingLocator): ChapterGenerationStatus | undefined => {
-      return statuses.get(locatorKey(target))
+      return statusesRef.current.get(locatorKey(target))
     },
-    [statuses]
+    []
   )
 
-  return {
-    currentProjectId: projectId,
-    statuses,
-    startGeneration,
-    startRegeneration,
-    retry,
-    dismissError,
-    getStatus,
-  }
+  return useMemo(
+    () => ({
+      currentProjectId: projectId,
+      statuses,
+      startGeneration,
+      startRegeneration,
+      retry,
+      dismissError,
+      getStatus,
+    }),
+    [dismissError, getStatus, projectId, retry, startGeneration, startRegeneration, statuses]
+  )
 }
 
 export { locatorKey }

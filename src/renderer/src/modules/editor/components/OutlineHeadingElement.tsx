@@ -10,6 +10,11 @@ import { ChapterGenerationProgress } from './ChapterGenerationProgress'
 import { InlineErrorBar } from './InlineErrorBar'
 import { RegenerateDialog } from './RegenerateDialog'
 import { locatorKey } from '@modules/editor/hooks/useChapterGeneration'
+import {
+  extractMarkdownHeadings,
+  findMarkdownHeading,
+  isMarkdownSectionEmpty,
+} from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
 function extractText(node: unknown): string {
@@ -22,66 +27,14 @@ function extractText(node: unknown): string {
   return ''
 }
 
-const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
-const GUIDANCE_RE = /^>\s*/
-
 function computeLocator(
   markdown: string,
   title: string,
   level: number,
   elementIndex: number
 ): ChapterHeadingLocator | null {
-  const lines = markdown.split('\n')
-  let occurrence = 0
-  for (const line of lines) {
-    const match = HEADING_RE.exec(line)
-    if (match && match[1].length === level && match[2].trim() === title) {
-      if (occurrence === elementIndex) {
-        return { title, level: level as 1 | 2 | 3 | 4, occurrenceIndex: occurrence }
-      }
-      occurrence++
-    }
-  }
-  // Do not silently fall back to occurrence 0 — return null if not found
-  return null
-}
-
-/** Check if a chapter's content is empty or guidance-only (blockquotes + blank lines) */
-function isChapterContentEmpty(
-  markdown: string,
-  title: string,
-  level: number,
-  occurrenceIndex: number
-): boolean {
-  const lines = markdown.split('\n')
-  let occurrence = 0
-  let headingLineIdx = -1
-
-  for (let i = 0; i < lines.length; i++) {
-    const match = HEADING_RE.exec(lines[i])
-    if (match && match[1].length === level && match[2].trim() === title) {
-      if (occurrence === occurrenceIndex) {
-        headingLineIdx = i
-        break
-      }
-      occurrence++
-    }
-  }
-
-  if (headingLineIdx === -1) return true
-
-  for (let i = headingLineIdx + 1; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
-    if (trimmed === '') continue
-    if (GUIDANCE_RE.test(trimmed)) continue
-    if (HEADING_RE.test(trimmed)) {
-      const m = HEADING_RE.exec(trimmed)!
-      if (m[1].length <= level) break
-      continue
-    }
-    return false
-  }
-  return true
+  const locator = { title, level: level as 1 | 2 | 3 | 4, occurrenceIndex: elementIndex }
+  return findMarkdownHeading(extractMarkdownHeadings(markdown), locator) ? locator : null
 }
 
 function getHeadingLevel(elementType: string): number {
@@ -139,7 +92,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   // Determine if chapter content is empty or guidance-only
   const chapterEmpty = useMemo(() => {
     if (!locator) return true
-    return isChapterContentEmpty(content, locator.title, locator.level, locator.occurrenceIndex)
+    return isMarkdownSectionEmpty(content, locator)
   }, [content, locator])
 
   const handleGenerate = useCallback(() => {

@@ -4,9 +4,10 @@ import type { Value } from 'platejs'
 import { editorPlugins } from '@modules/editor/plugins/editorPlugins'
 import { deserializeFromMarkdown, serializeToMarkdown } from '@modules/editor/serializer'
 import { useDocumentStore } from '@renderer/stores'
+import { replaceMarkdownSection } from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
-export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => void
+export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => boolean
 
 interface PlateEditorProps {
   initialContent: string
@@ -24,6 +25,7 @@ export function PlateEditor({
   const updateContent = useDocumentStore((s) => s.updateContent)
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const idleCallbackRef = useRef<number | null>(null)
+  const latestLoadedMarkdownRef = useRef(initialContent)
   const latestSerializedMarkdownRef = useRef(initialContent)
   const hasAppliedExternalContentRef = useRef(false)
 
@@ -54,6 +56,10 @@ export function PlateEditor({
     updateContent(markdown, projectId)
     return markdown
   }, [editor, projectId, updateContent])
+
+  useEffect(() => {
+    latestLoadedMarkdownRef.current = initialContent
+  }, [initialContent])
 
   useEffect(() => {
     if (
@@ -105,54 +111,30 @@ export function PlateEditor({
     (target: ChapterHeadingLocator, markdownContent: string) => {
       clearPendingSerialization()
 
-      const currentMarkdown = serializeToMarkdown(editor)
-      const lines = currentMarkdown.split('\n')
-      const headingPrefix = '#'.repeat(target.level) + ' '
-
-      // Find the target heading line
-      let occurrence = 0
-      let headingLineIdx = -1
-      for (let i = 0; i < lines.length; i++) {
-        if (
-          lines[i].startsWith(headingPrefix) &&
-          lines[i].slice(headingPrefix.length).trim() === target.title
-        ) {
-          if (occurrence === target.occurrenceIndex) {
-            headingLineIdx = i
-            break
-          }
-          occurrence++
-        }
-      }
-
-      if (headingLineIdx === -1) return
-
-      // Find the end of this section (next heading at same or higher level)
-      let endLineIdx = lines.length
-      for (let i = headingLineIdx + 1; i < lines.length; i++) {
-        const match = /^(#{1,4})\s/.exec(lines[i])
-        if (match && match[1].length <= target.level) {
-          endLineIdx = i
-          break
-        }
-      }
-
-      // Splice: keep heading line, replace content, keep rest
-      const newLines = [
-        ...lines.slice(0, headingLineIdx + 1),
-        '',
-        markdownContent,
-        '',
-        ...lines.slice(endLineIdx),
+      const markdownCandidates = [
+        serializeToMarkdown(editor),
+        latestLoadedMarkdownRef.current,
+        latestSerializedMarkdownRef.current,
       ]
-      const newMarkdown = newLines.join('\n')
+
+      let newMarkdown: string | null = null
+      for (const markdown of markdownCandidates) {
+        if (!markdown) continue
+        newMarkdown = replaceMarkdownSection(markdown, target, markdownContent)
+        if (newMarkdown) break
+      }
+
+      if (!newMarkdown) return false
 
       // Re-set editor and persist
       const tempEditor = createPlateEditor({ plugins: editorPlugins })
       const newNodes = deserializeFromMarkdown(tempEditor, newMarkdown) as Value
       editor.tf.setValue(newNodes)
+      hasAppliedExternalContentRef.current = false
+      latestLoadedMarkdownRef.current = newMarkdown
       latestSerializedMarkdownRef.current = newMarkdown
       updateContent(newMarkdown, projectId)
+      return true
     },
     [clearPendingSerialization, editor, projectId, updateContent]
   )

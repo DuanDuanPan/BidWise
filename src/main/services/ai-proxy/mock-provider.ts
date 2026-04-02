@@ -12,7 +12,7 @@ import { AiProxyError } from '@main/utils/errors'
 import type { AiProvider, AiProviderCallOptions } from './provider-adapter'
 import type { AiChatRequest, AiChatResponse } from '@shared/ai-types'
 
-const FORCE_ERROR_MARKER = '__E2E_FORCE_ERROR__'
+const FORCE_ERROR_SECTION_RE = /## (?:编写指导|补充说明)\n[\s\S]*?__E2E_FORCE_ERROR__/
 
 const MOCK_CHAPTER_CONTENT = `### 方案概述
 
@@ -46,7 +46,7 @@ export class MockAiProvider implements AiProvider {
     await this.sleep(delayMs, options?.signal)
 
     const userContent = request.messages.find((m) => m.role === 'user')?.content ?? ''
-    if (userContent.includes(FORCE_ERROR_MARKER)) {
+    if (FORCE_ERROR_SECTION_RE.test(userContent)) {
       throw new AiProxyError(ErrorCode.AI_PROXY_PROVIDER, 'Mock AI: forced error for E2E testing')
     }
 

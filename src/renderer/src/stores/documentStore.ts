@@ -3,6 +3,7 @@ import type { AutoSaveState } from '@shared/models/proposal'
 
 export interface DocumentState {
   content: string
+  loadedProjectId: string | null
   loading: boolean
   error: string | null
   autoSave: AutoSaveState
@@ -31,6 +32,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
   let saveQueuedWhileSaving = false
   let queuedProjectId: string | null = null
   let latestSaveAttemptToken = 0
+  let latestDocumentVersion = 0
 
   const clearDebounceTimer = (): void => {
     if (!debounceTimer) {
@@ -57,6 +59,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
 
   return {
     content: '',
+    loadedProjectId: null,
     loading: false,
     error: null,
     autoSave: { ...defaultAutoSave },
@@ -64,13 +67,18 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
     loadDocument: async (projectId: string) => {
       resetAutoSaveQueue()
       latestSaveAttemptToken += 1
+      const requestVersion = ++latestDocumentVersion
 
       set({ loading: true, error: null })
       try {
         const res = await window.api.documentLoad({ projectId })
         if (res.success) {
+          if (requestVersion !== latestDocumentVersion) {
+            return
+          }
           set({
             content: res.data.content,
+            loadedProjectId: projectId,
             loading: false,
             autoSave: {
               ...defaultAutoSave,
@@ -78,14 +86,21 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
             },
           })
         } else {
-          set({ error: res.error.message, loading: false })
+          if (requestVersion !== latestDocumentVersion) {
+            return
+          }
+          set({ error: res.error.message, loading: false, loadedProjectId: null })
         }
       } catch (err) {
-        set({ error: (err as Error).message, loading: false })
+        if (requestVersion !== latestDocumentVersion) {
+          return
+        }
+        set({ error: (err as Error).message, loading: false, loadedProjectId: null })
       }
     },
 
     updateContent: (content: string, projectId: string, options?: { scheduleSave?: boolean }) => {
+      latestDocumentVersion += 1
       set((state) => ({
         content,
         autoSave: {
@@ -221,8 +236,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
     resetDocument: () => {
       resetAutoSaveQueue()
       latestSaveAttemptToken += 1
+      latestDocumentVersion += 1
       set({
         content: '',
+        loadedProjectId: null,
         loading: false,
         error: null,
         autoSave: { ...defaultAutoSave },

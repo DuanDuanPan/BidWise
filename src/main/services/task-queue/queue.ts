@@ -224,6 +224,7 @@ export class TaskQueueService {
             completedAt: now,
           })
           progressEmitter.clear(taskId)
+          progressEmitter.emit({ taskId, progress: updated.progress, message: 'failed' })
           logger.error(`Task timed out: ${taskId} after ${timeoutMs}ms`)
           return tableToRecord(updated)
         }
@@ -234,6 +235,7 @@ export class TaskQueueService {
           completedAt: now,
         })
         progressEmitter.clear(taskId)
+        progressEmitter.emit({ taskId, progress: updated.progress, message: 'cancelled' })
         logger.info(`Task cancelled: ${taskId}`)
         return tableToRecord(updated)
       }
@@ -260,6 +262,7 @@ export class TaskQueueService {
         completedAt: now,
       })
       progressEmitter.clear(taskId)
+      progressEmitter.emit({ taskId, progress: updated.progress, message: 'failed' })
       logger.error(`Task failed: ${taskId} error=${errMsg}`)
 
       return tableToRecord(updated)
@@ -312,6 +315,8 @@ export class TaskQueueService {
       completedAt: now,
     })
     progressEmitter.clear(taskId)
+    const updatedTask = await this.repo.findById(taskId)
+    progressEmitter.emit({ taskId, progress: updatedTask.progress, message: 'cancelled' })
 
     // Remove from pending queue if present
     const idx = this.pendingQueue.findIndex((p) => p.taskId === taskId)
@@ -320,8 +325,7 @@ export class TaskQueueService {
       const callbacks = this._pendingCallbacks.get(taskId)
       this._pendingCallbacks.delete(taskId)
       if (callbacks) {
-        const updated = await this.repo.findById(taskId)
-        callbacks.resolve(tableToRecord(updated))
+        callbacks.resolve(tableToRecord(updatedTask))
       }
     }
 

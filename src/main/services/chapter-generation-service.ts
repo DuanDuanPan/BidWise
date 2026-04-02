@@ -2,12 +2,11 @@
  * Chapter generation service — builds rich context and dispatches
  * AI generation via agent-orchestrator for individual proposal chapters.
  */
-import { createHash } from 'crypto'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
-import { app } from 'electron'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError, ValidationError } from '@main/utils/errors'
+import { resolveProjectDataPath } from '@main/utils/project-paths'
 import { ErrorCode } from '@shared/constants'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { documentService } from '@main/services/document-service'
@@ -15,84 +14,34 @@ import { RequirementRepository } from '@main/db/repositories/requirement-repo'
 import { ScoringModelRepository } from '@main/db/repositories/scoring-model-repo'
 import { MandatoryItemRepository } from '@main/db/repositories/mandatory-item-repo'
 import type { ChapterHeadingLocator, ChapterGenerateOutput } from '@shared/chapter-types'
+import {
+  createContentDigest,
+  extractMarkdownHeadings,
+  findMarkdownHeading,
+  isMarkdownSectionContentEmpty,
+} from '@shared/chapter-markdown'
+import type { MarkdownHeadingInfo } from '@shared/chapter-markdown'
 
 const logger = createLogger('chapter-generation-service')
 
 const CHAPTER_TIMEOUT_MS = 120_000
 const MAX_ADJACENT_SUMMARY_LENGTH = 500
 
-interface HeadingInfo {
-  title: string
-  level: number
-  lineIndex: number
-  occurrenceIndex: number
-}
+type HeadingInfo = MarkdownHeadingInfo
 
 interface ChapterSlice {
   heading: HeadingInfo
   contentLines: string[]
 }
 
-const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
-const FENCE_RE = /^(\s*)(`{3,}|~{3,})/
 const GUIDANCE_RE = /^>\s*/
-
-/** Extract all headings from markdown, respecting fenced code blocks */
-function extractHeadings(markdown: string): HeadingInfo[] {
-  const lines = markdown.split('\n')
-  const headings: HeadingInfo[] = []
-  let inFence = false
-  let fenceChar: string | null = null
-  let fenceLen = 0
-  const occurrenceCount = new Map<string, number>()
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const fenceMatch = FENCE_RE.exec(line)
-    if (fenceMatch) {
-      const marker = fenceMatch[2]
-      const char = marker[0]
-      const len = marker.length
-      if (inFence) {
-        if (char === fenceChar && len >= fenceLen) {
-          inFence = false
-          fenceChar = null
-          fenceLen = 0
-        }
-      } else {
-        inFence = true
-        fenceChar = char
-        fenceLen = len
-      }
-      continue
-    }
-    if (inFence) continue
-
-    const match = HEADING_RE.exec(line)
-    if (match) {
-      const level = match[1].length
-      const title = match[2]
-      const count = occurrenceCount.get(title) ?? 0
-      occurrenceCount.set(title, count + 1)
-      headings.push({ title, level, lineIndex: i, occurrenceIndex: count })
-    }
-  }
-  return headings
-}
 
 /** Locate a heading by its locator (title + level + occurrenceIndex) */
 function findHeading(
   headings: HeadingInfo[],
   locator: ChapterHeadingLocator
 ): HeadingInfo | undefined {
-  let occurrence = 0
-  for (const h of headings) {
-    if (h.title === locator.title && h.level === locator.level) {
-      if (occurrence === locator.occurrenceIndex) return h
-      occurrence++
-    }
-  }
-  return undefined
+  return findMarkdownHeading(headings, locator)
 }
 
 /** Slice the chapter content (lines between heading and next same-or-higher-level heading) */
@@ -111,17 +60,23 @@ function sliceChapter(lines: string[], headings: HeadingInfo[], target: HeadingI
   }
 }
 
+function findAdjacentSiblingHeading(
+  headings: HeadingInfo[],
+  targetIdx: number,
+  direction: -1 | 1
+): HeadingInfo | undefined {
+  const target = headings[targetIdx]
+  for (let i = targetIdx + direction; i >= 0 && i < headings.length; i += direction) {
+    const candidate = headings[i]
+    if (candidate.level < target.level) break
+    if (candidate.level === target.level) return candidate
+  }
+  return undefined
+}
+
 /** Check if chapter content is empty or guidance-only (blockquotes + blank lines) */
 function isChapterEmpty(contentLines: string[]): boolean {
-  for (const line of contentLines) {
-    const trimmed = line.trim()
-    if (trimmed === '') continue
-    if (GUIDANCE_RE.test(trimmed)) continue
-    // If it's a sub-heading at a deeper level, that's still "empty" (no real content)
-    if (HEADING_RE.test(trimmed)) continue
-    return false
-  }
-  return true
+  return isMarkdownSectionContentEmpty(contentLines)
 }
 
 /** Extract guidance text from blockquote lines */
@@ -131,11 +86,6 @@ function extractGuidanceText(contentLines: string[]): string {
     .map((line) => line.trim().replace(GUIDANCE_RE, ''))
     .join('\n')
     .trim()
-}
-
-/** Create a short digest of chapter content for conflict detection */
-function createDigest(content: string): string {
-  return createHash('sha256').update(content).digest('hex').slice(0, 16)
 }
 
 /** Summarize adjacent chapter content (truncated) */
@@ -150,7 +100,7 @@ function summarizeChapter(slice: ChapterSlice): string {
 /** Try to read seed.json for strategy context (graceful degradation) */
 async function readStrategySeed(projectId: string): Promise<string | undefined> {
   try {
-    const rootPath = join(app.getPath('userData'), 'data', 'projects', projectId)
+    const rootPath = resolveProjectDataPath(projectId)
     const seedPath = join(rootPath, 'seed.json')
     const content = await readFile(seedPath, 'utf-8')
     const parsed = JSON.parse(content) as Record<string, unknown>
@@ -177,7 +127,7 @@ export const chapterGenerationService = {
     const doc = await documentService.load(projectId)
     const markdown = doc.content
     const lines = markdown.split('\n')
-    const headings = extractHeadings(markdown)
+    const headings = extractMarkdownHeadings(markdown)
 
     // Locate target heading
     const targetHeading = findHeading(headings, target)
@@ -207,7 +157,7 @@ export const chapterGenerationService = {
     const doc = await documentService.load(projectId)
     const markdown = doc.content
     const lines = markdown.split('\n')
-    const headings = extractHeadings(markdown)
+    const headings = extractMarkdownHeadings(markdown)
 
     const targetHeading = findHeading(headings, target)
     if (!targetHeading) {
@@ -232,7 +182,7 @@ export const chapterGenerationService = {
   ): Promise<ChapterGenerateOutput> {
     // Build context
     const guidanceText = extractGuidanceText(chapter.contentLines)
-    const baselineDigest = createDigest(chapter.contentLines.join('\n'))
+    const baselineDigest = createContentDigest(chapter.contentLines.join('\n'))
 
     // Load requirements
     let requirementsText = '暂无需求信息'
@@ -283,16 +233,20 @@ export const chapterGenerationService = {
     let adjacentAfter: string | undefined
 
     if (targetIdx > 0) {
-      const prevHeading = headings[targetIdx - 1]
-      const prevSlice = sliceChapter(lines, headings, prevHeading)
-      const summary = summarizeChapter(prevSlice)
-      if (summary) adjacentBefore = `**${prevHeading.title}**: ${summary}`
+      const prevHeading = findAdjacentSiblingHeading(headings, targetIdx, -1)
+      if (prevHeading) {
+        const prevSlice = sliceChapter(lines, headings, prevHeading)
+        const summary = summarizeChapter(prevSlice)
+        if (summary) adjacentBefore = `**${prevHeading.title}**: ${summary}`
+      }
     }
     if (targetIdx < headings.length - 1) {
-      const nextHeading = headings[targetIdx + 1]
-      const nextSlice = sliceChapter(lines, headings, nextHeading)
-      const summary = summarizeChapter(nextSlice)
-      if (summary) adjacentAfter = `**${nextHeading.title}**: ${summary}`
+      const nextHeading = findAdjacentSiblingHeading(headings, targetIdx, 1)
+      if (nextHeading) {
+        const nextSlice = sliceChapter(lines, headings, nextHeading)
+        const summary = summarizeChapter(nextSlice)
+        if (summary) adjacentAfter = `**${nextHeading.title}**: ${summary}`
+      }
     }
 
     // Optional strategy seed

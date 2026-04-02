@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, cleanup, act, waitFor } from '@testing-library/react'
+import { createHash } from 'crypto'
 import { useChapterGeneration } from '@modules/editor/hooks/useChapterGeneration'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
@@ -60,6 +61,10 @@ describe('@story-3-4 useChapterGeneration', () => {
         success: true,
         data: [],
       }),
+      documentLoad: vi.fn().mockImplementation(async () => ({
+        success: true,
+        data: { content: mockDocumentContent.current },
+      })),
     })
   })
 
@@ -211,6 +216,13 @@ describe('@story-3-4 useChapterGeneration', () => {
     vi.stubGlobal('api', {
       ...window.api,
       onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-restored-1',
+          status: 'running',
+        },
+      }),
       taskList: vi.fn().mockResolvedValue({
         success: true,
         data: [
@@ -259,6 +271,13 @@ describe('@story-3-4 useChapterGeneration', () => {
     vi.stubGlobal('api', {
       ...window.api,
       onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-pending-1',
+          status: 'pending',
+        },
+      }),
       taskList: vi.fn().mockResolvedValue({
         success: true,
         data: [
@@ -281,6 +300,121 @@ describe('@story-3-4 useChapterGeneration', () => {
       const status = result.current.getStatus(mockTarget)
       expect(status).toBeDefined()
       expect(status!.phase).toBe('queued')
+    })
+  })
+
+  it('@p1 should detect conflicts for restored tasks using baselineDigest', async () => {
+    const baselineSectionContent = '\n> 请描述系统架构\n'
+    const baselineDigest = createHash('sha256')
+      .update(baselineSectionContent)
+      .digest('hex')
+      .slice(0, 16)
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskList: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'task-restored-conflict',
+            status: 'running',
+            progress: 75,
+            input: JSON.stringify({
+              projectId: PROJECT_ID,
+              target: mockTarget,
+              baselineDigest,
+            }),
+          },
+        ],
+      }),
+      agentStatus: vi
+        .fn()
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            taskId: 'task-restored-conflict',
+            status: 'running',
+          },
+        })
+        .mockResolvedValue({
+          success: true,
+          data: {
+            taskId: 'task-restored-conflict',
+            status: 'completed',
+            result: { content: '# Restored Content' },
+          },
+        }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status).toBeDefined()
+      expect(status!.taskId).toBe('task-restored-conflict')
+    })
+
+    mockDocumentContent.current = '## 系统架构设计\n\n用户手动编辑的内容\n'
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-restored-conflict', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status!.phase).toBe('conflicted')
+      expect(status!.generatedContent).toBe('# Restored Content')
+    })
+  })
+
+  it('@p1 should restore completed tasks that still need editor injection', async () => {
+    const baselineSectionContent = '\n> 请描述系统架构\n'
+    const baselineDigest = createHash('sha256')
+      .update(baselineSectionContent)
+      .digest('hex')
+      .slice(0, 16)
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'task-restored-completed',
+            status: 'completed',
+            progress: 100,
+            input: JSON.stringify({
+              projectId: PROJECT_ID,
+              target: mockTarget,
+              baselineDigest,
+            }),
+          },
+        ],
+      }),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-restored-completed',
+          status: 'completed',
+          result: { content: '# Completed While Away' },
+        },
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status).toBeDefined()
+      expect(status!.phase).toBe('completed')
+      expect(status!.generatedContent).toBe('# Completed While Away')
     })
   })
 
@@ -372,6 +506,43 @@ describe('@story-3-4 useChapterGeneration', () => {
       const status = result.current.getStatus(mockTarget)
       expect(status!.phase).toBe('failed')
       expect(status!.error).toBe('Provider 超时')
+    })
+  })
+
+  it('@p1 should handle failed task progress notifications without a 100 event', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-gen-1',
+          status: 'failed',
+          error: { message: 'Mock AI: forced error for E2E testing' },
+        },
+      }),
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startGeneration(mockTarget)
+    })
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-gen-1', progress: 50, message: 'failed' })
+    })
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status!.phase).toBe('failed')
+      expect(status!.error).toBe('Mock AI: forced error for E2E testing')
     })
   })
 

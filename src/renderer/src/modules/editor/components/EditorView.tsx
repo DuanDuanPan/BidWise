@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Skeleton, Alert, Button, Modal } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { useDocument } from '@modules/editor/hooks/useDocument'
@@ -14,9 +14,12 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const loading = useDocumentStore((s) => s.loading)
   const error = useDocumentStore((s) => s.error)
   const content = useDocumentStore((s) => s.content)
+  const loadedProjectId = useDocumentStore((s) => s.loadedProjectId)
   const loadDocument = useDocumentStore((s) => s.loadDocument)
   const syncFlushRef = useRef<(() => string) | null>(null)
   const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
+  const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
+  const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const chapterGen = useChapterGenerationContext()
 
   const registerSyncFlush = useCallback((flush: (() => string) | null): void => {
@@ -25,6 +28,7 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
 
   const registerReplaceSection = useCallback((fn: ReplaceSectionFn | null): void => {
     replaceSectionRef.current = fn
+    setReplaceSectionVersion((version) => version + 1)
   }, [])
 
   const flushEditorContent = useCallback((): string | null => syncFlushRef.current?.() ?? null, [])
@@ -38,12 +42,35 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   // Watch for completed chapters and inject content into editor
   useEffect(() => {
     if (!chapterGen) return
-    for (const [, status] of chapterGen.statuses) {
-      if (status.phase === 'completed' && status.generatedContent && replaceSectionRef.current) {
-        replaceSectionRef.current(status.target, status.generatedContent)
-        chapterGen.dismissError(status.target)
+    const consumedKeys = consumedTerminalKeysRef.current
+
+    for (const [key, status] of chapterGen.statuses) {
+      if (!['completed', 'conflicted'].includes(status.phase)) {
+        consumedKeys.delete(key)
+        continue
       }
+
+      if (consumedKeys.has(key)) continue
+
+      if (
+        status.phase === 'completed' &&
+        status.generatedContent &&
+        replaceSectionRef.current &&
+        loadedProjectId === projectId &&
+        content.length > 0
+      ) {
+        const didReplace = replaceSectionRef.current(status.target, status.generatedContent)
+        if (!didReplace) {
+          consumedKeys.delete(key)
+          continue
+        }
+        consumedKeys.add(key)
+        chapterGen.dismissError(status.target)
+        continue
+      }
+
       if (status.phase === 'conflicted' && status.generatedContent) {
+        consumedKeys.add(key)
         Modal.confirm({
           title: '章节已被修改',
           content: `章节 "${status.target.title}" 在 AI 生成期间被手动修改。是否仍要替换为 AI 生成的内容？`,
@@ -51,17 +78,29 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
           cancelText: '保留手动编辑',
           onOk: () => {
             if (replaceSectionRef.current && status.generatedContent) {
-              replaceSectionRef.current(status.target, status.generatedContent)
+              const didReplace = replaceSectionRef.current(status.target, status.generatedContent)
+              if (!didReplace) {
+                consumedKeys.delete(key)
+                return
+              }
             }
+            consumedKeys.delete(key)
             chapterGen.dismissError(status.target)
           },
           onCancel: () => {
+            consumedKeys.delete(key)
             chapterGen.dismissError(status.target)
           },
         })
       }
     }
-  }, [chapterGen])
+
+    for (const key of Array.from(consumedKeys)) {
+      if (!chapterGen.statuses.has(key)) {
+        consumedKeys.delete(key)
+      }
+    }
+  }, [chapterGen, content, loadedProjectId, projectId, replaceSectionVersion])
 
   if (loading) {
     return (
