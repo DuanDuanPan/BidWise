@@ -146,14 +146,14 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
 
     void window.api.taskList({ category: 'ai-agent', agentType: 'generate' }).then(async (res) => {
       if (!res.success) return
-      const documentRes = await window.api.documentLoad({ projectId })
-      const persistedDocumentContent = documentRes.success
-        ? documentRes.data.content
-        : useDocumentStore.getState().content
       const restorableTasks = res.data.filter((task) =>
         ['pending', 'running', 'completed', 'failed', 'cancelled'].includes(task.status)
       )
       if (restorableTasks.length === 0) return
+      const documentRes = await window.api.documentLoad({ projectId })
+      const persistedDocumentContent = documentRes.success
+        ? documentRes.data.content
+        : useDocumentStore.getState().content
 
       const restoredStatuses = new Map<string, ChapterGenerationStatus>()
       for (const task of restorableTasks) {

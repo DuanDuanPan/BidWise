@@ -147,6 +147,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
       chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
       chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
       agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
+      documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
     })
     mockNavigate.mockClear()
     mockScrollToHeading.mockReset()
@@ -283,6 +284,7 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
       chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
       agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
+      documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
     })
     mockNavigate.mockClear()
   })
