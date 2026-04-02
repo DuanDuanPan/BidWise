@@ -1,95 +1,128 @@
-# Story 3.4 Validation Report
+# Story 3-4: AI Chapter Generation — UAT Validation Report
 
-日期：2026-04-01
-Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
-目标文档：`_bmad-output/implementation-artifacts/3-4-ai-chapter-generation.md`
+**Date**: 2026-04-02
+**Branch**: `worktree-story-3-4-ai-chapter-generation`
+**HEAD**: `e5ab8c1`
 
-已核对工件：
-- `_bmad/bmm/config.yaml`
-- `_bmad-output/planning-artifacts/epics.md`
-- `_bmad-output/planning-artifacts/prd.md`
-- `_bmad-output/planning-artifacts/architecture.md`
-- `_bmad-output/planning-artifacts/ux-design-specification.md`
-- `_bmad-output/implementation-artifacts/3-3-template-driven-proposal-skeleton.md`
-- `_bmad-output/implementation-artifacts/3-3-template-driven-proposal-skeleton-validation-report.md`
-- `_bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-validation-report.md`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation.md`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/ux-spec.md`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/prototype.manifest.yaml`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/exports/0D5kp.png`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/exports/AZ9bb.png`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/exports/ElQ7O.png`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/exports/WcNXo.png`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/exports/p5RRC.png`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/exports/qZz9d.png`
-- `_bmad-output/implementation-artifacts/3-4-ai-chapter-generation-ux/prototype.pen`
-- `src/shared/ipc-types.ts`
-- `src/shared/ai-types.ts`
-- `src/shared/analysis-types.ts`
-- `src/shared/template-types.ts`
-- `src/shared/models/proposal.ts`
-- `src/preload/index.ts`
-- `src/preload/index.d.ts`
-- `src/main/ipc/index.ts`
-- `src/main/ipc/agent-handlers.ts`
-- `src/main/ipc/document-handlers.ts`
-- `src/main/ipc/template-handlers.ts`
-- `src/main/services/agent-orchestrator/orchestrator.ts`
-- `src/main/services/agent-orchestrator/agents/generate-agent.ts`
-- `src/main/services/task-queue/queue.ts`
-- `src/main/services/ai-proxy/provider-adapter.ts`
-- `src/main/services/document-service.ts`
-- `src/main/services/project-service.ts`
-- `src/main/services/template-service.ts`
-- `src/main/services/document-parser/scoring-extractor.ts`
-- `src/main/services/document-parser/mandatory-item-detector.ts`
-- `src/main/prompts/generate-chapter.prompt.ts`
-- `src/renderer/src/stores/documentStore.ts`
-- `src/renderer/src/modules/editor/components/EditorView.tsx`
-- `src/renderer/src/modules/editor/components/PlateEditor.tsx`
-- `src/renderer/src/modules/editor/components/OutlineHeadingElement.tsx`
-- `src/renderer/src/modules/editor/components/DocumentOutlineTree.tsx`
-- `src/renderer/src/modules/editor/hooks/useDocumentOutline.ts`
-- `src/renderer/src/modules/editor/lib/scrollToHeading.ts`
-- `src/renderer/src/modules/project/components/ProjectWorkspace.tsx`
-- `src/renderer/src/modules/project/components/AnnotationPanel.tsx`
-- `tests/unit/main/services/agent-orchestrator/orchestrator.test.ts`
-- `tests/unit/main/services/task-queue/queue.test.ts`
-- `tests/unit/renderer/modules/editor/components/EditorView.test.tsx`
-- `tests/unit/renderer/modules/editor/components/PlateEditor.test.tsx`
-- `tests/unit/renderer/modules/editor/components/DocumentOutlineTree.test.tsx`
-- `tests/unit/renderer/project/ProjectWorkspace.test.tsx`
+## Build & Quality Gates
 
-`.pen` 核对说明：已按要求遵循 Lookup Order，先读 story 设计说明，再读 manifest，再查看 6 张 PNG 导出做视觉语义比对，最后通过 Pencil MCP 打开 `prototype.pen` 并读取 6 个 Screen 的结构节点，确认交互状态与文档修订一致。
+| Check | Result |
+|-------|--------|
+| `pnpm test` (unit) | 844 passed, 0 failed |
+| `pnpm test` (E2E) | 22 passed (5 story-3-4 specific) |
+| `pnpm lint` | Clean (0 warnings) |
+| `pnpm typecheck` | Clean (node + web) |
+| `pnpm build` | Success |
 
-结果: PASS
+## Acceptance Criteria Verification
 
-## 摘要
+### AC1: Guidance-only chapter AI generation with skeleton + phase progress
 
-本次按 `validate-create-story` 工作流重新执行了 Story 3.4 的实现就绪性校验，并把所有可安全修复的 story-spec 问题直接修正到了故事文件与直接相关 UX spec 中。修订后，Story 3.4 已与当前仓库的真实 heading 定位机制、任务队列/重试边界、编辑器插入方式、任务恢复能力以及 UX 原型状态机对齐，可作为实现输入继续推进。
+**PASS**
 
-## 发现的关键问题
+- `ChapterGenerateButton` renders only when `isMarkdownSectionEmpty()` returns true (guidance-only or blank)
+- `ChapterGenerationProgress` implements all 5 phases with correct Chinese labels:
+  - `queued` → 排队中... | `analyzing` → 分析需求上下文... | `matching-assets` → 匹配资产素材... | `generating` → AI 正在撰写... | `annotating-sources` → 标注来源...
+- 200ms fade-in animation defined in `globals.css` (`.animate-fadeIn`) and applied to progress component
+- Respects `prefers-reduced-motion` for accessibility
+- E2E: `@story-3-4 @p0` test verifies generation trigger, progress events, and content insertion
 
-None
+### AC2: Regeneration of non-empty chapters via modal with additional context
 
-## 已应用增强
+**PASS**
 
-- 把章节定位从不真实的 `sectionId` 方案改为基于当前 Markdown 的 `title + level + occurrenceIndex` heading locator，避免 Story 3.3 产出的纯 Markdown 骨架无法被稳定寻址。
-- 明确“空章节”判定必须兼容 Story 3.3 写入的 guidance blockquote，占位型章节可显示 `AI 生成`，防止按钮永远不出现。
-- 修正章节写回路径，要求由 `PlateEditor` 暴露 imperative section replacement API，在编辑器内部完成 AST 区间替换与 canonical Markdown flush，而不是在 `EditorView` 外部拼接 Slate 变换。
-- 补齐同章编辑冲突处理，要求生成任务记录 `baselineDigest`，完成时若章节被人工改动则进入显式覆盖确认，默认保留人工内容。
-- 收紧重试语义，明确 `provider-adapter` 的 3 次自动重试是唯一自动重试边界；故事已要求扩展 `AgentExecuteOptions.maxRetries` 并在章节生成时显式传 `0`，避免与 task-queue 默认重试叠加。
-- 补齐超时语义，明确 `timeoutMs=120000` 必须同时作用于 task-queue 执行窗口和内部 `aiProxy.call()`，避免“只限制 provider 请求、不限制整任务”的实现偏差。
-- 修正 prompt/上下文来源，明确需求与评分模型来自 `scoringExtractor`，必响应项来自 `mandatoryItemDetector`，`seed.json` 为可选输入，缺失时必须无错误降级。
-- 将章节生成状态提升到 `proposal-writing` 工作区作用域，供 `DocumentOutlineTree`、`EditorView` 和 `AnnotationPanel` 轻量摘要共享，避免新建全局 Zustand store。
-- 明确任务恢复只针对当前项目：通过 `taskList({ category: 'ai-agent', agentType: 'generate' })` 拉取后，再按 `task.status` 和 `task.input.projectId` 过滤当前项目 active 任务。
-- 将 UX 原型中的未来态与本 Story 交付边界剥离，明确 Screen 3 的 AI 建议卡、评分预警卡和来源标签不属于 Story 3.4 gate；本 Story 的右侧栏仅交付轻量级生成摘要。
-- 扩展测试清单，补充 `maxRetries/timeoutMs` 透传、仅恢复当前项目任务、章节冲突确认、outline 状态图标、PlateEditor imperative API 和重新进入工作区后的任务恢复等关键覆盖点。
+- `RegenerateDialog` displays read-only chapter title, `TextArea` (max 2000 chars) for additional context, and "重新生成" confirm button
+- `OutlineHeadingElement` shows regenerate button only for `!chapterEmpty` chapters
+- Hook's `startRegeneration(target, additionalContext)` stores `operationType: 'regenerate'` and context for retry support
+- E2E: `@story-3-4 @p1` test exercises dialog open, textarea fill, confirm, and content replacement
 
-## 剩余风险
+### AC3: Provider failure auto-retry (max 3, exponential backoff) + inline error bar
 
-None
+**PASS**
 
-## 最终结论
+- `chapter-generation-service.ts` sets `maxRetries: 0` — no task-queue level retry
+- `provider-adapter.ts` implements `withRetry()`: `MAX_RETRIES = 3`, base delay 1000ms, exponential backoff (`1s, 2s, 4s`), retryable on timeout/network/429/5xx
+- `InlineErrorBar` renders exactly 3 buttons: 重试 (`chapter-retry-btn`), 手动编辑 (`chapter-manual-edit-btn`), 跳过 (`chapter-skip-btn`)
+- E2E: `@story-3-4 @p1` test triggers mock error via `__E2E_FORCE_ERROR__` marker, verifies all 3 buttons, exercises skip dismissal
 
-经本轮 `validate-create-story` 复核与原位修正后，Story 3.4 已不存在剩余的可执行阻塞项。当前 story 文件、直接相关 UX 规格、Epic/PRD/架构约束及代码库真实契约已经完成必要对齐，结论为 **PASS**。
+### AC4: 120-second timeout across task-queue AND aiProxy.call()
+
+**PASS**
+
+- `CHAPTER_TIMEOUT_MS = 120_000` set in `chapter-generation-service.ts`
+- Timeout propagation chain verified:
+  1. Service → `agentOrchestrator.execute({ options: { timeoutMs: 120000 } })`
+  2. Orchestrator → `taskQueue.execute(taskId, executor, timeoutMs)` (queue execution window)
+  3. Orchestrator → `createExecutor()` → `aiProxy.call({ timeoutMs })` (AI call timeout)
+  4. `aiProxy` → `provider.chat({ timeoutMs })` → SDK timeout parameter
+- Task-queue enforces per-task timeout via `AbortController` + `setTimeout`, marks as `failed` on expiry
+
+### AC5: All AI calls through agent-orchestrator, .prompt.ts convention
+
+**PASS**
+
+- `src/main/prompts/generate-chapter.prompt.ts` exports `generateChapterPrompt()` function and `GENERATE_CHAPTER_SYSTEM_PROMPT` constant
+- `chapter-generation-service.ts` exclusively calls `agentOrchestrator.execute()` — no direct AI API imports
+- `generate-agent.ts` implements `AgentHandler` type, returns `AiRequestParams` (not direct API call)
+- `chapter-handlers.ts` uses `createIpcHandler()` enforcing `{ success, data }` / `{ success, error }` response wrapper
+
+### AC6: Generated Markdown replaced via heading locator, triggers auto-save
+
+**PASS**
+
+- `ChapterHeadingLocator` type: `{ title: string, level: 1|2|3|4, occurrenceIndex: number }`
+- `replaceMarkdownSection(markdown, locator, content)` in `chapter-markdown.ts` locates by title+level+occurrenceIndex, splices content between heading and next same-or-higher-level heading
+- `PlateEditor.replaceSectionContent()` imperative API: calls `replaceMarkdownSection()`, re-deserializes to Plate nodes, calls `documentStore.updateContent()` to trigger auto-save
+- E2E: Content insertion verified by checking mock-generated headings appear in editor
+
+### AC7: No blocking on user edits; conflict detection with overwrite confirmation
+
+**PASS**
+
+- `baselineDigest` created at task start from `createContentDigest(chapter.contentLines.join('\n'))` and stored in task context
+- `resolveTerminalPhase()` in hook compares `baselineDigest` vs current digest on completion; returns `'conflicted'` if mismatch
+- `EditorView.tsx` shows `Modal.confirm` when phase is `'conflicted'`: title "章节已被修改", OK="替换", Cancel="保留手动编辑" (default preserves human content)
+- `confirmOverwrite()` method in hook applies stored `generatedContent` via editor API
+
+### AC8: Parallel chapter scheduling (maxConcurrency=3) with queued state
+
+**PASS**
+
+- `task-queue/queue.ts`: `DEFAULT_MAX_CONCURRENCY = 3`, enforced in `execute()` — excess tasks enter `pendingQueue`
+- Hook sets initial phase to `'queued'` on `startGeneration()` / `startRegeneration()`
+- Recovery maps `task.status === 'pending'` to `'queued'` phase
+- `ChapterGenerationProgress` renders `排队中...` with `ClockCircleOutlined` icon for queued phase
+- E2E: `@story-3-4 @p1` multi-chapter test triggers 2 concurrent generations, verifies both complete
+
+### AC9: Task persistence across workspace re-entry
+
+**PASS**
+
+- Hook's `useEffect` on mount calls `window.api.taskList({ category: 'ai-agent', agentType: 'generate' })`
+- Filters by `input.projectId === projectId` to scope to current project
+- Recovers pending/running tasks: registers in `taskToLocatorRef` for continued progress listening
+- Recovers completed/failed tasks: resolves terminal phase via digest comparison
+- `baselineDigest` is persisted in task context (service-side), enabling conflict detection on recovery
+- E2E: `@story-3-4 @p1` test navigates away to kanban and back, verifies generated content persists
+
+## E2E Test Coverage Matrix
+
+| E2E Test | ACs Covered |
+|----------|-------------|
+| guidance-only chapter triggers AI generation and inserts content | AC1, AC5, AC6 |
+| multiple chapters queue and execute with progress tracking | AC8 |
+| error recovery shows inline error bar with retry/manual-edit/skip | AC3 |
+| regeneration dialog for chapter with existing content | AC2 |
+| task restoration on workspace re-entry | AC9 |
+
+## Out-of-Scope (Confirmed Placeholders)
+
+- **匹配资产 phase (25-49%)**: Alpha placeholder; real asset matching deferred to Epic 5
+- **来源标注 phase (90-99%)**: Alpha placeholder; real source attribution deferred to Story 3.5
+- **文风控制**: Story 3.6
+- **经验图谱注入**: Beta phase
+- **AnnotationPanel card system**: Lightweight summary only ("N 个章节正在生成中...")
+
+## Verdict
+
+**PASS** — All 9 acceptance criteria verified against implementation and covered by automated tests (844 unit + 22 E2E). No blocking issues found. Story is ready for merge.
