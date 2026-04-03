@@ -32,6 +32,10 @@ function getProgressColor(pct: number): string {
   return '#52C41A'
 }
 
+function resolveTourTarget(ref: React.RefObject<HTMLDivElement | null>): HTMLElement {
+  return ref.current ?? document.body
+}
+
 export function FogMapView({
   fogMap,
   fogMapSummary,
@@ -167,33 +171,29 @@ export function FogMapView({
   const riskyConfirmed = riskyItems.filter((i) => i.confirmed).length
   const ambiguousConfirmed = ambiguousItems.filter((i) => i.confirmed).length
 
-  // Tour steps: step 3 (confirm button) only included when there are pending items,
-  // since the confirm bar is not rendered when pendingCount === 0
+  const shouldRenderConfirmTourAnchor = pendingCount > 0 || showTour
+
   const tourSteps: TourProps['steps'] = [
     {
       title: '雾散进度',
       description: '雾散进度条显示当前需求的明确程度',
-      target: () => progressBarRef.current,
+      target: () => resolveTourTarget(progressBarRef),
     },
     {
       title: '需求分级',
       description: '红色=风险区域，黄色=模糊需求，需要定向确认',
-      target: () => groupsRef.current,
+      target: () => resolveTourTarget(groupsRef),
     },
-    ...(pendingCount > 0
-      ? [
-          {
-            title: '确认操作',
-            description: '点击确认后需求变为明确，迷雾逐步消散',
-            target: () => confirmAllRef.current,
-          },
-        ]
-      : []),
+    {
+      title: '确认操作',
+      description: '点击确认后需求变为明确，迷雾逐步消散',
+      target: () => resolveTourTarget(confirmAllRef),
+    },
   ]
 
   return (
     <div data-testid="fog-map-view">
-      {/* Tour anchored to progress bar, groups, and (when present) confirm button */}
+      {/* Tour anchored to progress bar, groups, and the confirm-action region */}
       <Tour open={showTour} onClose={dismissTour} steps={tourSteps} />
 
       {/* Error banner (has data but error from e.g. regeneration) */}
@@ -337,16 +337,22 @@ export function FogMapView({
       </div>
 
       {/* Batch confirm bar */}
-      {pendingCount > 0 && (
-        <div ref={confirmAllRef} className="mt-4 flex justify-center">
-          <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            onClick={onBatchConfirm}
-            data-testid="fog-map-confirm-all"
-          >
-            全部确认（{pendingCount} 项待确认）
-          </Button>
+      {shouldRenderConfirmTourAnchor && (
+        <div
+          ref={confirmAllRef}
+          aria-hidden={pendingCount === 0}
+          className={pendingCount > 0 ? 'mt-4 flex justify-center' : 'mt-4 h-px'}
+        >
+          {pendingCount > 0 ? (
+            <Button
+              type="primary"
+              icon={<CheckOutlined />}
+              onClick={onBatchConfirm}
+              data-testid="fog-map-confirm-all"
+            >
+              全部确认（{pendingCount} 项待确认）
+            </Button>
+          ) : null}
         </div>
       )}
     </div>

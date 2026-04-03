@@ -95,6 +95,21 @@ describe('analysisStore — fog map actions', () => {
       await useAnalysisStore.getState().generateFogMap('proj-1')
       expect(window.api.analysisGenerateFogMap).not.toHaveBeenCalled()
     })
+
+    it('should not generate while requirements extraction is still active', async () => {
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            extractionTaskId: 'extract-1',
+          },
+        },
+      })
+
+      await useAnalysisStore.getState().generateFogMap('proj-1')
+
+      expect(window.api.analysisGenerateFogMap).not.toHaveBeenCalled()
+    })
   })
 
   describe('fetchFogMap', () => {

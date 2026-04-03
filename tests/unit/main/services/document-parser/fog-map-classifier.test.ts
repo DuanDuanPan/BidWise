@@ -181,6 +181,52 @@ describe('FogMapClassifier', () => {
       const result = await classifier.generate({ projectId: 'proj-1' })
       expect(result.taskId).toBe('task-1')
     })
+
+    it('should abort before persisting stale certainties when cancellation happens mid-run', async () => {
+      mockExecute.mockImplementation(async (_taskId, executor) => executor)
+      mockAgentExecute.mockResolvedValue({ taskId: 'agent-task-1' })
+
+      const controller = new AbortController()
+      mockGetAgentStatus.mockImplementation(async () => {
+        controller.abort(new Error('Task cancelled'))
+        return {
+          status: 'completed',
+          progress: 100,
+          result: {
+            content:
+              '[{"requirementId":"req-1","certaintyLevel":"clear","reason":"明确","suggestion":"无需补充确认"}]',
+          },
+        }
+      })
+
+      await classifier.generate({ projectId: 'proj-1' })
+      const executor = mockExecute.mock.calls[0]?.[1] as
+        | ((ctx: {
+            taskId: string
+            input: unknown
+            signal: AbortSignal
+            updateProgress: (progress: number, message?: string) => void
+            setCheckpoint: (data: unknown) => Promise<void>
+            checkpoint?: unknown
+          }) => Promise<unknown>)
+        | undefined
+
+      expect(executor).toBeTypeOf('function')
+
+      await expect(
+        executor!({
+          taskId: 'task-1',
+          input: { projectId: 'proj-1' },
+          signal: controller.signal,
+          updateProgress: vi.fn(),
+          setCheckpoint: vi.fn().mockResolvedValue(undefined),
+          checkpoint: undefined,
+        })
+      ).rejects.toMatchObject({ name: 'AbortError' })
+
+      expect(mockCertaintyReplaceByProject).not.toHaveBeenCalled()
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
   })
 
   describe('getFogMap', () => {

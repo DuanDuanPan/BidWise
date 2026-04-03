@@ -2,6 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@main/utils/logger'
+import { throwIfAborted } from '@main/utils/abort'
 import { BidWiseError } from '@main/utils/errors'
 import { ErrorCode } from '@shared/constants'
 import { ProjectRepository } from '@main/db/repositories/project-repo'
@@ -135,8 +136,10 @@ export class FogMapClassifier {
     const rootPath = project.rootPath
     taskQueue
       .execute(taskId, async (ctx: TaskExecutorContext) => {
+        throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
         ctx.updateProgress(5, '正在构建确定性分级提示词...')
 
+        throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
         ctx.updateProgress(10, '正在调用 AI 分析需求确定性...')
         const agentResponse = await agentOrchestrator.execute({
           agentType: 'fog-map',
@@ -154,6 +157,8 @@ export class FogMapClassifier {
         const pollingStartedAt = Date.now()
 
         while (true) {
+          throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
+
           if (Date.now() - pollingStartedAt >= GENERATION_TIMEOUT_MS) {
             throw new BidWiseError(
               ErrorCode.FOG_MAP_GENERATION_FAILED,
@@ -161,6 +166,7 @@ export class FogMapClassifier {
             )
           }
 
+          throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
           const status = await agentOrchestrator.getAgentStatus(innerTaskId)
 
           if (status.status === 'completed') {
@@ -185,6 +191,7 @@ export class FogMapClassifier {
           await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
         }
 
+        throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
         if (!agentResult) {
           throw new BidWiseError(ErrorCode.FOG_MAP_GENERATION_FAILED, 'AI 返回结果为空')
         }
@@ -235,9 +242,11 @@ export class FogMapClassifier {
           })
 
         // Persist to DB (transaction: delete old + insert new)
+        throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
         await certaintyRepo.replaceByProject(projectId, certainties)
 
         // Write snapshot
+        throwIfAborted(ctx.signal, 'Fog map generation task cancelled')
         const reqs = await requirementRepo.findByProject(projectId)
         await syncSnapshot(projectId, rootPath, certaintyRepo, reqs)
 

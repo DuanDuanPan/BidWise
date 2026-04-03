@@ -133,7 +133,7 @@ export interface AnalysisActions {
   confirmCertainty: (id: string) => Promise<void>
   batchConfirmCertainty: (projectId: string) => Promise<void>
   updateFogMapProgress: (projectId: string, progress: number, message?: string) => void
-  setFogMapCompleted: (projectId: string) => Promise<void>
+  setFogMapCompleted: (projectId: string, taskId?: string) => Promise<void>
   setFogMapError: (projectId: string, error: string) => void
 }
 
@@ -255,6 +255,27 @@ function computeMandatorySummary(items: MandatoryItem[]): MandatoryItemSummary {
     confirmed: items.filter((i) => i.status === 'confirmed').length,
     dismissed: items.filter((i) => i.status === 'dismissed').length,
     pending: items.filter((i) => i.status === 'detected').length,
+  }
+}
+
+function invalidateFogMapState(): Pick<
+  AnalysisProjectState,
+  | 'fogMap'
+  | 'fogMapSummary'
+  | 'fogMapTaskId'
+  | 'fogMapProgress'
+  | 'fogMapMessage'
+  | 'fogMapLoading'
+  | 'fogMapError'
+> {
+  return {
+    fogMap: null,
+    fogMapSummary: null,
+    fogMapTaskId: null,
+    fogMapProgress: 0,
+    fogMapMessage: '',
+    fogMapLoading: false,
+    fogMapError: null,
   }
 }
 
@@ -417,16 +438,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationTaskId: taskKind === 'seed' ? null : projectState.seedGenerationTaskId,
         seedGenerationLoading: taskKind === 'seed' ? false : projectState.seedGenerationLoading,
         seedGenerationError: taskKind === 'seed' ? error : projectState.seedGenerationError,
-        // Extraction failure also invalidates any in-flight fog-map task (stale requirements)
-        fogMapTaskId:
-          taskKind === 'fog-map' || taskKind === 'extraction' ? null : projectState.fogMapTaskId,
-        fogMapLoading:
-          taskKind === 'fog-map' || taskKind === 'extraction' ? false : projectState.fogMapLoading,
+        fogMapTaskId: taskKind === 'fog-map' ? null : projectState.fogMapTaskId,
+        fogMapLoading: taskKind === 'fog-map' ? false : projectState.fogMapLoading,
         fogMapError: taskKind === 'fog-map' ? error : projectState.fogMapError,
-        // Re-extraction failure: backend may have already deleted certainties + fog-map.json,
-        // so invalidate stale frontend fog map data to prevent operating on phantom state
-        fogMap: taskKind === 'extraction' ? null : projectState.fogMap,
-        fogMapSummary: taskKind === 'extraction' ? null : projectState.fogMapSummary,
+        ...(taskKind === 'extraction' ? invalidateFogMapState() : {}),
       })),
     }))
   },
@@ -447,9 +462,13 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
   // ─── Story 2.5: Extraction Actions ───
 
   extractRequirements: async (projectId: string) => {
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (current.extractionLoading || current.extractionTaskId) return
+
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (prev) => ({
         ...prev,
+        ...invalidateFogMapState(),
         extractionLoading: true,
         extractionProgress: 0,
         extractionMessage: '正在启动抽取...',
@@ -457,6 +476,14 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         error: null,
       })),
     }))
+
+    if (current.fogMapTaskId) {
+      try {
+        await window.api.taskCancel(current.fogMapTaskId)
+      } catch {
+        // Best-effort cancellation. Local invalidation has already detached the stale task.
+      }
+    }
 
     try {
       const res = await window.api.analysisExtractRequirements({ projectId })
@@ -606,10 +633,8 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         extractionProgress: 100,
         extractionMessage: '抽取完成',
         extractionLoading: false,
-        // Clear stale fog map data — backend deletes certainties on re-extraction
-        fogMap: null,
-        fogMapSummary: null,
-        fogMapError: null,
+        // Re-extraction supersedes any fog-map result generated from older requirements.
+        ...invalidateFogMapState(),
       })),
     }))
   },
@@ -993,7 +1018,14 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
 
   generateFogMap: async (projectId: string) => {
     const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
-    if (current.fogMapLoading || current.fogMapTaskId) return
+    if (
+      current.fogMapLoading ||
+      current.fogMapTaskId ||
+      current.extractionLoading ||
+      current.extractionTaskId
+    ) {
+      return
+    }
 
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (prev) => ({
@@ -1176,7 +1208,16 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     }))
   },
 
-  setFogMapCompleted: async (projectId) => {
+  setFogMapCompleted: async (projectId, taskId) => {
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (!current.fogMapTaskId) {
+      return
+    }
+
+    if (taskId && current.fogMapTaskId !== taskId) {
+      return
+    }
+
     const fogMapRes = await window.api.analysisGetFogMap({ projectId })
     const summaryRes = await window.api.analysisGetFogMapSummary({ projectId })
 

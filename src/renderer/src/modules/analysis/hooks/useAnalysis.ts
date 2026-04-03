@@ -98,6 +98,11 @@ export function useAnalysisTaskMonitor(): void {
         }
 
         const task = res.data
+        const latestProjectState = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+        if (classifyTask(latestProjectState, taskId) !== kind) {
+          clearTaskTracking(taskId)
+          return
+        }
 
         if (task.status === 'completed') {
           terminalHandledRef.current.add(taskId)
@@ -128,7 +133,7 @@ export function useAnalysisTaskMonitor(): void {
             message.success('策略种子生成完成')
           } else {
             // fog-map
-            await setFogMapCompleted(projectId)
+            await setFogMapCompleted(projectId, taskId)
             message.success('迷雾地图生成完成')
           }
           clearTaskTracking(taskId)
