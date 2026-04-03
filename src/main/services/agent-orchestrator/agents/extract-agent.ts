@@ -1,10 +1,11 @@
 import { extractRequirementsPrompt } from '@main/prompts/extract-requirements.prompt'
 import { detectMandatoryPrompt } from '@main/prompts/detect-mandatory.prompt'
+import { extractAddendumPrompt } from '@main/prompts/extract-addendum.prompt'
 import { throwIfAborted } from '@main/utils/abort'
 import type { AgentHandler, AiRequestParams } from '../orchestrator'
 import type { TenderSection, RequirementItem } from '@shared/analysis-types'
 
-type ExtractMode = 'requirements-scoring' | 'mandatory-items'
+type ExtractMode = 'requirements-scoring' | 'mandatory-items' | 'addendum-requirements'
 
 export const extractAgentHandler: AgentHandler = async (
   context: Record<string, unknown>,
@@ -17,6 +18,30 @@ export const extractAgentHandler: AgentHandler = async (
   const rawText = context.rawText as string
   const totalPages = context.totalPages as number
   const hasScannedContent = context.hasScannedContent as boolean | undefined
+
+  if (mode === 'addendum-requirements') {
+    const addendumContent = context.addendumContent as string
+    const existingRequirements = (context.existingRequirements ?? []) as Array<{
+      id: string
+      sequenceNumber: number
+      description: string
+    }>
+    const prompt = extractAddendumPrompt({ addendumContent, existingRequirements })
+    throwIfAborted(signal, 'Extract agent cancelled')
+
+    return {
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是一位资深售前工程师，专精招标补遗文件与变更通知分析。请严格按照 JSON 格式输出结果。',
+        },
+        { role: 'user', content: prompt },
+      ],
+      maxTokens: 8192,
+      temperature: 0.2,
+    }
+  }
 
   if (mode === 'mandatory-items') {
     const existingRequirements = (context.existingRequirements ?? []) as RequirementItem[]

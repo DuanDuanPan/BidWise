@@ -17,6 +17,7 @@ import type {
   PersistSkeletonOutput,
   SkeletonSection,
   SectionWeightEntry,
+  ProposalSectionIndexEntry,
 } from '@shared/template-types'
 import type { ScoringModel } from '@shared/analysis-types'
 import { projectService } from '@main/services/project-service'
@@ -266,6 +267,42 @@ function extractSectionWeights(sections: SkeletonSection[]): SectionWeightEntry[
   return weights
 }
 
+function extractSectionIndex(sections: SkeletonSection[]): ProposalSectionIndexEntry[] {
+  const entries: ProposalSectionIndexEntry[] = []
+  const titleOccurrences = new Map<string, number>()
+
+  function collect(section: SkeletonSection, parentSectionId?: string): void {
+    const key = `${section.level}::${section.title}`
+    const occ = titleOccurrences.get(key) ?? 0
+    titleOccurrences.set(key, occ + 1)
+
+    entries.push({
+      sectionId: section.id,
+      title: section.title,
+      level: section.level,
+      parentSectionId,
+      order: entries.length,
+      occurrenceIndex: occ,
+      headingLocator: {
+        title: section.title,
+        level: section.level,
+        occurrenceIndex: occ,
+      },
+      weightPercent: section.weightPercent,
+      isKeyFocus: section.isKeyFocus || undefined,
+    })
+
+    for (const child of section.children) {
+      collect(child, section.id)
+    }
+  }
+
+  for (const section of sections) {
+    collect(section)
+  }
+  return entries
+}
+
 function countTopLevelSections(sections: SkeletonSection[]): number {
   return sections.filter((s) => s.level === 1).length
 }
@@ -273,6 +310,7 @@ function countTopLevelSections(sections: SkeletonSection[]): number {
 async function saveMetadata(
   projectId: string,
   sectionWeights: SectionWeightEntry[],
+  sectionIndex: ProposalSectionIndexEntry[],
   templateId: string
 ): Promise<void> {
   const project = await projectService.get(projectId)
@@ -292,6 +330,7 @@ async function saveMetadata(
     version: (existing.version as string) || '1.0',
     projectId,
     sectionWeights,
+    sectionIndex,
     templateId,
     lastSavedAt: new Date().toISOString(),
   }
@@ -372,8 +411,9 @@ export const templateService = {
     // Persist proposal.md
     const { lastSavedAt } = await documentService.save(projectId, markdown)
 
-    // Persist metadata with sectionWeights + templateId
-    await saveMetadata(projectId, sectionWeights, templateId)
+    // Persist metadata with sectionWeights + sectionIndex + templateId
+    const sectionIndex = extractSectionIndex(skeleton)
+    await saveMetadata(projectId, sectionWeights, sectionIndex, templateId)
 
     logger.info(
       `骨架生成完成: project=${projectId}, template=${templateId}, sections=${sectionCount}`
@@ -387,13 +427,14 @@ export const templateService = {
 
     const markdown = sectionsToMarkdown(skeleton)
     const sectionWeights = extractSectionWeights(skeleton)
+    const sectionIndex = extractSectionIndex(skeleton)
     const sectionCount = countTopLevelSections(skeleton)
 
     // Persist proposal.md
     const { lastSavedAt } = await documentService.save(projectId, markdown)
 
     // Persist metadata
-    await saveMetadata(projectId, sectionWeights, templateId)
+    await saveMetadata(projectId, sectionWeights, sectionIndex, templateId)
 
     return { markdown, sectionWeights, sectionCount, lastSavedAt }
   },

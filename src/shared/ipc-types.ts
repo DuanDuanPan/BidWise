@@ -39,6 +39,17 @@ import type {
   UpdateSeedInput,
   DeleteSeedInput,
   AddSeedInput,
+  GenerateMatrixInput,
+  GenerateMatrixResult,
+  GetMatrixInput,
+  TraceabilityMatrix,
+  TraceabilityStats,
+  CreateLinkInput,
+  TraceabilityLink,
+  UpdateLinkInput,
+  DeleteLinkInput,
+  ImportAddendumInput,
+  ImportAddendumResult,
 } from './analysis-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 import type {
@@ -156,6 +167,13 @@ export const IPC_CHANNELS = {
   ANALYSIS_UPDATE_SEED: 'analysis:update-seed',
   ANALYSIS_DELETE_SEED: 'analysis:delete-seed',
   ANALYSIS_ADD_SEED: 'analysis:add-seed',
+  ANALYSIS_GENERATE_MATRIX: 'analysis:generate-matrix',
+  ANALYSIS_GET_MATRIX: 'analysis:get-matrix',
+  ANALYSIS_GET_MATRIX_STATS: 'analysis:get-matrix-stats',
+  ANALYSIS_CREATE_LINK: 'analysis:create-link',
+  ANALYSIS_UPDATE_LINK: 'analysis:update-link',
+  ANALYSIS_DELETE_LINK: 'analysis:delete-link',
+  ANALYSIS_IMPORT_ADDENDUM: 'analysis:import-addendum',
   DOCUMENT_LOAD: 'document:load',
   DOCUMENT_SAVE: 'document:save',
   DOCUMENT_SAVE_SYNC: 'document:save-sync',
@@ -215,6 +233,13 @@ export type IpcChannelMap = {
   'analysis:update-seed': { input: UpdateSeedInput; output: StrategySeed }
   'analysis:delete-seed': { input: DeleteSeedInput; output: void }
   'analysis:add-seed': { input: AddSeedInput; output: StrategySeed }
+  'analysis:generate-matrix': { input: GenerateMatrixInput; output: GenerateMatrixResult }
+  'analysis:get-matrix': { input: GetMatrixInput; output: TraceabilityMatrix | null }
+  'analysis:get-matrix-stats': { input: GetMatrixInput; output: TraceabilityStats | null }
+  'analysis:create-link': { input: CreateLinkInput; output: TraceabilityLink }
+  'analysis:update-link': { input: UpdateLinkInput; output: TraceabilityLink }
+  'analysis:delete-link': { input: DeleteLinkInput; output: TraceabilityLink | null }
+  'analysis:import-addendum': { input: ImportAddendumInput; output: ImportAddendumResult }
   'document:load': { input: { projectId: string }; output: ProposalDocument }
   'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
   'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }
