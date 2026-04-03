@@ -315,5 +315,53 @@ describe('TraceabilityMatrixService @story-2-8', () => {
         service.importAddendum({ projectId: 'proj-1' })
       ).rejects.toThrow('必须提供')
     })
+
+    it('@p1 should fail the task when re-mapping fails after persisting the snapshot', async () => {
+      const progressSpy = vi.fn()
+      mockExecute.mockImplementationOnce((_taskId, executor) =>
+        executor({
+          taskId: 'task-001',
+          signal: new AbortController().signal,
+          updateProgress: progressSpy,
+          setCheckpoint: vi.fn(),
+        })
+      )
+      mockAgentExecute
+        .mockResolvedValueOnce({ taskId: 'extract-task-1' })
+        .mockResolvedValueOnce({ taskId: 'traceability-task-1' })
+      mockGetAgentStatus
+        .mockResolvedValueOnce({
+          status: 'completed',
+          progress: 100,
+          result: { content: '[]' },
+        })
+        .mockResolvedValueOnce({
+          status: 'failed',
+          progress: 100,
+          error: { message: 'traceability down' },
+        })
+      mockFsReadFile
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockResolvedValueOnce('## 技术方案\n\n内容')
+
+      const result = await service.importAddendum({
+        projectId: 'proj-1',
+        content: '补遗内容',
+      })
+
+      expect(result.taskId).toBe('task-001')
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: 'import',
+          maxRetries: 0,
+        })
+      )
+      await expect(mockExecute.mock.results[0]?.value).rejects.toThrow('追溯映射更新失败')
+      expect(mockFsWriteFile).toHaveBeenCalled()
+      expect(progressSpy).not.toHaveBeenCalledWith(
+        100,
+        expect.stringContaining('补遗导入完成')
+      )
+    })
   })
 })

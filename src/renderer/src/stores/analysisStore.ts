@@ -69,7 +69,7 @@ export interface AnalysisState {
 export interface AnalysisActions {
   importTender: (projectId: string, filePath: string) => Promise<void>
   fetchTenderResult: (projectId: string) => Promise<void>
-  updateParseProgress: (projectId: string, progress: number, message: string) => void
+  updateParseProgress: (projectId: string, progress: number, message?: string) => void
   setParseTaskStatus: (projectId: string, status: TaskStatus | null) => void
   setParseCompleted: (projectId: string, result: ParsedTender) => void
   setError: (
@@ -92,7 +92,7 @@ export interface AnalysisActions {
     patch: Partial<Pick<ScoringCriterion, 'maxScore' | 'weight' | 'reasoning' | 'status'>>
   ) => Promise<void>
   confirmScoringModel: (projectId: string) => Promise<void>
-  updateExtractionProgress: (projectId: string, progress: number, message: string) => void
+  updateExtractionProgress: (projectId: string, progress: number, message?: string) => void
   setExtractionCompleted: (
     projectId: string,
     result: { requirements: RequirementItem[]; scoringModel: ScoringModel | null }
@@ -375,12 +375,15 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     }
   },
 
-  updateParseProgress: (projectId: string, progress: number, message: string) => {
+  updateParseProgress: (projectId: string, progress: number, message?: string) => {
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (projectState) => ({
         ...projectState,
         parseProgress: progress,
-        parseMessage: message,
+        parseMessage:
+          typeof message === 'string' && message.trim().length > 0
+            ? message
+            : projectState.parseMessage,
       })),
     }))
   },
@@ -606,12 +609,15 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     }
   },
 
-  updateExtractionProgress: (projectId: string, progress: number, message: string) => {
+  updateExtractionProgress: (projectId: string, progress: number, message?: string) => {
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (prev) => ({
         ...prev,
         extractionProgress: progress,
-        extractionMessage: message,
+        extractionMessage:
+          typeof message === 'string' && message.trim().length > 0
+            ? message
+            : prev.extractionMessage,
       })),
     }))
   },
@@ -1225,7 +1231,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
       projects: updateProjectState(state.projects, projectId, (prev) => ({
         ...prev,
         addendumImportProgress: progress,
-        addendumImportMessage: message ?? prev.addendumImportMessage,
+        addendumImportMessage:
+          typeof message === 'string' && message.trim().length > 0
+            ? message
+            : prev.addendumImportMessage,
       })),
     }))
   },

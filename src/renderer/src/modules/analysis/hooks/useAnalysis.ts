@@ -38,6 +38,8 @@ export function useAnalysisTaskMonitor(): void {
   const updateExtractionProgress = useAnalysisStore((s) => s.updateExtractionProgress)
   const fetchRequirements = useAnalysisStore((s) => s.fetchRequirements)
   const fetchScoringModel = useAnalysisStore((s) => s.fetchScoringModel)
+  const fetchMatrix = useAnalysisStore((s) => s.fetchMatrix)
+  const fetchMatrixStats = useAnalysisStore((s) => s.fetchMatrixStats)
   const setExtractionCompleted = useAnalysisStore((s) => s.setExtractionCompleted)
   const setError = useAnalysisStore((s) => s.setError)
   const reset = useAnalysisStore((s) => s.reset)
@@ -157,6 +159,11 @@ export function useAnalysisTaskMonitor(): void {
             addendum: '补遗导入失败',
           }
           const errMsg = task.error ?? errMsgMap[kind]
+          if (kind === 'addendum' && errMsg.includes('追溯映射更新')) {
+            await fetchRequirements(projectId)
+            await fetchMatrix(projectId)
+            await fetchMatrixStats(projectId)
+          }
           setError(projectId, errMsg, kind)
           message.error({
             content: `${errMsgMap[kind]}：${errMsg}`,
@@ -182,6 +189,8 @@ export function useAnalysisTaskMonitor(): void {
     },
     [
       clearTaskTracking,
+      fetchMatrix,
+      fetchMatrixStats,
       fetchRequirements,
       fetchScoringModel,
       fetchTenderResult,
@@ -210,19 +219,23 @@ export function useAnalysisTaskMonitor(): void {
       if (!kind) return
 
       lastProgressTimeRef.current[event.taskId] = Date.now()
+      const progressMessage =
+        event.message && event.message !== 'failed' && event.message !== 'cancelled'
+          ? event.message
+          : undefined
 
       if (kind === 'import') {
-        updateParseProgress(projectId, event.progress, event.message ?? '')
+        updateParseProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'extraction') {
-        updateExtractionProgress(projectId, event.progress, event.message ?? '')
+        updateExtractionProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'mandatory') {
-        updateMandatoryDetectionProgress(projectId, event.progress, event.message ?? '')
+        updateMandatoryDetectionProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'seed') {
-        updateSeedGenerationProgress(projectId, event.progress, event.message ?? '')
+        updateSeedGenerationProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'matrix') {
-        updateMatrixGenerationProgress(projectId, event.progress, event.message ?? '')
+        updateMatrixGenerationProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'addendum') {
-        updateAddendumImportProgress(projectId, event.progress, event.message ?? '')
+        updateAddendumImportProgress(projectId, event.progress, progressMessage)
       }
 
       if (event.progress >= 100) {

@@ -514,6 +514,7 @@ export class TraceabilityMatrixService {
     const taskId = await taskQueue.enqueue({
       category: 'import',
       input: { projectId, fileName: input.fileName ?? 'addendum-import' },
+      maxRetries: 0,
     })
 
     const requirementRepo = this.requirementRepo
@@ -543,7 +544,7 @@ export class TraceabilityMatrixService {
               let docxPath = input.filePath
               if (ext === '.doc') {
                 const converted = await convertDocToDocx(input.filePath)
-                docxPath = converted.outputPath
+                docxPath = converted
               }
               const result = await extractWordText(docxPath)
               addendumContent = result.text
@@ -685,7 +686,7 @@ export class TraceabilityMatrixService {
         // Re-generate full auto mapping (preserving manual links)
         ctx.updateProgress(70, '正在重新生成追溯映射...')
 
-        let remappingFailed = false
+        let remappingFailureMessage: string | null = null
         const allReqsAfter = await requirementRepo.findByProject(projectId)
         const sections = await self.loadSectionIndex(rootPath, projectId)
 
@@ -726,7 +727,7 @@ export class TraceabilityMatrixService {
           while (true) {
             if (Date.now() - regenStartedAt >= GENERATION_TIMEOUT_MS) {
               logger.warn('Addendum re-mapping timed out, skipping auto-link update')
-              remappingFailed = true
+              remappingFailureMessage = '追溯映射更新超时，请手动重新生成矩阵'
               break
             }
 
@@ -741,7 +742,10 @@ export class TraceabilityMatrixService {
               logger.warn(
                 `Addendum re-mapping ${regenStatus.status}: ${regenStatus.error?.message}`
               )
-              remappingFailed = true
+              remappingFailureMessage =
+                regenStatus.status === 'cancelled'
+                  ? '追溯映射更新已取消，请手动重新生成矩阵'
+                  : `追溯映射更新失败: ${regenStatus.error?.message ?? '未知错误'}，请手动重新生成矩阵`
               break
             }
 
@@ -789,8 +793,8 @@ export class TraceabilityMatrixService {
             }
 
             await linkRepo.replaceAutoByProject(projectId, autoLinks)
-          } else {
-            remappingFailed = true
+          } else if (!remappingFailureMessage) {
+            remappingFailureMessage = '追溯映射更新未返回结果，请手动重新生成矩阵'
           }
         }
 
@@ -839,15 +843,19 @@ export class TraceabilityMatrixService {
         const snapshotPath = path.join(rootPath, SNAPSHOT_FILE)
         await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf-8')
 
-        const remapNote = remappingFailed ? '（追溯映射更新失败，请手动重新生成矩阵）' : ''
-        ctx.updateProgress(100, `补遗导入完成，新增 ${newRequirements.length} 条需求${remapNote}`)
+        if (remappingFailureMessage) {
+          ctx.updateProgress(100, remappingFailureMessage)
+          throw new BidWiseError(ErrorCode.MATRIX_GENERATION_FAILED, remappingFailureMessage)
+        }
+
+        ctx.updateProgress(100, `补遗导入完成，新增 ${newRequirements.length} 条需求`)
         logger.info(
-          `Addendum import complete for project ${projectId}: ${newRequirements.length} new requirements, ${recentlyImpactedSectionIds.length} impacted sections, remappingFailed=${remappingFailed}`
+          `Addendum import complete for project ${projectId}: ${newRequirements.length} new requirements, ${recentlyImpactedSectionIds.length} impacted sections, remappingFailed=${Boolean(remappingFailureMessage)}`
         )
         return {
           newRequirements: newRequirements.length,
           impactedSections: recentlyImpactedSectionIds.length,
-          remappingFailed,
+          remappingFailed: false,
         }
       })
       .catch((err) => {

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Tooltip, Popover, Dropdown, Tag, Badge } from 'antd'
 import type { MenuProps } from 'antd'
 import type {
@@ -121,15 +121,42 @@ export function ComplianceCoverageMatrix({
   onNavigateToChapter,
 }: ComplianceCoverageMatrixProps): React.JSX.Element {
   const [allGreenAnimated, setAllGreenAnimated] = useState(false)
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prevAllCoveredRef = useRef(false)
 
   // Check if all requirements are covered (all green)
   const isAllCovered = matrix.stats.coveredCount === matrix.stats.totalRequirements
 
-  // Trigger animation once when all green
-  if (isAllCovered && !allGreenAnimated) {
-    setAllGreenAnimated(true)
-    setTimeout(() => setAllGreenAnimated(false), 3000)
-  }
+  useEffect(() => {
+    if (isAllCovered && !prevAllCoveredRef.current) {
+      setAllGreenAnimated(true)
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current)
+      }
+      celebrationTimerRef.current = setTimeout(() => {
+        setAllGreenAnimated(false)
+        celebrationTimerRef.current = null
+      }, 3000)
+    }
+
+    if (!isAllCovered) {
+      setAllGreenAnimated(false)
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current)
+        celebrationTimerRef.current = null
+      }
+    }
+
+    prevAllCoveredRef.current = isAllCovered
+  }, [isAllCovered])
+
+  useEffect(() => {
+    return () => {
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleColumnHeaderClick = useCallback(
     (column: TraceabilityMatrixColumn): void => {
@@ -141,9 +168,24 @@ export function ComplianceCoverageMatrix({
   )
 
   const getCellContextMenu = useCallback(
-    (cell: TraceabilityMatrixCell): MenuProps['items'] => {
+    (
+      cell: TraceabilityMatrixCell,
+      headingLocator?: ChapterHeadingLocator | null
+    ): MenuProps['items'] => {
+      const jumpToChapterItem =
+        headingLocator && onNavigateToChapter
+          ? [
+              {
+                key: 'jump-to-chapter',
+                label: '跳转到方案章节',
+                onClick: () => onNavigateToChapter(headingLocator),
+              },
+            ]
+          : []
+
       if (cell.cellState === 'none') {
         return [
+          ...jumpToChapterItem,
           {
             key: 'create-covered',
             label: '创建链接（已覆盖）',
@@ -163,6 +205,7 @@ export function ComplianceCoverageMatrix({
       }
 
       const items: MenuProps['items'] = [
+        ...jumpToChapterItem,
         {
           key: 'status',
           label: '更新状态',
@@ -187,7 +230,7 @@ export function ComplianceCoverageMatrix({
 
       return items
     },
-    [onCreateLink, onUpdateLink, onDeleteLink]
+    [onCreateLink, onDeleteLink, onNavigateToChapter, onUpdateLink]
   )
 
   return (
@@ -260,7 +303,10 @@ function MatrixRow({
   columns: TraceabilityMatrixColumn[]
   isAddedRequirement: boolean
   allGreenAnimated: boolean
-  getCellContextMenu: (cell: TraceabilityMatrixCell) => MenuProps['items']
+  getCellContextMenu: (
+    cell: TraceabilityMatrixCell,
+    headingLocator?: ChapterHeadingLocator | null
+  ) => MenuProps['items']
   onUpdateLink: (id: string, patch: { coverageStatus?: CoverageStatus }) => void
   onDeleteLink: (id: string) => void
   onNavigateToChapter?: (locator: ChapterHeadingLocator) => void
@@ -291,7 +337,7 @@ function MatrixRow({
             className={`border-r border-b border-gray-200 p-0 ${isImpacted ? 'ring-2 ring-blue-400 ring-inset' : ''}`}
           >
             <Dropdown
-              menu={{ items: getCellContextMenu(cell) }}
+              menu={{ items: getCellContextMenu(cell, column?.headingLocator) }}
               trigger={cell.cellState === 'none' ? ['click', 'contextMenu'] : ['contextMenu']}
             >
               {cell.cellState === 'none' ? (
