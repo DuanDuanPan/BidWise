@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react'
-import { Button, Progress, Alert, Collapse, Popover, Popconfirm } from 'antd'
+import { useState, useCallback, useRef } from 'react'
+import { Button, Progress, Alert, Collapse, Popover, Popconfirm, Tour } from 'antd'
+import type { TourProps } from 'antd'
 import {
   LoadingOutlined,
   ThunderboltOutlined,
@@ -45,19 +46,38 @@ export function FogMapView({
   onNavigateToRequirements,
 }: FogMapViewProps): React.JSX.Element {
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [showTour, setShowTour] = useState(false)
+  const [tourDismissed, setTourDismissed] = useState(
+    () => localStorage.getItem('fogMapTourShown') === 'true'
+  )
+  const showTour = !tourDismissed && fogMap !== null && fogMap.length > 0
 
-  // Show tour when fogMap data becomes available for the first time
-  useEffect(() => {
-    if (fogMap !== null && fogMap.length > 0 && !localStorage.getItem('fogMapTourShown')) {
-      setShowTour(true)
-    }
-  }, [fogMap])
+  // Refs for Tour anchor targets
+  const progressBarRef = useRef<HTMLDivElement>(null)
+  const groupsRef = useRef<HTMLDivElement>(null)
+  const confirmAllRef = useRef<HTMLDivElement>(null)
 
   const dismissTour = useCallback(() => {
-    setShowTour(false)
+    setTourDismissed(true)
     localStorage.setItem('fogMapTourShown', 'true')
   }, [])
+
+  const tourSteps: TourProps['steps'] = [
+    {
+      title: '雾散进度',
+      description: '雾散进度条显示当前需求的明确程度',
+      target: () => progressBarRef.current,
+    },
+    {
+      title: '需求分级',
+      description: '红色=风险区域，黄色=模糊需求，需要定向确认',
+      target: () => groupsRef.current,
+    },
+    {
+      title: '确认操作',
+      description: '点击确认后需求变为明确，迷雾逐步消散',
+      target: () => confirmAllRef.current,
+    },
+  ]
 
   const handleToggle = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -165,25 +185,14 @@ export function FogMapView({
 
   return (
     <div data-testid="fog-map-view">
-      {/* Tour popover */}
-      {showTour && (
-        <Alert
-          type="info"
-          showIcon
-          icon={<QuestionCircleOutlined />}
-          message="迷雾地图指南"
-          description="绿色=明确需求，黄色=模糊需求（建议确认），红色=风险区域。点击卡片查看详情，点击确认按钮消散迷雾。"
-          closable
-          onClose={dismissTour}
-          className="mb-4"
-        />
-      )}
+      {/* 3-step Tour anchored to progress bar, groups, and confirm button */}
+      <Tour open={showTour} onClose={dismissTour} steps={tourSteps} />
 
       {/* Error banner (has data but error from e.g. regeneration) */}
       {error && <Alert type="error" showIcon message={error} closable className="mb-4" />}
 
       {/* Fog clearing progress bar */}
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+      <div ref={progressBarRef} className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-base font-medium">雾散进度</span>
           <div className="flex items-center gap-2">
@@ -245,81 +254,83 @@ export function FogMapView({
       </div>
 
       {/* Grouped list */}
-      <Collapse
-        defaultActiveKey={['risky', 'ambiguous']}
-        items={[
-          {
-            key: 'risky',
-            label: (
-              <span className="font-medium" style={{ color: '#FF4D4F' }}>
-                风险需求 ({riskyItems.length} | 已确认 {riskyConfirmed})
-              </span>
-            ),
-            children:
-              riskyItems.length > 0 ? (
-                riskyItems.map((item) => (
-                  <FogMapCard
-                    key={item.id}
-                    item={item}
-                    onConfirm={onConfirm}
-                    expanded={expandedId === item.id}
-                    onToggle={handleToggle}
-                  />
-                ))
-              ) : (
-                <div className="py-4 text-center text-sm text-gray-400">无风险需求</div>
+      <div ref={groupsRef}>
+        <Collapse
+          defaultActiveKey={['risky', 'ambiguous']}
+          items={[
+            {
+              key: 'risky',
+              label: (
+                <span className="font-medium" style={{ color: '#FF4D4F' }}>
+                  风险需求 ({riskyItems.length} | 已确认 {riskyConfirmed})
+                </span>
               ),
-          },
-          {
-            key: 'ambiguous',
-            label: (
-              <span className="font-medium" style={{ color: '#FAAD14' }}>
-                模糊需求 ({ambiguousItems.length} | 已确认 {ambiguousConfirmed})
-              </span>
-            ),
-            children:
-              ambiguousItems.length > 0 ? (
-                ambiguousItems.map((item) => (
-                  <FogMapCard
-                    key={item.id}
-                    item={item}
-                    onConfirm={onConfirm}
-                    expanded={expandedId === item.id}
-                    onToggle={handleToggle}
-                  />
-                ))
-              ) : (
-                <div className="py-4 text-center text-sm text-gray-400">无模糊需求</div>
+              children:
+                riskyItems.length > 0 ? (
+                  riskyItems.map((item) => (
+                    <FogMapCard
+                      key={item.id}
+                      item={item}
+                      onConfirm={onConfirm}
+                      expanded={expandedId === item.id}
+                      onToggle={handleToggle}
+                    />
+                  ))
+                ) : (
+                  <div className="py-4 text-center text-sm text-gray-400">无风险需求</div>
+                ),
+            },
+            {
+              key: 'ambiguous',
+              label: (
+                <span className="font-medium" style={{ color: '#FAAD14' }}>
+                  模糊需求 ({ambiguousItems.length} | 已确认 {ambiguousConfirmed})
+                </span>
               ),
-          },
-          {
-            key: 'clear',
-            label: (
-              <span className="font-medium" style={{ color: '#52C41A' }}>
-                明确需求 ({clearItems.length})
-              </span>
-            ),
-            children:
-              clearItems.length > 0 ? (
-                clearItems.map((item) => (
-                  <FogMapCard
-                    key={item.id}
-                    item={item}
-                    onConfirm={onConfirm}
-                    expanded={expandedId === item.id}
-                    onToggle={handleToggle}
-                  />
-                ))
-              ) : (
-                <div className="py-4 text-center text-sm text-gray-400">无明确需求</div>
+              children:
+                ambiguousItems.length > 0 ? (
+                  ambiguousItems.map((item) => (
+                    <FogMapCard
+                      key={item.id}
+                      item={item}
+                      onConfirm={onConfirm}
+                      expanded={expandedId === item.id}
+                      onToggle={handleToggle}
+                    />
+                  ))
+                ) : (
+                  <div className="py-4 text-center text-sm text-gray-400">无模糊需求</div>
+                ),
+            },
+            {
+              key: 'clear',
+              label: (
+                <span className="font-medium" style={{ color: '#52C41A' }}>
+                  明确需求 ({clearItems.length})
+                </span>
               ),
-          },
-        ]}
-      />
+              children:
+                clearItems.length > 0 ? (
+                  clearItems.map((item) => (
+                    <FogMapCard
+                      key={item.id}
+                      item={item}
+                      onConfirm={onConfirm}
+                      expanded={expandedId === item.id}
+                      onToggle={handleToggle}
+                    />
+                  ))
+                ) : (
+                  <div className="py-4 text-center text-sm text-gray-400">无明确需求</div>
+                ),
+            },
+          ]}
+        />
+      </div>
 
       {/* Batch confirm bar */}
       {pendingCount > 0 && (
-        <div className="mt-4 flex justify-center">
+        <div ref={confirmAllRef} className="mt-4 flex justify-center">
           <Button
             type="primary"
             icon={<CheckOutlined />}

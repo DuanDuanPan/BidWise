@@ -420,6 +420,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         fogMapTaskId: taskKind === 'fog-map' ? null : projectState.fogMapTaskId,
         fogMapLoading: taskKind === 'fog-map' ? false : projectState.fogMapLoading,
         fogMapError: taskKind === 'fog-map' ? error : projectState.fogMapError,
+        // Re-extraction failure: backend may have already deleted certainties + fog-map.json,
+        // so invalidate stale frontend fog map data to prevent operating on phantom state
+        fogMap: taskKind === 'extraction' ? null : projectState.fogMap,
+        fogMapSummary: taskKind === 'extraction' ? null : projectState.fogMapSummary,
       })),
     }))
   },
