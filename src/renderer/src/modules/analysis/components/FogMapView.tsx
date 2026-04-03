@@ -61,23 +61,7 @@ export function FogMapView({
     localStorage.setItem('fogMapTourShown', 'true')
   }, [])
 
-  const tourSteps: TourProps['steps'] = [
-    {
-      title: '雾散进度',
-      description: '雾散进度条显示当前需求的明确程度',
-      target: () => progressBarRef.current,
-    },
-    {
-      title: '需求分级',
-      description: '红色=风险区域，黄色=模糊需求，需要定向确认',
-      target: () => groupsRef.current,
-    },
-    {
-      title: '确认操作',
-      description: '点击确认后需求变为明确，迷雾逐步消散',
-      target: () => confirmAllRef.current,
-    },
-  ]
+  // tourSteps is built lazily after pendingCount is known (see below)
 
   const handleToggle = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -183,9 +167,33 @@ export function FogMapView({
   const riskyConfirmed = riskyItems.filter((i) => i.confirmed).length
   const ambiguousConfirmed = ambiguousItems.filter((i) => i.confirmed).length
 
+  // Tour steps: step 3 (confirm button) only included when there are pending items,
+  // since the confirm bar is not rendered when pendingCount === 0
+  const tourSteps: TourProps['steps'] = [
+    {
+      title: '雾散进度',
+      description: '雾散进度条显示当前需求的明确程度',
+      target: () => progressBarRef.current,
+    },
+    {
+      title: '需求分级',
+      description: '红色=风险区域，黄色=模糊需求，需要定向确认',
+      target: () => groupsRef.current,
+    },
+    ...(pendingCount > 0
+      ? [
+          {
+            title: '确认操作',
+            description: '点击确认后需求变为明确，迷雾逐步消散',
+            target: () => confirmAllRef.current,
+          },
+        ]
+      : []),
+  ]
+
   return (
     <div data-testid="fog-map-view">
-      {/* 3-step Tour anchored to progress bar, groups, and confirm button */}
+      {/* Tour anchored to progress bar, groups, and (when present) confirm button */}
       <Tour open={showTour} onClose={dismissTour} steps={tourSteps} />
 
       {/* Error banner (has data but error from e.g. regeneration) */}

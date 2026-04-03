@@ -417,8 +417,11 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationTaskId: taskKind === 'seed' ? null : projectState.seedGenerationTaskId,
         seedGenerationLoading: taskKind === 'seed' ? false : projectState.seedGenerationLoading,
         seedGenerationError: taskKind === 'seed' ? error : projectState.seedGenerationError,
-        fogMapTaskId: taskKind === 'fog-map' ? null : projectState.fogMapTaskId,
-        fogMapLoading: taskKind === 'fog-map' ? false : projectState.fogMapLoading,
+        // Extraction failure also invalidates any in-flight fog-map task (stale requirements)
+        fogMapTaskId:
+          taskKind === 'fog-map' || taskKind === 'extraction' ? null : projectState.fogMapTaskId,
+        fogMapLoading:
+          taskKind === 'fog-map' || taskKind === 'extraction' ? false : projectState.fogMapLoading,
         fogMapError: taskKind === 'fog-map' ? error : projectState.fogMapError,
         // Re-extraction failure: backend may have already deleted certainties + fog-map.json,
         // so invalidate stale frontend fog map data to prevent operating on phantom state
@@ -1178,16 +1181,21 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     const summaryRes = await window.api.analysisGetFogMapSummary({ projectId })
 
     set((state) => ({
-      projects: updateProjectState(state.projects, projectId, (prev) => ({
-        ...prev,
-        fogMap: fogMapRes.success ? fogMapRes.data : prev.fogMap,
-        fogMapSummary: summaryRes.success ? summaryRes.data : prev.fogMapSummary,
-        fogMapTaskId: null,
-        fogMapProgress: 100,
-        fogMapMessage: '迷雾地图生成完成',
-        fogMapLoading: false,
-        fogMapError: null,
-      })),
+      projects: updateProjectState(state.projects, projectId, (prev) => {
+        // Guard: if fogMapTaskId was already invalidated (e.g. extraction failure
+        // cleared it), skip write-back to avoid restoring stale data.
+        if (!prev.fogMapTaskId) return prev
+        return {
+          ...prev,
+          fogMap: fogMapRes.success ? fogMapRes.data : prev.fogMap,
+          fogMapSummary: summaryRes.success ? summaryRes.data : prev.fogMapSummary,
+          fogMapTaskId: null,
+          fogMapProgress: 100,
+          fogMapMessage: '迷雾地图生成完成',
+          fogMapLoading: false,
+          fogMapError: null,
+        }
+      }),
     }))
   },
 

@@ -306,6 +306,44 @@ describe('analysisStore — fog map actions', () => {
     })
   })
 
+  describe('setFogMapCompleted — staleness guard', () => {
+    it('should skip write-back when fogMapTaskId is already null (invalidated)', async () => {
+      const mockSummary: FogMapSummary = {
+        total: 5,
+        clear: 5,
+        ambiguous: 0,
+        risky: 0,
+        confirmed: 0,
+        fogClearingPercentage: 100,
+      }
+      mockApi({
+        analysisGetFogMap: vi.fn().mockResolvedValue({ success: true, data: [{ id: 'stale' }] }),
+        analysisGetFogMapSummary: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: mockSummary }),
+      } as unknown as Partial<typeof window.api>)
+
+      // Simulate state after extraction failure invalidated fogMapTaskId
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMapTaskId: null,
+            fogMap: null,
+            fogMapSummary: null,
+          },
+        },
+      })
+
+      await useAnalysisStore.getState().setFogMapCompleted('proj-1')
+
+      const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      // Stale data should NOT have been written back
+      expect(ps.fogMap).toBeNull()
+      expect(ps.fogMapSummary).toBeNull()
+    })
+  })
+
   describe('setError with fog-map', () => {
     it('should set fogMapError and clear fogMapTaskId', () => {
       useAnalysisStore.setState({
@@ -324,6 +362,32 @@ describe('analysisStore — fog map actions', () => {
       expect(ps.fogMapError).toBe('生成失败')
       expect(ps.fogMapTaskId).toBeNull()
       expect(ps.fogMapLoading).toBe(false)
+    })
+  })
+
+  describe('setError with extraction — fog map invalidation', () => {
+    it('should invalidate fogMapTaskId and fogMapLoading when extraction fails', () => {
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMapTaskId: 'fog-task-running',
+            fogMapLoading: false,
+            fogMap: [{ id: 'cert-1' }] as FogMapItem[],
+            fogMapSummary: { total: 1, clear: 1, ambiguous: 0, risky: 0, confirmed: 0, fogClearingPercentage: 100 },
+          },
+        },
+      })
+
+      useAnalysisStore.getState().setError('proj-1', '抽取失败', 'extraction')
+
+      const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      // Fog map task must be invalidated
+      expect(ps.fogMapTaskId).toBeNull()
+      expect(ps.fogMapLoading).toBe(false)
+      // Fog map data must be cleared
+      expect(ps.fogMap).toBeNull()
+      expect(ps.fogMapSummary).toBeNull()
     })
   })
 })
