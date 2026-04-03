@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError } from '@main/utils/errors'
+import { throwIfAborted } from '@main/utils/abort'
 import { ErrorCode } from '@shared/constants'
 import { ProjectRepository } from '@main/db/repositories/project-repo'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
@@ -96,6 +98,60 @@ function parseMappingResponse(content: string): RawMapping[] {
   )
 }
 
+function buildAutoLinks(
+  projectId: string,
+  requirements: RequirementItem[],
+  sections: ProposalSectionIndexEntry[],
+  mappings: RawMapping[],
+  generatedAt: string
+): TraceabilityLink[] {
+  const validRequirementIds = new Set(requirements.map((requirement) => requirement.id))
+  const validSectionIds = new Set(sections.map((section) => section.sectionId))
+  const sectionTitleMap = new Map(sections.map((section) => [section.sectionId, section.title]))
+  const autoLinks: TraceabilityLink[] = []
+
+  for (const mapping of mappings) {
+    if (!mapping.requirementId || !validRequirementIds.has(mapping.requirementId)) continue
+    if (!Array.isArray(mapping.sectionMappings)) continue
+
+    for (const sectionMapping of mapping.sectionMappings) {
+      if (!sectionMapping.sectionId || !validSectionIds.has(sectionMapping.sectionId)) continue
+      const coverageStatus = sectionMapping.coverageStatus as CoverageStatus
+      if (!['covered', 'partial', 'uncovered'].includes(coverageStatus)) continue
+
+      autoLinks.push({
+        id: uuidv4(),
+        projectId,
+        requirementId: mapping.requirementId,
+        sectionId: sectionMapping.sectionId,
+        sectionTitle: sectionTitleMap.get(sectionMapping.sectionId) ?? '',
+        coverageStatus,
+        confidence:
+          typeof sectionMapping.confidence === 'number'
+            ? Math.min(Math.max(sectionMapping.confidence, 0), 1)
+            : 0.5,
+        matchReason: sectionMapping.reason ?? null,
+        source: 'auto',
+        createdAt: generatedAt,
+        updatedAt: generatedAt,
+      })
+    }
+  }
+
+  return autoLinks
+}
+
+function buildFallbackSectionId(section: {
+  title: string
+  level: number
+  occurrenceIndex: number
+}): string {
+  const digest = createHash('sha1')
+    .update(`${section.level}:${section.title}:${section.occurrenceIndex}`)
+    .digest('hex')
+  return `heading-${section.level}-${digest}`
+}
+
 export class TraceabilityMatrixService {
   private projectRepo = new ProjectRepository()
   private requirementRepo = new RequirementRepository()
@@ -105,7 +161,7 @@ export class TraceabilityMatrixService {
     const { projectId } = input
 
     const project = await this.projectRepo.findById(projectId)
-    if (!project.rootPath) {
+    if (!project || !project.rootPath) {
       throw new BidWiseError(ErrorCode.MATRIX_GENERATION_FAILED, `项目未设置存储路径: ${projectId}`)
     }
 
@@ -128,6 +184,7 @@ export class TraceabilityMatrixService {
     const taskId = await taskQueue.enqueue({
       category: 'import',
       input: { projectId, fileName: 'traceability-matrix' },
+      maxRetries: 0,
     })
 
     const linkRepo = this.linkRepo
@@ -168,6 +225,8 @@ export class TraceabilityMatrixService {
         const pollingStartedAt = Date.now()
 
         while (true) {
+          throwIfAborted(ctx.signal, 'AI 追溯矩阵生成任务已取消')
+
           if (Date.now() - pollingStartedAt >= GENERATION_TIMEOUT_MS) {
             throw new BidWiseError(
               ErrorCode.MATRIX_GENERATION_FAILED,
@@ -205,40 +264,8 @@ export class TraceabilityMatrixService {
 
         ctx.updateProgress(85, 'AI 返回结果，正在解析和持久化...')
         const rawMappings = parseMappingResponse(agentResult)
-
-        // Build valid ID sets for validation
-        const validRequirementIds = new Set(requirements.map((r) => r.id))
-        const validSectionIds = new Set(sections.map((s) => s.sectionId))
-        const sectionTitleMap = new Map(sections.map((s) => [s.sectionId, s.title]))
-
         const now = new Date().toISOString()
-        const autoLinks: TraceabilityLink[] = []
-
-        for (const mapping of rawMappings) {
-          if (!mapping.requirementId || !validRequirementIds.has(mapping.requirementId)) continue
-          if (!Array.isArray(mapping.sectionMappings)) continue
-
-          for (const sm of mapping.sectionMappings) {
-            if (!sm.sectionId || !validSectionIds.has(sm.sectionId)) continue
-            const coverageStatus = sm.coverageStatus as CoverageStatus
-            if (!['covered', 'partial', 'uncovered'].includes(coverageStatus)) continue
-
-            autoLinks.push({
-              id: uuidv4(),
-              projectId,
-              requirementId: mapping.requirementId,
-              sectionId: sm.sectionId,
-              sectionTitle: sectionTitleMap.get(sm.sectionId) ?? '',
-              coverageStatus,
-              confidence:
-                typeof sm.confidence === 'number' ? Math.min(Math.max(sm.confidence, 0), 1) : 0.5,
-              matchReason: sm.reason ?? null,
-              source: 'auto',
-              createdAt: now,
-              updatedAt: now,
-            })
-          }
-        }
+        const autoLinks = buildAutoLinks(projectId, requirements, sections, rawMappings, now)
 
         await linkRepo.replaceAutoByProject(projectId, autoLinks)
 
@@ -507,7 +534,7 @@ export class TraceabilityMatrixService {
     }
 
     const project = await this.projectRepo.findById(projectId)
-    if (!project.rootPath) {
+    if (!project || !project.rootPath) {
       throw new BidWiseError(ErrorCode.ADDENDUM_PARSE_FAILED, `项目未设置存储路径: ${projectId}`)
     }
 
@@ -584,6 +611,8 @@ export class TraceabilityMatrixService {
         const pollingStartedAt = Date.now()
 
         while (true) {
+          throwIfAborted(ctx.signal, 'AI 补遗解析任务已取消')
+
           if (Date.now() - pollingStartedAt >= GENERATION_TIMEOUT_MS) {
             throw new BidWiseError(
               ErrorCode.ADDENDUM_PARSE_FAILED,
@@ -643,6 +672,10 @@ export class TraceabilityMatrixService {
 
         // Build lookup from sequenceNumber to existing requirement
         const seqToReq = new Map(existingReqs.map((r) => [r.sequenceNumber, r]))
+        const requirementPatches = new Map<
+          string,
+          Partial<Pick<RequirementItem, 'description' | 'category' | 'priority' | 'status'>>
+        >()
 
         // Handle modified and deleted requirements
         for (const item of parsedItems) {
@@ -651,14 +684,18 @@ export class TraceabilityMatrixService {
           if (!existing) continue
 
           if (item.status === 'deleted') {
-            await requirementRepo.update(existing.id, { status: 'deleted' })
+            const patch = { status: 'deleted' as const }
+            requirementPatches.set(existing.id, patch)
+            await requirementRepo.update(existing.id, patch)
           } else if (item.status === 'modified' && item.description) {
-            await requirementRepo.update(existing.id, {
+            const patch = {
               description: item.description.trim(),
               ...(item.category ? { category: item.category as RequirementCategory } : {}),
               ...(item.priority ? { priority: item.priority as 'high' | 'medium' | 'low' } : {}),
-              status: 'modified',
-            })
+              status: 'modified' as const,
+            }
+            requirementPatches.set(existing.id, patch)
+            await requirementRepo.update(existing.id, patch)
           }
         }
 
@@ -677,20 +714,34 @@ export class TraceabilityMatrixService {
             status: 'extracted' as const,
           }))
 
-        ctx.updateProgress(65, '正在插入新增需求...')
+        const activeRequirementsAfterUpdates = existingReqs
+          .map((requirement): RequirementItem | null => {
+            const patch = requirementPatches.get(requirement.id)
+            const nextStatus = (patch?.status ?? requirement.status) as RequirementItem['status']
+            if (nextStatus === 'deleted') {
+              return null
+            }
 
-        if (newRequirements.length > 0) {
-          await requirementRepo.create(projectId, newRequirements)
-        }
+            return {
+              ...requirement,
+              description: patch?.description ?? requirement.description,
+              category: (patch?.category ?? requirement.category) as RequirementCategory,
+              priority: (patch?.priority ?? requirement.priority) as 'high' | 'medium' | 'low',
+              status: nextStatus,
+            }
+          })
+          .filter((requirement): requirement is RequirementItem => requirement !== null)
 
         // Re-generate full auto mapping (preserving manual links)
-        ctx.updateProgress(70, '正在重新生成追溯映射...')
-
+        const allReqsAfter = [...activeRequirementsAfterUpdates, ...newRequirements].sort(
+          (left, right) => left.sequenceNumber - right.sequenceNumber
+        )
         let remappingFailureMessage: string | null = null
-        const allReqsAfter = await requirementRepo.findByProject(projectId)
         const sections = await self.loadSectionIndex(rootPath, projectId)
+        let remappedAutoLinks: TraceabilityLink[] | null = null
 
         if (sections.length > 0 && allReqsAfter.length > 0) {
+          ctx.updateProgress(70, '正在重新生成追溯映射...')
           const manualLinks = (await linkRepo.findByProject(projectId)).filter(
             (l) => l.source === 'manual'
           )
@@ -725,6 +776,8 @@ export class TraceabilityMatrixService {
           const regenStartedAt = Date.now()
 
           while (true) {
+            throwIfAborted(ctx.signal, '追溯映射更新已取消')
+
             if (Date.now() - regenStartedAt >= GENERATION_TIMEOUT_MS) {
               logger.warn('Addendum re-mapping timed out, skipping auto-link update')
               remappingFailureMessage = '追溯映射更新超时，请手动重新生成矩阵'
@@ -757,45 +810,26 @@ export class TraceabilityMatrixService {
 
           if (regenResult) {
             const regenMappings = parseMappingResponse(regenResult)
-            const validRequirementIds = new Set(allReqsAfter.map((r) => r.id))
-            const validSectionIds = new Set(sections.map((s) => s.sectionId))
-            const sectionTitleMap = new Map(sections.map((s) => [s.sectionId, s.title]))
             const now = new Date().toISOString()
-
-            const autoLinks: TraceabilityLink[] = []
-            for (const mapping of regenMappings) {
-              if (!mapping.requirementId || !validRequirementIds.has(mapping.requirementId))
-                continue
-              if (!Array.isArray(mapping.sectionMappings)) continue
-
-              for (const sm of mapping.sectionMappings) {
-                if (!sm.sectionId || !validSectionIds.has(sm.sectionId)) continue
-                const coverageStatus = sm.coverageStatus as CoverageStatus
-                if (!['covered', 'partial', 'uncovered'].includes(coverageStatus)) continue
-
-                autoLinks.push({
-                  id: uuidv4(),
-                  projectId,
-                  requirementId: mapping.requirementId,
-                  sectionId: sm.sectionId,
-                  sectionTitle: sectionTitleMap.get(sm.sectionId) ?? '',
-                  coverageStatus,
-                  confidence:
-                    typeof sm.confidence === 'number'
-                      ? Math.min(Math.max(sm.confidence, 0), 1)
-                      : 0.5,
-                  matchReason: sm.reason ?? null,
-                  source: 'auto',
-                  createdAt: now,
-                  updatedAt: now,
-                })
-              }
-            }
-
-            await linkRepo.replaceAutoByProject(projectId, autoLinks)
+            remappedAutoLinks = buildAutoLinks(projectId, allReqsAfter, sections, regenMappings, now)
           } else if (!remappingFailureMessage) {
             remappingFailureMessage = '追溯映射更新未返回结果，请手动重新生成矩阵'
           }
+        }
+
+        if (remappingFailureMessage) {
+          ctx.updateProgress(100, remappingFailureMessage)
+          throw new BidWiseError(ErrorCode.MATRIX_GENERATION_FAILED, remappingFailureMessage)
+        }
+
+        ctx.updateProgress(85, '正在持久化补遗变更...')
+
+        if (newRequirements.length > 0) {
+          await requirementRepo.create(projectId, newRequirements)
+        }
+
+        if (remappedAutoLinks) {
+          await linkRepo.replaceAutoByProject(projectId, remappedAutoLinks)
         }
 
         // Compute impact diff
@@ -843,11 +877,6 @@ export class TraceabilityMatrixService {
         const snapshotPath = path.join(rootPath, SNAPSHOT_FILE)
         await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf-8')
 
-        if (remappingFailureMessage) {
-          ctx.updateProgress(100, remappingFailureMessage)
-          throw new BidWiseError(ErrorCode.MATRIX_GENERATION_FAILED, remappingFailureMessage)
-        }
-
         ctx.updateProgress(100, `补遗导入完成，新增 ${newRequirements.length} 条需求`)
         logger.info(
           `Addendum import complete for project ${projectId}: ${newRequirements.length} new requirements, ${recentlyImpactedSectionIds.length} impacted sections, remappingFailed=${Boolean(remappingFailureMessage)}`
@@ -889,7 +918,7 @@ export class TraceabilityMatrixService {
       const headings = extractMarkdownHeadings(markdown)
 
       return headings.map((h, i) => ({
-        sectionId: `heading-${h.level}-${encodeURIComponent(h.title).slice(0, 60)}-${h.occurrenceIndex}`,
+        sectionId: buildFallbackSectionId(h),
         title: h.title,
         level: h.level,
         order: i,
@@ -985,7 +1014,9 @@ function computeStats(
     const hasPartial = reqLinks.some((l) => l.coverageStatus === 'partial')
     const hasCovered = reqLinks.some((l) => l.coverageStatus === 'covered')
 
-    if (hasExplicitUncovered) {
+    if (hasExplicitUncovered && (hasCovered || hasPartial)) {
+      partialCount++
+    } else if (hasExplicitUncovered) {
       uncoveredCount++
     } else if (hasPartial) {
       partialCount++

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockFindProjectById = vi.fn()
@@ -17,6 +18,9 @@ const mockGetAgentStatus = vi.fn()
 const mockFsAccess = vi.fn()
 const mockFsReadFile = vi.fn()
 const mockFsWriteFile = vi.fn()
+const { mockExtractMarkdownHeadings } = vi.hoisted(() => ({
+  mockExtractMarkdownHeadings: vi.fn(),
+}))
 
 vi.mock('fs/promises', () => ({
   access: (...args: unknown[]) => mockFsAccess(...args),
@@ -87,15 +91,16 @@ vi.mock('@main/utils/errors', () => {
 })
 
 vi.mock('@shared/chapter-markdown', () => ({
-  extractMarkdownHeadings: () => [
-    { rawTitle: '技术方案', title: '技术方案', level: 2, lineIndex: 0, occurrenceIndex: 0 },
-    { rawTitle: '服务保障', title: '服务保障', level: 2, lineIndex: 10, occurrenceIndex: 0 },
-  ],
+  extractMarkdownHeadings: (...args: unknown[]) => mockExtractMarkdownHeadings(...args),
 }))
 
 import { TraceabilityMatrixService } from '@main/services/document-parser/traceability-matrix-service'
 
 const NOW = '2026-04-01T09:00:00.000Z'
+
+function fallbackSectionId(title: string, level: number, occurrenceIndex: number): string {
+  return `heading-${level}-${createHash('sha1').update(`${level}:${title}:${occurrenceIndex}`).digest('hex')}`
+}
 
 describe('TraceabilityMatrixService @story-2-8', () => {
   let service: TraceabilityMatrixService
@@ -128,6 +133,10 @@ describe('TraceabilityMatrixService @story-2-8', () => {
     mockFsReadFile.mockRejectedValue(new Error('ENOENT'))
     mockFsAccess.mockRejectedValue(new Error('ENOENT'))
     mockFsWriteFile.mockResolvedValue(undefined)
+    mockExtractMarkdownHeadings.mockReturnValue([
+      { rawTitle: '技术方案', title: '技术方案', level: 2, lineIndex: 0, occurrenceIndex: 0 },
+      { rawTitle: '服务保障', title: '服务保障', level: 2, lineIndex: 10, occurrenceIndex: 0 },
+    ])
   })
 
   afterEach(() => {
@@ -143,7 +152,7 @@ describe('TraceabilityMatrixService @story-2-8', () => {
       const result = await service.generate({ projectId: 'proj-1' })
       expect(result.taskId).toBe('task-001')
       expect(mockEnqueue).toHaveBeenCalledWith(
-        expect.objectContaining({ category: 'import' })
+        expect.objectContaining({ category: 'import', maxRetries: 0 })
       )
     })
 
@@ -156,6 +165,36 @@ describe('TraceabilityMatrixService @story-2-8', () => {
       mockFindProjectById.mockResolvedValue({ id: 'proj-1', rootPath: null })
       await expect(service.generate({ projectId: 'proj-1' })).rejects.toThrow('未设置存储路径')
     })
+
+    it('@p1 should throw when project lookup returns null', async () => {
+      mockFindProjectById.mockResolvedValue(null)
+      await expect(service.generate({ projectId: 'proj-1' })).rejects.toThrow('未设置存储路径')
+    })
+
+    it('@p1 should stop polling immediately when the task is already aborted', async () => {
+      mockFsReadFile
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockResolvedValueOnce('## 技术方案\n\n内容\n\n## 服务保障\n\n内容')
+      mockAgentExecute.mockResolvedValue({ taskId: 'traceability-task-1' })
+      mockExecute.mockImplementationOnce((_taskId, executor) => {
+        const controller = new AbortController()
+        controller.abort('cancelled')
+        return executor({
+          taskId: 'task-001',
+          signal: controller.signal,
+          updateProgress: vi.fn(),
+          setCheckpoint: vi.fn(),
+        })
+      })
+
+      const result = await service.generate({ projectId: 'proj-1' })
+
+      expect(result.taskId).toBe('task-001')
+      await expect(mockExecute.mock.results[0]?.value).rejects.toMatchObject({
+        name: 'AbortError',
+      })
+      expect(mockGetAgentStatus).not.toHaveBeenCalled()
+    })
   })
 
   describe('getMatrix', () => {
@@ -166,8 +205,8 @@ describe('TraceabilityMatrixService @story-2-8', () => {
 
     it('@p1 should return matrix with correct cell semantics', async () => {
       // Fallback sectionIds use title-based format: heading-{level}-{encodedTitle}-{occurrenceIndex}
-      const techSectionId = `heading-2-${encodeURIComponent('技术方案').slice(0, 60)}-0`
-      const serviceSectionId = `heading-2-${encodeURIComponent('服务保障').slice(0, 60)}-0`
+      const techSectionId = fallbackSectionId('技术方案', 2, 0)
+      const serviceSectionId = fallbackSectionId('服务保障', 2, 0)
 
       // Simulate existing links
       mockFindLinksByProject.mockResolvedValue([
@@ -241,6 +280,56 @@ describe('TraceabilityMatrixService @story-2-8', () => {
 
       const result = await service.getStats('proj-1')
       expect(result!.uncoveredCount).toBe(1) // req-2 has no links
+    })
+
+    it('@p1 should treat mixed covered and uncovered links as partial coverage', async () => {
+      mockFindRequirementsByProject.mockResolvedValue([
+        {
+          id: 'req-1',
+          sequenceNumber: 1,
+          description: '数据处理',
+          sourcePages: [],
+          category: 'technical',
+          priority: 'high',
+          status: 'extracted',
+        },
+      ])
+      mockFindLinksByProject.mockResolvedValue([
+        {
+          id: 'l1',
+          projectId: 'proj-1',
+          requirementId: 'req-1',
+          sectionId: 's1',
+          sectionTitle: '技术方案',
+          coverageStatus: 'covered',
+          confidence: 0.9,
+          matchReason: null,
+          source: 'auto',
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        {
+          id: 'l2',
+          projectId: 'proj-1',
+          requirementId: 'req-1',
+          sectionId: 's2',
+          sectionTitle: '服务保障',
+          coverageStatus: 'uncovered',
+          confidence: 0.4,
+          matchReason: null,
+          source: 'manual',
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ])
+
+      const result = await service.getStats('proj-1')
+
+      expect(result).not.toBeNull()
+      expect(result!.coveredCount).toBe(0)
+      expect(result!.partialCount).toBe(1)
+      expect(result!.uncoveredCount).toBe(0)
+      expect(result!.coverageRate).toBe(0)
     })
   })
 
@@ -316,7 +405,7 @@ describe('TraceabilityMatrixService @story-2-8', () => {
       ).rejects.toThrow('必须提供')
     })
 
-    it('@p1 should fail the task when re-mapping fails after persisting the snapshot', async () => {
+    it('@p1 should not persist new requirements when re-mapping fails', async () => {
       const progressSpy = vi.fn()
       mockExecute.mockImplementationOnce((_taskId, executor) =>
         executor({
@@ -333,7 +422,10 @@ describe('TraceabilityMatrixService @story-2-8', () => {
         .mockResolvedValueOnce({
           status: 'completed',
           progress: 100,
-          result: { content: '[]' },
+          result: {
+            content:
+              '[{"description":"新增补遗条款","category":"technical","priority":"high","status":"extracted"}]',
+          },
         })
         .mockResolvedValueOnce({
           status: 'failed',
@@ -357,11 +449,57 @@ describe('TraceabilityMatrixService @story-2-8', () => {
         })
       )
       await expect(mockExecute.mock.results[0]?.value).rejects.toThrow('追溯映射更新失败')
-      expect(mockFsWriteFile).toHaveBeenCalled()
+      expect(mockCreateRequirements).not.toHaveBeenCalled()
+      expect(mockFsWriteFile).not.toHaveBeenCalled()
       expect(progressSpy).not.toHaveBeenCalledWith(
         100,
         expect.stringContaining('补遗导入完成')
       )
+    })
+
+    it('@p1 should generate unique fallback section ids for long headings sharing the same prefix', async () => {
+      const sharedPrefix = 'super-long-shared-prefix-'.repeat(4)
+      mockExtractMarkdownHeadings.mockReturnValue([
+        {
+          rawTitle: `${sharedPrefix}alpha`,
+          title: `${sharedPrefix}alpha`,
+          level: 2,
+          lineIndex: 0,
+          occurrenceIndex: 0,
+        },
+        {
+          rawTitle: `${sharedPrefix}beta`,
+          title: `${sharedPrefix}beta`,
+          level: 2,
+          lineIndex: 10,
+          occurrenceIndex: 0,
+        },
+      ])
+      mockFindLinksByProject.mockResolvedValue([
+        {
+          id: 'l1',
+          projectId: 'proj-1',
+          requirementId: 'req-1',
+          sectionId: 'legacy-section-id',
+          sectionTitle: '旧章节',
+          coverageStatus: 'covered',
+          confidence: 0.9,
+          matchReason: null,
+          source: 'auto',
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ])
+      mockFsReadFile
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockResolvedValueOnce(`# ${sharedPrefix}alpha\n\n# ${sharedPrefix}beta`)
+        .mockRejectedValueOnce(new Error('ENOENT'))
+
+      const result = await service.getMatrix('proj-1')
+
+      expect(result).not.toBeNull()
+      expect(result!.columns).toHaveLength(2)
+      expect(new Set(result!.columns.map((column) => column.sectionId)).size).toBe(2)
     })
   })
 })

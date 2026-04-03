@@ -270,10 +270,11 @@ export function ComplianceCoverageMatrix({
           </tr>
         </thead>
         <tbody>
-          {matrix.rows.map((row) => (
+          {matrix.rows.map((row, rowIndex) => (
             <MatrixRow
               key={row.requirementId}
               row={row}
+              rowIndex={rowIndex}
               columns={matrix.columns}
               isAddedRequirement={matrix.recentlyAddedRequirementIds.includes(row.requirementId)}
               allGreenAnimated={allGreenAnimated && isAllCovered}
@@ -291,6 +292,7 @@ export function ComplianceCoverageMatrix({
 
 function MatrixRow({
   row,
+  rowIndex,
   columns,
   isAddedRequirement,
   allGreenAnimated,
@@ -300,6 +302,7 @@ function MatrixRow({
   onNavigateToChapter,
 }: {
   row: TraceabilityMatrixRow
+  rowIndex: number
   columns: TraceabilityMatrixColumn[]
   isAddedRequirement: boolean
   allGreenAnimated: boolean
@@ -326,10 +329,11 @@ function MatrixRow({
         </Tooltip>
       </td>
       {/* Cells */}
-      {row.cells.map((cell) => {
+      {row.cells.map((cell, columnIndex) => {
         const colors = STATUS_COLORS[cell.cellState]
         const isImpacted = cell.isImpacted
         const column = columns.find((c) => c.sectionId === cell.sectionId)
+        const animationDelayMs = (rowIndex * columns.length + columnIndex) * 90
 
         return (
           <td
@@ -366,6 +370,11 @@ function MatrixRow({
                       allGreenAnimated && cell.cellState === 'covered' ? 'animate-pulse' : ''
                     }`}
                     data-testid={`cell-${cell.requirementId}-${cell.sectionId}`}
+                    style={
+                      allGreenAnimated && cell.cellState === 'covered'
+                        ? { animationDelay: `${animationDelayMs}ms` }
+                        : undefined
+                    }
                   >
                     {STATUS_LABELS[cell.cellState]}
                   </div>
