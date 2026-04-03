@@ -168,7 +168,7 @@ describe('FogMapClassifier', () => {
 
       expect(result).toEqual({ taskId: 'task-1' })
       expect(mockEnqueue).toHaveBeenCalledWith({
-        category: 'import',
+        category: 'ai',
         input: { projectId: 'proj-1', rootPath: '/projects/proj-1' },
       })
       expect(mockExecute).toHaveBeenCalledWith('task-1', expect.any(Function))
@@ -339,6 +339,48 @@ describe('FogMapClassifier', () => {
       const result = await classifier.confirmCertainty('cert-1')
       expect(result.confirmed).toBe(true)
       expect(mockCertaintyConfirmItem).toHaveBeenCalledWith('cert-1')
+    })
+
+    it('should preserve the original generatedAt when syncing an existing snapshot', async () => {
+      const confirmed = {
+        id: 'cert-1',
+        requirementId: 'req-1',
+        certaintyLevel: 'ambiguous',
+        reason: 'test',
+        suggestion: 'test',
+        confirmed: true,
+        confirmedAt: '2026-04-02T00:00:00Z',
+        createdAt: '2026-04-01T00:00:00Z',
+        updatedAt: '2026-04-02T00:00:00Z',
+      }
+      mockCertaintyConfirmItem.mockResolvedValue(confirmed)
+      mockCertaintyFindProjectId.mockResolvedValue('proj-1')
+      mockCertaintyFindByProject.mockResolvedValue([confirmed])
+      mockReadFile.mockImplementation(async (filePath: string) => {
+        if (filePath.endsWith('fog-map.json')) {
+          return JSON.stringify({
+            projectId: 'proj-1',
+            items: [],
+            summary: {
+              total: 0,
+              clear: 0,
+              ambiguous: 0,
+              risky: 0,
+              confirmed: 0,
+              fogClearingPercentage: 0,
+            },
+            generatedAt: '2026-03-01T00:00:00Z',
+            updatedAt: '2026-03-15T00:00:00Z',
+          })
+        }
+        throw new Error('ENOENT')
+      })
+
+      await classifier.confirmCertainty('cert-1')
+
+      const writtenSnapshot = JSON.parse(mockWriteFile.mock.calls.at(-1)?.[1] as string)
+      expect(writtenSnapshot.generatedAt).toBe('2026-03-01T00:00:00Z')
+      expect(writtenSnapshot.updatedAt).not.toBe('2026-03-15T00:00:00Z')
     })
   })
 

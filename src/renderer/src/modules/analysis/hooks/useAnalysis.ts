@@ -161,7 +161,17 @@ export function useAnalysisTaskMonitor(): void {
 
         if (task.status === 'cancelled') {
           terminalHandledRef.current.add(taskId)
-          reset(projectId)
+          if (kind === 'import') {
+            reset(projectId)
+          } else {
+            const cancelledMsgMap: Record<Exclude<TaskKind, 'import'>, string> = {
+              extraction: '抽取任务已取消',
+              mandatory: '*项检测已取消',
+              seed: '策略种子生成已取消',
+              'fog-map': '迷雾地图生成已取消',
+            }
+            setError(projectId, cancelledMsgMap[kind], kind)
+          }
           clearTaskTracking(taskId)
           return
         }

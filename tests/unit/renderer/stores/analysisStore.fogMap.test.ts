@@ -7,6 +7,14 @@ import {
   EMPTY_ANALYSIS_PROJECT_STATE,
 } from '@renderer/stores/analysisStore'
 
+const messageError = vi.fn()
+
+vi.mock('antd', () => ({
+  message: {
+    error: (...args: unknown[]) => messageError(...args),
+  },
+}))
+
 function mockApi(overrides: Partial<typeof window.api> = {}): void {
   vi.stubGlobal('api', {
     analysisGenerateFogMap: vi
@@ -44,6 +52,7 @@ function mockApi(overrides: Partial<typeof window.api> = {}): void {
 describe('analysisStore — fog map actions', () => {
   beforeEach(() => {
     useAnalysisStore.setState({ projects: {} })
+    messageError.mockReset()
     mockApi()
   })
 
@@ -65,6 +74,52 @@ describe('analysisStore — fog map actions', () => {
       expect(ps.fogMapTaskId).toBe('fog-task-1')
       expect(ps.fogMapLoading).toBe(false)
       expect(ps.fogMapError).toBeNull()
+    })
+
+    it('should clear stale fog map data before starting regeneration', async () => {
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMap: [
+              {
+                id: 'cert-1',
+                requirementId: 'req-1',
+                certaintyLevel: 'ambiguous',
+                reason: '模糊',
+                suggestion: '建议确认',
+                confirmed: false,
+                confirmedAt: null,
+                createdAt: '2026-04-01T00:00:00Z',
+                updatedAt: '2026-04-01T00:00:00Z',
+                requirement: {
+                  id: 'req-1',
+                  sequenceNumber: 1,
+                  description: '测试需求',
+                  sourcePages: [1],
+                  category: 'technical',
+                  priority: 'high',
+                },
+              },
+            ],
+            fogMapSummary: {
+              total: 1,
+              clear: 0,
+              ambiguous: 1,
+              risky: 0,
+              confirmed: 0,
+              fogClearingPercentage: 0,
+            },
+          },
+        },
+      })
+
+      await useAnalysisStore.getState().generateFogMap('proj-1')
+
+      const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      expect(ps.fogMap).toBeNull()
+      expect(ps.fogMapSummary).toBeNull()
+      expect(ps.fogMapTaskId).toBe('fog-task-1')
     })
 
     it('should set error on failure', async () => {
@@ -224,6 +279,7 @@ describe('analysisStore — fog map actions', () => {
       const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
       // Should rollback to unconfirmed
       expect(ps.fogMap![0].confirmed).toBe(false)
+      expect(messageError).toHaveBeenCalledWith('确认失败，请重试')
     })
   })
 
@@ -282,6 +338,65 @@ describe('analysisStore — fog map actions', () => {
       expect(ps.fogMap![0].confirmed).toBe(true)
       expect(ps.fogMap![1].confirmed).toBe(true)
     })
+
+    it('should rollback and notify when batch confirm IPC throws', async () => {
+      const mockFogMap: FogMapItem[] = [
+        {
+          id: 'cert-1',
+          requirementId: 'req-1',
+          certaintyLevel: 'ambiguous',
+          reason: 'r1',
+          suggestion: 's1',
+          confirmed: false,
+          confirmedAt: null,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+          requirement: {
+            id: 'req-1',
+            sequenceNumber: 1,
+            description: 'd1',
+            sourcePages: [1],
+            category: 'technical',
+            priority: 'high',
+          },
+        },
+      ]
+
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMap: mockFogMap,
+            fogMapSummary: {
+              total: 1,
+              clear: 0,
+              ambiguous: 1,
+              risky: 0,
+              confirmed: 0,
+              fogClearingPercentage: 0,
+            },
+          },
+        },
+      })
+
+      mockApi({
+        analysisBatchConfirmCertainty: vi.fn().mockRejectedValue(new Error('network down')),
+      } as unknown as Partial<typeof window.api>)
+
+      await useAnalysisStore.getState().batchConfirmCertainty('proj-1')
+
+      const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      expect(ps.fogMap![0].confirmed).toBe(false)
+      expect(ps.fogMapSummary).toEqual({
+        total: 1,
+        clear: 0,
+        ambiguous: 1,
+        risky: 0,
+        confirmed: 0,
+        fogClearingPercentage: 0,
+      })
+      expect(messageError).toHaveBeenCalledWith('确认失败，请重试')
+    })
   })
 
   describe('setFogMapCompleted', () => {
@@ -311,13 +426,48 @@ describe('analysisStore — fog map actions', () => {
         },
       })
 
-      await useAnalysisStore.getState().setFogMapCompleted('proj-1')
+      await useAnalysisStore.getState().setFogMapCompleted('proj-1', 'fog-task-1')
 
       const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
       expect(ps.fogMapTaskId).toBeNull()
       expect(ps.fogMapProgress).toBe(100)
       expect(ps.fogMapSummary).toEqual(mockSummary)
       expect(ps.fogMapLoading).toBe(false)
+    })
+
+    it('should ignore completion payloads for stale task ids', async () => {
+      mockApi({
+        analysisGetFogMap: vi.fn().mockResolvedValue({ success: true, data: [{ id: 'new-data' }] }),
+        analysisGetFogMapSummary: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            total: 1,
+            clear: 1,
+            ambiguous: 0,
+            risky: 0,
+            confirmed: 0,
+            fogClearingPercentage: 100,
+          },
+        }),
+      } as unknown as Partial<typeof window.api>)
+
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMapTaskId: 'fog-task-1',
+            fogMap: null,
+            fogMapSummary: null,
+          },
+        },
+      })
+
+      await useAnalysisStore.getState().setFogMapCompleted('proj-1', 'different-task')
+
+      const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      expect(ps.fogMapTaskId).toBe('fog-task-1')
+      expect(ps.fogMap).toBeNull()
+      expect(ps.fogMapSummary).toBeNull()
     })
   })
 
@@ -350,7 +500,7 @@ describe('analysisStore — fog map actions', () => {
         },
       })
 
-      await useAnalysisStore.getState().setFogMapCompleted('proj-1')
+      await useAnalysisStore.getState().setFogMapCompleted('proj-1', 'fog-task-1')
 
       const ps = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
       // Stale data should NOT have been written back

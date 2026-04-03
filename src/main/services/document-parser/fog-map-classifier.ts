@@ -127,7 +127,7 @@ export class FogMapClassifier {
     }
 
     const taskId = await taskQueue.enqueue({
-      category: 'import',
+      category: 'ai',
       input: { projectId, rootPath: project.rootPath },
     })
 
@@ -383,6 +383,7 @@ async function syncSnapshot(
   try {
     const certainties = await certaintyRepo.findByProject(projectId)
     const reqMap = new Map(requirements.map((r) => [r.id, r]))
+    const snapshotPath = path.join(rootPath, 'tender', 'fog-map.json')
 
     const items = certainties
       .map((cert) => {
@@ -415,17 +416,46 @@ async function syncSnapshot(
       total > 0 ? Math.round(((clear + confirmed) / total) * 100) : 0
 
     const now = new Date().toISOString()
+    const generatedAt = await resolveGeneratedAt(snapshotPath, certainties, now)
     const snapshot: FogMapSnapshot = {
       projectId,
       items,
       summary: { total, clear, ambiguous, risky, confirmed, fogClearingPercentage },
-      generatedAt: now,
+      generatedAt,
       updatedAt: now,
     }
 
-    const snapshotPath = path.join(rootPath, 'tender', 'fog-map.json')
     await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2), 'utf-8')
   } catch (err) {
     logger.warn(`Failed to sync fog map snapshot for project ${projectId}`, err)
   }
+}
+
+async function resolveGeneratedAt(
+  snapshotPath: string,
+  certainties: RequirementCertainty[],
+  fallback: string
+): Promise<string> {
+  try {
+    const existingSnapshot = JSON.parse(await fs.readFile(snapshotPath, 'utf-8')) as Partial<
+      FogMapSnapshot
+    >
+    if (typeof existingSnapshot.generatedAt === 'string' && existingSnapshot.generatedAt) {
+      return existingSnapshot.generatedAt
+    }
+  } catch {
+    // Snapshot does not exist yet or is unreadable. Fall back to DB timestamps.
+  }
+
+  const earliestCreatedAt = certainties.reduce<string | null>((earliest, certainty) => {
+    if (!certainty.createdAt) {
+      return earliest
+    }
+    if (!earliest || certainty.createdAt < earliest) {
+      return certainty.createdAt
+    }
+    return earliest
+  }, null)
+
+  return earliestCreatedAt ?? fallback
 }

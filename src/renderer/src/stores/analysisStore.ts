@@ -1,3 +1,4 @@
+import { message } from 'antd'
 import { create } from 'zustand'
 import type {
   ParsedTender,
@@ -133,7 +134,7 @@ export interface AnalysisActions {
   confirmCertainty: (id: string) => Promise<void>
   batchConfirmCertainty: (projectId: string) => Promise<void>
   updateFogMapProgress: (projectId: string, progress: number, message?: string) => void
-  setFogMapCompleted: (projectId: string, taskId?: string) => Promise<void>
+  setFogMapCompleted: (projectId: string, taskId: string) => Promise<void>
   setFogMapError: (projectId: string, error: string) => void
 }
 
@@ -1030,6 +1031,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (prev) => ({
         ...prev,
+        ...invalidateFogMapState(),
         fogMapLoading: true,
         fogMapProgress: 0,
         fogMapMessage: '正在启动迷雾地图生成...',
@@ -1143,6 +1145,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
             fogMapSummary: prevSummary ?? null,
           })),
         }))
+        message.error('确认失败，请重试')
       }
     } catch {
       // Rollback
@@ -1153,6 +1156,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
           fogMapSummary: prevSummary ?? null,
         })),
       }))
+      message.error('确认失败，请重试')
     }
   },
 
@@ -1186,6 +1190,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
             fogMapSummary: prevSummary ?? null,
           })),
         }))
+        message.error('确认失败，请重试')
       }
     } catch {
       set((s) => ({
@@ -1195,6 +1200,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
           fogMapSummary: prevSummary ?? null,
         })),
       }))
+      message.error('确认失败，请重试')
     }
   },
 
@@ -1214,7 +1220,7 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
       return
     }
 
-    if (taskId && current.fogMapTaskId !== taskId) {
+    if (current.fogMapTaskId !== taskId) {
       return
     }
 

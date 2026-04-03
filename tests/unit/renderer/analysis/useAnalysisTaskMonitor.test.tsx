@@ -222,4 +222,130 @@ describe('useAnalysisTaskMonitor', () => {
     expect(window.api.analysisGetFogMapSummary).not.toHaveBeenCalled()
     expect(messageSuccess).not.toHaveBeenCalled()
   })
+
+  it('preserves non-fog analysis state when a fog-map task is cancelled', async () => {
+    vi.stubGlobal('api', {
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskGetStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          id: 'fog-task-1',
+          category: 'ai',
+          status: 'cancelled',
+          priority: 'normal',
+          progress: 65,
+          input: '{}',
+          retryCount: 0,
+          maxRetries: 0,
+          createdAt: '2026-03-21T00:00:00.000Z',
+          updatedAt: '2026-03-21T00:00:01.000Z',
+          completedAt: '2026-03-21T00:00:02.000Z',
+        },
+      }),
+      analysisGetTender: vi.fn(),
+      analysisGetFogMap: vi.fn(),
+      analysisGetFogMapSummary: vi.fn(),
+      taskCancel: vi.fn(),
+    })
+
+    useAnalysisStore.setState({
+      projects: {
+        'proj-1': makeProjectState({
+          parsedTender: mockParsedTender,
+          requirements: [
+            {
+              id: 'req-1',
+              sequenceNumber: 1,
+              description: '测试需求',
+              sourcePages: [1],
+              category: 'technical',
+              priority: 'high',
+              status: 'extracted',
+            },
+          ],
+          scoringModel: {
+            projectId: 'proj-1',
+            totalScore: 100,
+            criteria: [],
+            extractedAt: '2026-03-21T00:00:00.000Z',
+            confirmedAt: null,
+            version: 1,
+          },
+          seeds: [],
+          fogMapTaskId: 'fog-task-1',
+          fogMapLoading: true,
+          fogMapProgress: 65,
+          fogMapMessage: '正在生成迷雾地图',
+        }),
+      },
+    })
+
+    renderHook(() => useAnalysisTaskMonitor())
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(13_000)
+    })
+
+    const projectState = useAnalysisStore.getState().projects['proj-1']
+    expect(projectState).toBeDefined()
+    expect(projectState?.parsedTender).toEqual(mockParsedTender)
+    expect(projectState?.requirements).toHaveLength(1)
+    expect(projectState?.scoringModel?.projectId).toBe('proj-1')
+    expect(projectState?.fogMapTaskId).toBeNull()
+    expect(projectState?.fogMapLoading).toBe(false)
+    expect(projectState?.fogMapError).toBe('迷雾地图生成已取消')
+  })
+
+  it('still resets the project when an import task is cancelled', async () => {
+    vi.stubGlobal('api', {
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskGetStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          id: 'task-1',
+          category: 'import',
+          status: 'cancelled',
+          priority: 'normal',
+          progress: 30,
+          input: '{}',
+          retryCount: 0,
+          maxRetries: 0,
+          createdAt: '2026-03-21T00:00:00.000Z',
+          updatedAt: '2026-03-21T00:00:01.000Z',
+          completedAt: '2026-03-21T00:00:02.000Z',
+        },
+      }),
+      analysisGetTender: vi.fn(),
+      analysisGetFogMap: vi.fn(),
+      analysisGetFogMapSummary: vi.fn(),
+      taskCancel: vi.fn(),
+    })
+
+    useAnalysisStore.setState({
+      projects: {
+        'proj-1': makeProjectState({
+          importTaskId: 'task-1',
+          parsedTender: mockParsedTender,
+        }),
+      },
+    })
+
+    renderHook(() => useAnalysisTaskMonitor())
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(13_000)
+    })
+
+    expect(useAnalysisStore.getState().projects['proj-1']).toBeUndefined()
+  })
 })
