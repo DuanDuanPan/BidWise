@@ -559,8 +559,10 @@ export class TraceabilityMatrixService {
 
         ctx.updateProgress(15, '正在调用 AI 提取补遗需求...')
 
-        // Load existing requirements for reference
-        const existingReqs = await requirementRepo.findByProject(projectId)
+        // Load existing requirements for reference (include deleted to map by sequenceNumber)
+        const existingReqs = await requirementRepo.findByProject(projectId, {
+          includeDeleted: true,
+        })
 
         // Use extract agent addendum mode
         const agentResponse = await agentOrchestrator.execute({

@@ -290,7 +290,10 @@ function MatrixRow({
             key={cell.sectionId}
             className={`border-r border-b border-gray-200 p-0 ${isImpacted ? 'ring-2 ring-blue-400 ring-inset' : ''}`}
           >
-            <Dropdown menu={{ items: getCellContextMenu(cell) }} trigger={['contextMenu']}>
+            <Dropdown
+              menu={{ items: getCellContextMenu(cell) }}
+              trigger={cell.cellState === 'none' ? ['click', 'contextMenu'] : ['contextMenu']}
+            >
               {cell.cellState === 'none' ? (
                 <div
                   className={`flex h-full min-h-[36px] items-center justify-center ${colors.bg} ${colors.text} cursor-pointer text-xs`}

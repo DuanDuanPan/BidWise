@@ -9,6 +9,9 @@ import type {
   MandatoryItemSummary,
   StrategySeed,
   StrategySeedSummary,
+  TraceabilityMatrix,
+  TraceabilityStats,
+  CoverageStatus,
 } from '@shared/analysis-types'
 import type { TaskStatus } from '@shared/ai-types'
 
@@ -44,6 +47,19 @@ export interface AnalysisProjectState {
   seedGenerationMessage: string
   seedGenerationLoading: boolean
   seedGenerationError: string | null
+  // Story 2.8: traceability matrix state
+  traceabilityMatrix: TraceabilityMatrix | null
+  traceabilityStats: TraceabilityStats | null
+  matrixGenerationTaskId: string | null
+  matrixGenerationProgress: number
+  matrixGenerationMessage: string
+  matrixGenerationLoading: boolean
+  matrixGenerationError: string | null
+  addendumImportTaskId: string | null
+  addendumImportProgress: number
+  addendumImportMessage: string
+  addendumImportLoading: boolean
+  addendumImportError: string | null
 }
 
 export interface AnalysisState {
@@ -59,7 +75,7 @@ export interface AnalysisActions {
   setError: (
     projectId: string,
     error: string,
-    taskKind?: 'import' | 'extraction' | 'mandatory' | 'seed'
+    taskKind?: 'import' | 'extraction' | 'mandatory' | 'seed' | 'matrix' | 'addendum'
   ) => void
   reset: (projectId?: string) => void
   // Story 2.5: extraction actions
@@ -116,6 +132,29 @@ export interface AnalysisActions {
   updateSeedGenerationProgress: (projectId: string, progress: number, message?: string) => void
   setSeedGenerationCompleted: (projectId: string) => Promise<void>
   setSeedGenerationError: (projectId: string, error: string) => void
+  // Story 2.8: traceability matrix actions
+  generateMatrix: (projectId: string) => Promise<void>
+  fetchMatrix: (projectId: string) => Promise<void>
+  fetchMatrixStats: (projectId: string) => Promise<void>
+  createLink: (
+    projectId: string,
+    requirementId: string,
+    sectionId: string,
+    coverageStatus: CoverageStatus
+  ) => Promise<void>
+  updateLink: (
+    id: string,
+    patch: Partial<{ coverageStatus: CoverageStatus; matchReason: string }>
+  ) => Promise<void>
+  deleteLink: (id: string) => Promise<void>
+  importAddendum: (
+    projectId: string,
+    input: { content?: string; filePath?: string; fileName?: string }
+  ) => Promise<void>
+  updateMatrixGenerationProgress: (projectId: string, progress: number, message?: string) => void
+  setMatrixGenerationCompleted: (projectId: string) => Promise<void>
+  updateAddendumImportProgress: (projectId: string, progress: number, message?: string) => void
+  setAddendumImportCompleted: (projectId: string) => Promise<void>
 }
 
 export type AnalysisStore = AnalysisState & AnalysisActions
@@ -153,6 +192,18 @@ export const EMPTY_ANALYSIS_PROJECT_STATE: Readonly<AnalysisProjectState> = Obje
   seedGenerationMessage: '',
   seedGenerationLoading: false,
   seedGenerationError: null,
+  traceabilityMatrix: null,
+  traceabilityStats: null,
+  matrixGenerationTaskId: null,
+  matrixGenerationProgress: 0,
+  matrixGenerationMessage: '',
+  matrixGenerationLoading: false,
+  matrixGenerationError: null,
+  addendumImportTaskId: null,
+  addendumImportProgress: 0,
+  addendumImportMessage: '',
+  addendumImportLoading: false,
+  addendumImportError: null,
 })
 
 function createProjectState(overrides: Partial<AnalysisProjectState> = {}): AnalysisProjectState {
@@ -193,7 +244,9 @@ export function findAnalysisProjectIdByTaskId(
       projectState.importTaskId === taskId ||
       projectState.extractionTaskId === taskId ||
       projectState.mandatoryDetectionTaskId === taskId ||
-      projectState.seedGenerationTaskId === taskId
+      projectState.seedGenerationTaskId === taskId ||
+      projectState.matrixGenerationTaskId === taskId ||
+      projectState.addendumImportTaskId === taskId
     ) {
       return projectId
     }
@@ -361,7 +414,13 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (projectState) => ({
         ...projectState,
-        error: taskKind === 'mandatory' || taskKind === 'seed' ? projectState.error : error,
+        error:
+          taskKind === 'mandatory' ||
+          taskKind === 'seed' ||
+          taskKind === 'matrix' ||
+          taskKind === 'addendum'
+            ? projectState.error
+            : error,
         loading: false,
         importTaskId: taskKind === 'import' ? null : projectState.importTaskId,
         extractionTaskId: taskKind === 'extraction' ? null : projectState.extractionTaskId,
@@ -376,6 +435,18 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationTaskId: taskKind === 'seed' ? null : projectState.seedGenerationTaskId,
         seedGenerationLoading: taskKind === 'seed' ? false : projectState.seedGenerationLoading,
         seedGenerationError: taskKind === 'seed' ? error : projectState.seedGenerationError,
+        matrixGenerationTaskId:
+          taskKind === 'matrix' ? null : projectState.matrixGenerationTaskId,
+        matrixGenerationLoading:
+          taskKind === 'matrix' ? false : projectState.matrixGenerationLoading,
+        matrixGenerationError:
+          taskKind === 'matrix' ? error : projectState.matrixGenerationError,
+        addendumImportTaskId:
+          taskKind === 'addendum' ? null : projectState.addendumImportTaskId,
+        addendumImportLoading:
+          taskKind === 'addendum' ? false : projectState.addendumImportLoading,
+        addendumImportError:
+          taskKind === 'addendum' ? error : projectState.addendumImportError,
       })),
     }))
   },
@@ -932,5 +1003,256 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationLoading: false,
       })),
     }))
+  },
+
+  // ─── Story 2.8: Traceability Matrix Actions ───
+
+  generateMatrix: async (projectId: string) => {
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (current.matrixGenerationLoading || current.matrixGenerationTaskId) return
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        matrixGenerationLoading: true,
+        matrixGenerationProgress: 0,
+        matrixGenerationMessage: '正在启动追溯矩阵生成...',
+        matrixGenerationTaskId: null,
+        matrixGenerationError: null,
+      })),
+    }))
+
+    try {
+      const res = await window.api.analysisGenerateMatrix({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            matrixGenerationTaskId: res.data.taskId,
+            matrixGenerationLoading: false,
+          })),
+        }))
+      } else {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            matrixGenerationError: res.error.message,
+            matrixGenerationLoading: false,
+            matrixGenerationTaskId: null,
+          })),
+        }))
+      }
+    } catch (err) {
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => ({
+          ...prev,
+          matrixGenerationError: (err as Error).message,
+          matrixGenerationLoading: false,
+          matrixGenerationTaskId: null,
+        })),
+      }))
+    }
+  },
+
+  fetchMatrix: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetMatrix({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            traceabilityMatrix: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail — data may not exist yet
+    }
+  },
+
+  fetchMatrixStats: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetMatrixStats({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            traceabilityStats: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail
+    }
+  },
+
+  createLink: async (projectId, requirementId, sectionId, coverageStatus) => {
+    try {
+      const res = await window.api.analysisCreateLink({
+        projectId,
+        requirementId,
+        sectionId,
+        coverageStatus,
+      })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+      // Refresh matrix data
+      const matrixRes = await window.api.analysisGetMatrix({ projectId })
+      if (matrixRes.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            traceabilityMatrix: matrixRes.data,
+          })),
+        }))
+      }
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  updateLink: async (id, patch) => {
+    try {
+      const res = await window.api.analysisUpdateLink({ id, patch })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+      // Refresh matrix for the project
+      const link = res.data
+      const matrixRes = await window.api.analysisGetMatrix({ projectId: link.projectId })
+      if (matrixRes.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, link.projectId, (prev) => ({
+            ...prev,
+            traceabilityMatrix: matrixRes.data,
+          })),
+        }))
+      }
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  deleteLink: async (id) => {
+    try {
+      const res = await window.api.analysisDeleteLink({ id })
+      if (!res.success) {
+        throw new Error(res.error.message)
+      }
+    } catch (error) {
+      throw new Error(toErrorMessage(error))
+    }
+  },
+
+  importAddendum: async (projectId, input) => {
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (current.addendumImportLoading || current.addendumImportTaskId) return
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        addendumImportLoading: true,
+        addendumImportProgress: 0,
+        addendumImportMessage: '正在启动补遗导入...',
+        addendumImportTaskId: null,
+        addendumImportError: null,
+      })),
+    }))
+
+    try {
+      const res = await window.api.analysisImportAddendum({ projectId, ...input })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            addendumImportTaskId: res.data.taskId,
+            addendumImportLoading: false,
+          })),
+        }))
+      } else {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            addendumImportError: res.error.message,
+            addendumImportLoading: false,
+            addendumImportTaskId: null,
+          })),
+        }))
+      }
+    } catch (err) {
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => ({
+          ...prev,
+          addendumImportError: (err as Error).message,
+          addendumImportLoading: false,
+          addendumImportTaskId: null,
+        })),
+      }))
+    }
+  },
+
+  updateMatrixGenerationProgress: (projectId, progress, message) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        matrixGenerationProgress: progress,
+        matrixGenerationMessage: message ?? prev.matrixGenerationMessage,
+      })),
+    }))
+  },
+
+  setMatrixGenerationCompleted: async (projectId) => {
+    const matrixRes = await window.api.analysisGetMatrix({ projectId })
+    const statsRes = await window.api.analysisGetMatrixStats({ projectId })
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        traceabilityMatrix: matrixRes.success ? matrixRes.data : prev.traceabilityMatrix,
+        traceabilityStats: statsRes.success ? statsRes.data : prev.traceabilityStats,
+        matrixGenerationTaskId: null,
+        matrixGenerationProgress: 100,
+        matrixGenerationMessage: '追溯矩阵生成完成',
+        matrixGenerationLoading: false,
+        matrixGenerationError: null,
+      })),
+    }))
+  },
+
+  updateAddendumImportProgress: (projectId, progress, message) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        addendumImportProgress: progress,
+        addendumImportMessage: message ?? prev.addendumImportMessage,
+      })),
+    }))
+  },
+
+  setAddendumImportCompleted: async (projectId) => {
+    const matrixRes = await window.api.analysisGetMatrix({ projectId })
+    const statsRes = await window.api.analysisGetMatrixStats({ projectId })
+    const reqsRes = await window.api.analysisGetRequirements({ projectId })
+
+    set((state) => {
+      const prev = getAnalysisProjectState(state, projectId)
+      // Preserve the backend's progress message (may contain remapping failure note)
+      const completionMessage = prev.addendumImportMessage || '补遗导入完成'
+
+      return {
+        projects: updateProjectState(state.projects, projectId, (p) => ({
+          ...p,
+          traceabilityMatrix: matrixRes.success ? matrixRes.data : p.traceabilityMatrix,
+          traceabilityStats: statsRes.success ? statsRes.data : p.traceabilityStats,
+          requirements: reqsRes.success ? reqsRes.data : p.requirements,
+          addendumImportTaskId: null,
+          addendumImportProgress: 100,
+          addendumImportMessage: completionMessage,
+          addendumImportLoading: false,
+          addendumImportError: null,
+        })),
+      }
+    })
   },
 }))
