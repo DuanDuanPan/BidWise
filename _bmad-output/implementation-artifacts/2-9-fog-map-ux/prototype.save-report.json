@@ -1,0 +1,39 @@
+{
+  "story_id": "2-9-fog-map",
+  "saved_at": "2026-04-03T12:00:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/2-9-fog-map-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/2-9-fog-map-ux/prototype.snapshot.json",
+  "children_count": 7,
+  "screens": {
+    "screenA": {
+      "id": "igGTl",
+      "name": "Screen A — 迷雾地图 Empty State",
+      "description": "Empty state when requirements exist but fog map not generated, with CTA button"
+    },
+    "screenB": {
+      "id": "JbArg",
+      "name": "Screen B — 迷雾地图 Primary State",
+      "description": "Three-color groups (3 risky, 7 ambiguous, 10 clear) with progress bar, stats, and batch confirm"
+    },
+    "screenC": {
+      "id": "RFoRP",
+      "name": "Screen C — Card Expanded Detail",
+      "description": "Expanded ambiguous requirement card with reason alert, suggestion blockquote, metadata, and confirm button"
+    }
+  },
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 3,
+  "exported_pngs": [
+    "exports/igGTl.png",
+    "exports/JbArg.png",
+    "exports/RFoRP.png"
+  ],
+  "validation_details": {
+    "disk_top_level_keys": ["version", "children", "variables"],
+    "version_preserved": "2.9",
+    "mcp_reread_children_count": 7,
+    "original_frames_preserved": 4,
+    "new_prototype_frames": 3
+  }
+}
