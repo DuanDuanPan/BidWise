@@ -37,6 +37,11 @@ const mockGetSeedSummary = vi.fn()
 const mockUpdateSeed = vi.fn()
 const mockDeleteSeed = vi.fn()
 const mockAddSeed = vi.fn()
+const mockGenerateFogMap = vi.fn()
+const mockGetFogMap = vi.fn()
+const mockGetFogMapSummary = vi.fn()
+const mockConfirmCertainty = vi.fn()
+const mockBatchConfirm = vi.fn()
 
 vi.mock('@main/services/document-parser', () => ({
   tenderImportService: {
@@ -65,6 +70,13 @@ vi.mock('@main/services/document-parser', () => ({
     updateSeed: (...args: unknown[]) => mockUpdateSeed(...args),
     deleteSeed: (...args: unknown[]) => mockDeleteSeed(...args),
     addSeed: (...args: unknown[]) => mockAddSeed(...args),
+  },
+  fogMapClassifier: {
+    generate: (...args: unknown[]) => mockGenerateFogMap(...args),
+    getFogMap: (...args: unknown[]) => mockGetFogMap(...args),
+    getSummary: (...args: unknown[]) => mockGetFogMapSummary(...args),
+    confirmCertainty: (...args: unknown[]) => mockConfirmCertainty(...args),
+    batchConfirm: (...args: unknown[]) => mockBatchConfirm(...args),
   },
 }))
 
@@ -98,6 +110,11 @@ describe('analysis-handlers', () => {
     expect(channels).toContain('analysis:update-seed')
     expect(channels).toContain('analysis:delete-seed')
     expect(channels).toContain('analysis:add-seed')
+    expect(channels).toContain('analysis:generate-fog-map')
+    expect(channels).toContain('analysis:get-fog-map')
+    expect(channels).toContain('analysis:get-fog-map-summary')
+    expect(channels).toContain('analysis:confirm-certainty')
+    expect(channels).toContain('analysis:batch-confirm-certainty')
   })
 
   it('analysis:import-tender dispatches to tenderImportService.importTender', async () => {

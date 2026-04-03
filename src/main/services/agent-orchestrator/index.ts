@@ -5,6 +5,7 @@ import { parseAgentHandler } from './agents/parse-agent'
 import { generateAgentHandler } from './agents/generate-agent'
 import { extractAgentHandler } from './agents/extract-agent'
 import { seedAgentHandler } from './agents/seed-agent'
+import { fogMapAgentHandler } from './agents/fog-map-agent'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
@@ -13,3 +14,4 @@ agentOrchestrator.registerAgent('parse', parseAgentHandler)
 agentOrchestrator.registerAgent('generate', generateAgentHandler)
 agentOrchestrator.registerAgent('extract', extractAgentHandler)
 agentOrchestrator.registerAgent('seed', seedAgentHandler)
+agentOrchestrator.registerAgent('fog-map', fogMapAgentHandler)

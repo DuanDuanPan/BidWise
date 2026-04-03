@@ -4,6 +4,7 @@ import {
   scoringExtractor,
   mandatoryItemDetector,
   strategySeedGenerator,
+  fogMapClassifier,
 } from '@main/services/document-parser'
 import type { IpcChannel } from '@shared/ipc-types'
 
@@ -74,6 +75,24 @@ const analysisHandlerMap: { [C in AnalysisChannel]: () => void } = {
     createIpcHandler('analysis:delete-seed', (input) => strategySeedGenerator.deleteSeed(input.id)),
   'analysis:add-seed': () =>
     createIpcHandler('analysis:add-seed', (input) => strategySeedGenerator.addSeed(input)),
+  'analysis:generate-fog-map': () =>
+    createIpcHandler('analysis:generate-fog-map', (input) => fogMapClassifier.generate(input)),
+  'analysis:get-fog-map': () =>
+    createIpcHandler('analysis:get-fog-map', (input) =>
+      fogMapClassifier.getFogMap(input.projectId)
+    ),
+  'analysis:get-fog-map-summary': () =>
+    createIpcHandler('analysis:get-fog-map-summary', (input) =>
+      fogMapClassifier.getSummary(input.projectId)
+    ),
+  'analysis:confirm-certainty': () =>
+    createIpcHandler('analysis:confirm-certainty', (input) =>
+      fogMapClassifier.confirmCertainty(input.id)
+    ),
+  'analysis:batch-confirm-certainty': () =>
+    createIpcHandler('analysis:batch-confirm-certainty', (input) =>
+      fogMapClassifier.batchConfirm(input.projectId)
+    ),
 }
 
 export type RegisteredAnalysisChannels = AnalysisChannel

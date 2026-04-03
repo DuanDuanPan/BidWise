@@ -63,6 +63,13 @@ function makeEmptyProjectState(
     seedGenerationMessage: '',
     seedGenerationLoading: false,
     seedGenerationError: null,
+    fogMap: null,
+    fogMapSummary: null,
+    fogMapTaskId: null,
+    fogMapProgress: 0,
+    fogMapMessage: '',
+    fogMapLoading: false,
+    fogMapError: null,
     ...overrides,
   }
 }

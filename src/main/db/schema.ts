@@ -83,6 +83,19 @@ export interface StrategySeedTable {
   updatedAt: string
 }
 
+export interface RequirementCertaintyTable {
+  id: string
+  projectId: string
+  requirementId: string
+  certaintyLevel: string // 'clear' | 'ambiguous' | 'risky'
+  reason: string
+  suggestion: string
+  confirmed: number // 0 | 1
+  confirmedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -90,4 +103,5 @@ export interface DB {
   scoringModels: ScoringModelTable
   mandatoryItems: MandatoryItemTable
   strategySeeds: StrategySeedTable
+  requirementCertainties: RequirementCertaintyTable
 }

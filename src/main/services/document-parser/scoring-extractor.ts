@@ -8,6 +8,7 @@ import { ProjectRepository } from '@main/db/repositories/project-repo'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
 import { ScoringModelRepository } from '@main/db/repositories/scoring-model-repo'
 import { MandatoryItemRepository } from '@main/db/repositories/mandatory-item-repo'
+import { RequirementCertaintyRepository } from '@main/db/repositories/requirement-certainty-repo'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { taskQueue } from '@main/services/task-queue'
 import type { TaskExecutorContext } from '@main/services/task-queue'
@@ -148,6 +149,7 @@ export class ScoringExtractor {
   private requirementRepo = new RequirementRepository()
   private scoringModelRepo = new ScoringModelRepository()
   private mandatoryItemRepo = new MandatoryItemRepository()
+  private certaintyRepo = new RequirementCertaintyRepository()
 
   async extract(input: { projectId: string }): Promise<ExtractionTaskResult> {
     const { projectId } = input
@@ -181,6 +183,7 @@ export class ScoringExtractor {
     const requirementRepo = this.requirementRepo
     const scoringModelRepo = this.scoringModelRepo
     const mandatoryItemRepo = this.mandatoryItemRepo
+    const certaintyRepo = this.certaintyRepo
     const rootPath = project.rootPath
     taskQueue
       .execute(taskId, async (ctx: TaskExecutorContext) => {
@@ -245,6 +248,11 @@ export class ScoringExtractor {
         const result = parseExtractionResponse(agentResult, projectId)
 
         // Step 4: Clean old data and persist
+        // Clear fog-map data before re-extracting requirements (Story 2.9 regression guard)
+        await certaintyRepo.deleteByProject(projectId)
+        const fogMapPath = path.join(rootPath, 'tender', 'fog-map.json')
+        await fs.rm(fogMapPath, { force: true }).catch(() => {})
+
         // Clear mandatory item links before deleting requirements to prevent dangling references
         await mandatoryItemRepo.clearLinkedRequirements(projectId)
 

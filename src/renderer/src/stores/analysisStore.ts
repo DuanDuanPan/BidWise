@@ -9,6 +9,8 @@ import type {
   MandatoryItemSummary,
   StrategySeed,
   StrategySeedSummary,
+  FogMapItem,
+  FogMapSummary,
 } from '@shared/analysis-types'
 import type { TaskStatus } from '@shared/ai-types'
 
@@ -44,6 +46,14 @@ export interface AnalysisProjectState {
   seedGenerationMessage: string
   seedGenerationLoading: boolean
   seedGenerationError: string | null
+  // Story 2.9: fog map state
+  fogMap: FogMapItem[] | null
+  fogMapSummary: FogMapSummary | null
+  fogMapTaskId: string | null
+  fogMapProgress: number
+  fogMapMessage: string
+  fogMapLoading: boolean
+  fogMapError: string | null
 }
 
 export interface AnalysisState {
@@ -59,7 +69,7 @@ export interface AnalysisActions {
   setError: (
     projectId: string,
     error: string,
-    taskKind?: 'import' | 'extraction' | 'mandatory' | 'seed'
+    taskKind?: 'import' | 'extraction' | 'mandatory' | 'seed' | 'fog-map'
   ) => void
   reset: (projectId?: string) => void
   // Story 2.5: extraction actions
@@ -116,6 +126,15 @@ export interface AnalysisActions {
   updateSeedGenerationProgress: (projectId: string, progress: number, message?: string) => void
   setSeedGenerationCompleted: (projectId: string) => Promise<void>
   setSeedGenerationError: (projectId: string, error: string) => void
+  // Story 2.9: fog map actions
+  generateFogMap: (projectId: string) => Promise<void>
+  fetchFogMap: (projectId: string) => Promise<void>
+  fetchFogMapSummary: (projectId: string) => Promise<void>
+  confirmCertainty: (id: string) => Promise<void>
+  batchConfirmCertainty: (projectId: string) => Promise<void>
+  updateFogMapProgress: (projectId: string, progress: number, message?: string) => void
+  setFogMapCompleted: (projectId: string) => Promise<void>
+  setFogMapError: (projectId: string, error: string) => void
 }
 
 export type AnalysisStore = AnalysisState & AnalysisActions
@@ -153,6 +172,13 @@ export const EMPTY_ANALYSIS_PROJECT_STATE: Readonly<AnalysisProjectState> = Obje
   seedGenerationMessage: '',
   seedGenerationLoading: false,
   seedGenerationError: null,
+  fogMap: null,
+  fogMapSummary: null,
+  fogMapTaskId: null,
+  fogMapProgress: 0,
+  fogMapMessage: '',
+  fogMapLoading: false,
+  fogMapError: null,
 })
 
 function createProjectState(overrides: Partial<AnalysisProjectState> = {}): AnalysisProjectState {
@@ -193,7 +219,8 @@ export function findAnalysisProjectIdByTaskId(
       projectState.importTaskId === taskId ||
       projectState.extractionTaskId === taskId ||
       projectState.mandatoryDetectionTaskId === taskId ||
-      projectState.seedGenerationTaskId === taskId
+      projectState.seedGenerationTaskId === taskId ||
+      projectState.fogMapTaskId === taskId
     ) {
       return projectId
     }
@@ -209,6 +236,17 @@ function computeSeedSummary(seeds: StrategySeed[]): StrategySeedSummary {
     adjusted: seeds.filter((s) => s.status === 'adjusted').length,
     pending: seeds.filter((s) => s.status === 'pending').length,
   }
+}
+
+function computeFogMapSummary(items: FogMapItem[]): FogMapSummary {
+  const total = items.length
+  const clear = items.filter((i) => i.certaintyLevel === 'clear').length
+  const ambiguous = items.filter((i) => i.certaintyLevel === 'ambiguous').length
+  const risky = items.filter((i) => i.certaintyLevel === 'risky').length
+  // Only count confirmed among non-clear items to avoid double-counting in fogClearingPercentage
+  const confirmed = items.filter((i) => i.confirmed && i.certaintyLevel !== 'clear').length
+  const fogClearingPercentage = total > 0 ? Math.round(((clear + confirmed) / total) * 100) : 0
+  return { total, clear, ambiguous, risky, confirmed, fogClearingPercentage }
 }
 
 function computeMandatorySummary(items: MandatoryItem[]): MandatoryItemSummary {
@@ -361,7 +399,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     set((state) => ({
       projects: updateProjectState(state.projects, projectId, (projectState) => ({
         ...projectState,
-        error: taskKind === 'mandatory' || taskKind === 'seed' ? projectState.error : error,
+        error:
+          taskKind === 'mandatory' || taskKind === 'seed' || taskKind === 'fog-map'
+            ? projectState.error
+            : error,
         loading: false,
         importTaskId: taskKind === 'import' ? null : projectState.importTaskId,
         extractionTaskId: taskKind === 'extraction' ? null : projectState.extractionTaskId,
@@ -376,6 +417,9 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationTaskId: taskKind === 'seed' ? null : projectState.seedGenerationTaskId,
         seedGenerationLoading: taskKind === 'seed' ? false : projectState.seedGenerationLoading,
         seedGenerationError: taskKind === 'seed' ? error : projectState.seedGenerationError,
+        fogMapTaskId: taskKind === 'fog-map' ? null : projectState.fogMapTaskId,
+        fogMapLoading: taskKind === 'fog-map' ? false : projectState.fogMapLoading,
+        fogMapError: taskKind === 'fog-map' ? error : projectState.fogMapError,
       })),
     }))
   },
@@ -555,6 +599,10 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         extractionProgress: 100,
         extractionMessage: '抽取完成',
         extractionLoading: false,
+        // Clear stale fog map data — backend deletes certainties on re-extraction
+        fogMap: null,
+        fogMapSummary: null,
+        fogMapError: null,
       })),
     }))
   },
@@ -930,6 +978,222 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationError: error,
         seedGenerationTaskId: null,
         seedGenerationLoading: false,
+      })),
+    }))
+  },
+
+  // ─── Story 2.9: Fog Map Actions ───
+
+  generateFogMap: async (projectId: string) => {
+    const current = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+    if (current.fogMapLoading || current.fogMapTaskId) return
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        fogMapLoading: true,
+        fogMapProgress: 0,
+        fogMapMessage: '正在启动迷雾地图生成...',
+        fogMapTaskId: null,
+        fogMapError: null,
+      })),
+    }))
+
+    try {
+      const res = await window.api.analysisGenerateFogMap({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            fogMapTaskId: res.data.taskId,
+            fogMapLoading: false,
+          })),
+        }))
+      } else {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            fogMapError: res.error.message,
+            fogMapLoading: false,
+            fogMapTaskId: null,
+          })),
+        }))
+      }
+    } catch (err) {
+      set((state) => ({
+        projects: updateProjectState(state.projects, projectId, (prev) => ({
+          ...prev,
+          fogMapError: (err as Error).message,
+          fogMapLoading: false,
+          fogMapTaskId: null,
+        })),
+      }))
+    }
+  },
+
+  fetchFogMap: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetFogMap({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            fogMap: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail — data may not exist yet
+    }
+  },
+
+  fetchFogMapSummary: async (projectId: string) => {
+    try {
+      const res = await window.api.analysisGetFogMapSummary({ projectId })
+      if (res.success) {
+        set((state) => ({
+          projects: updateProjectState(state.projects, projectId, (prev) => ({
+            ...prev,
+            fogMapSummary: res.data,
+          })),
+        }))
+      }
+    } catch {
+      // Silently fail
+    }
+  },
+
+  confirmCertainty: async (id: string) => {
+    // Optimistic update: find which project this item belongs to
+    let targetProjectId: string | null = null
+    const state = useAnalysisStore.getState()
+    for (const [pid, ps] of Object.entries(state.projects)) {
+      if (ps.fogMap?.some((item) => item.id === id)) {
+        targetProjectId = pid
+        break
+      }
+    }
+
+    if (!targetProjectId) return
+
+    // Save snapshot for rollback
+    const prevFogMap = state.projects[targetProjectId]?.fogMap
+    const prevSummary = state.projects[targetProjectId]?.fogMapSummary
+
+    // Optimistic: mark as confirmed locally
+    set((s) => ({
+      projects: updateProjectState(s.projects, targetProjectId!, (prev) => {
+        const updatedFogMap = prev.fogMap?.map((item) =>
+          item.id === id
+            ? { ...item, confirmed: true, confirmedAt: new Date().toISOString() }
+            : item
+        )
+        const summary = updatedFogMap ? computeFogMapSummary(updatedFogMap) : prev.fogMapSummary
+        return { ...prev, fogMap: updatedFogMap ?? null, fogMapSummary: summary }
+      }),
+    }))
+
+    try {
+      const res = await window.api.analysisConfirmCertainty({ id })
+      if (!res.success) {
+        // Rollback
+        set((s) => ({
+          projects: updateProjectState(s.projects, targetProjectId!, (prev) => ({
+            ...prev,
+            fogMap: prevFogMap ?? null,
+            fogMapSummary: prevSummary ?? null,
+          })),
+        }))
+      }
+    } catch {
+      // Rollback
+      set((s) => ({
+        projects: updateProjectState(s.projects, targetProjectId!, (prev) => ({
+          ...prev,
+          fogMap: prevFogMap ?? null,
+          fogMapSummary: prevSummary ?? null,
+        })),
+      }))
+    }
+  },
+
+  batchConfirmCertainty: async (projectId: string) => {
+    // Save snapshot for rollback
+    const state = useAnalysisStore.getState()
+    const prevFogMap = state.projects[projectId]?.fogMap
+    const prevSummary = state.projects[projectId]?.fogMapSummary
+
+    // Optimistic: mark all non-clear unconfirmed items as confirmed
+    set((s) => ({
+      projects: updateProjectState(s.projects, projectId, (prev) => {
+        const now = new Date().toISOString()
+        const updatedFogMap = prev.fogMap?.map((item) =>
+          item.confirmed || item.certaintyLevel === 'clear'
+            ? item
+            : { ...item, confirmed: true, confirmedAt: now }
+        )
+        const summary = updatedFogMap ? computeFogMapSummary(updatedFogMap) : prev.fogMapSummary
+        return { ...prev, fogMap: updatedFogMap ?? null, fogMapSummary: summary }
+      }),
+    }))
+
+    try {
+      const res = await window.api.analysisBatchConfirmCertainty({ projectId })
+      if (!res.success) {
+        set((s) => ({
+          projects: updateProjectState(s.projects, projectId, (prev) => ({
+            ...prev,
+            fogMap: prevFogMap ?? null,
+            fogMapSummary: prevSummary ?? null,
+          })),
+        }))
+      }
+    } catch {
+      set((s) => ({
+        projects: updateProjectState(s.projects, projectId, (prev) => ({
+          ...prev,
+          fogMap: prevFogMap ?? null,
+          fogMapSummary: prevSummary ?? null,
+        })),
+      }))
+    }
+  },
+
+  updateFogMapProgress: (projectId, progress, message) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        fogMapProgress: progress,
+        fogMapMessage: message ?? prev.fogMapMessage,
+      })),
+    }))
+  },
+
+  setFogMapCompleted: async (projectId) => {
+    const fogMapRes = await window.api.analysisGetFogMap({ projectId })
+    const summaryRes = await window.api.analysisGetFogMapSummary({ projectId })
+
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        fogMap: fogMapRes.success ? fogMapRes.data : prev.fogMap,
+        fogMapSummary: summaryRes.success ? summaryRes.data : prev.fogMapSummary,
+        fogMapTaskId: null,
+        fogMapProgress: 100,
+        fogMapMessage: '迷雾地图生成完成',
+        fogMapLoading: false,
+        fogMapError: null,
+      })),
+    }))
+  },
+
+  setFogMapError: (projectId, error) => {
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        fogMapError: error,
+        fogMapTaskId: null,
+        fogMapLoading: false,
       })),
     }))
   },

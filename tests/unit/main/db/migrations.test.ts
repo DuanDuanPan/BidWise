@@ -8,6 +8,7 @@ import * as migration003 from '@main/db/migrations/003_create_tasks'
 import * as migration004 from '@main/db/migrations/004_create_requirements_scoring'
 import * as migration005 from '@main/db/migrations/005_create_mandatory_items'
 import * as migration006 from '@main/db/migrations/006_create_strategy_seeds'
+import * as migration007 from '@main/db/migrations/007_create_requirement_certainties'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -23,6 +24,7 @@ const migrations: Record<string, Migration> = {
   '004_create_requirements_scoring': migration004,
   '005_create_mandatory_items': migration005,
   '006_create_strategy_seeds': migration006,
+  '007_create_requirement_certainties': migration007,
 }
 
 describe('Database migrations', () => {
@@ -44,7 +46,7 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(6)
+    expect(results).toHaveLength(7)
     for (const result of results!) {
       expect(result.status).toBe('Success')
     }
@@ -55,6 +57,7 @@ describe('Database migrations', () => {
       '004_create_requirements_scoring',
       '005_create_mandatory_items',
       '006_create_strategy_seeds',
+      '007_create_requirement_certainties',
     ])
   })
 
@@ -117,8 +120,8 @@ describe('Database migrations', () => {
     }>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)
     const names = rows.rows.map((r) => r.name)
 
-    expect(names).toContain('006_create_strategy_seeds')
-    expect(names).toHaveLength(6)
+    expect(names).toContain('007_create_requirement_certainties')
+    expect(names).toHaveLength(7)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {
@@ -169,6 +172,52 @@ describe('Database migrations', () => {
       expect(indexes.rows.some((index) => index.name === 'strategy_seeds_project_id_idx')).toBe(
         true
       )
+    } finally {
+      await rawDb.destroy()
+    }
+  })
+
+  it('should create requirement_certainties table with expected columns and unique constraint', async () => {
+    const rawDb = new Kysely<DB>({
+      dialect: new SqliteDialect({ database: new Database(':memory:') }),
+    })
+
+    try {
+      const rawMigrator = new Migrator({
+        db: rawDb,
+        provider: { getMigrations: async () => migrations },
+      })
+      await rawMigrator.migrateToLatest()
+
+      const columns = await sql<{
+        name: string
+        notnull: number
+        dflt_value: string | null
+      }>`PRAGMA table_info(requirement_certainties)`.execute(rawDb)
+
+      const colMap = new Map(columns.rows.map((column) => [column.name, column]))
+
+      expect(colMap.get('project_id')!.notnull).toBe(1)
+      expect(colMap.get('requirement_id')!.notnull).toBe(1)
+      expect(colMap.get('certainty_level')!.notnull).toBe(1)
+      expect(colMap.get('reason')!.notnull).toBe(1)
+      expect(colMap.get('suggestion')!.notnull).toBe(1)
+      expect(colMap.get('confirmed')!.notnull).toBe(1)
+      expect(colMap.get('confirmed')!.dflt_value).toBe('0')
+      expect(colMap.get('confirmed_at')!.notnull).toBe(0)
+      expect(colMap.get('created_at')!.notnull).toBe(1)
+      expect(colMap.get('updated_at')!.notnull).toBe(1)
+
+      const indexes = await sql<{
+        name: string
+        unique: number
+      }>`PRAGMA index_list(requirement_certainties)`.execute(rawDb)
+      expect(indexes.rows.some((index) => index.unique === 1)).toBe(true)
+      expect(
+        indexes.rows.some(
+          (index) => index.name === 'requirement_certainties_project_id_idx'
+        )
+      ).toBe(true)
     } finally {
       await rawDb.destroy()
     }
