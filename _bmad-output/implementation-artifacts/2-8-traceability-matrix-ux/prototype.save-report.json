@@ -1,0 +1,32 @@
+{
+  "story_id": "2-8-traceability-matrix",
+  "saved_at": "2026-04-03T10:00:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/2-8-traceability-matrix-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/2-8-traceability-matrix-ux/prototype.snapshot.json",
+  "children_count": 7,
+  "screens": [
+    {
+      "id": "XJzh6",
+      "name": "Screen A — 追溯矩阵 Empty State",
+      "description": "Empty state before matrix generation with CTA button"
+    },
+    {
+      "id": "dt4Tv",
+      "name": "Screen B — 追溯矩阵 Primary Matrix View",
+      "description": "Primary view with action bar, stats badges, and 7x6 compliance coverage matrix with mixed coverage statuses"
+    },
+    {
+      "id": "Hsg6Y",
+      "name": "Screen C — 导入补遗 Modal",
+      "description": "Addendum import modal with sample text, upload zone, and action buttons"
+    }
+  ],
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 3,
+  "exported_files": [
+    "exports/XJzh6.png",
+    "exports/dt4Tv.png",
+    "exports/Hsg6Y.png"
+  ]
+}
