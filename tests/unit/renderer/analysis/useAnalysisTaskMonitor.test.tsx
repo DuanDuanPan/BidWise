@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, cleanup, act } from '@testing-library/react'
 import { useAnalysisTaskMonitor } from '@modules/analysis/hooks/useAnalysis'
-import { useAnalysisStore } from '@renderer/stores/analysisStore'
+import { getAnalysisProjectState, useAnalysisStore } from '@renderer/stores/analysisStore'
 import type { ParsedTender } from '@shared/analysis-types'
 import type { AnalysisProjectState } from '@renderer/stores/analysisStore'
 
 const messageSuccess = vi.fn()
 const messageError = vi.fn()
+let progressListener:
+  | ((event: { taskId: string; progress: number; message?: string }) => void)
+  | null = null
 
 vi.mock('antd', () => ({
   message: {
@@ -32,23 +35,63 @@ const mockParsedTender: ParsedTender = {
 
 function makeProjectState(overrides: Partial<AnalysisProjectState> = {}): AnalysisProjectState {
   return {
-    tenderMeta: null,
-    parsedTender: null,
-    importTaskId: null,
-    parseProgress: 0,
-    parseMessage: '',
-    loading: false,
-    error: null,
-    taskStatus: null,
+    ...getAnalysisProjectState({ projects: {} }, 'proj-1'),
     ...overrides,
   }
 }
 
-describe('useAnalysisTaskMonitor', () => {
-  let progressListener:
-    | ((event: { taskId: string; progress: number; message?: string }) => void)
-    | null = null
+function stubApi(overrides: Record<string, unknown> = {}): void {
+  vi.stubGlobal('api', {
+    onTaskProgress: vi.fn().mockImplementation((callback) => {
+      progressListener = callback
+      return () => {
+        progressListener = null
+      }
+    }),
+    taskGetStatus: vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'task-1',
+          category: 'import',
+          status: 'running',
+          priority: 'normal',
+          progress: 100,
+          input: '{}',
+          retryCount: 0,
+          maxRetries: 0,
+          createdAt: '2026-03-21T00:00:00.000Z',
+          updatedAt: '2026-03-21T00:00:00.000Z',
+        },
+      })
+      .mockResolvedValue({
+        success: true,
+        data: {
+          id: 'task-1',
+          category: 'import',
+          status: 'completed',
+          priority: 'normal',
+          progress: 100,
+          input: '{}',
+          retryCount: 0,
+          maxRetries: 0,
+          createdAt: '2026-03-21T00:00:00.000Z',
+          updatedAt: '2026-03-21T00:00:01.000Z',
+          completedAt: '2026-03-21T00:00:02.000Z',
+        },
+      }),
+    analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: mockParsedTender }),
+    analysisGetMatrix: vi.fn().mockResolvedValue({ success: true, data: null }),
+    analysisGetMatrixStats: vi.fn().mockResolvedValue({ success: true, data: null }),
+    analysisGetRequirements: vi.fn().mockResolvedValue({ success: true, data: null }),
+    analysisImportTender: vi.fn(),
+    taskCancel: vi.fn(),
+    ...overrides,
+  })
+}
 
+describe('useAnalysisTaskMonitor', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     progressListener = null
@@ -65,50 +108,7 @@ describe('useAnalysisTaskMonitor', () => {
       },
     })
 
-    vi.stubGlobal('api', {
-      onTaskProgress: vi.fn().mockImplementation((callback) => {
-        progressListener = callback
-        return () => {
-          progressListener = null
-        }
-      }),
-      taskGetStatus: vi
-        .fn()
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            id: 'task-1',
-            category: 'import',
-            status: 'running',
-            priority: 'normal',
-            progress: 100,
-            input: '{}',
-            retryCount: 0,
-            maxRetries: 0,
-            createdAt: '2026-03-21T00:00:00.000Z',
-            updatedAt: '2026-03-21T00:00:00.000Z',
-          },
-        })
-        .mockResolvedValue({
-          success: true,
-          data: {
-            id: 'task-1',
-            category: 'import',
-            status: 'completed',
-            priority: 'normal',
-            progress: 100,
-            input: '{}',
-            retryCount: 0,
-            maxRetries: 0,
-            createdAt: '2026-03-21T00:00:00.000Z',
-            updatedAt: '2026-03-21T00:00:01.000Z',
-            completedAt: '2026-03-21T00:00:02.000Z',
-          },
-        }),
-      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: mockParsedTender }),
-      analysisImportTender: vi.fn(),
-      taskCancel: vi.fn(),
-    })
+    stubApi()
   })
 
   afterEach(() => {
@@ -148,5 +148,121 @@ describe('useAnalysisTaskMonitor', () => {
     })
 
     expect(window.api.taskGetStatus).toHaveBeenCalledWith({ taskId: 'task-1' })
+  })
+
+  it('treats completed addendum tasks as success without inspecting progress text', async () => {
+    stubApi({
+      taskGetStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          id: 'addendum-task-1',
+          category: 'import',
+          status: 'completed',
+          priority: 'normal',
+          progress: 100,
+          input: '{}',
+          retryCount: 0,
+          maxRetries: 0,
+          createdAt: '2026-03-21T00:00:00.000Z',
+          updatedAt: '2026-03-21T00:00:01.000Z',
+          completedAt: '2026-03-21T00:00:02.000Z',
+        },
+      }),
+    })
+    useAnalysisStore.setState({
+      projects: {
+        'proj-1': makeProjectState({
+          importTaskId: null,
+          taskStatus: null,
+          addendumImportTaskId: 'addendum-task-1',
+          addendumImportProgress: 95,
+          addendumImportMessage: '追溯映射更新失败，请手动重新生成矩阵',
+        }),
+      },
+    })
+
+    renderHook(() => useAnalysisTaskMonitor())
+
+    await act(async () => {
+      progressListener?.({
+        taskId: 'addendum-task-1',
+        progress: 100,
+        message: '追溯映射更新失败，请手动重新生成矩阵',
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.api.analysisGetRequirements).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    expect(window.api.analysisGetMatrix).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    expect(window.api.analysisGetMatrixStats).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    expect(messageSuccess).toHaveBeenCalledWith('补遗导入完成')
+    expect(messageError).not.toHaveBeenCalled()
+
+    const state = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+    expect(state.addendumImportTaskId).toBeNull()
+    expect(state.addendumImportMessage).toBe('补遗导入完成')
+  })
+
+  it('treats remapping failures as failed addendum tasks and never shows a success toast', async () => {
+    const remappingError = '追溯映射更新失败: traceability down，请手动重新生成矩阵'
+
+    stubApi({
+      taskGetStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          id: 'addendum-task-1',
+          category: 'import',
+          status: 'failed',
+          priority: 'normal',
+          progress: 100,
+          input: '{}',
+          error: remappingError,
+          retryCount: 0,
+          maxRetries: 0,
+          createdAt: '2026-03-21T00:00:00.000Z',
+          updatedAt: '2026-03-21T00:00:01.000Z',
+          completedAt: '2026-03-21T00:00:02.000Z',
+        },
+      }),
+    })
+    useAnalysisStore.setState({
+      projects: {
+        'proj-1': makeProjectState({
+          importTaskId: null,
+          taskStatus: null,
+          addendumImportTaskId: 'addendum-task-1',
+          addendumImportProgress: 95,
+          addendumImportMessage: '正在重新生成追溯映射...',
+        }),
+      },
+    })
+
+    renderHook(() => useAnalysisTaskMonitor())
+
+    await act(async () => {
+      progressListener?.({
+        taskId: 'addendum-task-1',
+        progress: 100,
+        message: remappingError,
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.api.analysisGetRequirements).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    expect(window.api.analysisGetMatrix).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    expect(window.api.analysisGetMatrixStats).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    expect(messageSuccess).not.toHaveBeenCalled()
+    expect(messageError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: `补遗导入失败：${remappingError}`,
+        duration: 0,
+      })
+    )
+
+    const state = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+    expect(state.addendumImportTaskId).toBeNull()
+    expect(state.addendumImportError).toBe(remappingError)
   })
 })

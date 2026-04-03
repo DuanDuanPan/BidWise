@@ -438,18 +438,13 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
         seedGenerationTaskId: taskKind === 'seed' ? null : projectState.seedGenerationTaskId,
         seedGenerationLoading: taskKind === 'seed' ? false : projectState.seedGenerationLoading,
         seedGenerationError: taskKind === 'seed' ? error : projectState.seedGenerationError,
-        matrixGenerationTaskId:
-          taskKind === 'matrix' ? null : projectState.matrixGenerationTaskId,
+        matrixGenerationTaskId: taskKind === 'matrix' ? null : projectState.matrixGenerationTaskId,
         matrixGenerationLoading:
           taskKind === 'matrix' ? false : projectState.matrixGenerationLoading,
-        matrixGenerationError:
-          taskKind === 'matrix' ? error : projectState.matrixGenerationError,
-        addendumImportTaskId:
-          taskKind === 'addendum' ? null : projectState.addendumImportTaskId,
-        addendumImportLoading:
-          taskKind === 'addendum' ? false : projectState.addendumImportLoading,
-        addendumImportError:
-          taskKind === 'addendum' ? error : projectState.addendumImportError,
+        matrixGenerationError: taskKind === 'matrix' ? error : projectState.matrixGenerationError,
+        addendumImportTaskId: taskKind === 'addendum' ? null : projectState.addendumImportTaskId,
+        addendumImportLoading: taskKind === 'addendum' ? false : projectState.addendumImportLoading,
+        addendumImportError: taskKind === 'addendum' ? error : projectState.addendumImportError,
       })),
     }))
   },
@@ -1244,24 +1239,18 @@ export const useAnalysisStore = create<AnalysisStore>((set) => ({
     const statsRes = await window.api.analysisGetMatrixStats({ projectId })
     const reqsRes = await window.api.analysisGetRequirements({ projectId })
 
-    set((state) => {
-      const prev = getAnalysisProjectState(state, projectId)
-      // Preserve the backend's progress message (may contain remapping failure note)
-      const completionMessage = prev.addendumImportMessage || '补遗导入完成'
-
-      return {
-        projects: updateProjectState(state.projects, projectId, (p) => ({
-          ...p,
-          traceabilityMatrix: matrixRes.success ? matrixRes.data : p.traceabilityMatrix,
-          traceabilityStats: statsRes.success ? statsRes.data : p.traceabilityStats,
-          requirements: reqsRes.success ? reqsRes.data : p.requirements,
-          addendumImportTaskId: null,
-          addendumImportProgress: 100,
-          addendumImportMessage: completionMessage,
-          addendumImportLoading: false,
-          addendumImportError: null,
-        })),
-      }
-    })
+    set((state) => ({
+      projects: updateProjectState(state.projects, projectId, (prev) => ({
+        ...prev,
+        traceabilityMatrix: matrixRes.success ? matrixRes.data : prev.traceabilityMatrix,
+        traceabilityStats: statsRes.success ? statsRes.data : prev.traceabilityStats,
+        requirements: reqsRes.success ? reqsRes.data : prev.requirements,
+        addendumImportTaskId: null,
+        addendumImportProgress: 100,
+        addendumImportMessage: '补遗导入完成',
+        addendumImportLoading: false,
+        addendumImportError: null,
+      })),
+    }))
   },
 }))

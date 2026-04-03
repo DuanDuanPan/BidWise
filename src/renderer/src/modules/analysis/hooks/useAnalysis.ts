@@ -137,12 +137,7 @@ export function useAnalysisTaskMonitor(): void {
             message.success('追溯矩阵生成完成')
           } else if (kind === 'addendum') {
             await setAddendumImportCompleted(projectId)
-            const freshAddendum = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
-            if (freshAddendum.addendumImportMessage?.includes('失败')) {
-              message.warning(freshAddendum.addendumImportMessage)
-            } else {
-              message.success('补遗导入完成')
-            }
+            message.success('补遗导入完成')
           }
           clearTaskTracking(taskId)
           return

@@ -15,19 +15,26 @@ import type {
 
 function mockApi(overrides: Record<string, unknown> = {}): void {
   vi.stubGlobal('api', {
-    analysisGenerateMatrix: vi.fn<() => Promise<ApiResponse<GenerateMatrixResult>>>()
+    analysisGenerateMatrix: vi
+      .fn<() => Promise<ApiResponse<GenerateMatrixResult>>>()
       .mockResolvedValue({ success: true, data: { taskId: 'matrix-task-1' } }),
-    analysisGetMatrix: vi.fn<() => Promise<ApiResponse<TraceabilityMatrix | null>>>()
+    analysisGetMatrix: vi
+      .fn<() => Promise<ApiResponse<TraceabilityMatrix | null>>>()
       .mockResolvedValue({ success: true, data: null }),
-    analysisGetMatrixStats: vi.fn<() => Promise<ApiResponse<TraceabilityStats | null>>>()
+    analysisGetMatrixStats: vi
+      .fn<() => Promise<ApiResponse<TraceabilityStats | null>>>()
       .mockResolvedValue({ success: true, data: null }),
-    analysisCreateLink: vi.fn<() => Promise<ApiResponse<TraceabilityLink>>>()
+    analysisCreateLink: vi
+      .fn<() => Promise<ApiResponse<TraceabilityLink>>>()
       .mockResolvedValue({ success: true, data: {} as TraceabilityLink }),
-    analysisUpdateLink: vi.fn<() => Promise<ApiResponse<TraceabilityLink>>>()
+    analysisUpdateLink: vi
+      .fn<() => Promise<ApiResponse<TraceabilityLink>>>()
       .mockResolvedValue({ success: true, data: { projectId: 'proj-1' } as TraceabilityLink }),
-    analysisDeleteLink: vi.fn<() => Promise<ApiResponse<void>>>()
+    analysisDeleteLink: vi
+      .fn<() => Promise<ApiResponse<void>>>()
       .mockResolvedValue({ success: true, data: undefined }),
-    analysisImportAddendum: vi.fn<() => Promise<ApiResponse<ImportAddendumResult>>>()
+    analysisImportAddendum: vi
+      .fn<() => Promise<ApiResponse<ImportAddendumResult>>>()
       .mockResolvedValue({ success: true, data: { taskId: 'addendum-task-1' } }),
     analysisGetRequirements: vi.fn().mockResolvedValue({ success: true, data: null }),
     ...overrides,
@@ -106,13 +113,13 @@ describe('analysisStore traceability @story-2-8', () => {
       expect(state.addendumImportMessage).toBe('追溯映射更新失败，请手动重新生成矩阵')
     })
 
-    it('@p1 should keep the backend completion message when refreshing addendum artifacts', async () => {
+    it('@p1 should replace in-progress text with a success message when refreshing addendum artifacts', async () => {
       useAnalysisStore.setState({
         projects: {
           'proj-1': {
             ...getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1'),
             addendumImportTaskId: 'addendum-task-1',
-            addendumImportMessage: '追溯映射更新失败，请手动重新生成矩阵',
+            addendumImportMessage: '正在重新生成追溯映射...',
           },
         },
       })
@@ -121,7 +128,7 @@ describe('analysisStore traceability @story-2-8', () => {
 
       const state = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
       expect(state.addendumImportTaskId).toBeNull()
-      expect(state.addendumImportMessage).toBe('追溯映射更新失败，请手动重新生成矩阵')
+      expect(state.addendumImportMessage).toBe('补遗导入完成')
     })
   })
 
