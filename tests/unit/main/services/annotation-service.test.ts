@@ -161,6 +161,24 @@ describe('annotationService', () => {
         vi.useRealTimers()
       }
     })
+
+    it('throws the forced E2E annotation list error when configured', async () => {
+      const originalError = process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE
+      process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE = 'forced annotation list error'
+
+      try {
+        await expect(annotationService.list({ projectId: 'proj-1' })).rejects.toThrow(
+          'forced annotation list error'
+        )
+        expect(mocks.repoListByProject).not.toHaveBeenCalled()
+      } finally {
+        if (originalError === undefined) {
+          delete process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE
+        } else {
+          process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE = originalError
+        }
+      }
+    })
   })
 
   describe('sidecar sync', () => {

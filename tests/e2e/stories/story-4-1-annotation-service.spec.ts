@@ -57,7 +57,8 @@ async function launchApp(): Promise<LaunchContext> {
 /** Helper: create an annotation via IPC and return the record */
 async function createAnnotation(
   ctx: LaunchContext,
-  overrides: Record<string, string> = {}
+  overrides: Record<string, string> = {},
+  projectId = ctx.projectId
 ): Promise<{ id: string; status: string; content: string; projectId: string }> {
   const result = await ctx.window.evaluate(
     async (args: { pid: string; overrides: Record<string, string> }) => {
@@ -70,7 +71,7 @@ async function createAnnotation(
         author: args.overrides.author ?? 'e2e-user',
       })
     },
-    { pid: ctx.projectId, overrides }
+    { pid: projectId, overrides }
   )
 
   const data = result as {
@@ -81,10 +82,13 @@ async function createAnnotation(
 }
 
 /** Helper: navigate to project workspace and enter proposal-writing stage */
-async function navigateToProposalWriting(ctx: LaunchContext): Promise<void> {
+async function navigateToProposalWriting(
+  ctx: LaunchContext,
+  projectId = ctx.projectId
+): Promise<void> {
   await ctx.window.evaluate((id) => {
     window.location.hash = `#/project/${id}`
-  }, ctx.projectId)
+  }, projectId)
   await expect(ctx.window.getByTestId('project-workspace')).toBeVisible({ timeout: 30_000 })
 
   // Click proposal-writing stage in SOP bar
@@ -92,6 +96,16 @@ async function navigateToProposalWriting(ctx: LaunchContext): Promise<void> {
   if (await sopTab.isVisible().catch(() => false)) {
     await sopTab.click()
   }
+}
+
+async function setAnnotationListFailure(ctx: LaunchContext, message: string | null): Promise<void> {
+  await ctx.electronApp.evaluate((_electron, value) => {
+    if (value === null) {
+      delete process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE
+      return
+    }
+    process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE = value
+  }, message)
 }
 
 test.describe('Story 4.1 Annotation Service E2E', () => {
@@ -226,6 +240,51 @@ test.describe('Story 4.1 Annotation Service E2E', () => {
     // Verify items are rendered
     const items = ctx.window.getByTestId('annotation-item')
     await expect(items.first()).toBeVisible()
+  })
+
+  test('annotation panel shows error state and can recover after annotation:list failure', async () => {
+    const newProject = await ctx.window.evaluate(async () => {
+      const api = (window as unknown as { api: AnyApi }).api
+      return api.projectCreate({ name: 'E2E Annotation Failure Project' })
+    })
+    const failureProjectId = (newProject as { data: { id: string } }).data.id
+
+    await createAnnotation(ctx, { content: 'Failure recovery annotation' }, failureProjectId)
+
+    try {
+      await setAnnotationListFailure(ctx, 'forced annotation list failure')
+      await navigateToProposalWriting(ctx, failureProjectId)
+
+      const panel = ctx.window
+        .getByTestId('annotation-panel')
+        .or(ctx.window.getByTestId('annotation-icon-bar'))
+      await expect(panel).toBeVisible({ timeout: 15_000 })
+
+      const iconButton = ctx.window.getByTestId('annotation-icon-button')
+      if (await iconButton.isVisible().catch(() => false)) {
+        await iconButton.click()
+        await expect(ctx.window.getByTestId('annotation-flyout')).toBeVisible({ timeout: 5_000 })
+      }
+
+      await expect(ctx.window.getByTestId('annotation-loading')).toBeVisible({ timeout: 5_000 })
+      await expect(ctx.window.getByTestId('annotation-header-spinner')).toBeVisible({
+        timeout: 5_000,
+      })
+
+      await expect(ctx.window.getByTestId('annotation-error')).toBeVisible({ timeout: 15_000 })
+      await expect(ctx.window.getByText('forced annotation list failure')).toBeVisible()
+      await expect(ctx.window.getByTestId('annotation-loading')).toHaveCount(0)
+      await expect(ctx.window.getByTestId('annotation-header-spinner')).toHaveCount(0)
+
+      await setAnnotationListFailure(ctx, null)
+      await ctx.window.getByTestId('annotation-retry').click()
+
+      await expect(ctx.window.getByTestId('annotation-list')).toBeVisible({ timeout: 15_000 })
+      await expect(ctx.window.getByText('Failure recovery annotation')).toBeVisible()
+      await expect(ctx.window.getByTestId('annotation-error')).toHaveCount(0)
+    } finally {
+      await setAnnotationListFailure(ctx, null)
+    }
   })
 
   test('pending pill shows count of pending annotations', async () => {

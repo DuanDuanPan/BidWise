@@ -20,6 +20,11 @@ async function maybeDelayAnnotationListForE2E(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
+function getForcedAnnotationListErrorMessageForE2E(): string | null {
+  const message = process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE?.trim()
+  return message ? message : null
+}
+
 async function syncToSidecar(projectId: string): Promise<void> {
   try {
     const annotations = await annotationRepo.listByProject(projectId)
@@ -55,6 +60,11 @@ export const annotationService = {
 
   async list(input: ListAnnotationsInput): Promise<AnnotationRecord[]> {
     await maybeDelayAnnotationListForE2E()
+
+    const forcedErrorMessage = getForcedAnnotationListErrorMessageForE2E()
+    if (forcedErrorMessage) {
+      throw new Error(forcedErrorMessage)
+    }
 
     if (input.sectionId) {
       return annotationRepo.listBySection(input.projectId, input.sectionId)
