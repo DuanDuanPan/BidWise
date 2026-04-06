@@ -69,9 +69,6 @@ export class AgentOrchestrator {
         })
         throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
-        // Post-AI progress: annotating sources (Alpha placeholder — quick skip)
-        ctx.updateProgress(90, 'annotating-sources')
-
         const result: AgentExecuteResult = {
           content: response.content,
           usage: response.usage,
