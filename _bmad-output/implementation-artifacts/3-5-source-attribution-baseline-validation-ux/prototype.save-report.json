@@ -1,0 +1,16 @@
+{
+  "story_id": "3-5-source-attribution-baseline-validation",
+  "saved_at": "2026-04-06T12:00:00.000Z",
+  "pen_file": "_bmad-output/implementation-artifacts/3-5-source-attribution-baseline-validation-ux/prototype.pen",
+  "snapshot_file": "_bmad-output/implementation-artifacts/3-5-source-attribution-baseline-validation-ux/prototype.snapshot.json",
+  "children_count": 8,
+  "json_parse_verified": true,
+  "reopen_verified": true,
+  "exported_png_count": 4,
+  "screens": [
+    {"id": "iL3ky", "name": "3-5 Screen 1: Source Attribution Labels", "png": "exports/iL3ky.png"},
+    {"id": "XTBwX", "name": "3-5 Screen 2: Source Detail Popover", "png": "exports/XTBwX.png"},
+    {"id": "U9woN", "name": "3-5 Screen 3: Baseline Mismatch", "png": "exports/U9woN.png"},
+    {"id": "47OMH", "name": "3-5 Screen 4: Generation Progress", "png": "exports/47OMH.png"}
+  ]
+}

@@ -1,0 +1,26 @@
+story_id: 3-5-source-attribution-baseline-validation
+story_file: _bmad-output/implementation-artifacts/3-5-source-attribution-baseline-validation.md
+ux_spec: ux-spec.md
+pen_file: prototype.pen
+snapshot_file: prototype.snapshot.json
+save_report_file: prototype.save-report.json
+reference_exports:
+- exports/47OMH.png
+- exports/U9woN.png
+- exports/XTBwX.png
+- exports/iL3ky.png
+primary_frames:
+- Story 1.4 — 色彩系统
+- Story 1.4 — 字体系统与排版层级
+- Story 1.4 — 间距系统
+- Story 1.4 — 自定义图标集
+- '3-5 Screen 1: Source Attribution Labels'
+- '3-5 Screen 2: Source Detail Popover'
+- '3-5 Screen 3: Baseline Mismatch'
+- '3-5 Screen 4: Generation Progress'
+dev_lookup_order:
+- Read story file design notes
+- Read this manifest
+- Open reference PNG for visual fidelity
+- Open .pen for structure and interaction detail
+notes: PNG 用于视觉对齐参考，.pen 用于结构与交互细节查阅。
