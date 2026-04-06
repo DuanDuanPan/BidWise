@@ -77,12 +77,12 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
           continue
         }
         consumedKeys.add(key)
-        chapterGen.dismissError(status.target)
         // Trigger source attribution after successful replace
         if (sourceAttr) {
           void sourceAttr.triggerAttribution(status.target, status.generatedContent)
           void sourceAttr.triggerBaselineValidation(status.target, status.generatedContent)
         }
+        chapterGen.dismissError(status.target)
         continue
       }
 
@@ -109,12 +109,12 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
               return
             }
             consumedKeys.delete(key)
-            chapterGen.dismissError(status.target)
             // Trigger source attribution after conflict resolution replace
             if (sourceAttr && status.generatedContent) {
               void sourceAttr.triggerAttribution(status.target, status.generatedContent)
               void sourceAttr.triggerBaselineValidation(status.target, status.generatedContent)
             }
+            chapterGen.dismissError(status.target)
           },
           onCancel: () => {
             consumedKeys.delete(key)

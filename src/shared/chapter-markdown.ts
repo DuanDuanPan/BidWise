@@ -1,4 +1,6 @@
+import { stripMarkdown } from '@platejs/markdown'
 import type { ChapterHeadingLocator } from './chapter-types'
+import type { RenderableParagraph } from './source-attribution-types'
 
 const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
 const FENCE_RE = /^(\s*)(`{3,}|~{3,})/
@@ -233,6 +235,62 @@ export function isMarkdownSectionEmpty(markdown: string, locator: ChapterHeading
   const section = getMarkdownSection(markdown, locator)
   if (!section) return true
   return isMarkdownSectionContentEmpty(section.contentLines)
+}
+
+/**
+ * Extract renderable paragraphs from a markdown section's content.
+ * Alpha: only plain-text paragraphs and list items are annotatable blocks.
+ * Headings, blank lines, guidance blockquotes, and fenced code blocks are skipped.
+ */
+export function extractRenderableParagraphs(sectionMarkdown: string): RenderableParagraph[] {
+  const lines = sectionMarkdown.split('\n')
+  const paragraphs: RenderableParagraph[] = []
+  let paragraphIndex = 0
+  let inFence = false
+  let fenceChar: string | null = null
+  let fenceLen = 0
+
+  for (const line of lines) {
+    const fenceMatch = FENCE_RE.exec(line)
+    if (fenceMatch) {
+      const marker = fenceMatch[2]
+      const char = marker[0]
+      const len = marker.length
+      if (inFence) {
+        if (char === fenceChar && len >= fenceLen) {
+          inFence = false
+          fenceChar = null
+          fenceLen = 0
+        }
+      } else {
+        inFence = true
+        fenceChar = char
+        fenceLen = len
+      }
+      continue
+    }
+    if (inFence) continue
+
+    const trimmed = line.trim()
+
+    // Skip blank lines
+    if (trimmed === '') continue
+    // Skip headings
+    if (HEADING_RE.test(line)) continue
+    // Skip guidance blockquotes
+    if (GUIDANCE_RE.test(trimmed) && !trimmed.match(/^>\s*[-*+]\s/)) continue
+
+    // Plain-text paragraph or list item
+    const renderedText = stripMarkdown(trimmed).replace(/\s+/g, ' ').trim()
+    paragraphs.push({
+      paragraphIndex,
+      text: trimmed,
+      digest: createContentDigest(renderedText || trimmed),
+    })
+    paragraphIndex++
+  }
+
+  return paragraphs
 }
 
 export function replaceMarkdownSection(

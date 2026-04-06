@@ -35,11 +35,18 @@ export interface UseSourceAttributionReturn {
   getEditedParagraphs: (target: ChapterHeadingLocator, currentContent: string) => Set<number>
 }
 
-function locatorKey(locator: ChapterHeadingLocator): string {
+export function createSourceSectionKey(locator: ChapterHeadingLocator): string {
   return `${locator.level}:${locator.title}:${locator.occurrenceIndex}`
 }
 
-function parseLocatorKey(key: string): ChapterHeadingLocator | null {
+export function createParagraphLookupKey(
+  locator: ChapterHeadingLocator,
+  paragraphIndex: number
+): string {
+  return `${createSourceSectionKey(locator)}:${paragraphIndex}`
+}
+
+function parseSourceSectionKey(key: string): ChapterHeadingLocator | null {
   const parts = key.split(':')
   if (parts.length < 3) return null
   return {
@@ -154,7 +161,7 @@ export function useSourceAttribution(
 
   const triggerAttribution = useCallback(
     async (target: ChapterHeadingLocator, content: string) => {
-      const key = locatorKey(target)
+      const key = createSourceSectionKey(target)
 
       setSections((prev) => {
         const next = new Map(prev)
@@ -190,7 +197,7 @@ export function useSourceAttribution(
 
   const triggerBaselineValidation = useCallback(
     async (target: ChapterHeadingLocator, content: string) => {
-      const key = locatorKey(target)
+      const key = createSourceSectionKey(target)
 
       setSections((prev) => {
         const next = new Map(prev)
@@ -226,7 +233,7 @@ export function useSourceAttribution(
 
   const refreshSection = useCallback(
     async (target: ChapterHeadingLocator) => {
-      const key = locatorKey(target)
+      const key = createSourceSectionKey(target)
       const response = await window.api.sourceGetAttributions({ projectId, target })
       if (!response.success) return
 
@@ -244,14 +251,14 @@ export function useSourceAttribution(
 
   const getSectionState = useCallback(
     (target: ChapterHeadingLocator): SectionAttributionState | undefined => {
-      return sections.get(locatorKey(target))
+      return sections.get(createSourceSectionKey(target))
     },
     [sections]
   )
 
   const getEditedParagraphs = useCallback(
     (target: ChapterHeadingLocator, currentContent: string): Set<number> => {
-      const key = locatorKey(target)
+      const key = createSourceSectionKey(target)
       const state = sections.get(key)
       if (!state) return new Set()
 
@@ -270,8 +277,9 @@ export function useSourceAttribution(
     [sections]
   )
 
-  // Build a lookup map: current paragraph digest → { attribution, validation, isEdited }
-  // Enables SourceAwareParagraph to match by digest without knowing its section context.
+  // Build a lookup map keyed by section locator + paragraph index.
+  // SourceAwareParagraph resolves its section context from the editor tree to avoid
+  // collisions when different paragraphs render the same text.
   const paragraphLookup = useMemo(() => {
     const lookup = new Map<string, ParagraphLookupEntry>()
     if (!documentContent) return lookup
@@ -279,7 +287,7 @@ export function useSourceAttribution(
     for (const [key, state] of sections) {
       if (state.attributions.length === 0) continue
 
-      const locator = parseLocatorKey(key)
+      const locator = parseSourceSectionKey(key)
       if (!locator) continue
 
       const sectionContent = extractMarkdownSectionContent(documentContent, locator)
@@ -295,7 +303,7 @@ export function useSourceAttribution(
           state.baselineValidations.find((v) => v.paragraphIndex === attr.paragraphIndex) ?? null
         const isEdited = currentPara.digest !== attr.paragraphDigest
 
-        lookup.set(currentPara.digest, {
+        lookup.set(createParagraphLookupKey(locator, attr.paragraphIndex), {
           attribution: attr,
           validation: val,
           isEdited,
@@ -319,25 +327,25 @@ export function useSourceAttribution(
       const next = new Map(prev)
 
       for (const attr of meta.sourceAttributions) {
-        const key = locatorKey(attr.sectionLocator)
+        const key = createSourceSectionKey(attr.sectionLocator)
         const state = { ...(next.get(key) ?? defaultSectionState()) }
         if (state.attributionPhase === 'idle') {
           state.attributionPhase = 'completed'
         }
         state.attributions = meta.sourceAttributions.filter(
-          (a) => locatorKey(a.sectionLocator) === key
+          (a) => createSourceSectionKey(a.sectionLocator) === key
         )
         next.set(key, state)
       }
 
       for (const val of meta.baselineValidations) {
-        const key = locatorKey(val.sectionLocator)
+        const key = createSourceSectionKey(val.sectionLocator)
         const state = { ...(next.get(key) ?? defaultSectionState()) }
         if (state.baselinePhase === 'idle') {
           state.baselinePhase = 'completed'
         }
         state.baselineValidations = meta.baselineValidations.filter(
-          (v) => locatorKey(v.sectionLocator) === key
+          (v) => createSourceSectionKey(v.sectionLocator) === key
         )
         next.set(key, state)
       }

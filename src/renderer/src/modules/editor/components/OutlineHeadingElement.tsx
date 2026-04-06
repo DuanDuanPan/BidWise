@@ -86,16 +86,24 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
 
   const statusKey = locator ? locatorKey(locator) : null
   const status = statusKey ? chapterGen?.statuses.get(statusKey) : undefined
-  const isGenerating = status && !['completed', 'failed', 'conflicted'].includes(status.phase)
+  const isGenerating = Boolean(
+    status && !['completed', 'failed', 'conflicted'].includes(status.phase)
+  )
   const hasFailed = status?.phase === 'failed'
+  const sectionState = statusKey && sourceAttr ? sourceAttr.sections.get(statusKey) : undefined
+
+  const followUpProgress = useMemo(() => {
+    if (!sectionState) return null
+    if (sectionState.attributionPhase === 'running') return 92
+    if (sectionState.baselinePhase === 'running') return 96
+    return null
+  }, [sectionState])
 
   // Get projectId from the chapter generation context
   const projectId = chapterGen?.currentProjectId
 
   // Compute secondary note for baseline validation progress
   const secondaryNote = useMemo(() => {
-    if (!isGenerating || !statusKey || !sourceAttr) return undefined
-    const sectionState = sourceAttr.sections.get(statusKey)
     if (!sectionState) return undefined
 
     if (sectionState.attributionPhase === 'running') return '来源标注分析中...'
@@ -103,7 +111,12 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
     if (sectionState.attributionPhase === 'completed' && sectionState.baselinePhase === 'completed')
       return '来源标注与基线验证已完成'
     return undefined
-  }, [isGenerating, statusKey, sourceAttr])
+  }, [sectionState])
+
+  const progressPhase =
+    isGenerating && status ? status.phase : followUpProgress !== null ? 'annotating-sources' : null
+  const progressValue = isGenerating && status ? status.progress : followUpProgress
+  const isBusy = progressPhase !== null
 
   // Determine if chapter content is empty or guidance-only
   const chapterEmpty = useMemo(() => {
@@ -135,7 +148,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
     chapterGen.dismissError(locator)
   }, [chapterGen, locator])
 
-  const canAct = chapterGen && locator && projectId && !isGenerating && !hasFailed && level >= 2
+  const canAct = chapterGen && locator && projectId && !isBusy && !hasFailed && level >= 2
   const showGenerateButton = canAct && chapterEmpty
   const showRegenerateButton = canAct && !chapterEmpty
 
@@ -167,11 +180,11 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
         </span>
       </PlateElement>
 
-      {isGenerating && status && (
+      {progressPhase !== null && progressValue !== null && (
         <div contentEditable={false} className="my-2">
           <ChapterGenerationProgress
-            phase={status.phase}
-            progress={status.progress}
+            phase={progressPhase}
+            progress={progressValue}
             secondaryNote={secondaryNote}
           />
         </div>
