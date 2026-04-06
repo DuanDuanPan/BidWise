@@ -131,8 +131,13 @@ export function ProjectWorkspace(): React.JSX.Element {
     for (const [key, status] of chapterGen.statuses) {
       map.set(key, status.phase)
     }
+    for (const [key, state] of sourceAttribution.sections) {
+      if (state.attributionPhase === 'running' || state.baselinePhase === 'running') {
+        map.set(key, 'annotating-sources')
+      }
+    }
     return map
-  }, [chapterGen.statuses])
+  }, [chapterGen.statuses, sourceAttribution.sections])
 
   if (loading && !currentProject) {
     return (
