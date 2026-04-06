@@ -49,6 +49,7 @@ async function launchStoryApp(existingHome?: string): Promise<LaunchContext> {
       LOCALAPPDATA: join(sandboxHome, 'AppData', 'Local'),
       XDG_CONFIG_HOME: join(sandboxHome, '.config'),
       XDG_DATA_HOME: join(sandboxHome, '.local', 'share'),
+      BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
     },
   })
 
@@ -58,6 +59,7 @@ async function launchStoryApp(existingHome?: string): Promise<LaunchContext> {
   await expect(window.getByTestId('project-kanban')).toBeVisible({ timeout: 30_000 })
 
   const userDataPath = await electronApp.evaluate(({ app }) => app.getPath('userData'))
+  expect(userDataPath.startsWith(sandboxHome)).toBe(true)
 
   return { electronApp, window, sandboxHome, userDataPath }
 }
