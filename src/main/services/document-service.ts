@@ -83,6 +83,8 @@ function buildDefaultMetadata(projectId: string, lastSavedAt: string): ProposalM
     projectId,
     annotations: [],
     scores: [],
+    sourceAttributions: [],
+    baselineValidations: [],
     lastSavedAt,
   }
 }
@@ -97,6 +99,8 @@ function normalizeMetadata(
     projectId,
     annotations: Array.isArray(meta?.annotations) ? meta.annotations : [],
     scores: Array.isArray(meta?.scores) ? meta.scores : [],
+    sourceAttributions: Array.isArray(meta?.sourceAttributions) ? meta.sourceAttributions : [],
+    baselineValidations: Array.isArray(meta?.baselineValidations) ? meta.baselineValidations : [],
     ...(meta?.sectionWeights !== undefined ? { sectionWeights: meta.sectionWeights } : {}),
     ...(meta?.templateId !== undefined ? { templateId: meta.templateId } : {}),
     lastSavedAt: meta?.lastSavedAt || lastSavedAt,
@@ -146,6 +150,12 @@ function parseMetadata(
   }
   if (metadata.lastSavedAt !== undefined && typeof metadata.lastSavedAt !== 'string') {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 lastSavedAt 必须是字符串`)
+  }
+  if (metadata.sourceAttributions !== undefined && !Array.isArray(metadata.sourceAttributions)) {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 sourceAttributions 必须是数组`)
+  }
+  if (metadata.baselineValidations !== undefined && !Array.isArray(metadata.baselineValidations)) {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 baselineValidations 必须是数组`)
   }
   if (metadata.sectionWeights !== undefined && !Array.isArray(metadata.sectionWeights)) {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 sectionWeights 必须是数组`)
@@ -336,7 +346,7 @@ export const documentService = {
       const rootPath = await getProjectRootPath(projectId)
       const metaPath = join(rootPath, 'proposal.meta.json')
       const current = await readMetadata(metaPath, projectId, new Date().toISOString())
-      const updated = updater(current)
+      const updated = normalizeMetadata(projectId, current.lastSavedAt, updater(current))
 
       const tmpSuffix = Date.now()
       const tmpPath = join(rootPath, `.proposal.meta.json.tmp.${tmpSuffix}`)

@@ -3,6 +3,7 @@ import { Skeleton, Alert, Button, Modal } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { useDocument } from '@modules/editor/hooks/useDocument'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
+import { useSourceAttributionContext } from '@modules/editor/context/useSourceAttributionContext'
 import { PlateEditor } from './PlateEditor'
 import type { ReplaceSectionFn } from './PlateEditor'
 
@@ -22,6 +23,7 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const chapterGen = useChapterGenerationContext()
   const chapterStatuses = chapterGen?.statuses
+  const sourceAttr = useSourceAttributionContext()
 
   const registerSyncFlush = useCallback((flush: (() => string) | null): void => {
     syncFlushRef.current = flush
@@ -39,6 +41,15 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   useEffect(() => {
     loadDocument(projectId)
   }, [projectId, loadDocument])
+
+  // Hydrate persisted source attributions from sidecar on mount
+  useEffect(() => {
+    if (sourceAttr) {
+      void sourceAttr.loadPersistedState()
+    }
+    // Only run on mount / projectId change, not when sourceAttr ref changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   // Watch for completed chapters and inject content into editor
   useEffect(() => {
@@ -66,6 +77,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
           continue
         }
         consumedKeys.add(key)
+        // Trigger source attribution after successful replace
+        if (sourceAttr) {
+          void sourceAttr.triggerAttribution(status.target, status.generatedContent)
+          void sourceAttr.triggerBaselineValidation(status.target, status.generatedContent)
+        }
         chapterGen.dismissError(status.target)
         continue
       }
@@ -93,6 +109,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
               return
             }
             consumedKeys.delete(key)
+            // Trigger source attribution after conflict resolution replace
+            if (sourceAttr && status.generatedContent) {
+              void sourceAttr.triggerAttribution(status.target, status.generatedContent)
+              void sourceAttr.triggerBaselineValidation(status.target, status.generatedContent)
+            }
             chapterGen.dismissError(status.target)
           },
           onCancel: () => {
@@ -108,7 +129,15 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
         consumedKeys.delete(key)
       }
     }
-  }, [chapterGen, chapterStatuses, content, loadedProjectId, projectId, replaceSectionVersion])
+  }, [
+    chapterGen,
+    chapterStatuses,
+    content,
+    loadedProjectId,
+    projectId,
+    replaceSectionVersion,
+    sourceAttr,
+  ])
 
   if (loading) {
     return (

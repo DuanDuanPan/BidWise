@@ -366,4 +366,46 @@ describe('AgentOrchestrator @story-2-2', () => {
       expect(mockCancel).toHaveBeenCalledWith('task-123')
     })
   })
+
+  describe('@story-3-5 global progress hardcode removal', () => {
+    it('@p0 should NOT call updateProgress with annotating-sources in executor', async () => {
+      mockEnqueue.mockResolvedValue('task-123')
+
+      let capturedExecutor: (ctx: unknown) => Promise<unknown>
+      mockExecute.mockImplementation(
+        async (_id: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return {}
+        }
+      )
+
+      await orchestrator.execute({
+        agentType: 'parse',
+        context: { rfpContent: 'test doc' },
+      })
+
+      mockAiProxyCall.mockResolvedValue({
+        content: 'AI response',
+        usage: { promptTokens: 100, completionTokens: 50 },
+        latencyMs: 500,
+        model: 'claude-sonnet-4-20250514',
+        provider: 'claude',
+      })
+
+      const mockProgress = vi.fn()
+      await capturedExecutor!({
+        taskId: 'task-123',
+        input: { rfpContent: 'test doc' },
+        signal: new AbortController().signal,
+        updateProgress: mockProgress,
+        setCheckpoint: vi.fn(),
+      })
+
+      // The orchestrator should NOT inject a global 'annotating-sources' stage
+      const progressCalls = mockProgress.mock.calls.map(
+        (call: unknown[]) => call[1] as string | undefined
+      )
+      expect(progressCalls).not.toContain('annotating-sources')
+    })
+  })
 })

@@ -27,7 +27,9 @@ import { DocumentOutlineTree } from '@modules/editor/components/DocumentOutlineT
 import { useDocumentOutline } from '@modules/editor/hooks/useDocumentOutline'
 import { useWordCount } from '@modules/editor/hooks/useWordCount'
 import { useChapterGeneration } from '@modules/editor/hooks/useChapterGeneration'
+import { useSourceAttribution } from '@modules/editor/hooks/useSourceAttribution'
 import { ChapterGenerationProvider } from '@modules/editor/context/ChapterGenerationContext'
+import { SourceAttributionProvider } from '@modules/editor/context/SourceAttributionContext'
 import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
@@ -130,6 +132,7 @@ export function ProjectWorkspace(): React.JSX.Element {
   const wordCount = useWordCount(documentContent)
   const showAutoSaveIndicator = isProposalWriting
   const chapterGen = useChapterGeneration(projectId ?? '')
+  const sourceAttribution = useSourceAttribution(projectId ?? '', documentContent)
 
   // Build chapter phase map for outline tree status icons
   const chapterPhases = useMemo(() => {
@@ -137,8 +140,13 @@ export function ProjectWorkspace(): React.JSX.Element {
     for (const [key, status] of chapterGen.statuses) {
       map.set(key, status.phase)
     }
+    for (const [key, state] of sourceAttribution.sections) {
+      if (state.attributionPhase === 'running' || state.baselinePhase === 'running') {
+        map.set(key, 'annotating-sources')
+      }
+    }
     return map
-  }, [chapterGen.statuses])
+  }, [chapterGen.statuses, sourceAttribution.sections])
 
   if (loading && !currentProject) {
     return (
@@ -167,118 +175,120 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   return (
     <ChapterGenerationProvider value={chapterGen}>
-      <div className="bg-bg-global flex h-screen flex-col" data-testid="project-workspace">
-        {/* Top nav bar — mirrors Kanban header style */}
-        <header className="border-border bg-bg-content flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="text-text-tertiary hover:bg-bg-global hover:text-brand flex cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-1 transition-colors"
-              onClick={() => navigate('/')}
-              aria-label="返回项目看板"
-              data-testid="back-to-kanban"
-            >
-              <ArrowLeftOutlined style={{ fontSize: 16 }} />
-            </button>
-            <div className="bg-brand flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white">
-              标
+      <SourceAttributionProvider value={sourceAttribution}>
+        <div className="bg-bg-global flex h-screen flex-col" data-testid="project-workspace">
+          {/* Top nav bar — mirrors Kanban header style */}
+          <header className="border-border bg-bg-content flex h-14 shrink-0 items-center justify-between border-b px-6">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="text-text-tertiary hover:bg-bg-global hover:text-brand flex cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-1 transition-colors"
+                onClick={() => navigate('/')}
+                aria-label="返回项目看板"
+                data-testid="back-to-kanban"
+              >
+                <ArrowLeftOutlined style={{ fontSize: 16 }} />
+              </button>
+              <div className="bg-brand flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white">
+                标
+              </div>
+              <span className="text-h4">BidWise 标智</span>
+              <span className="text-caption text-text-tertiary">
+                / {currentProject.customerName ?? ''}
+              </span>
+              <span className="text-h4">{currentProject.name}</span>
             </div>
-            <span className="text-h4">BidWise 标智</span>
-            <span className="text-caption text-text-tertiary">
-              / {currentProject.customerName ?? ''}
-            </span>
-            <span className="text-h4">{currentProject.name}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              type="text"
-              icon={<SearchOutlined />}
-              className="text-text-tertiary"
-              onClick={() => setCommandPaletteOpen(true)}
-              title={formatShortcut('Ctrl+K')}
-              aria-label="命令面板"
-              data-testid="search-btn"
-            />
-            <Button
-              type="text"
-              icon={<SettingOutlined />}
-              className="text-text-tertiary"
-              disabled
-              title="设置（即将推出）"
-              aria-label="设置（即将推出）"
-            />
-          </div>
-        </header>
-
-        {/* SOP Progress Bar */}
-        <SopProgressBar
-          currentStageKey={currentStageKey}
-          stageStatuses={stageStatuses}
-          onStageClick={navigateToStage}
-        />
-
-        {/* Three-column workspace layout */}
-        <WorkspaceLayout
-          left={
-            <OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline}>
-              {isProposalWriting ? (
-                <DocumentOutlineTree
-                  outline={outline}
-                  chapterPhases={chapterPhases}
-                  onNodeClick={(node) => {
-                    scrollToHeading(
-                      document.querySelector(
-                        '[data-editor-scroll-container="true"]'
-                      ) as HTMLElement | null,
-                      node
-                    )
-                  }}
-                />
-              ) : isSolutionDesign && outline.length > 0 ? (
-                <DocumentOutlineTree outline={outline} />
-              ) : undefined}
-            </OutlinePanel>
-          }
-          center={
-            currentStageKey === 'requirements-analysis' && projectId ? (
-              <AnalysisView projectId={projectId} />
-            ) : isSolutionDesign && projectId ? (
-              <SolutionDesignView
-                projectId={projectId}
-                onEnterProposalWriting={() => navigateToStage('proposal-writing')}
+            <div className="flex items-center gap-3">
+              <Button
+                type="text"
+                icon={<SearchOutlined />}
+                className="text-text-tertiary"
+                onClick={() => setCommandPaletteOpen(true)}
+                title={formatShortcut('Ctrl+K')}
+                aria-label="命令面板"
+                data-testid="search-btn"
               />
-            ) : isProposalWriting && projectId ? (
-              <EditorView projectId={projectId} />
-            ) : (
-              <StageGuidePlaceholder stageKey={currentStageKey} />
-            )
-          }
-          right={
-            <AnnotationPanel
-              collapsed={sidebarCollapsed}
-              isCompact={isCompact}
-              onToggle={toggleSidebar}
-              projectId={isProposalWriting ? projectId : undefined}
-            />
-          }
-          statusBar={
-            <StatusBar
-              currentStageName={currentStageName}
-              wordCount={showWordCount ? wordCount : undefined}
-              leftExtra={
-                showAutoSaveIndicator && projectId ? (
-                  <AutoSaveIndicator
-                    autoSave={autoSave}
-                    onRetry={() => {
-                      void saveDocument(projectId)
+              <Button
+                type="text"
+                icon={<SettingOutlined />}
+                className="text-text-tertiary"
+                disabled
+                title="设置（即将推出）"
+                aria-label="设置（即将推出）"
+              />
+            </div>
+          </header>
+
+          {/* SOP Progress Bar */}
+          <SopProgressBar
+            currentStageKey={currentStageKey}
+            stageStatuses={stageStatuses}
+            onStageClick={navigateToStage}
+          />
+
+          {/* Three-column workspace layout */}
+          <WorkspaceLayout
+            left={
+              <OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline}>
+                {isProposalWriting ? (
+                  <DocumentOutlineTree
+                    outline={outline}
+                    chapterPhases={chapterPhases}
+                    onNodeClick={(node) => {
+                      scrollToHeading(
+                        document.querySelector(
+                          '[data-editor-scroll-container="true"]'
+                        ) as HTMLElement | null,
+                        node
+                      )
                     }}
                   />
-                ) : undefined
-              }
-            />
-          }
-        />
-      </div>
+                ) : isSolutionDesign && outline.length > 0 ? (
+                  <DocumentOutlineTree outline={outline} />
+                ) : undefined}
+              </OutlinePanel>
+            }
+            center={
+              currentStageKey === 'requirements-analysis' && projectId ? (
+                <AnalysisView projectId={projectId} />
+              ) : isSolutionDesign && projectId ? (
+                <SolutionDesignView
+                  projectId={projectId}
+                  onEnterProposalWriting={() => navigateToStage('proposal-writing')}
+                />
+              ) : isProposalWriting && projectId ? (
+                <EditorView projectId={projectId} />
+              ) : (
+                <StageGuidePlaceholder stageKey={currentStageKey} />
+              )
+            }
+            right={
+              <AnnotationPanel
+                collapsed={sidebarCollapsed}
+                isCompact={isCompact}
+                onToggle={toggleSidebar}
+                projectId={isProposalWriting ? projectId : undefined}
+              />
+            }
+            statusBar={
+              <StatusBar
+                currentStageName={currentStageName}
+                wordCount={showWordCount ? wordCount : undefined}
+                leftExtra={
+                  showAutoSaveIndicator && projectId ? (
+                    <AutoSaveIndicator
+                      autoSave={autoSave}
+                      onRetry={() => {
+                        void saveDocument(projectId)
+                      }}
+                    />
+                  ) : undefined
+                }
+              />
+            }
+          />
+        </div>
+      </SourceAttributionProvider>
     </ChapterGenerationProvider>
   )
 }

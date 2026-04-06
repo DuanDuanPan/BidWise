@@ -8,9 +8,14 @@ import { CommandPaletteProvider } from '@renderer/shared/command-palette/Command
 import { commandRegistry } from '@renderer/shared/command-palette'
 import { useDocumentStore, useProjectStore } from '@renderer/stores'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
+import type { ChapterGenerationPhase, ChapterGenerationStatus } from '@shared/chapter-types'
+import type { SectionAttributionState } from '@modules/editor/hooks/useSourceAttribution'
 
 const mockNavigate = vi.fn()
 const mockScrollToHeading = vi.fn()
+let latestChapterPhases: Map<string, ChapterGenerationPhase> | undefined
+let mockChapterStatuses = new Map<string, ChapterGenerationStatus>()
+let mockSourceSections = new Map<string, SectionAttributionState>()
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
@@ -36,18 +41,48 @@ vi.mock('@modules/editor/components/DocumentOutlineTree', () => ({
   DocumentOutlineTree: ({
     outline,
     onNodeClick,
+    chapterPhases,
   }: {
     outline: Array<{ title: string; occurrenceIndex: number }>
     onNodeClick: (node: { title: string; occurrenceIndex: number }) => void
-  }) => (
-    <button
-      type="button"
-      data-testid="document-outline-tree"
-      onClick={() => onNodeClick(outline[0])}
-    >
-      outline:{outline.length}
-    </button>
-  ),
+    chapterPhases?: Map<string, ChapterGenerationPhase>
+  }) => {
+    latestChapterPhases = chapterPhases
+    return (
+      <button
+        type="button"
+        data-testid="document-outline-tree"
+        onClick={() => onNodeClick(outline[0])}
+      >
+        outline:{outline.length}
+      </button>
+    )
+  },
+}))
+
+vi.mock('@modules/editor/hooks/useChapterGeneration', () => ({
+  useChapterGeneration: vi.fn(() => ({
+    currentProjectId: 'p1',
+    statuses: mockChapterStatuses,
+    startGeneration: vi.fn(),
+    startRegeneration: vi.fn(),
+    retry: vi.fn(),
+    dismissError: vi.fn(),
+    getStatus: vi.fn(),
+  })),
+}))
+
+vi.mock('@modules/editor/hooks/useSourceAttribution', () => ({
+  useSourceAttribution: vi.fn(() => ({
+    sections: mockSourceSections,
+    paragraphLookup: new Map(),
+    triggerAttribution: vi.fn(),
+    triggerBaselineValidation: vi.fn(),
+    refreshSection: vi.fn(),
+    loadPersistedState: vi.fn(),
+    getSectionState: vi.fn(),
+    getEditedParagraphs: vi.fn(),
+  })),
 }))
 
 vi.mock('@modules/editor/lib/scrollToHeading', () => ({
@@ -119,6 +154,9 @@ function renderWorkspaceLifecycle(projectId = 'p1'): void {
 
 describe('@story-1-6 ProjectWorkspace', () => {
   beforeEach(() => {
+    latestChapterPhases = undefined
+    mockChapterStatuses = new Map()
+    mockSourceSections = new Map()
     // Reset Zustand store to prevent cross-test leakage
     useProjectStore.setState({
       currentProject: null,
@@ -256,6 +294,9 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
 
   beforeEach(() => {
     originalInnerWidth = window.innerWidth
+    latestChapterPhases = undefined
+    mockChapterStatuses = new Map()
+    mockSourceSections = new Map()
     // Set standard mode width so three-column layout renders fully
     Object.defineProperty(window, 'innerWidth', {
       writable: true,
@@ -377,6 +418,33 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
 
     expect(await screen.findByTestId('document-outline-tree')).toHaveTextContent('outline:1')
     expect(screen.queryByTestId('outline-panel-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('@story-3-5 @p0 projects follow-up source attribution work into outline chapter phases', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
+    useDocumentStore.setState({ content: '## 系统架构设计\n\nAI 生成内容\n' })
+    mockSourceSections = new Map([
+      [
+        '2:系统架构设计:0',
+        {
+          attributions: [],
+          baselineValidations: [],
+          attributionPhase: 'completed',
+          baselinePhase: 'running',
+        },
+      ],
+    ])
+
+    renderWorkspace()
+
+    await screen.findByTestId('document-outline-tree')
+    expect(latestChapterPhases?.get('2:系统架构设计:0')).toBe('annotating-sources')
   })
 
   it('@story-3-2 @p1 clicks outline node and forwards container + node to scrollToHeading', async () => {

@@ -82,7 +82,13 @@ export interface ProviderConfig {
 // ─── Agent Orchestrator types (Story 2.2) ───
 
 /** Alpha agent types — Beta extends with 'adversarial' | 'scoring' | 'gap' */
-export type AgentType = 'parse' | 'generate' | 'extract' | 'seed'
+export type AgentType =
+  | 'parse'
+  | 'generate'
+  | 'extract'
+  | 'seed'
+  | 'attribute-sources'
+  | 'validate-baseline'
 
 /** Task status state machine */
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'

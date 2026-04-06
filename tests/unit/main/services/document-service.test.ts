@@ -230,6 +230,8 @@ describe('documentService @story-3-1', () => {
         projectId: 'proj-1',
         annotations: [],
         scores: [],
+        sourceAttributions: [],
+        baselineValidations: [],
         lastSavedAt: '2026-03-21T10:00:00.000Z',
       }
       mockReadFile.mockResolvedValue(JSON.stringify(meta))
@@ -248,6 +250,8 @@ describe('documentService @story-3-1', () => {
       expect(result.projectId).toBe('proj-1')
       expect(result.annotations).toEqual([])
       expect(result.scores).toEqual([])
+      expect(result.sourceAttributions).toEqual([])
+      expect(result.baselineValidations).toEqual([])
     })
 
     it('throws when metadata JSON is invalid', async () => {
@@ -256,6 +260,96 @@ describe('documentService @story-3-1', () => {
       await expect(documentService.getMetadata('proj-1')).rejects.toMatchObject({
         code: 'PARSE',
       })
+    })
+
+    it('@story-3-5 preserves sourceAttributions and baselineValidations from existing metadata', async () => {
+      const existingMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        sourceAttributions: [{ id: 'sa-1', paragraphIndex: 0, sourceType: 'ai-inference' }],
+        baselineValidations: [{ id: 'bv-1', paragraphIndex: 0, matched: true }],
+        lastSavedAt: '2026-04-06T00:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+
+      const result = await documentService.getMetadata('proj-1')
+
+      expect(result.sourceAttributions).toHaveLength(1)
+      expect(result.sourceAttributions[0].id).toBe('sa-1')
+      expect(result.baselineValidations).toHaveLength(1)
+      expect(result.baselineValidations[0].id).toBe('bv-1')
+    })
+
+    it('@story-3-5 defaults new fields to empty arrays for legacy metadata', async () => {
+      const legacyMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        lastSavedAt: '2026-04-06T00:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(legacyMeta))
+
+      const result = await documentService.getMetadata('proj-1')
+
+      expect(result.sourceAttributions).toEqual([])
+      expect(result.baselineValidations).toEqual([])
+    })
+  })
+
+  describe('@story-3-5 updateMetadata', () => {
+    it('should atomically update metadata with updater function', async () => {
+      const existingMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        sourceAttributions: [],
+        baselineValidations: [],
+        lastSavedAt: '2026-04-06T00:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      const result = await documentService.updateMetadata('proj-1', (meta) => ({
+        ...meta,
+        sourceAttributions: [
+          { id: 'sa-1', paragraphIndex: 0, sourceType: 'ai-inference' } as never,
+        ],
+      }))
+
+      expect(result.sourceAttributions).toHaveLength(1)
+      expect(mockWriteFile).toHaveBeenCalled()
+      expect(mockRename).toHaveBeenCalled()
+    })
+
+    it('should preserve existing fields when updating', async () => {
+      const existingMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        sourceAttributions: [],
+        baselineValidations: [],
+        sectionWeights: [{ sectionTitle: 'test', weight: 0.5 }],
+        templateId: 'tpl-1',
+        lastSavedAt: '2026-04-06T00:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      const result = await documentService.updateMetadata('proj-1', (meta) => ({
+        ...meta,
+        baselineValidations: [{ id: 'bv-1', matched: false } as never],
+      }))
+
+      expect(result.sectionWeights).toEqual([{ sectionTitle: 'test', weight: 0.5 }])
+      expect(result.templateId).toBe('tpl-1')
+      expect(result.annotations).toEqual([])
     })
   })
 

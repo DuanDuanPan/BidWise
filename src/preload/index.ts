@@ -152,6 +152,15 @@ const requestApi = {
 
   annotationList: (input: IpcChannelMap['annotation:list']['input']) =>
     typedInvoke(IPC_CHANNELS.ANNOTATION_LIST, input),
+
+  sourceAttribute: (input: IpcChannelMap['source:attribute']['input']) =>
+    typedInvoke(IPC_CHANNELS.SOURCE_ATTRIBUTE, input),
+
+  sourceValidateBaseline: (input: IpcChannelMap['source:validate-baseline']['input']) =>
+    typedInvoke(IPC_CHANNELS.SOURCE_VALIDATE_BASELINE, input),
+
+  sourceGetAttributions: (input: IpcChannelMap['source:get-attributions']['input']) =>
+    typedInvoke(IPC_CHANNELS.SOURCE_GET_ATTRIBUTIONS, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

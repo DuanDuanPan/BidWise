@@ -6,6 +6,9 @@ import { EditorView } from '@modules/editor/components/EditorView'
 const mockLoadDocument = vi.fn().mockResolvedValue(undefined)
 const mockDismissError = vi.fn()
 const mockReplaceSection = vi.fn(() => true)
+const mockTriggerAttribution = vi.fn().mockResolvedValue(undefined)
+const mockTriggerBaselineValidation = vi.fn().mockResolvedValue(undefined)
+const mockLoadPersistedState = vi.fn().mockResolvedValue(undefined)
 
 let mockLoading = false
 let mockError: string | null = null
@@ -18,6 +21,7 @@ let mockChapterGen: {
 let latestReplaceSectionReady:
   | ((fn: ((target: unknown, markdownContent: string) => boolean) | null) => void)
   | null = null
+let mockSourceAttr: Record<string, unknown> | null = null
 
 vi.mock('@renderer/stores', () => ({
   useDocumentStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
@@ -43,6 +47,10 @@ vi.mock('@modules/editor/context/useChapterGenerationContext', () => ({
   useChapterGenerationContext: vi.fn(() => mockChapterGen),
 }))
 
+vi.mock('@modules/editor/context/useSourceAttributionContext', () => ({
+  useSourceAttributionContext: vi.fn(() => mockSourceAttr),
+}))
+
 vi.mock('@modules/editor/components/PlateEditor', () => ({
   PlateEditor: ({
     projectId,
@@ -66,9 +74,14 @@ describe('@story-3-1 EditorView', () => {
     mockContent = ''
     mockLoadedProjectId = 'proj-1'
     mockChapterGen = null
+    mockSourceAttr = null
     latestReplaceSectionReady = null
     mockReplaceSection.mockReset()
     mockReplaceSection.mockReturnValue(true)
+    mockTriggerAttribution.mockReset()
+    mockTriggerBaselineValidation.mockReset()
+    mockLoadPersistedState.mockReset()
+    mockLoadPersistedState.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -143,6 +156,50 @@ describe('@story-3-1 EditorView', () => {
       expect(mockReplaceSection).toHaveBeenCalledWith(target, 'AI 生成内容')
       expect(mockDismissError).toHaveBeenCalledWith(target)
     })
+  })
+
+  it('@story-3-5 starts attribution and baseline follow-up before dismissing completed status', async () => {
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    mockContent = '## 系统架构设计\n\n> 请描述系统架构\n'
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: 'AI 生成内容',
+            progress: 100,
+            taskId: 'task-1',
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+    mockSourceAttr = {
+      loadPersistedState: mockLoadPersistedState,
+      triggerAttribution: mockTriggerAttribution,
+      triggerBaselineValidation: mockTriggerBaselineValidation,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      expect(mockTriggerAttribution).toHaveBeenCalledWith(target, 'AI 生成内容')
+      expect(mockTriggerBaselineValidation).toHaveBeenCalledWith(target, 'AI 生成内容')
+      expect(mockDismissError).toHaveBeenCalledWith(target)
+    })
+
+    expect(mockTriggerAttribution.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDismissError.mock.invocationCallOrder[0]
+    )
+    expect(mockTriggerBaselineValidation.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDismissError.mock.invocationCallOrder[0]
+    )
   })
 
   it('@story-3-4 opens the conflict modal only once for the same chapter', async () => {

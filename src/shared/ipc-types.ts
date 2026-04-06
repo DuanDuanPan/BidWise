@@ -61,6 +61,13 @@ import type {
   DeleteAnnotationInput,
   ListAnnotationsInput,
 } from './annotation-types'
+import type {
+  AttributeSourcesInput,
+  ValidateBaselineInput,
+  GetSourceAttributionsInput,
+  SourceTaskOutput,
+  GetSourceAttributionsOutput,
+} from './source-attribution-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -177,6 +184,9 @@ export const IPC_CHANNELS = {
   ANNOTATION_UPDATE: 'annotation:update',
   ANNOTATION_DELETE: 'annotation:delete',
   ANNOTATION_LIST: 'annotation:list',
+  SOURCE_ATTRIBUTE: 'source:attribute',
+  SOURCE_VALIDATE_BASELINE: 'source:validate-baseline',
+  SOURCE_GET_ATTRIBUTIONS: 'source:get-attributions',
 } as const
 
 /** Filter for task:list queries */
@@ -239,6 +249,12 @@ export type IpcChannelMap = {
   'annotation:update': { input: UpdateAnnotationInput; output: AnnotationRecord }
   'annotation:delete': { input: DeleteAnnotationInput; output: void }
   'annotation:list': { input: ListAnnotationsInput; output: AnnotationRecord[] }
+  'source:attribute': { input: AttributeSourcesInput; output: SourceTaskOutput }
+  'source:validate-baseline': { input: ValidateBaselineInput; output: SourceTaskOutput }
+  'source:get-attributions': {
+    input: GetSourceAttributionsInput
+    output: GetSourceAttributionsOutput
+  }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

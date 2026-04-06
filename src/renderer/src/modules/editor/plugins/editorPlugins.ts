@@ -10,6 +10,7 @@ import {
   StrikethroughPlugin,
   UnderlinePlugin,
 } from '@platejs/basic-nodes/react'
+import { ParagraphPlugin } from '@platejs/core/react'
 import {
   BulletedListPlugin,
   ListItemContentPlugin,
@@ -25,8 +26,10 @@ import {
   OutlineHeadingElement,
   ChapterHeadingElement,
 } from '@modules/editor/components/OutlineHeadingElement'
+import { SourceAwareParagraph } from '@modules/editor/components/SourceAwareParagraph'
 
 export const editorPlugins = [
+  ParagraphPlugin.withComponent(SourceAwareParagraph),
   H1Plugin.withComponent(OutlineHeadingElement),
   H2Plugin.withComponent(ChapterHeadingElement),
   H3Plugin.withComponent(ChapterHeadingElement),
@@ -41,7 +44,7 @@ export const editorPlugins = [
   BulletedListPlugin,
   NumberedListPlugin,
   ListItemPlugin,
-  ListItemContentPlugin,
+  ListItemContentPlugin.withComponent(SourceAwareParagraph),
   TablePlugin,
   CodeBlockPlugin,
   CodeLinePlugin,

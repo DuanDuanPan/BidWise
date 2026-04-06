@@ -22,11 +22,13 @@ const PHASE_CONFIG: Record<
 interface ChapterGenerationProgressProps {
   phase: ChapterGenerationPhase
   progress: number
+  secondaryNote?: string
 }
 
 export function ChapterGenerationProgress({
   phase,
   progress,
+  secondaryNote,
 }: ChapterGenerationProgressProps): React.JSX.Element | null {
   if (phase === 'completed' || phase === 'failed' || phase === 'conflicted') return null
 
@@ -54,6 +56,15 @@ export function ChapterGenerationProgress({
         strokeColor="var(--color-brand)"
         data-testid="chapter-generation-progress-bar"
       />
+      {secondaryNote && (
+        <div
+          className="text-caption mt-1"
+          style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}
+          data-testid="chapter-generation-secondary-note"
+        >
+          {secondaryNote}
+        </div>
+      )}
       <div className="mt-3">
         <Skeleton active paragraph={{ rows: 3, width: ['100%', '80%', '60%'] }} title={false} />
       </div>
