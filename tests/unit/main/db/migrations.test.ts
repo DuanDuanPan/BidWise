@@ -8,6 +8,7 @@ import * as migration003 from '@main/db/migrations/003_create_tasks'
 import * as migration004 from '@main/db/migrations/004_create_requirements_scoring'
 import * as migration005 from '@main/db/migrations/005_create_mandatory_items'
 import * as migration006 from '@main/db/migrations/006_create_strategy_seeds'
+import * as migration007 from '@main/db/migrations/007_create_annotations'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -23,6 +24,7 @@ const migrations: Record<string, Migration> = {
   '004_create_requirements_scoring': migration004,
   '005_create_mandatory_items': migration005,
   '006_create_strategy_seeds': migration006,
+  '007_create_annotations': migration007,
 }
 
 describe('Database migrations', () => {
@@ -44,7 +46,7 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(6)
+    expect(results).toHaveLength(7)
     for (const result of results!) {
       expect(result.status).toBe('Success')
     }
@@ -55,6 +57,7 @@ describe('Database migrations', () => {
       '004_create_requirements_scoring',
       '005_create_mandatory_items',
       '006_create_strategy_seeds',
+      '007_create_annotations',
     ])
   })
 
@@ -118,7 +121,8 @@ describe('Database migrations', () => {
     const names = rows.rows.map((r) => r.name)
 
     expect(names).toContain('006_create_strategy_seeds')
-    expect(names).toHaveLength(6)
+    expect(names).toContain('007_create_annotations')
+    expect(names).toHaveLength(7)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {
@@ -169,6 +173,51 @@ describe('Database migrations', () => {
       expect(indexes.rows.some((index) => index.name === 'strategy_seeds_project_id_idx')).toBe(
         true
       )
+    } finally {
+      await rawDb.destroy()
+    }
+  })
+
+  it('should create annotations table with correct columns, defaults, and indexes', async () => {
+    const rawDb = new Kysely<DB>({
+      dialect: new SqliteDialect({ database: new Database(':memory:') }),
+    })
+
+    try {
+      const rawMigrator = new Migrator({
+        db: rawDb,
+        provider: { getMigrations: async () => migrations },
+      })
+      await rawMigrator.migrateToLatest()
+
+      const columns = await sql<{
+        name: string
+        type: string
+        notnull: number
+        dflt_value: string | null
+        pk: number
+      }>`PRAGMA table_info(annotations)`.execute(rawDb)
+
+      const colMap = new Map(columns.rows.map((c) => [c.name, c]))
+
+      expect(colMap.get('id')!.pk).toBe(1)
+      expect(colMap.get('id')!.type.toLowerCase()).toBe('text')
+      expect(colMap.get('project_id')!.notnull).toBe(1)
+      expect(colMap.get('section_id')!.notnull).toBe(1)
+      expect(colMap.get('type')!.notnull).toBe(1)
+      expect(colMap.get('content')!.notnull).toBe(1)
+      expect(colMap.get('author')!.notnull).toBe(1)
+      expect(colMap.get('status')!.notnull).toBe(1)
+      expect(colMap.get('status')!.dflt_value).toBe("'pending'")
+      expect(colMap.get('created_at')!.notnull).toBe(1)
+      expect(colMap.get('updated_at')!.notnull).toBe(1)
+
+      const indexes = await sql<{
+        name: string
+      }>`PRAGMA index_list(annotations)`.execute(rawDb)
+      const indexNames = indexes.rows.map((i) => i.name)
+      expect(indexNames).toContain('annotations_project_id_idx')
+      expect(indexNames).toContain('annotations_project_section_id_idx')
     } finally {
       await rawDb.destroy()
     }

@@ -258,4 +258,103 @@ describe('documentService @story-3-1', () => {
       })
     })
   })
+
+  describe('updateMetadata', () => {
+    it('reads current metadata, applies updater, and writes back atomically', async () => {
+      const existingMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [{ id: 'ann-1', content: 'test' }],
+        scores: [],
+        lastSavedAt: '2026-03-21T10:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      const result = await documentService.updateMetadata('proj-1', (current) => ({
+        ...current,
+        templateId: 'tpl-1',
+      }))
+
+      expect(result.templateId).toBe('tpl-1')
+      expect(result.annotations).toEqual([{ id: 'ann-1', content: 'test' }])
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('.proposal.meta.json.tmp'),
+        expect.stringContaining('"templateId": "tpl-1"'),
+        'utf-8'
+      )
+      expect(mockRename).toHaveBeenCalledWith(
+        expect.stringContaining('.proposal.meta.json.tmp'),
+        expect.stringContaining('proposal.meta.json')
+      )
+    })
+
+    it('throws DocumentSaveError when write fails', async () => {
+      mockReadFile.mockRejectedValue(createErrnoError('ENOENT'))
+      mockWriteFile.mockRejectedValue(new Error('disk full'))
+
+      await expect(documentService.updateMetadata('proj-1', (current) => current)).rejects.toThrow(
+        DocumentSaveError
+      )
+    })
+
+    it('preserves existing annotations when updating other fields', async () => {
+      const annotations = [
+        {
+          id: 'a1',
+          projectId: 'proj-1',
+          sectionId: 's1',
+          type: 'human',
+          content: 'note',
+          author: 'user',
+          status: 'pending',
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+        },
+      ]
+      const existingMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations,
+        scores: [],
+        lastSavedAt: '2026-03-21T10:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      const result = await documentService.updateMetadata('proj-1', (current) => ({
+        ...current,
+        lastSavedAt: '2026-04-06T00:00:00Z',
+      }))
+
+      expect(result.annotations).toEqual(annotations)
+    })
+  })
+
+  describe('save preserves annotations', () => {
+    it('does not drop existing annotations from metadata during save', async () => {
+      const existingMeta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [{ id: 'a1', content: 'preserved' }],
+        scores: [],
+        lastSavedAt: '2026-03-21T10:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      await documentService.save('proj-1', '# Content')
+
+      const metaWriteCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && (call[0] as string).includes('meta.json.tmp')
+      )
+      expect(metaWriteCall).toBeTruthy()
+      const writtenMeta = JSON.parse(metaWriteCall![1] as string)
+      expect(writtenMeta.annotations).toEqual([{ id: 'a1', content: 'preserved' }])
+    })
+  })
 })

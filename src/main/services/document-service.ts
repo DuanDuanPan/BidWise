@@ -320,4 +320,30 @@ export const documentService = {
     const metaPath = join(rootPath, 'proposal.meta.json')
     return readMetadata(metaPath, projectId, new Date().toISOString())
   },
+
+  async updateMetadata(
+    projectId: string,
+    updater: (current: ProposalMetadata) => ProposalMetadata
+  ): Promise<ProposalMetadata> {
+    const rootPath = await getProjectRootPath(projectId)
+    const metaPath = join(rootPath, 'proposal.meta.json')
+    const sequence = beginSave(projectId)
+    const current = await readMetadata(metaPath, projectId, new Date().toISOString())
+    const updated = updater(current)
+
+    try {
+      const tmpPath = join(rootPath, `.proposal.meta.json.tmp.${sequence}`)
+      await writeFile(tmpPath, JSON.stringify(updated, null, 2), 'utf-8')
+      if (!isLatestSave(projectId, sequence)) {
+        await cleanupTmpFile(tmpPath)
+        return updated
+      }
+      await rename(tmpPath, metaPath)
+    } catch (err) {
+      logger.error(`proposal.meta.json 更新失败: ${projectId}`, err)
+      throw new DocumentSaveError(`元数据更新失败: ${(err as Error).message}`, err)
+    }
+
+    return updated
+  },
 }

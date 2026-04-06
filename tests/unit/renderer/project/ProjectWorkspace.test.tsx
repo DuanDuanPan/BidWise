@@ -7,6 +7,7 @@ import { ProjectWorkspace } from '@modules/project/components/ProjectWorkspace'
 import { CommandPaletteProvider } from '@renderer/shared/command-palette/CommandPaletteProvider'
 import { commandRegistry } from '@renderer/shared/command-palette'
 import { useDocumentStore, useProjectStore } from '@renderer/stores'
+import { useAnnotationStore } from '@renderer/stores/annotationStore'
 
 const mockNavigate = vi.fn()
 const mockScrollToHeading = vi.fn()
@@ -131,6 +132,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
       error: null,
       autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
     })
+    useAnnotationStore.setState({ projects: {} })
     vi.stubGlobal('api', {
       projectGet: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
       projectUpdate: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
@@ -148,6 +150,10 @@ describe('@story-1-6 ProjectWorkspace', () => {
       chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
       agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
       documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
+      annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
     mockScrollToHeading.mockReset()
@@ -268,6 +274,7 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       error: null,
       autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
     })
+    useAnnotationStore.setState({ projects: {} })
     vi.stubGlobal('api', {
       projectGet: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
       projectUpdate: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
@@ -285,6 +292,10 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
       agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
       documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
+      annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
   })

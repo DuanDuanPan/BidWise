@@ -1,29 +1,173 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { CommentOutlined, RobotOutlined } from '@ant-design/icons'
-import { Badge, Tooltip } from 'antd'
+import { CommentOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
+import { Badge, Tooltip, Skeleton, Tag } from 'antd'
+import {
+  useProjectAnnotations,
+  usePendingAnnotationCount,
+} from '@renderer/modules/annotation/hooks/useAnnotation'
+import { formatRelativeTime } from '@renderer/shared/lib/format-time'
+import type { AnnotationRecord, AnnotationType, AnnotationStatus } from '@shared/annotation-types'
 
 interface AnnotationPanelProps {
   collapsed: boolean
   isCompact: boolean
   onToggle: () => void
-  /** Number of chapters currently being generated */
-  generatingCount?: number
+  projectId?: string
+}
+
+const TYPE_LABELS: Record<AnnotationType, string> = {
+  'ai-suggestion': 'AI 建议',
+  'asset-recommendation': '资产推荐',
+  'score-warning': '评分预警',
+  adversarial: '对抗攻击',
+  human: '人工批注',
+  'cross-role': '跨角色',
+}
+
+const TYPE_COLORS: Record<AnnotationType, string> = {
+  'ai-suggestion': 'blue',
+  'asset-recommendation': 'green',
+  'score-warning': 'orange',
+  adversarial: 'red',
+  human: 'purple',
+  'cross-role': 'cyan',
+}
+
+const STATUS_LABELS: Record<AnnotationStatus, string> = {
+  pending: '待处理',
+  accepted: '已采纳',
+  rejected: '已拒绝',
+  'needs-decision': '待决策',
+}
+
+const STATUS_COLORS: Record<AnnotationStatus, string> = {
+  pending: 'default',
+  accepted: 'success',
+  rejected: 'error',
+  'needs-decision': 'processing',
+}
+
+function AnnotationItem({ item }: { item: AnnotationRecord }): React.JSX.Element {
+  return (
+    <div
+      role="listitem"
+      className="flex flex-col gap-1 rounded-md p-3"
+      style={{ backgroundColor: 'var(--color-bg-global)' }}
+      data-testid="annotation-item"
+    >
+      <div className="flex items-center gap-1.5">
+        <Tag color={TYPE_COLORS[item.type]} style={{ margin: 0, fontSize: 11 }}>
+          {TYPE_LABELS[item.type]}
+        </Tag>
+        <Tag color={STATUS_COLORS[item.status]} style={{ margin: 0, fontSize: 11 }}>
+          {STATUS_LABELS[item.status]}
+        </Tag>
+      </div>
+      <p className="text-caption m-0 line-clamp-3" style={{ color: 'var(--color-text-primary)' }}>
+        {item.content}
+      </p>
+      <span className="text-caption" style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+        {item.author} · {formatRelativeTime(item.createdAt)}
+      </span>
+    </div>
+  )
+}
+
+function LoadingContent(): React.JSX.Element {
+  return (
+    <div className="flex flex-1 flex-col gap-3 p-4" data-testid="annotation-loading">
+      <Skeleton active paragraph={{ rows: 2 }} title={false} />
+      <Skeleton active paragraph={{ rows: 2 }} title={false} />
+      <Skeleton active paragraph={{ rows: 2 }} title={false} />
+      <p className="text-caption text-center" style={{ color: 'var(--color-text-tertiary)' }}>
+        正在加载批注数据...
+      </p>
+    </div>
+  )
+}
+
+function EmptyContent(): React.JSX.Element {
+  return (
+    <div
+      className="flex flex-1 flex-col items-center justify-center gap-2 p-4"
+      data-testid="annotation-empty"
+    >
+      <FileTextOutlined style={{ fontSize: 36, color: 'var(--color-text-quaternary)' }} />
+      <span className="text-body" style={{ color: 'var(--color-text-secondary)' }}>
+        本项目暂无批注
+      </span>
+      <p className="text-caption m-0 text-center" style={{ color: 'var(--color-text-tertiary)' }}>
+        批注将在 AI 生成、评分分析、对抗检测等流程中自动创建
+      </p>
+    </div>
+  )
+}
+
+function ListContent({ items }: { items: AnnotationRecord[] }): React.JSX.Element {
+  return (
+    <div role="list" className="flex flex-1 flex-col gap-2 overflow-y-auto p-4" data-testid="annotation-list">
+      {items.map((item) => (
+        <AnnotationItem key={item.id} item={item} />
+      ))}
+    </div>
+  )
+}
+
+function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element {
+  const { items, loading, loaded } = useProjectAnnotations(projectId ?? '')
+
+  if (!projectId) {
+    return <EmptyContent />
+  }
+  if (loading && !loaded) {
+    return <LoadingContent />
+  }
+  if (items.length === 0) {
+    return <EmptyContent />
+  }
+  return <ListContent items={items} />
+}
+
+function PendingPill({ projectId }: { projectId?: string }): React.JSX.Element | null {
+  const count = usePendingAnnotationCount(projectId ?? '')
+  if (!projectId || count === 0) return null
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+      style={{ backgroundColor: 'var(--color-brand)', color: '#fff' }}
+      data-testid="annotation-pending-pill"
+    >
+      {count} 待处理
+    </span>
+  )
+}
+
+function HeaderSpinner({ projectId }: { projectId?: string }): React.JSX.Element | null {
+  const loading = useProjectAnnotations(projectId ?? '').loading
+  if (!projectId || !loading) return null
+  return (
+    <LoadingOutlined
+      style={{ fontSize: 14, color: 'var(--color-brand)' }}
+      spin
+      data-testid="annotation-header-spinner"
+    />
+  )
 }
 
 export function AnnotationPanel({
   collapsed,
   isCompact,
   onToggle,
-  generatingCount = 0,
+  projectId,
 }: AnnotationPanelProps): React.JSX.Element {
   const [flyoutOpen, setFlyoutOpen] = useState(false)
   const flyoutRef = useRef<HTMLDivElement>(null)
   const iconBarRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const pendingCount = usePendingAnnotationCount(projectId ?? '')
 
   const closeFlyout = useCallback(() => {
     setFlyoutOpen(false)
-    // Return focus to trigger button
     triggerRef.current?.focus()
   }, [])
 
@@ -99,7 +243,7 @@ export function AnnotationPanel({
               aria-label="智能批注"
               data-testid="annotation-icon-button"
             >
-              <Badge count={0} size="small" offset={[4, -4]}>
+              <Badge count={pendingCount} size="small" offset={[4, -4]}>
                 <CommentOutlined style={{ fontSize: 18, color: 'var(--color-text-tertiary)' }} />
               </Badge>
             </button>
@@ -131,18 +275,12 @@ export function AnnotationPanel({
                 style={{ height: 48, borderBottom: '1px solid var(--color-border)' }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-h4">智能批注</span>
-                  <Badge count={0} size="small" />
+                  <span className="text-h4">批注</span>
+                  <PendingPill projectId={projectId} />
+                  <HeaderSpinner projectId={projectId} />
                 </div>
               </div>
-              <div className="flex flex-1 items-center justify-center p-4">
-                <p
-                  className="text-caption text-center"
-                  style={{ color: 'var(--color-text-tertiary)' }}
-                >
-                  批注面板将在批注模块（Epic 4）中加载
-                </p>
-              </div>
+              <PanelContent projectId={projectId} />
             </div>
           </div>
         )}
@@ -206,8 +344,9 @@ export function AnnotationPanel({
           style={{ height: 48, borderBottom: '1px solid var(--color-border)' }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-h4">智能批注</span>
-            <Badge count={0} size="small" />
+            <span className="text-h4">批注</span>
+            <PendingPill projectId={projectId} />
+            <HeaderSpinner projectId={projectId} />
           </div>
           <button
             type="button"
@@ -222,24 +361,8 @@ export function AnnotationPanel({
           </button>
         </div>
 
-        {/* Content area — placeholder for Epic 4 */}
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-          {generatingCount > 0 && (
-            <div
-              className="flex w-full items-center gap-2 rounded-md p-3"
-              style={{ backgroundColor: 'var(--color-bg-global)' }}
-              data-testid="annotation-generating-summary"
-            >
-              <RobotOutlined style={{ color: 'var(--color-brand)' }} />
-              <span className="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
-                {generatingCount} 个章节正在生成...
-              </span>
-            </div>
-          )}
-          <p className="text-caption text-center" style={{ color: 'var(--color-text-tertiary)' }}>
-            批注面板将在批注模块（Epic 4）中加载
-          </p>
-        </div>
+        {/* Content area — loading / empty / list */}
+        <PanelContent projectId={projectId} />
       </div>
     </aside>
   )

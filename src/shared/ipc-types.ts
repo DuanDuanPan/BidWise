@@ -54,6 +54,13 @@ import type {
   ChapterRegenerateInput,
   ChapterGenerateOutput,
 } from './chapter-types'
+import type {
+  AnnotationRecord,
+  CreateAnnotationInput,
+  UpdateAnnotationInput,
+  DeleteAnnotationInput,
+  ListAnnotationsInput,
+} from './annotation-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -166,6 +173,10 @@ export const IPC_CHANNELS = {
   TEMPLATE_PERSIST_SKELETON: 'template:persist-skeleton',
   CHAPTER_GENERATE: 'chapter:generate',
   CHAPTER_REGENERATE: 'chapter:regenerate',
+  ANNOTATION_CREATE: 'annotation:create',
+  ANNOTATION_UPDATE: 'annotation:update',
+  ANNOTATION_DELETE: 'annotation:delete',
+  ANNOTATION_LIST: 'annotation:list',
 } as const
 
 /** Filter for task:list queries */
@@ -224,6 +235,10 @@ export type IpcChannelMap = {
   'template:persist-skeleton': { input: PersistSkeletonInput; output: PersistSkeletonOutput }
   'chapter:generate': { input: ChapterGenerateInput; output: ChapterGenerateOutput }
   'chapter:regenerate': { input: ChapterRegenerateInput; output: ChapterGenerateOutput }
+  'annotation:create': { input: CreateAnnotationInput; output: AnnotationRecord }
+  'annotation:update': { input: UpdateAnnotationInput; output: AnnotationRecord }
+  'annotation:delete': { input: DeleteAnnotationInput; output: void }
+  'annotation:list': { input: ListAnnotationsInput; output: AnnotationRecord[] }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

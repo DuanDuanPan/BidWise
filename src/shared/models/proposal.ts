@@ -1,4 +1,5 @@
 import type { SectionWeightEntry } from '../template-types'
+import type { AnnotationRecord } from '../annotation-types'
 
 /** 方案文档数据模型 */
 export interface ProposalDocument {
@@ -12,7 +13,7 @@ export interface ProposalDocument {
 export interface ProposalMetadata {
   version: string // schema 版本 "1.0"
   projectId: string
-  annotations: [] // Alpha 阶段空数组占位，Epic 4 填充
+  annotations: AnnotationRecord[]
   scores: [] // Alpha 阶段空数组占位，Epic 7 填充
   sectionWeights?: SectionWeightEntry[]
   templateId?: string

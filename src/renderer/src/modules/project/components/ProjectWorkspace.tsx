@@ -32,6 +32,7 @@ import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { useDocumentStore } from '@renderer/stores'
+import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
 
@@ -111,6 +112,14 @@ export function ProjectWorkspace(): React.JSX.Element {
   const autoSave = useDocumentStore((s) => s.autoSave)
   const saveDocument = useDocumentStore((s) => s.saveDocument)
   useWorkspaceKeyboard(toggleSidebar, toggleOutline)
+
+  // Load annotations when entering proposal-writing stage
+  const loadAnnotations = useAnnotationStore((s) => s.loadAnnotations)
+  useEffect(() => {
+    if (currentStageKey === 'proposal-writing' && projectId) {
+      void loadAnnotations(projectId)
+    }
+  }, [currentStageKey, projectId, loadAnnotations])
 
   const currentStageName = SOP_STAGES.find((s) => s.key === currentStageKey)?.label
   const isProposalWriting = currentStageKey === 'proposal-writing' && Boolean(projectId)
@@ -249,13 +258,7 @@ export function ProjectWorkspace(): React.JSX.Element {
               collapsed={sidebarCollapsed}
               isCompact={isCompact}
               onToggle={toggleSidebar}
-              generatingCount={
-                isProposalWriting
-                  ? [...chapterGen.statuses.values()].filter(
-                      (s) => !['completed', 'failed', 'conflicted'].includes(s.phase)
-                    ).length
-                  : 0
-              }
+              projectId={isProposalWriting ? projectId : undefined}
             />
           }
           statusBar={

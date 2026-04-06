@@ -83,6 +83,18 @@ export interface StrategySeedTable {
   updatedAt: string
 }
 
+export interface AnnotationTable {
+  id: string
+  projectId: string
+  sectionId: string
+  type: string
+  content: string
+  author: string
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -90,4 +102,5 @@ export interface DB {
   scoringModels: ScoringModelTable
   mandatoryItems: MandatoryItemTable
   strategySeeds: StrategySeedTable
+  annotations: AnnotationTable
 }

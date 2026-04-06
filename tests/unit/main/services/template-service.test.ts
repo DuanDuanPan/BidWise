@@ -25,6 +25,7 @@ const mockDocumentService = vi.hoisted(() => ({
   save: vi.fn(),
   getMetadata: vi.fn(),
   saveSync: vi.fn(),
+  updateMetadata: vi.fn(),
 }))
 vi.mock('@main/services/document-service', () => ({
   documentService: mockDocumentService,
@@ -216,11 +217,7 @@ describe('template-service @story-3-3', () => {
         lastSavedAt: '2026-03-30T01:00:00.000Z',
       })
       mockScoringExtractor.getScoringModel.mockResolvedValue(null)
-      mockProjectService.get.mockResolvedValue({
-        id: 'proj-1',
-        rootPath: '/projects/proj-1',
-      })
-      mockWriteFile.mockResolvedValue(undefined)
+      mockDocumentService.updateMetadata.mockResolvedValue({})
     })
 
     it('generates skeleton with correct structure', async () => {
@@ -329,12 +326,7 @@ describe('template-service @story-3-3', () => {
       mockDocumentService.save.mockResolvedValue({
         lastSavedAt: '2026-03-30T02:00:00.000Z',
       })
-      mockProjectService.get.mockResolvedValue({
-        id: 'proj-1',
-        rootPath: '/projects/proj-1',
-      })
-      mockReadFile.mockImplementation(() => '{}')
-      mockWriteFile.mockResolvedValue(undefined)
+      mockDocumentService.updateMetadata.mockResolvedValue({})
     })
 
     it('regenerates markdown and updates metadata', async () => {

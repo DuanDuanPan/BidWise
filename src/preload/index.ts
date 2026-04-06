@@ -140,6 +140,18 @@ const requestApi = {
 
   chapterRegenerate: (input: IpcChannelMap['chapter:regenerate']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_REGENERATE, input),
+
+  annotationCreate: (input: IpcChannelMap['annotation:create']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANNOTATION_CREATE, input),
+
+  annotationUpdate: (input: IpcChannelMap['annotation:update']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANNOTATION_UPDATE, input),
+
+  annotationDelete: (input: IpcChannelMap['annotation:delete']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANNOTATION_DELETE, input),
+
+  annotationList: (input: IpcChannelMap['annotation:list']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANNOTATION_LIST, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

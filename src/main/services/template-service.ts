@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { app } from 'electron'
-import { readFile, readdir, writeFile } from 'fs/promises'
+import { readFile, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError } from '@main/utils/errors'
@@ -19,7 +19,6 @@ import type {
   SectionWeightEntry,
 } from '@shared/template-types'
 import type { ScoringModel } from '@shared/analysis-types'
-import { projectService } from '@main/services/project-service'
 
 const logger = createLogger('template-service')
 
@@ -275,28 +274,12 @@ async function saveMetadata(
   sectionWeights: SectionWeightEntry[],
   templateId: string
 ): Promise<void> {
-  const project = await projectService.get(projectId)
-  if (!project.rootPath) return
-
-  const metaPath = join(project.rootPath, 'proposal.meta.json')
-  let existing: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(metaPath, 'utf-8')
-    existing = JSON.parse(raw) as Record<string, unknown>
-  } catch {
-    // File may not exist yet
-  }
-
-  const meta = {
-    ...existing,
-    version: (existing.version as string) || '1.0',
-    projectId,
+  await documentService.updateMetadata(projectId, (current) => ({
+    ...current,
     sectionWeights,
     templateId,
     lastSavedAt: new Date().toISOString(),
-  }
-
-  await writeFile(metaPath, JSON.stringify(meta, null, 2), 'utf-8')
+  }))
 }
 
 export const templateService = {

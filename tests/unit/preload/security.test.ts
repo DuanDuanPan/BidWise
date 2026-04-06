@@ -101,6 +101,10 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'templatePersistSkeleton',
       'chapterGenerate',
       'chapterRegenerate',
+      'annotationCreate',
+      'annotationUpdate',
+      'annotationDelete',
+      'annotationList',
       'onTaskProgress',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)

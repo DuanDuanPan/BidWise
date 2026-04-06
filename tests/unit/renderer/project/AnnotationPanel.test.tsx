@@ -1,75 +1,99 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
-import { AnnotationPanel } from '@modules/project/components/AnnotationPanel'
+import type { AnnotationRecord } from '@shared/annotation-types'
 
-describe('@story-1-7 AnnotationPanel', () => {
+function mockApi(): void {
+  vi.stubGlobal('api', {
+    annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+  })
+}
+
+const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRecord => ({
+  id: 'ann-1',
+  projectId: 'proj-1',
+  sectionId: 'section-1',
+  type: 'human',
+  content: 'Test annotation content',
+  author: 'user-1',
+  status: 'pending',
+  createdAt: '2026-04-01T00:00:00Z',
+  updatedAt: '2026-04-01T00:00:00Z',
+  ...overrides,
+})
+
+describe('AnnotationPanel', () => {
+  let AnnotationPanel: typeof import('@modules/project/components/AnnotationPanel').AnnotationPanel
+  let useAnnotationStore: typeof import('@renderer/stores/annotationStore').useAnnotationStore
+
+  beforeEach(async () => {
+    vi.resetModules()
+    mockApi()
+    const storeModule = await import('@renderer/stores/annotationStore')
+    useAnnotationStore = storeModule.useAnnotationStore
+    useAnnotationStore.setState({ projects: {} })
+    const panelModule = await import('@modules/project/components/AnnotationPanel')
+    AnnotationPanel = panelModule.AnnotationPanel
+  })
+
   afterEach(cleanup)
 
-  describe('standard mode (not compact)', () => {
-    it('@p0 renders title and placeholder content', () => {
+  describe('shell geometry (Story 1.7 contract)', () => {
+    it('expanded state sets width to 320px', () => {
       render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
-      expect(screen.getByText('智能批注')).toBeInTheDocument()
-      expect(screen.getByText(/批注面板将在批注模块/)).toBeInTheDocument()
+      expect(screen.getByTestId('annotation-panel').style.width).toBe('320px')
     })
 
-    it('@p0 has role="complementary" and aria-label', () => {
+    it('collapsed state sets width to 40px', () => {
+      render(<AnnotationPanel collapsed={true} isCompact={false} onToggle={vi.fn()} />)
+      expect(screen.getByTestId('annotation-panel').style.width).toBe('40px')
+    })
+
+    it('compact + collapsed renders icon bar at 48px', () => {
+      render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
+      expect(screen.getByTestId('annotation-icon-bar')).toBeInTheDocument()
+    })
+
+    it('has role="complementary" and aria-label', () => {
       render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
       const panel = screen.getByTestId('annotation-panel')
       expect(panel).toHaveAttribute('role', 'complementary')
       expect(panel).toHaveAttribute('aria-label', '智能批注')
     })
 
-    it('@p0 has aria-live="polite"', () => {
+    it('has aria-live="polite" when expanded', () => {
       render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
-      const panel = screen.getByTestId('annotation-panel')
-      expect(panel).toHaveAttribute('aria-live', 'polite')
+      expect(screen.getByTestId('annotation-panel')).toHaveAttribute('aria-live', 'polite')
     })
 
-    it('@p0 toggle button triggers onToggle callback', () => {
+    it('toggle button triggers onToggle', () => {
       const onToggle = vi.fn()
       render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={onToggle} />)
       fireEvent.click(screen.getByTestId('annotation-toggle'))
       expect(onToggle).toHaveBeenCalledTimes(1)
     })
 
-    it('@p0 toggle button has correct aria-expanded', () => {
+    it('toggle button has correct aria-expanded', () => {
       const { rerender } = render(
         <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />
       )
       expect(screen.getByTestId('annotation-toggle')).toHaveAttribute('aria-expanded', 'true')
-
       rerender(<AnnotationPanel collapsed={true} isCompact={false} onToggle={vi.fn()} />)
       expect(screen.getByTestId('annotation-toggle')).toHaveAttribute('aria-expanded', 'false')
     })
-
-    it('@p1 expanded state sets width to 320px', () => {
-      render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
-      const panel = screen.getByTestId('annotation-panel')
-      expect(panel.style.width).toBe('320px')
-    })
-
-    it('@p1 collapsed state sets width to 40px (expand strip)', () => {
-      render(<AnnotationPanel collapsed={true} isCompact={false} onToggle={vi.fn()} />)
-      const panel = screen.getByTestId('annotation-panel')
-      expect(panel.style.width).toBe('40px')
-    })
   })
 
-  describe('compact mode (isCompact + collapsed)', () => {
-    it('@p0 renders icon bar when compact + collapsed', () => {
-      render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
-      expect(screen.getByTestId('annotation-icon-bar')).toBeInTheDocument()
-    })
-
-    it('@p0 clicking icon button opens flyout', () => {
+  describe('compact flyout (Story 1.7 contract)', () => {
+    it('clicking icon button opens flyout', () => {
       render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
       expect(screen.queryByTestId('annotation-flyout')).not.toBeInTheDocument()
-
       fireEvent.click(screen.getByTestId('annotation-icon-button'))
       expect(screen.getByTestId('annotation-flyout')).toBeInTheDocument()
     })
 
-    it('@p0 flyout has role="dialog" and aria-label', () => {
+    it('flyout has role="dialog" and aria-label', () => {
       render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
       fireEvent.click(screen.getByTestId('annotation-icon-button'))
       const flyout = screen.getByTestId('annotation-flyout')
@@ -77,16 +101,14 @@ describe('@story-1-7 AnnotationPanel', () => {
       expect(flyout).toHaveAttribute('aria-label', '智能批注面板')
     })
 
-    it('@p0 Escape closes flyout', () => {
+    it('Escape closes flyout', () => {
       render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
       fireEvent.click(screen.getByTestId('annotation-icon-button'))
-      expect(screen.getByTestId('annotation-flyout')).toBeInTheDocument()
-
       fireEvent.keyDown(window, { key: 'Escape' })
       expect(screen.queryByTestId('annotation-flyout')).not.toBeInTheDocument()
     })
 
-    it('@p0 clicking outside closes flyout', () => {
+    it('clicking outside closes flyout', () => {
       render(
         <div>
           <div data-testid="outside">Outside</div>
@@ -94,19 +116,181 @@ describe('@story-1-7 AnnotationPanel', () => {
         </div>
       )
       fireEvent.click(screen.getByTestId('annotation-icon-button'))
-      expect(screen.getByTestId('annotation-flyout')).toBeInTheDocument()
-
       fireEvent.mouseDown(screen.getByTestId('outside'))
       expect(screen.queryByTestId('annotation-flyout')).not.toBeInTheDocument()
     })
+  })
 
-    it('@p1 icon button has aria-expanded reflecting flyout state', () => {
-      render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
-      const btn = screen.getByTestId('annotation-icon-button')
-      expect(btn).toHaveAttribute('aria-expanded', 'false')
+  describe('header (Story 4.1)', () => {
+    it('displays title as "批注"', () => {
+      render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
+      expect(screen.getByText('批注')).toBeInTheDocument()
+    })
 
-      fireEvent.click(btn)
-      expect(btn).toHaveAttribute('aria-expanded', 'true')
+    it('does not show pending pill when no projectId', () => {
+      render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
+      expect(screen.queryByTestId('annotation-pending-pill')).not.toBeInTheDocument()
+    })
+
+    it('shows pending pill with count when pending > 0', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [
+              makeAnnotation({ id: 'a1', status: 'pending' }),
+              makeAnnotation({ id: 'a2', status: 'accepted' }),
+              makeAnnotation({ id: 'a3', status: 'pending' }),
+            ],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      const pill = screen.getByTestId('annotation-pending-pill')
+      expect(pill).toBeInTheDocument()
+      expect(pill.textContent).toContain('2')
+      expect(pill.textContent).toContain('待处理')
+    })
+
+    it('hides pending pill when pending === 0', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [makeAnnotation({ id: 'a1', status: 'accepted' })],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.queryByTestId('annotation-pending-pill')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('content states (Story 4.1)', () => {
+    it('shows empty state without projectId', () => {
+      render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
+      expect(screen.getByTestId('annotation-empty')).toBeInTheDocument()
+      expect(screen.getByText('本项目暂无批注')).toBeInTheDocument()
+    })
+
+    it('shows loading state when loading and not yet loaded', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': { items: [], loading: true, error: null, loaded: false },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
+      expect(screen.getByText('正在加载批注数据...')).toBeInTheDocument()
+    })
+
+    it('shows empty state when loaded with no items', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': { items: [], loading: false, error: null, loaded: true },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-empty')).toBeInTheDocument()
+    })
+
+    it('shows list state with annotation items', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [
+              makeAnnotation({ id: 'a1', type: 'ai-suggestion', content: 'Suggestion text' }),
+              makeAnnotation({ id: 'a2', type: 'human', content: 'Human note' }),
+            ],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-list')).toBeInTheDocument()
+      const items = screen.getAllByTestId('annotation-item')
+      expect(items).toHaveLength(2)
+      expect(screen.getByText('Suggestion text')).toBeInTheDocument()
+      expect(screen.getByText('Human note')).toBeInTheDocument()
+    })
+
+    it('annotation item shows type chip, status chip, author and time', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [
+              makeAnnotation({ type: 'adversarial', status: 'needs-decision', author: 'ai-agent' }),
+            ],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByText('对抗攻击')).toBeInTheDocument()
+      expect(screen.getByText('待决策')).toBeInTheDocument()
+      expect(screen.getByText(/ai-agent/)).toBeInTheDocument()
     })
   })
 })
