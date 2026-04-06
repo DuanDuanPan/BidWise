@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-01  # story 2-7 done
+last_updated: 2026-04-06  # story 4-1 merged
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -76,15 +76,15 @@ development_status:
   3-2-editor-workspace-doc-outline: done
   3-3-template-driven-proposal-skeleton: done
   3-4-ai-chapter-generation: ready-for-dev
-  3-5-source-attribution-baseline-validation: backlog
+  3-5-source-attribution-baseline-validation: ready-for-dev
   3-6-writing-style-template: backlog
   3-7-drawio-embedded-editing: backlog
   3-8-mermaid-diagram-generation: backlog
   epic-3-retrospective: optional
 
   # ── Epic 4: 批注式人机协作 (4 stories) ──
-  epic-4: backlog
-  4-1-enabler-annotation-service: backlog
+  epic-4: in-progress
+  4-1-enabler-annotation-service: done
   4-2-annotation-card-color-coding: backlog
   4-3-smart-annotation-panel: backlog
   4-4-pending-decision-cross-role-notification: backlog
