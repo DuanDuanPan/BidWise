@@ -15,6 +15,7 @@ import type { ProposalDocument, ProposalMetadata } from '@shared/models/proposal
 
 const logger = createLogger('document-service')
 const latestSaveSequenceByProject = new Map<string, number>()
+const metadataLock = new Map<string, Promise<unknown>>()
 const DOCUMENT_VERSION = 1
 const METADATA_VERSION = '1.0'
 
@@ -204,6 +205,22 @@ function cleanupTmpFileSync(tmpPath: string): void {
   }
 }
 
+async function withMetadataLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+  const previous = metadataLock.get(projectId) ?? Promise.resolve()
+  let releaseLock!: () => void
+  const next = new Promise<void>((resolve) => {
+    releaseLock = resolve
+  })
+  metadataLock.set(projectId, next)
+
+  try {
+    await previous
+    return await fn()
+  } finally {
+    releaseLock()
+  }
+}
+
 export const documentService = {
   async load(projectId: string): Promise<ProposalDocument> {
     const rootPath = await getProjectRootPath(projectId)
@@ -238,7 +255,7 @@ export const documentService = {
   async save(projectId: string, content: string): Promise<{ lastSavedAt: string }> {
     const rootPath = await getProjectRootPath(projectId)
     const sequence = beginSave(projectId)
-    const { filePath, metaPath, tmpPath, metaTmpPath } = getDocumentPaths(rootPath, sequence)
+    const { filePath, tmpPath } = getDocumentPaths(rootPath, sequence)
     const lastSavedAt = new Date().toISOString()
 
     try {
@@ -254,21 +271,11 @@ export const documentService = {
     }
 
     // Update sidecar metadata lastSavedAt (AC2: md + sidecar must be synchronized)
-    if (!isLatestSave(projectId, sequence)) {
-      return { lastSavedAt }
-    }
-
-    const meta = await readMetadata(metaPath, projectId, lastSavedAt)
-    try {
-      await writeFile(metaTmpPath, JSON.stringify(meta, null, 2), 'utf-8')
-      if (!isLatestSave(projectId, sequence)) {
-        await cleanupTmpFile(metaTmpPath)
-        return { lastSavedAt }
-      }
-      await rename(metaTmpPath, metaPath)
-    } catch (err) {
-      logger.error(`proposal.meta.json 写入失败: ${projectId}`, err)
-      throw new DocumentSaveError(`元数据保存失败: ${(err as Error).message}`, err)
+    if (isLatestSave(projectId, sequence)) {
+      await documentService.updateMetadata(projectId, (current) => ({
+        ...current,
+        lastSavedAt,
+      }))
     }
 
     return { lastSavedAt }
@@ -325,25 +332,24 @@ export const documentService = {
     projectId: string,
     updater: (current: ProposalMetadata) => ProposalMetadata
   ): Promise<ProposalMetadata> {
-    const rootPath = await getProjectRootPath(projectId)
-    const metaPath = join(rootPath, 'proposal.meta.json')
-    const sequence = beginSave(projectId)
-    const current = await readMetadata(metaPath, projectId, new Date().toISOString())
-    const updated = updater(current)
+    return withMetadataLock(projectId, async () => {
+      const rootPath = await getProjectRootPath(projectId)
+      const metaPath = join(rootPath, 'proposal.meta.json')
+      const current = await readMetadata(metaPath, projectId, new Date().toISOString())
+      const updated = updater(current)
 
-    try {
-      const tmpPath = join(rootPath, `.proposal.meta.json.tmp.${sequence}`)
-      await writeFile(tmpPath, JSON.stringify(updated, null, 2), 'utf-8')
-      if (!isLatestSave(projectId, sequence)) {
+      const tmpSuffix = Date.now()
+      const tmpPath = join(rootPath, `.proposal.meta.json.tmp.${tmpSuffix}`)
+      try {
+        await writeFile(tmpPath, JSON.stringify(updated, null, 2), 'utf-8')
+        await rename(tmpPath, metaPath)
+      } catch (err) {
         await cleanupTmpFile(tmpPath)
-        return updated
+        logger.error(`proposal.meta.json 更新失败: ${projectId}`, err)
+        throw new DocumentSaveError(`元数据更新失败: ${(err as Error).message}`, err)
       }
-      await rename(tmpPath, metaPath)
-    } catch (err) {
-      logger.error(`proposal.meta.json 更新失败: ${projectId}`, err)
-      throw new DocumentSaveError(`元数据更新失败: ${(err as Error).message}`, err)
-    }
 
-    return updated
+      return updated
+    })
   },
 }

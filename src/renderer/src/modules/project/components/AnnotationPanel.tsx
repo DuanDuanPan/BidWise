@@ -105,7 +105,11 @@ function EmptyContent(): React.JSX.Element {
 
 function ListContent({ items }: { items: AnnotationRecord[] }): React.JSX.Element {
   return (
-    <div role="list" className="flex flex-1 flex-col gap-2 overflow-y-auto p-4" data-testid="annotation-list">
+    <div
+      role="list"
+      className="flex flex-1 flex-col gap-2 overflow-y-auto p-4"
+      data-testid="annotation-list"
+    >
       {items.map((item) => (
         <AnnotationItem key={item.id} item={item} />
       ))}
@@ -114,12 +118,12 @@ function ListContent({ items }: { items: AnnotationRecord[] }): React.JSX.Elemen
 }
 
 function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element {
-  const { items, loading, loaded } = useProjectAnnotations(projectId ?? '')
+  const { items, loaded } = useProjectAnnotations(projectId ?? '')
 
   if (!projectId) {
     return <EmptyContent />
   }
-  if (loading && !loaded) {
+  if (!loaded) {
     return <LoadingContent />
   }
   if (items.length === 0) {

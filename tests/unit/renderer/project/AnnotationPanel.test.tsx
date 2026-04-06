@@ -195,6 +195,27 @@ describe('AnnotationPanel', () => {
       expect(screen.getByText('本项目暂无批注')).toBeInTheDocument()
     })
 
+    it('shows loading state before first fetch starts (no flash of empty)', () => {
+      // Before useEffect fires: loading=false, loaded=false — must show skeleton, not empty
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': { items: [], loading: false, error: null, loaded: false },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
+      expect(screen.queryByTestId('annotation-empty')).not.toBeInTheDocument()
+    })
+
     it('shows loading state when loading and not yet loaded', () => {
       useAnnotationStore.setState({
         projects: {
