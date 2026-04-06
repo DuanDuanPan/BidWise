@@ -4,6 +4,7 @@ import type { PlateElementProps } from 'platejs/react'
 import { SyncOutlined } from '@ant-design/icons'
 import { Button, Tooltip } from 'antd'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
+import { useSourceAttributionContext } from '@modules/editor/context/useSourceAttributionContext'
 import { useDocumentStore } from '@renderer/stores'
 import { ChapterGenerateButton } from './ChapterGenerateButton'
 import { ChapterGenerationProgress } from './ChapterGenerationProgress'
@@ -81,6 +82,8 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
     return computeLocator(content, text, level, occurrenceIndex)
   }, [content, text, level, occurrenceIndex])
 
+  const sourceAttr = useSourceAttributionContext()
+
   const statusKey = locator ? locatorKey(locator) : null
   const status = statusKey ? chapterGen?.statuses.get(statusKey) : undefined
   const isGenerating = status && !['completed', 'failed', 'conflicted'].includes(status.phase)
@@ -88,6 +91,19 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
 
   // Get projectId from the chapter generation context
   const projectId = chapterGen?.currentProjectId
+
+  // Compute secondary note for baseline validation progress
+  const secondaryNote = useMemo(() => {
+    if (!isGenerating || !statusKey || !sourceAttr) return undefined
+    const sectionState = sourceAttr.sections.get(statusKey)
+    if (!sectionState) return undefined
+
+    if (sectionState.attributionPhase === 'running') return '来源标注分析中...'
+    if (sectionState.baselinePhase === 'running') return '基线验证中...'
+    if (sectionState.attributionPhase === 'completed' && sectionState.baselinePhase === 'completed')
+      return '来源标注与基线验证已完成'
+    return undefined
+  }, [isGenerating, statusKey, sourceAttr])
 
   // Determine if chapter content is empty or guidance-only
   const chapterEmpty = useMemo(() => {
@@ -153,7 +169,11 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
 
       {isGenerating && status && (
         <div contentEditable={false} className="my-2">
-          <ChapterGenerationProgress phase={status.phase} progress={status.progress} />
+          <ChapterGenerationProgress
+            phase={status.phase}
+            progress={status.progress}
+            secondaryNote={secondaryNote}
+          />
         </div>
       )}
 

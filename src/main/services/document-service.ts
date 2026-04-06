@@ -15,6 +15,7 @@ import type { ProposalDocument, ProposalMetadata } from '@shared/models/proposal
 
 const logger = createLogger('document-service')
 const latestSaveSequenceByProject = new Map<string, number>()
+const metadataUpdateQueue = new Map<string, Promise<ProposalMetadata>>()
 const DOCUMENT_VERSION = 1
 const METADATA_VERSION = '1.0'
 
@@ -82,6 +83,8 @@ function buildDefaultMetadata(projectId: string, lastSavedAt: string): ProposalM
     projectId,
     annotations: [],
     scores: [],
+    sourceAttributions: [],
+    baselineValidations: [],
     lastSavedAt,
   }
 }
@@ -96,6 +99,8 @@ function normalizeMetadata(
     projectId,
     annotations: Array.isArray(meta?.annotations) ? meta.annotations : [],
     scores: Array.isArray(meta?.scores) ? meta.scores : [],
+    sourceAttributions: Array.isArray(meta?.sourceAttributions) ? meta.sourceAttributions : [],
+    baselineValidations: Array.isArray(meta?.baselineValidations) ? meta.baselineValidations : [],
     ...(meta?.sectionWeights !== undefined ? { sectionWeights: meta.sectionWeights } : {}),
     ...(meta?.templateId !== undefined ? { templateId: meta.templateId } : {}),
     lastSavedAt: meta?.lastSavedAt || lastSavedAt,
@@ -145,6 +150,12 @@ function parseMetadata(
   }
   if (metadata.lastSavedAt !== undefined && typeof metadata.lastSavedAt !== 'string') {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 lastSavedAt 必须是字符串`)
+  }
+  if (metadata.sourceAttributions !== undefined && !Array.isArray(metadata.sourceAttributions)) {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 sourceAttributions 必须是数组`)
+  }
+  if (metadata.baselineValidations !== undefined && !Array.isArray(metadata.baselineValidations)) {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 baselineValidations 必须是数组`)
   }
   if (metadata.sectionWeights !== undefined && !Array.isArray(metadata.sectionWeights)) {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 sectionWeights 必须是数组`)
@@ -319,5 +330,49 @@ export const documentService = {
     const rootPath = await getProjectRootPath(projectId)
     const metaPath = join(rootPath, 'proposal.meta.json')
     return readMetadata(metaPath, projectId, new Date().toISOString())
+  },
+
+  async updateMetadata(
+    projectId: string,
+    updater: (meta: ProposalMetadata) => ProposalMetadata
+  ): Promise<ProposalMetadata> {
+    // Serialize concurrent updates per project to prevent read-modify-write races.
+    const pending = metadataUpdateQueue.get(projectId) ?? Promise.resolve({} as ProposalMetadata)
+    const next = pending.then(
+      () => this._updateMetadataUnsafe(projectId, updater),
+      () => this._updateMetadataUnsafe(projectId, updater)
+    )
+    metadataUpdateQueue.set(projectId, next)
+    return next
+  },
+
+  async _updateMetadataUnsafe(
+    projectId: string,
+    updater: (meta: ProposalMetadata) => ProposalMetadata
+  ): Promise<ProposalMetadata> {
+    const rootPath = await getProjectRootPath(projectId)
+    const metaPath = join(rootPath, 'proposal.meta.json')
+    const now = new Date().toISOString()
+
+    const current = await readMetadata(metaPath, projectId, now)
+    const updated = updater(current)
+    updated.lastSavedAt = now
+
+    const sequence = beginSave(projectId)
+    const metaTmpPath = join(rootPath, `.proposal.meta.json.tmp.${sequence}`)
+
+    try {
+      await writeFile(metaTmpPath, JSON.stringify(updated, null, 2), 'utf-8')
+      if (!isLatestSave(projectId, sequence)) {
+        await cleanupTmpFile(metaTmpPath)
+        return updated
+      }
+      await rename(metaTmpPath, metaPath)
+    } catch (err) {
+      logger.error(`proposal.meta.json 更新失败: ${projectId}`, err)
+      throw new DocumentSaveError(`元数据更新失败: ${(err as Error).message}`, err)
+    }
+
+    return updated
   },
 }
