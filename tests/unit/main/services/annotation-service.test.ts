@@ -135,6 +135,32 @@ describe('annotationService', () => {
       expect(result[0].id).toBe('ann-2')
       expect(result[1].id).toBe('ann-1')
     })
+
+    it('honors the E2E annotation list delay when configured', async () => {
+      vi.useFakeTimers()
+      const originalDelay = process.env.BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS
+      process.env.BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS = '25'
+      mocks.repoListByProject.mockResolvedValue([makeAnnotation()])
+
+      try {
+        const resultPromise = annotationService.list({ projectId: 'proj-1' })
+
+        expect(mocks.repoListByProject).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(25)
+        const result = await resultPromise
+
+        expect(result).toHaveLength(1)
+        expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1')
+      } finally {
+        if (originalDelay === undefined) {
+          delete process.env.BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS
+        } else {
+          process.env.BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS = originalDelay
+        }
+        vi.useRealTimers()
+      }
+    })
   })
 
   describe('sidecar sync', () => {

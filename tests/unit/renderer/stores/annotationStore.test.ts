@@ -67,6 +67,7 @@ describe('annotationStore', () => {
       const state = useAnnotationStore.getState().projects['proj-1']
       expect(state?.error).toBe('db error')
       expect(state?.loading).toBe(false)
+      expect(state?.loaded).toBe(false)
     })
 
     it('per-project loading state does not pollute other projects', async () => {

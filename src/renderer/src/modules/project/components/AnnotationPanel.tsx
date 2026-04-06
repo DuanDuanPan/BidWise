@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { CommentOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
-import { Badge, Tooltip, Skeleton, Tag } from 'antd'
+import { Alert, Badge, Button, Skeleton, Tag, Tooltip } from 'antd'
 import {
   useProjectAnnotations,
   usePendingAnnotationCount,
 } from '@renderer/modules/annotation/hooks/useAnnotation'
+import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { formatRelativeTime } from '@renderer/shared/lib/format-time'
 import type { AnnotationRecord, AnnotationType, AnnotationStatus } from '@shared/annotation-types'
 
@@ -117,14 +118,47 @@ function ListContent({ items }: { items: AnnotationRecord[] }): React.JSX.Elemen
   )
 }
 
+function ErrorContent({
+  message,
+  onRetry,
+}: {
+  message: string
+  onRetry: () => void
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-1 items-center p-4" data-testid="annotation-error">
+      <Alert
+        type="error"
+        showIcon
+        message="批注加载失败"
+        description={message}
+        action={
+          <Button size="small" onClick={onRetry} data-testid="annotation-retry">
+            重试
+          </Button>
+        }
+      />
+    </div>
+  )
+}
+
+function isInitialLoadPending(state: { loaded: boolean; error: string | null }): boolean {
+  return !state.loaded && !state.error
+}
+
 function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element {
-  const { items, loaded } = useProjectAnnotations(projectId ?? '')
+  const project = useProjectAnnotations(projectId ?? '')
+  const loadAnnotations = useAnnotationStore((state) => state.loadAnnotations)
+  const { items, loaded, error } = project
 
   if (!projectId) {
     return <EmptyContent />
   }
-  if (!loaded) {
+  if (isInitialLoadPending(project)) {
     return <LoadingContent />
+  }
+  if (!loaded && error) {
+    return <ErrorContent message={error} onRetry={() => void loadAnnotations(projectId)} />
   }
   if (items.length === 0) {
     return <EmptyContent />
@@ -147,8 +181,9 @@ function PendingPill({ projectId }: { projectId?: string }): React.JSX.Element |
 }
 
 function HeaderSpinner({ projectId }: { projectId?: string }): React.JSX.Element | null {
-  const loading = useProjectAnnotations(projectId ?? '').loading
-  if (!projectId || !loading) return null
+  const project = useProjectAnnotations(projectId ?? '')
+  const showSpinner = project.loading || isInitialLoadPending(project)
+  if (!projectId || !showSpinner) return null
   return (
     <LoadingOutlined
       style={{ fontSize: 14, color: 'var(--color-brand)' }}

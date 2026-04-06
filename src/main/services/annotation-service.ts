@@ -11,6 +11,15 @@ import type {
 const logger = createLogger('annotation-service')
 const annotationRepo = new AnnotationRepository()
 
+async function maybeDelayAnnotationListForE2E(): Promise<void> {
+  const delayMs = Number.parseInt(process.env.BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS ?? '0', 10)
+  if (!Number.isFinite(delayMs) || delayMs <= 0) {
+    return
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, delayMs))
+}
+
 async function syncToSidecar(projectId: string): Promise<void> {
   try {
     const annotations = await annotationRepo.listByProject(projectId)
@@ -45,6 +54,8 @@ export const annotationService = {
   },
 
   async list(input: ListAnnotationsInput): Promise<AnnotationRecord[]> {
+    await maybeDelayAnnotationListForE2E()
+
     if (input.sectionId) {
       return annotationRepo.listBySection(input.projectId, input.sectionId)
     }

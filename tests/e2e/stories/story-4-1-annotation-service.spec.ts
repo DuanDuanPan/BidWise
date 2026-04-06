@@ -33,6 +33,7 @@ async function launchApp(): Promise<LaunchContext> {
       ...process.env,
       ELECTRON_IS_DEV: '0',
       BIDWISE_E2E: 'true',
+      BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS: '400',
       HOME: sandboxHome,
       APPDATA: sandboxHome,
       XDG_CONFIG_HOME: sandboxHome,
@@ -193,7 +194,7 @@ test.describe('Story 4.1 Annotation Service E2E', () => {
 
   // --- Panel states (AC 8, AC 10) ---
 
-  test('annotation panel shows loading skeleton then list state with annotations', async () => {
+  test('annotation panel shows loading skeleton and spinner before list state with annotations', async () => {
     // Ensure at least one annotation exists for the project
     await createAnnotation(ctx, { content: 'Panel list test' })
 
@@ -212,8 +213,15 @@ test.describe('Story 4.1 Annotation Service E2E', () => {
       await expect(ctx.window.getByTestId('annotation-flyout')).toBeVisible({ timeout: 5_000 })
     }
 
+    await expect(ctx.window.getByTestId('annotation-loading')).toBeVisible({ timeout: 5_000 })
+    await expect(ctx.window.getByTestId('annotation-header-spinner')).toBeVisible({
+      timeout: 5_000,
+    })
+
     // Should eventually show annotation list (after loading completes)
     await expect(ctx.window.getByTestId('annotation-list')).toBeVisible({ timeout: 15_000 })
+    await expect(ctx.window.getByTestId('annotation-loading')).toHaveCount(0)
+    await expect(ctx.window.getByTestId('annotation-header-spinner')).toHaveCount(0)
 
     // Verify items are rendered
     const items = ctx.window.getByTestId('annotation-item')
@@ -285,10 +293,6 @@ test.describe('Story 4.1 Annotation Service E2E', () => {
     await expect(ctx.window.getByTestId('annotation-empty')).toBeVisible({ timeout: 15_000 })
 
     // No pending pill should appear
-    await expect(ctx.window.getByTestId('annotation-pending-pill'))
-      .not.toBeVisible()
-      .catch(() => {
-        // Element may not exist at all, which is also acceptable
-      })
+    await expect(ctx.window.getByTestId('annotation-pending-pill')).toHaveCount(0)
   })
 })

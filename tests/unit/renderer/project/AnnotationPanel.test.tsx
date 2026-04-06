@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import type { AnnotationRecord } from '@shared/annotation-types'
 
 function mockApi(): void {
@@ -213,6 +213,7 @@ describe('AnnotationPanel', () => {
       )
 
       expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
+      expect(screen.getByTestId('annotation-header-spinner')).toBeInTheDocument()
       expect(screen.queryByTestId('annotation-empty')).not.toBeInTheDocument()
     })
 
@@ -233,7 +234,50 @@ describe('AnnotationPanel', () => {
       )
 
       expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
+      expect(screen.getByTestId('annotation-header-spinner')).toBeInTheDocument()
       expect(screen.getByText('正在加载批注数据...')).toBeInTheDocument()
+    })
+
+    it('shows error state with retry when first load fails', async () => {
+      const annotationList = vi.fn().mockResolvedValue({
+        success: true,
+        data: [makeAnnotation({ id: 'a1', content: 'Recovered annotation' })],
+      })
+      vi.stubGlobal('api', {
+        ...window.api,
+        annotationList,
+      })
+
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': { items: [], loading: false, error: 'db error', loaded: false },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-error')).toBeInTheDocument()
+      expect(screen.getByText('批注加载失败')).toBeInTheDocument()
+      expect(screen.getByText('db error')).toBeInTheDocument()
+      expect(screen.queryByTestId('annotation-loading')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('annotation-header-spinner')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByTestId('annotation-retry'))
+
+      await waitFor(() => {
+        expect(annotationList).toHaveBeenCalledWith({ projectId: 'proj-1' })
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId('annotation-list')).toBeInTheDocument()
+      })
+      expect(screen.getByText('Recovered annotation')).toBeInTheDocument()
     })
 
     it('shows empty state when loaded with no items', () => {
