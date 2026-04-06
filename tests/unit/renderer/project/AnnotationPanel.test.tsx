@@ -238,6 +238,32 @@ describe('AnnotationPanel', () => {
       expect(screen.getByText('正在加载批注数据...')).toBeInTheDocument()
     })
 
+    it('keeps loading state authoritative while a retry is in flight', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [],
+            loading: true,
+            error: 'previous failure',
+            loaded: false,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
+      expect(screen.getByTestId('annotation-header-spinner')).toBeInTheDocument()
+      expect(screen.queryByTestId('annotation-error')).not.toBeInTheDocument()
+    })
+
     it('shows error state with retry when first load fails', async () => {
       const annotationList = vi.fn().mockResolvedValue({
         success: true,

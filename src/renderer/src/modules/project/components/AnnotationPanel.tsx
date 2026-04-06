@@ -142,8 +142,13 @@ function ErrorContent({
   )
 }
 
-function isInitialLoadPending(state: { loaded: boolean; error: string | null }): boolean {
-  return !state.loaded && !state.error
+function shouldShowLoadingState(state: {
+  loading: boolean
+  loaded: boolean
+  error: string | null
+}): boolean {
+  if (state.loaded) return false
+  return state.loading || !state.error
 }
 
 function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element {
@@ -154,7 +159,7 @@ function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element 
   if (!projectId) {
     return <EmptyContent />
   }
-  if (isInitialLoadPending(project)) {
+  if (shouldShowLoadingState(project)) {
     return <LoadingContent />
   }
   if (!loaded && error) {
@@ -182,7 +187,7 @@ function PendingPill({ projectId }: { projectId?: string }): React.JSX.Element |
 
 function HeaderSpinner({ projectId }: { projectId?: string }): React.JSX.Element | null {
   const project = useProjectAnnotations(projectId ?? '')
-  const showSpinner = project.loading || isInitialLoadPending(project)
+  const showSpinner = shouldShowLoadingState(project)
   if (!projectId || !showSpinner) return null
   return (
     <LoadingOutlined
