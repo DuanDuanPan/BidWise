@@ -43,5 +43,3 @@ nohup.out
 # ATO runtime
 .ato/
 .worktrees/
-ato.yaml
-ato.yaml.example
