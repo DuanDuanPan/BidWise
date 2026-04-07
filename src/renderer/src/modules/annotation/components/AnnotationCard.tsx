@@ -41,9 +41,12 @@ export const AnnotationCard = forwardRef<HTMLDivElement, AnnotationCardProps>(
     const actions = ANNOTATION_TYPE_ACTIONS[type]
     const isPending = status === 'pending'
 
-    const handleAction = (action: (typeof actions)[number]): void => {
+    const handleAction = async (action: (typeof actions)[number]): Promise<void> => {
       if (action.targetStatus) {
-        void updateAnnotation({ id, status: action.targetStatus })
+        const ok = await updateAnnotation({ id, status: action.targetStatus })
+        if (!ok) {
+          void message.error('批注状态更新失败，请重试')
+        }
       } else {
         void message.info('功能将在后续版本实现')
       }

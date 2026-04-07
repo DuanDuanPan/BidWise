@@ -134,7 +134,6 @@ function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; a
     if (focusedIndex >= 0) {
       const el = cardRefs.current.get(focusedIndex)
       el?.scrollIntoView?.({ block: 'nearest' })
-      el?.focus?.({ preventScroll: true })
     }
   }, [focusedIndex])
 
@@ -169,6 +168,10 @@ function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; a
         return
       }
 
+      const showUpdateError = (): void => {
+        void message.error('批注状态更新失败，请重试')
+      }
+
       // Status-changing shortcuts: only for pending cards
       if (key === 'Enter' || key === 'Backspace' || key === 'd' || key === 'D') {
         e.preventDefault()
@@ -185,18 +188,24 @@ function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; a
         if (key === 'Enter') {
           const primary = actions.find((a) => a.primary && a.targetStatus)
           if (primary?.targetStatus) {
-            void updateAnnotation({ id: focused.id, status: primary.targetStatus })
+            void updateAnnotation({ id: focused.id, status: primary.targetStatus }).then((ok) => {
+              if (!ok) showUpdateError()
+            })
           }
         } else if (key === 'Backspace') {
           const rejectAction = actions.find((a) => a.targetStatus === 'rejected')
           if (rejectAction) {
-            void updateAnnotation({ id: focused.id, status: 'rejected' })
+            void updateAnnotation({ id: focused.id, status: 'rejected' }).then((ok) => {
+              if (!ok) showUpdateError()
+            })
           } else {
             void message.info('该类型批注没有驳回操作')
           }
         } else {
           // Alt+D
-          void updateAnnotation({ id: focused.id, status: 'needs-decision' })
+          void updateAnnotation({ id: focused.id, status: 'needs-decision' }).then((ok) => {
+            if (!ok) showUpdateError()
+          })
         }
       }
     }

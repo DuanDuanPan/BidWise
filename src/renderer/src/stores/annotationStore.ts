@@ -20,7 +20,7 @@ export interface AnnotationState {
 interface AnnotationActions {
   loadAnnotations: (projectId: string) => Promise<void>
   createAnnotation: (input: CreateAnnotationInput) => Promise<void>
-  updateAnnotation: (input: UpdateAnnotationInput) => Promise<void>
+  updateAnnotation: (input: UpdateAnnotationInput) => Promise<boolean>
   deleteAnnotation: (id: string, projectId: string) => Promise<void>
   reset: (projectId?: string) => void
 }
@@ -115,7 +115,7 @@ export const useAnnotationStore = create<AnnotationStore>()(
       }
     },
 
-    async updateAnnotation(input: UpdateAnnotationInput): Promise<void> {
+    async updateAnnotation(input: UpdateAnnotationInput): Promise<boolean> {
       try {
         const response = await window.api.annotationUpdate(input)
         if (response.success) {
@@ -128,6 +128,7 @@ export const useAnnotationStore = create<AnnotationStore>()(
               ),
             })
           })
+          return true
         } else {
           const allProjects = get().projects
           for (const [pid, ps] of Object.entries(allProjects)) {
@@ -136,6 +137,7 @@ export const useAnnotationStore = create<AnnotationStore>()(
               break
             }
           }
+          return false
         }
       } catch (err) {
         const allProjects = get().projects
@@ -145,6 +147,7 @@ export const useAnnotationStore = create<AnnotationStore>()(
             break
           }
         }
+        return false
       }
     },
 
