@@ -6,14 +6,21 @@ import { deserializeFromMarkdown, serializeToMarkdown } from '@modules/editor/se
 import { useDocumentStore } from '@renderer/stores'
 import { replaceMarkdownSection } from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
+import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
 
 export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => boolean
+export type InsertDrawioFn = () => void
 
 interface PlateEditorProps {
   initialContent: string
   projectId: string
   onSyncFlushReady?: (flush: (() => string) | null) => void
   onReplaceSectionReady?: (fn: ReplaceSectionFn | null) => void
+  onInsertDrawioReady?: (fn: InsertDrawioFn | null) => void
+}
+
+function generateShortId(): string {
+  return Math.random().toString(36).substring(2, 10)
 }
 
 export function PlateEditor({
@@ -21,6 +28,7 @@ export function PlateEditor({
   projectId,
   onSyncFlushReady,
   onReplaceSectionReady,
+  onInsertDrawioReady,
 }: PlateEditorProps): React.JSX.Element {
   const updateContent = useDocumentStore((s) => s.updateContent)
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -139,6 +147,35 @@ export function PlateEditor({
     [clearPendingSerialization, editor, projectId, updateContent]
   )
 
+  // Track the latest non-empty selection for insert operations
+  const lastSelectionRef = useRef(editor.selection)
+
+  useEffect(() => {
+    if (editor.selection) {
+      lastSelectionRef.current = editor.selection
+    }
+  })
+
+  const insertDrawio: InsertDrawioFn = useCallback(() => {
+    // Use current selection, last known selection, or fall back to end of document
+    const at = editor.selection ?? lastSelectionRef.current ?? [editor.children.length]
+
+    const shortId = generateShortId()
+    const diagramId = crypto.randomUUID()
+    const assetFileName = `diagram-${shortId}.drawio`
+
+    editor.tf.insertNodes(
+      {
+        type: DRAWIO_ELEMENT_TYPE,
+        diagramId,
+        assetFileName,
+        caption: '',
+        children: [{ text: '' }],
+      },
+      { at, select: true }
+    )
+  }, [editor])
+
   useEffect(() => {
     onReplaceSectionReady?.(replaceSectionContent)
     return () => onReplaceSectionReady?.(null)
@@ -148,6 +185,11 @@ export function PlateEditor({
     onSyncFlushReady?.(flushEditorContent)
     return () => onSyncFlushReady?.(null)
   }, [flushEditorContent, onSyncFlushReady])
+
+  useEffect(() => {
+    onInsertDrawioReady?.(insertDrawio)
+    return () => onInsertDrawioReady?.(null)
+  }, [insertDrawio, onInsertDrawioReady])
 
   useEffect(() => {
     return () => {
