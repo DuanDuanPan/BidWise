@@ -93,13 +93,15 @@ async function ensurePanelOpen(ctx: LaunchContext): Promise<void> {
     .or(ctx.window.locator('[data-testid="annotation-icon-bar"]'))
   await expect(panel).toBeVisible({ timeout: 15_000 })
 
-  // In compact mode the icon bar is shown; click to open the flyout
+  // In compact mode the icon bar is shown; click to open the flyout only if not already open
+  const flyout = ctx.window.locator('[data-testid="annotation-flyout"]')
   const iconButton = ctx.window.locator('[data-testid="annotation-icon-button"]')
   if (await iconButton.isVisible().catch(() => false)) {
-    await iconButton.click()
-    await expect(ctx.window.locator('[data-testid="annotation-flyout"]')).toBeVisible({
-      timeout: 5_000,
-    })
+    const flyoutAlreadyOpen = await flyout.isVisible().catch(() => false)
+    if (!flyoutAlreadyOpen) {
+      await iconButton.click()
+    }
+    await expect(flyout).toBeVisible({ timeout: 5_000 })
   }
 }
 

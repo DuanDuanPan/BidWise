@@ -188,10 +188,10 @@ timeout:
 # 必须使用 test:unit 而不是裸跑 vitest：build/dev 会把 better-sqlite3 重建到
 # Electron ABI，test:unit 会先重建回宿主 Node ABI，避免 native module mismatch。
 regression_test_commands:
-  - "pnpm test:unit"
-  - "pnpm lint"
-  - "pnpm typecheck"
-  - "pnpm build"
+  - 'pnpm test:unit'
+  - 'pnpm lint'
+  - 'pnpm typecheck'
+  - 'pnpm build'
 
 # 向后兼容：单命令格式（当 regression_test_commands 存在时此字段被忽略）
 # regression_test_command: "uv run pytest"
