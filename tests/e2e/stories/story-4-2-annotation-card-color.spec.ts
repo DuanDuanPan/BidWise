@@ -214,19 +214,37 @@ test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
     const card = testCtx.window.locator(`[data-annotation-id="${created.id}"]`)
     await expect(card).toBeVisible({ timeout: 5_000 })
 
-    // Click accept
+    // Record the pending badge count before accept
+    const pendingTab = testCtx.window.getByTestId('status-filter-pending')
+    const pendingCountBefore = await pendingTab.locator('span').last().innerText()
+    const countBefore = Number(pendingCountBefore)
+
+    // Click accept — card leaves the "pending" filtered view
     await card.getByTestId('annotation-action-accept').click()
 
+    // Pending count should drop by 1
+    await expect(pendingTab.locator('span').last()).toHaveText(String(countBefore - 1), {
+      timeout: 5_000,
+    })
+
+    // Switch to "processed" tab to find the accepted card
+    await testCtx.window.getByTestId('status-filter-processed').click()
+
+    const acceptedCard = testCtx.window.locator(`[data-annotation-id="${created.id}"]`)
+    await expect(acceptedCard).toBeVisible({ timeout: 5_000 })
+
     // Card should now show status label and reduced opacity
-    await expect(card.getByTestId('annotation-status-label')).toBeVisible({ timeout: 5_000 })
-    await expect(card.getByTestId('annotation-status-label')).toContainText('已采纳')
+    await expect(acceptedCard.getByTestId('annotation-status-label')).toBeVisible({
+      timeout: 5_000,
+    })
+    await expect(acceptedCard.getByTestId('annotation-status-label')).toContainText('已采纳')
 
     // Verify opacity reduced
-    const opacity = await card.evaluate((el) => el.style.opacity)
+    const opacity = await acceptedCard.evaluate((el) => el.style.opacity)
     expect(opacity).toBe('0.6')
 
     // Action buttons should be hidden
-    await expect(card.getByTestId('annotation-action-accept')).toHaveCount(0)
+    await expect(acceptedCard.getByTestId('annotation-action-accept')).toHaveCount(0)
   })
 
   test('keyboard navigation Alt+Arrow cycles through cards', async () => {
