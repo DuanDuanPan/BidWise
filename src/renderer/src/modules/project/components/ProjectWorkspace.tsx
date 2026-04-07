@@ -30,6 +30,7 @@ import { useChapterGeneration } from '@modules/editor/hooks/useChapterGeneration
 import { useSourceAttribution } from '@modules/editor/hooks/useSourceAttribution'
 import { ChapterGenerationProvider } from '@modules/editor/context/ChapterGenerationContext'
 import { SourceAttributionProvider } from '@modules/editor/context/SourceAttributionContext'
+import { useCurrentSection } from '@modules/annotation/hooks/useCurrentSection'
 import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
@@ -133,6 +134,7 @@ export function ProjectWorkspace(): React.JSX.Element {
   const showAutoSaveIndicator = isProposalWriting
   const chapterGen = useChapterGeneration(projectId ?? '')
   const sourceAttribution = useSourceAttribution(projectId ?? '', documentContent)
+  const currentSection = useCurrentSection()
 
   // Build chapter phase map for outline tree status icons
   const chapterPhases = useMemo(() => {
@@ -303,6 +305,8 @@ export function ProjectWorkspace(): React.JSX.Element {
                 isCompact={isCompact}
                 onToggle={toggleSidebar}
                 projectId={isProposalWriting ? projectId : undefined}
+                sopPhase={currentStageKey}
+                currentSection={isProposalWriting ? currentSection : null}
               />
             }
             statusBar={

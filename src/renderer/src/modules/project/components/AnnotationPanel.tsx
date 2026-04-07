@@ -1,5 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { CommentOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import {
+  CommentOutlined,
+  FileTextOutlined,
+  LoadingOutlined,
+  CheckCircleOutlined,
+} from '@ant-design/icons'
 import { Alert, Badge, Button, Skeleton, Tooltip, message } from 'antd'
 import {
   useProjectAnnotations,
@@ -7,14 +12,38 @@ import {
 } from '@renderer/modules/annotation/hooks/useAnnotation'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { AnnotationCard } from '@renderer/modules/annotation/components/AnnotationCard'
+import { AnnotationFilters } from '@renderer/modules/annotation/components/AnnotationFilters'
+import { useAnnotationFilters } from '@renderer/modules/annotation/hooks/useAnnotationFilters'
+import { AnnotationOverloadPanel } from '@renderer/modules/annotation/components/AnnotationOverloadPanel'
+import type { OverloadMode } from '@renderer/modules/annotation/components/AnnotationOverloadPanel'
+import {
+  filterAnnotations,
+  countByStatus,
+} from '@renderer/modules/annotation/lib/annotationFilters'
+import { sortAnnotations } from '@renderer/modules/annotation/lib/annotationSorter'
+import {
+  scopeToSection,
+  getSummaryItems,
+  OVERLOAD_THRESHOLD,
+} from '@renderer/modules/annotation/lib/annotationSectionScope'
+import { AskSystemDialog } from '@renderer/modules/annotation/components/AskSystemDialog'
 import { ANNOTATION_TYPE_ACTIONS } from '@renderer/modules/annotation/constants/annotation-colors'
 import type { AnnotationRecord } from '@shared/annotation-types'
+import type { ChapterHeadingLocator } from '@shared/chapter-types'
+
+export interface CurrentSectionProp {
+  locator: ChapterHeadingLocator
+  sectionKey: string
+  label: string
+}
 
 interface AnnotationPanelProps {
   collapsed: boolean
   isCompact: boolean
   onToggle: () => void
   projectId?: string
+  sopPhase?: string
+  currentSection?: CurrentSectionProp | null
 }
 
 function LoadingContent(): React.JSX.Element {
@@ -30,7 +59,25 @@ function LoadingContent(): React.JSX.Element {
   )
 }
 
-function EmptyContent(): React.JSX.Element {
+function EmptyContent({
+  currentSection,
+}: {
+  currentSection?: CurrentSectionProp | null
+}): React.JSX.Element {
+  if (currentSection) {
+    return (
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-2 p-4"
+        data-testid="annotation-empty-section"
+      >
+        <CheckCircleOutlined style={{ fontSize: 36, color: 'var(--color-success)' }} />
+        <span className="text-body" style={{ color: 'var(--color-text-secondary)' }}>
+          本章节 AI 审查完毕，未发现需要您关注的问题
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div
       className="flex flex-1 flex-col items-center justify-center gap-2 p-4"
@@ -217,19 +264,91 @@ function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; a
   return { focusedIndex, cardRefs }
 }
 
+function SectionLabel({ label }: { label: string }): React.JSX.Element {
+  return (
+    <div
+      className="flex shrink-0 items-center px-4 py-1"
+      style={{
+        borderBottom: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-bg-global)',
+      }}
+      data-testid="section-label"
+    >
+      <span className="text-caption" style={{ color: 'var(--color-text-tertiary)' }}>
+        当前章节: {label}
+      </span>
+    </div>
+  )
+}
+
 function PanelBody({
   projectId,
   active,
+  sopPhase,
+  currentSection,
 }: {
   projectId?: string
   active: boolean
+  sopPhase?: string
+  currentSection?: CurrentSectionProp | null
 }): React.JSX.Element {
   const project = useProjectAnnotations(projectId ?? '')
   const loadAnnotations = useAnnotationStore((state) => state.loadAnnotations)
   const { items, loaded, error } = project
 
+  const filters = useAnnotationFilters()
+  const [overloadMode, setOverloadMode] = useState<OverloadMode>('none')
+
+  // Reset overload mode when section changes (ref-based to avoid setState in effect)
+  const sectionKey = currentSection?.sectionKey ?? null
+  const prevSectionKeyRef = useRef(sectionKey)
+  if (prevSectionKeyRef.current !== sectionKey) {
+    prevSectionKeyRef.current = sectionKey
+    if (overloadMode !== 'none') {
+      setOverloadMode('none')
+    }
+  }
+
+  // Pipeline: scope → filter → sort
+  const scopedItems = useMemo(() => scopeToSection(items, sectionKey), [items, sectionKey])
+
+  const filteredItems = useMemo(
+    () => filterAnnotations(scopedItems, filters.typeFilter, filters.statusFilter),
+    [scopedItems, filters.typeFilter, filters.statusFilter]
+  )
+
+  const sortedItems = useMemo(
+    () =>
+      sortAnnotations(filteredItems, {
+        sopPhase: (sopPhase ?? 'proposal-writing') as Parameters<
+          typeof sortAnnotations
+        >[1]['sopPhase'],
+      }),
+    [filteredItems, sopPhase]
+  )
+
+  // Display items: apply summary mode if active
+  const displayItems = useMemo(() => {
+    if (overloadMode === 'summary') {
+      return getSummaryItems(scopedItems, sopPhase ?? 'proposal-writing')
+    }
+    return sortedItems
+  }, [overloadMode, sortedItems, scopedItems, sopPhase])
+
+  // Status counts for badges (based on scoped + type-filtered items)
+  const statusCounts = useMemo(
+    () => countByStatus(scopedItems, filters.typeFilter),
+    [scopedItems, filters.typeFilter]
+  )
+
+  // Pending count for overload detection (scoped + type-filtered)
+  const scopedPendingCount = useMemo(
+    () => filterAnnotations(scopedItems, filters.typeFilter, 'pending').length,
+    [scopedItems, filters.typeFilter]
+  )
+
   const { focusedIndex, cardRefs } = useKeyboardNavigation({
-    items,
+    items: displayItems,
     active: active && !!projectId,
   })
 
@@ -242,10 +361,28 @@ function PanelBody({
   if (!loaded && error) {
     return <ErrorContent message={error} onRetry={() => void loadAnnotations(projectId)} />
   }
-  if (items.length === 0) {
-    return <EmptyContent />
-  }
-  return <ListContent items={items} focusedIndex={focusedIndex} cardRefs={cardRefs} />
+
+  return (
+    <>
+      <AnnotationFilters
+        typeFilter={filters.typeFilter}
+        statusFilter={filters.statusFilter}
+        statusCounts={statusCounts}
+        onToggleType={filters.toggleType}
+        onStatusChange={filters.setStatusFilter}
+      />
+      {currentSection && <SectionLabel label={currentSection.label} />}
+      {filters.statusFilter === 'pending' && scopedPendingCount > OVERLOAD_THRESHOLD && (
+        <AnnotationOverloadPanel pendingCount={scopedPendingCount} onSelectMode={setOverloadMode} />
+      )}
+      {displayItems.length === 0 ? (
+        <EmptyContent currentSection={currentSection} />
+      ) : (
+        <ListContent items={displayItems} focusedIndex={focusedIndex} cardRefs={cardRefs} />
+      )}
+      <AskSystemDialog projectId={projectId} currentSection={currentSection ?? null} />
+    </>
+  )
 }
 
 function PendingPill({ projectId }: { projectId?: string }): React.JSX.Element | null {
@@ -280,6 +417,8 @@ export function AnnotationPanel({
   isCompact,
   onToggle,
   projectId,
+  sopPhase,
+  currentSection,
 }: AnnotationPanelProps): React.JSX.Element {
   const [flyoutOpen, setFlyoutOpen] = useState(false)
   const flyoutRef = useRef<HTMLDivElement>(null)
@@ -401,7 +540,12 @@ export function AnnotationPanel({
                   <HeaderSpinner projectId={projectId} />
                 </div>
               </div>
-              <PanelBody projectId={projectId} active={true} />
+              <PanelBody
+                projectId={projectId}
+                active={true}
+                sopPhase={sopPhase}
+                currentSection={currentSection}
+              />
             </div>
           </div>
         )}
@@ -483,7 +627,12 @@ export function AnnotationPanel({
         </div>
 
         {/* Content area */}
-        <PanelBody projectId={projectId} active={true} />
+        <PanelBody
+          projectId={projectId}
+          active={true}
+          sopPhase={sopPhase}
+          currentSection={currentSection}
+        />
       </div>
     </aside>
   )
