@@ -189,9 +189,13 @@ async function revealChapterAction(
 ): Promise<Locator> {
   const heading = page.getByTestId('editor-view').getByText(headingTitle, { exact: true }).first()
   await expect(heading).toBeVisible({ timeout: 10_000 })
-  await heading.hover()
 
-  const action = page.locator(`[data-testid="${actionTestId}"]`).first()
+  // Scope to the PlateElement container that wraps both text and action button,
+  // preventing detached-node clicks when hover-driven re-renders occur.
+  const headingBlock = heading.locator('xpath=ancestor::*[@data-heading-text]').first()
+  await headingBlock.hover()
+
+  const action = headingBlock.locator(`[data-testid="${actionTestId}"]`)
   await expect(action).toBeVisible({ timeout: 10_000 })
   return action
 }

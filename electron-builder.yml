@@ -1,5 +1,9 @@
 appId: com.bidwise.app
 productName: BidWise
+# Disabled asar packing: electron-builder produces corrupted archives with
+# overlapping file contents (package.json prefixed with HTML, index.html
+# prefixed with JS). Re-enable once the root cause is isolated.
+asar: false
 directories:
   buildResources: build
 files:

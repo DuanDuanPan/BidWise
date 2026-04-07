@@ -7,7 +7,7 @@
  * 4. Asserts the value is < 5000 ms.
  */
 import { execSync, spawn } from 'child_process'
-import { existsSync, readdirSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join, resolve } from 'path'
 
 const THRESHOLD_MS = 5000
@@ -57,22 +57,52 @@ function findBinary() {
 
 const binaryPath = findBinary()
 
-// ── Step 2b: Ad-hoc codesign on macOS ──────────────────────────────────
-// electron-builder --dir may produce bundles with mismatched Team IDs
-// between the app executable and Electron Framework, causing dyld to
-// reject the binary. Re-signing with ad-hoc identity (`-`) fixes this.
-if (process.platform === 'darwin') {
-  const appBundle = binaryPath.replace(/\/Contents\/MacOS\/.*$/, '')
-  console.log(`Ad-hoc codesigning: ${appBundle}`)
-  execSync(`codesign --force --deep -s - "${appBundle}"`, {
-    cwd: root,
-    stdio: 'inherit',
-  })
+// ── Step 2b: Validate build output integrity ───────────────────────────
+// Verify critical files are not corrupted (overlapping asar contents).
+function validateBuildIntegrity() {
+  const distDir = join(root, 'dist')
+
+  if (process.platform === 'darwin') {
+    const macDir = readdirSync(distDir).find((d) => d.startsWith('mac'))
+    if (!macDir) return
+    const appDir = readdirSync(join(distDir, macDir)).find((f) => f.endsWith('.app'))
+    if (!appDir) return
+    const resourcesDir = join(distDir, macDir, appDir, 'Contents', 'Resources')
+
+    // With asar disabled, files are unpacked in app/ directory
+    const appResourceDir = join(resourcesDir, 'app')
+    if (existsSync(appResourceDir)) {
+      const pkgJsonPath = join(appResourceDir, 'package.json')
+      if (existsSync(pkgJsonPath)) {
+        const content = readFileSync(pkgJsonPath, 'utf8')
+        try {
+          JSON.parse(content)
+        } catch {
+          console.error('FAIL: package.json in build output is malformed:')
+          console.error(`  First 200 chars: ${content.slice(0, 200)}`)
+          process.exit(2)
+        }
+      }
+
+      const indexHtmlPath = join(appResourceDir, 'out', 'renderer', 'index.html')
+      if (existsSync(indexHtmlPath)) {
+        const html = readFileSync(indexHtmlPath, 'utf8').trimStart()
+        if (!html.startsWith('<!') && !html.startsWith('<html') && !html.startsWith('<head')) {
+          console.error('FAIL: index.html in build output has unexpected prefix:')
+          console.error(`  First 200 chars: ${html.slice(0, 200)}`)
+          process.exit(2)
+        }
+      }
+    }
+  }
 }
+
+validateBuildIntegrity()
+console.log('Build integrity check passed.')
 
 console.log(`Launching binary: ${binaryPath}`)
 
-// ── Step 2b: Re-sign on macOS to avoid dyld library-validation errors ──
+// ── Step 2c: Re-sign on macOS to avoid dyld library-validation errors ──
 if (process.platform === 'darwin') {
   // electron-builder --dir may produce an ad-hoc or partially-signed bundle.
   // Re-sign with ad-hoc identity so macOS dyld accepts the binary.
