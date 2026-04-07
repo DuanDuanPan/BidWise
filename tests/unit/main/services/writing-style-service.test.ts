@@ -148,15 +148,15 @@ describe('@story-3-6 writingStyleService', () => {
       expect(styles[0].source).toBe('company')
     })
 
-    it('@p1 should use cache on subsequent calls', async () => {
+    it('@p1 should re-scan on each call to discover new company styles', async () => {
       mockReaddir.mockResolvedValue(['general.style.json'])
       mockReadFile.mockResolvedValue(JSON.stringify(GENERAL_STYLE))
 
       await writingStyleService.listStyles()
       await writingStyleService.listStyles()
 
-      // readdir should only be called once (cached)
-      expect(mockReaddir).toHaveBeenCalledTimes(1)
+      // readdir is called each time — listStyles always re-scans
+      expect(mockReaddir).toHaveBeenCalledTimes(2)
     })
 
     it('@p2 should reject malformed JSON missing required fields', async () => {

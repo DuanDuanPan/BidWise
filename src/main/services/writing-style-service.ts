@@ -151,6 +151,7 @@ export function serializeStyleForPrompt(style: WritingStyleTemplate): string {
 
 export const writingStyleService = {
   async listStyles(): Promise<WritingStyleTemplate[]> {
+    styleCache = null
     return loadAllStyles()
   },
 

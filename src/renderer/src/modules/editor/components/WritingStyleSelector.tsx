@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Select, message, Tooltip, Tag } from 'antd'
 import { EditOutlined } from '@ant-design/icons'
 import type { WritingStyleTemplate, WritingStyleId } from '@shared/writing-style-types'
@@ -24,6 +24,9 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
   const [selectedId, setSelectedId] = useState<WritingStyleId>('general')
   const [loading, setLoading] = useState(true)
 
+  const confirmedIdRef = useRef<WritingStyleId>('general')
+  const requestSeqRef = useRef(0)
+
   useEffect(() => {
     let cancelled = false
 
@@ -42,10 +45,13 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
 
           const metaStyleId = metaRes.success ? metaRes.data.writingStyleId : undefined
           const validIds = new Set(listRes.data.styles.map((s) => s.id))
-          setSelectedId(metaStyleId && validIds.has(metaStyleId) ? metaStyleId : 'general')
+          const resolved = metaStyleId && validIds.has(metaStyleId) ? metaStyleId : 'general'
+          setSelectedId(resolved)
+          confirmedIdRef.current = resolved
         } else {
           setStyles([FALLBACK_GENERAL])
           setSelectedId('general')
+          confirmedIdRef.current = 'general'
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -60,17 +66,19 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
 
   const handleChange = useCallback(
     async (styleId: WritingStyleId) => {
-      const previousId = selectedId
+      const seq = ++requestSeqRef.current
       setSelectedId(styleId)
       const res = await window.api.writingStyleUpdateProject({ projectId, writingStyleId: styleId })
+      if (seq !== requestSeqRef.current) return // superseded by a newer request
       if (res.success) {
+        confirmedIdRef.current = styleId
         void message.info('新文风将在下次生成章节时生效')
       } else {
-        setSelectedId(previousId)
+        setSelectedId(confirmedIdRef.current)
         void message.error('文风切换失败，请重试')
       }
     },
-    [projectId, selectedId]
+    [projectId]
   )
 
   const options = useMemo(() => {
