@@ -3,9 +3,10 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import type { AnnotationRecord, AnnotationType } from '@shared/annotation-types'
 
 // Hoist mocks
-const { mockUpdateAnnotation, mockMessageInfo } = vi.hoisted(() => ({
-  mockUpdateAnnotation: vi.fn().mockResolvedValue(undefined),
+const { mockUpdateAnnotation, mockMessageInfo, mockMessageError } = vi.hoisted(() => ({
+  mockUpdateAnnotation: vi.fn().mockResolvedValue(true),
   mockMessageInfo: vi.fn(),
+  mockMessageError: vi.fn(),
 }))
 
 vi.mock('@renderer/stores/annotationStore', () => ({
@@ -46,7 +47,7 @@ vi.mock('antd', () => ({
     </span>
   ),
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  message: { info: mockMessageInfo },
+  message: { info: mockMessageInfo, error: mockMessageError },
 }))
 
 import { AnnotationCard } from '@renderer/modules/annotation/components/AnnotationCard'
@@ -208,6 +209,15 @@ describe('@story-4-2 AnnotationCard', () => {
       render(<AnnotationCard annotation={makeAnnotation({ type: 'human' })} />)
       fireEvent.click(screen.getByTestId('annotation-action-reply'))
       expect(mockMessageInfo).toHaveBeenCalledWith('功能将在后续版本实现')
+    })
+
+    it('shows error toast when updateAnnotation fails', async () => {
+      mockUpdateAnnotation.mockResolvedValueOnce(false)
+      render(<AnnotationCard annotation={makeAnnotation({ type: 'ai-suggestion' })} />)
+      fireEvent.click(screen.getByTestId('annotation-action-accept'))
+      await waitFor(() => {
+        expect(mockMessageError).toHaveBeenCalledWith('批注状态更新失败，请重试')
+      })
     })
   })
 
