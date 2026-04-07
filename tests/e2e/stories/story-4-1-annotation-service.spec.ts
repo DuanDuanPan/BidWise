@@ -237,8 +237,8 @@ test.describe('Story 4.1 Annotation Service E2E', () => {
     await expect(ctx.window.getByTestId('annotation-loading')).toHaveCount(0)
     await expect(ctx.window.getByTestId('annotation-header-spinner')).toHaveCount(0)
 
-    // Verify items are rendered
-    const items = ctx.window.getByTestId('annotation-item')
+    // Verify items are rendered (Story 4.2 upgraded to AnnotationCard)
+    const items = ctx.window.getByTestId('annotation-card')
     await expect(items.first()).toBeVisible()
   })
 
