@@ -338,9 +338,24 @@ describe('AnnotationPanel', () => {
         projects: {
           'proj-1': {
             items: [
-              makeAnnotation({ id: 'a1', type: 'ai-suggestion', content: 'First', status: 'pending' }),
-              makeAnnotation({ id: 'a2', type: 'score-warning', content: 'Second', status: 'pending' }),
-              makeAnnotation({ id: 'a3', type: 'adversarial', content: 'Third', status: 'pending' }),
+              makeAnnotation({
+                id: 'a1',
+                type: 'ai-suggestion',
+                content: 'First',
+                status: 'pending',
+              }),
+              makeAnnotation({
+                id: 'a2',
+                type: 'score-warning',
+                content: 'Second',
+                status: 'pending',
+              }),
+              makeAnnotation({
+                id: 'a3',
+                type: 'adversarial',
+                content: 'Third',
+                status: 'pending',
+              }),
             ],
             loading: false,
             error: null,
@@ -353,7 +368,12 @@ describe('AnnotationPanel', () => {
     it('first card is focused by default', () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
       const cards = screen.getAllByTestId('annotation-card')
       expect(cards[0].style.outline).toContain('2px solid')
@@ -362,7 +382,12 @@ describe('AnnotationPanel', () => {
     it('Alt+ArrowDown moves focus to next card', () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
@@ -376,7 +401,12 @@ describe('AnnotationPanel', () => {
     it('Alt+ArrowUp moves focus to previous card', () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       // Move down first, then up
@@ -390,7 +420,12 @@ describe('AnnotationPanel', () => {
     it('Alt+ArrowDown wraps from last to first', () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       // Navigate to end and wrap
@@ -405,7 +440,12 @@ describe('AnnotationPanel', () => {
     it('Alt+ArrowUp wraps from first to last', () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       fireEvent.keyDown(window, { key: 'ArrowUp', altKey: true })
@@ -417,7 +457,12 @@ describe('AnnotationPanel', () => {
     it('Alt+Enter executes primary action on focused pending card', async () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       fireEvent.keyDown(window, { key: 'Enter', altKey: true })
@@ -433,7 +478,12 @@ describe('AnnotationPanel', () => {
     it('Alt+Backspace executes reject on ai-suggestion card', async () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       fireEvent.keyDown(window, { key: 'Backspace', altKey: true })
@@ -449,7 +499,12 @@ describe('AnnotationPanel', () => {
     it('Alt+Backspace on score-warning is no-op (no reject action)', () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       // Navigate to score-warning card (index 1)
@@ -463,7 +518,12 @@ describe('AnnotationPanel', () => {
     it('Alt+D marks focused card as needs-decision', async () => {
       setupWithAnnotations()
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       fireEvent.keyDown(window, { key: 'd', altKey: true })
@@ -480,9 +540,7 @@ describe('AnnotationPanel', () => {
       useAnnotationStore.setState({
         projects: {
           'proj-1': {
-            items: [
-              makeAnnotation({ id: 'a1', type: 'ai-suggestion', status: 'accepted' }),
-            ],
+            items: [makeAnnotation({ id: 'a1', type: 'ai-suggestion', status: 'accepted' })],
             loading: false,
             error: null,
             loaded: true,
@@ -491,7 +549,12 @@ describe('AnnotationPanel', () => {
       })
 
       render(
-        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
       )
 
       fireEvent.keyDown(window, { key: 'Enter', altKey: true })
@@ -506,7 +569,12 @@ describe('AnnotationPanel', () => {
       render(
         <div>
           <input data-testid="test-input" />
-          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+          <AnnotationPanel
+            collapsed={false}
+            isCompact={false}
+            onToggle={vi.fn()}
+            projectId="proj-1"
+          />
         </div>
       )
 
@@ -523,7 +591,12 @@ describe('AnnotationPanel', () => {
       render(
         <div>
           <textarea data-testid="test-textarea" />
-          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+          <AnnotationPanel
+            collapsed={false}
+            isCompact={false}
+            onToggle={vi.fn()}
+            projectId="proj-1"
+          />
         </div>
       )
 
@@ -539,7 +612,12 @@ describe('AnnotationPanel', () => {
       render(
         <div>
           <div data-testid="editable" contentEditable="true" />
-          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+          <AnnotationPanel
+            collapsed={false}
+            isCompact={false}
+            onToggle={vi.fn()}
+            projectId="proj-1"
+          />
         </div>
       )
 
@@ -557,7 +635,12 @@ describe('AnnotationPanel', () => {
           <div data-testid="plate-editor-content">
             <div data-testid="editor-child" />
           </div>
-          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+          <AnnotationPanel
+            collapsed={false}
+            isCompact={false}
+            onToggle={vi.fn()}
+            projectId="proj-1"
+          />
         </div>
       )
 

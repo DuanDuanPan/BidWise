@@ -168,19 +168,19 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   // When stage changes to proposal-writing and there's a pending locator, scroll to it
   useEffect(() => {
-    if (currentStageKey === 'proposal-writing' && pendingLocatorRef.current) {
-      const locator = pendingLocatorRef.current
-      pendingLocatorRef.current = null
-      // Wait for editor to mount
-      const timer = setTimeout(() => {
-        scrollToHeading(
-          document.querySelector('[data-editor-scroll-container="true"]') as HTMLElement | null,
-          locator
-        )
-      }, 500)
-      return () => clearTimeout(timer)
+    if (currentStageKey !== 'proposal-writing' || !pendingLocatorRef.current) {
+      return undefined
     }
-    return undefined
+    const locator = pendingLocatorRef.current
+    pendingLocatorRef.current = null
+    // Wait for editor to mount
+    const timer = setTimeout(() => {
+      scrollToHeading(
+        document.querySelector('[data-editor-scroll-container="true"]') as HTMLElement | null,
+        locator
+      )
+    }, 500)
+    return () => clearTimeout(timer)
   }, [currentStageKey])
 
   if (loading && !currentProject) {

@@ -106,6 +106,7 @@ export const AnnotationCard = forwardRef<HTMLDivElement, AnnotationCardProps>(
                 key={action.key}
                 size="small"
                 type={action.primary ? 'primary' : 'default'}
+                autoInsertSpace={false}
                 style={action.primary ? { backgroundColor: color, borderColor: color } : undefined}
                 onClick={() => handleAction(action)}
                 data-testid={`annotation-action-${action.key}`}
@@ -115,7 +116,10 @@ export const AnnotationCard = forwardRef<HTMLDivElement, AnnotationCardProps>(
             ))}
           </div>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }} data-testid="annotation-status-label">
+          <div
+            style={{ display: 'flex', justifyContent: 'flex-end' }}
+            data-testid="annotation-status-label"
+          >
             <span
               style={{
                 fontSize: 12,
