@@ -7,6 +7,7 @@ const mockExecute = vi.hoisted(() => vi.fn())
 const mockFindRequirements = vi.hoisted(() => vi.fn())
 const mockFindScoringModel = vi.hoisted(() => vi.fn())
 const mockFindMandatoryItems = vi.hoisted(() => vi.fn())
+const mockGetProjectWritingStyle = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   app: {
@@ -42,6 +43,13 @@ vi.mock('@main/db/repositories/mandatory-item-repo', () => ({
   MandatoryItemRepository: class {
     findByProject = mockFindMandatoryItems
   },
+}))
+
+vi.mock('@main/services/writing-style-service', () => ({
+  writingStyleService: {
+    getProjectWritingStyle: (...args: unknown[]) => mockGetProjectWritingStyle(...args),
+  },
+  serializeStyleForPrompt: (style: { name: string }) => `文风：${style.name}`,
 }))
 
 vi.mock('fs/promises', () => ({
@@ -116,6 +124,15 @@ describe('@story-3-4 chapterGenerationService', () => {
     mockFindRequirements.mockResolvedValue([])
     mockFindScoringModel.mockResolvedValue(null)
     mockFindMandatoryItems.mockResolvedValue([])
+    mockGetProjectWritingStyle.mockResolvedValue({
+      id: 'general',
+      name: '通用文风',
+      toneGuidance: '专业、清晰',
+      vocabularyRules: [],
+      forbiddenWords: [],
+      sentencePatterns: [],
+      source: 'built-in',
+    })
     mockExecute.mockResolvedValue({ taskId: 'task-gen-1' })
   })
 
@@ -242,6 +259,34 @@ describe('@story-3-4 chapterGenerationService', () => {
       expect(result).toEqual({ taskId: 'task-gen-1' })
       const request = mockExecute.mock.calls[0][0]
       expect(request.context.strategySeed).toBeUndefined()
+    })
+
+    it('@p1 should include writing style in context when available', async () => {
+      mockGetProjectWritingStyle.mockResolvedValue({
+        id: 'military',
+        name: '军工文风',
+        toneGuidance: '严谨、精确',
+        vocabularyRules: [],
+        forbiddenWords: [],
+        sentencePatterns: [],
+        source: 'built-in',
+      })
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.writingStyle).toContain('军工文风')
+    })
+
+    it('@p1 should propagate writing style config errors (fail-fast)', async () => {
+      mockGetProjectWritingStyle.mockRejectedValue(new Error('general 文风模板缺失'))
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await expect(chapterGenerationService.generateChapter('proj-1', target)).rejects.toThrow(
+        'general 文风模板缺失'
+      )
+      expect(mockExecute).not.toHaveBeenCalled()
     })
 
     it('@p1 should gracefully degrade when requirements fail to load', async () => {

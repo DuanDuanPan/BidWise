@@ -1,6 +1,6 @@
 # Story 3.6: 文风模板与军工用语控制
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -44,10 +44,10 @@ So that 方案的用语规范、术语准确，像行内人写的。
 
 ### 共享类型定义
 
-- [ ] Task 1: 定义文风模板类型（AC: #1, #3, #4, #6）
-  - [ ] 1.1 新建 `src/shared/writing-style-types.ts`
-  - [ ] 1.2 定义 `WritingStyleId = string`（如 `'military'`、`'government'`、`'general'`）
-  - [ ] 1.3 定义 `WritingStyleTemplate` 接口：
+- [x] Task 1: 定义文风模板类型（AC: #1, #3, #4, #6）
+  - [x] 1.1 新建 `src/shared/writing-style-types.ts`
+  - [x] 1.2 定义 `WritingStyleId = string`（如 `'military'`、`'government'`、`'general'`）
+  - [x] 1.3 定义 `WritingStyleTemplate` 接口：
     ```typescript
     type WritingStyleId = string
 
@@ -67,7 +67,7 @@ So that 方案的用语规范、术语准确，像行内人写的。
     // JSON 文件只保存模板内容；source 必须由 service 根据加载目录派生，不能信任文件自声明
     type WritingStyleFileData = Omit<WritingStyleTemplate, 'source'>
     ```
-  - [ ] 1.4 定义 IPC 输入/输出类型：
+  - [x] 1.4 定义 IPC 输入/输出类型：
     - `ListWritingStylesOutput { styles: WritingStyleTemplate[] }`
     - `GetWritingStyleInput { styleId: WritingStyleId }`
     - `GetWritingStyleOutput { style: WritingStyleTemplate | null }`
@@ -76,120 +76,120 @@ So that 方案的用语规范、术语准确，像行内人写的。
 
 ### 内置文风模板数据文件
 
-- [ ] Task 2: 创建内置文风模板 JSON 文件（AC: #1, #2, #6）
-  - [ ] 2.1 创建目录 `resources/writing-styles/`
-  - [ ] 2.2 创建 `resources/writing-styles/military.style.json` — 军工文风模板
+- [x] Task 2: 创建内置文风模板 JSON 文件（AC: #1, #2, #6）
+  - [x] 2.1 创建目录 `resources/writing-styles/`
+  - [x] 2.2 创建 `resources/writing-styles/military.style.json` — 军工文风模板
     - 用语规范：使用"保障"不用"保证"、使用"论证"不用"证明"、使用"态势感知"等军工术语
     - 禁用词：口语化表述（"非常""特别好""大概"等）、非正式缩略语
     - 句式约束：多用"本系统""本方案"主语、段落首句概括核心结论、避免反问句
     - 语气要求：严谨、精确、客观、权威
     - 示例段落：提供典型军工方案段落范例
-  - [ ] 2.3 创建 `resources/writing-styles/government.style.json` — 政企文风模板
+  - [x] 2.3 创建 `resources/writing-styles/government.style.json` — 政企文风模板
     - 用语规范：正式政务用语、"推进""落实""统筹"等
     - 禁用词：口语化表述、网络用语
     - 句式约束：条理清晰、分点论述
     - 语气要求：稳重、规范、务实
-  - [ ] 2.4 创建 `resources/writing-styles/general.style.json` — 通用文风模板
+  - [x] 2.4 创建 `resources/writing-styles/general.style.json` — 通用文风模板
     - 用语规范：通用技术写作规范
     - 禁用词：极端用语、歧义表述
     - 句式约束：简洁明了
     - 语气要求：专业、清晰
-  - [ ] 2.5 单测验证 JSON 文件可正确解析并匹配 `WritingStyleFileData`，由 service 追加 `source`
+  - [x] 2.5 单测验证 JSON 文件可正确解析并匹配 `WritingStyleFileData`，由 service 追加 `source`
 
 ### 主进程服务
 
-- [ ] Task 3: 创建 `writing-style-service`（AC: #1, #4, #6）
-  - [ ] 3.1 新建 `src/main/services/writing-style-service.ts`
-  - [ ] 3.2 实现 `listStyles(): Promise<WritingStyleTemplate[]>`
+- [x] Task 3: 创建 `writing-style-service`（AC: #1, #4, #6）
+  - [x] 3.1 新建 `src/main/services/writing-style-service.ts`
+  - [x] 3.2 实现 `listStyles(): Promise<WritingStyleTemplate[]>`
     - 扫描 `resources/writing-styles/*.style.json`（内置）
     - 扫描 `company-data/writing-styles/*.style.json`（公司级），采用与 `template-service.ts` 一致的双候选目录解析：先 `app.getAppPath()/company-data/writing-styles`，再 `app.getPath('userData')/company-data/writing-styles`
     - 公司级同 id 覆盖内置
     - 读取文件时按 `WritingStyleFileData` 解析，返回对象时用目录来源强制设置 `source: 'built-in' | 'company'`
     - 缓存结果，避免重复 I/O
-  - [ ] 3.3 实现 `getStyle(styleId: WritingStyleId): Promise<WritingStyleTemplate | null>`
+  - [x] 3.3 实现 `getStyle(styleId: WritingStyleId): Promise<WritingStyleTemplate | null>`
     - 从缓存获取，未命中时重新扫描
-  - [ ] 3.4 实现 `getProjectWritingStyle(projectId: string): Promise<WritingStyleTemplate>`
+  - [x] 3.4 实现 `getProjectWritingStyle(projectId: string): Promise<WritingStyleTemplate>`
     - 从 `documentService.getMetadata(projectId)` 读取 `writingStyleId`
     - 再通过 `getStyle()` 获取完整模板
     - 若 `writingStyleId` 未设置或对应模板不存在，返回 `general` 默认模板
     - 若内置 `general` 模板缺失，抛出 `BidWiseError(ErrorCode.CONFIG, ...)`，避免静默生成无文风约束内容
-  - [ ] 3.5 实现 `updateProjectWritingStyle(projectId: string, styleId: WritingStyleId): Promise<UpdateProjectWritingStyleOutput>`
+  - [x] 3.5 实现 `updateProjectWritingStyle(projectId: string, styleId: WritingStyleId): Promise<UpdateProjectWritingStyleOutput>`
     - 验证 styleId 对应模板存在
     - 通过 `documentService.updateMetadata()` 写入 `writingStyleId`
     - 返回 `{ writingStyleId: styleId }`，与 IPC output 契约保持一致
-  - [ ] 3.6 单测覆盖：内置扫描、公司级覆盖、缓存命中、metadata 读写、无效 styleId 处理
+  - [x] 3.6 单测覆盖：内置扫描、公司级覆盖、缓存命中、metadata 读写、无效 styleId 处理
 
 ### Prompt 扩展
 
-- [ ] Task 4: 扩展 generate-chapter prompt 注入文风约束（AC: #1, #5）
-  - [ ] 4.1 修改 `src/main/prompts/generate-chapter.prompt.ts`
+- [x] Task 4: 扩展 generate-chapter prompt 注入文风约束（AC: #1, #5）
+  - [x] 4.1 修改 `src/main/prompts/generate-chapter.prompt.ts`
     - 在 `GenerateChapterContext` 接口新增 `writingStyle?: string` 字段
     - 在 prompt 模板中增加 `## 写作风格要求` 条件区块
     - 当 `writingStyle` 非空时注入文风约束文本，包含用语规范、禁用词、句式约束、语气、示例
-  - [ ] 4.2 文风约束注入位置：在 `requirements` 之后、`adjacentChapters` 之前，确保 AI 在生成内容时优先感知文风要求
-  - [ ] 4.3 单测验证：有/无 writingStyle 时 prompt 输出正确，文风约束段完整注入
+  - [x] 4.2 文风约束注入位置：在 `requirements` 之后、`adjacentChapters` 之前，确保 AI 在生成内容时优先感知文风要求
+  - [x] 4.3 单测验证：有/无 writingStyle 时 prompt 输出正确，文风约束段完整注入
 
 ### 章节生成集成
 
-- [ ] Task 5: 在章节生成链路中注入文风上下文（AC: #1, #5, #7）
-  - [ ] 5.1 修改 `src/main/services/chapter-generation-service.ts` 的 `_dispatchGeneration()` 方法
+- [x] Task 5: 在章节生成链路中注入文风上下文（AC: #1, #5, #7）
+  - [x] 5.1 修改 `src/main/services/chapter-generation-service.ts` 的 `_dispatchGeneration()` 方法
     - 在构建 agent context 前，调用 `writingStyleService.getProjectWritingStyle(projectId)` 获取当前文风模板
     - 将文风模板内容序列化为 prompt 可用的文本块（toneGuidance + vocabularyRules + forbiddenWords + sentencePatterns + exampleSnippet）
     - 将序列化结果作为 `writingStyle` 字段传入 agent context
-  - [ ] 5.2 修改 `src/main/services/agent-orchestrator/agents/generate-agent.ts`
+  - [x] 5.2 修改 `src/main/services/agent-orchestrator/agents/generate-agent.ts`
     - 从 context 中提取 `writingStyle` 字段
     - 传递给 `GenerateChapterContext` 的 `writingStyle` 参数
-  - [ ] 5.3 单测覆盖：有/无文风模板时 context 构建正确，文风信息正确传递到 prompt
+  - [x] 5.3 单测覆盖：有/无文风模板时 context 构建正确，文风信息正确传递到 prompt
 
 ### IPC 通道与 Preload
 
-- [ ] Task 6: 注册文风模板 IPC 通道（AC: #2, #3, #4）
-  - [ ] 6.1 在 `src/shared/ipc-types.ts` 新增 IPC 通道：
+- [x] Task 6: 注册文风模板 IPC 通道（AC: #2, #3, #4）
+  - [x] 6.1 在 `src/shared/ipc-types.ts` 新增 IPC 通道：
     - `'writing-style:list'` → `ListWritingStylesOutput`
     - `'writing-style:get'` → `GetWritingStyleInput` / `GetWritingStyleOutput`
     - `'writing-style:update-project'` → `UpdateProjectWritingStyleInput` / `UpdateProjectWritingStyleOutput`
-  - [ ] 6.2 新建 `src/main/ipc/writing-style-handlers.ts`，使用 `createIpcHandler` 做薄分发到 `writingStyleService`
-  - [ ] 6.3 在 `src/main/ipc/index.ts` 注册新 handler，并入 exhaustive `_AllRegistered` 类型检查
-  - [ ] 6.4 在 `src/preload/index.ts` 的 `requestApi` 中暴露 `writingStyleList()` / `writingStyleGet()` / `writingStyleUpdateProject()`
-  - [ ] 6.5 更新 `tests/unit/preload/security.test.ts` 白名单
+  - [x] 6.2 新建 `src/main/ipc/writing-style-handlers.ts`，使用 `createIpcHandler` 做薄分发到 `writingStyleService`
+  - [x] 6.3 在 `src/main/ipc/index.ts` 注册新 handler，并入 exhaustive `_AllRegistered` 类型检查
+  - [x] 6.4 在 `src/preload/index.ts` 的 `requestApi` 中暴露 `writingStyleList()` / `writingStyleGet()` / `writingStyleUpdateProject()`
+  - [x] 6.5 更新 `tests/unit/preload/security.test.ts` 白名单
 
 ### ProposalMetadata 扩展
 
-- [ ] Task 7: 扩展 `ProposalMetadata` 持久化文风选择（AC: #4）
-  - [ ] 7.1 在 `src/shared/models/proposal.ts` 的 `ProposalMetadata` 接口新增 `writingStyleId?: WritingStyleId`，并从 `@shared/writing-style-types` 引入类型
-  - [ ] 7.2 在 `src/main/services/document-service.ts` 的 `buildDefaultMetadata()` / `normalizeMetadata()` / `parseMetadata()` 中为 `writingStyleId` 提供 `undefined` 默认值（不设默认文风，由 service 层 fallback 到 'general'），并在 parse 阶段校验非 `undefined` 时必须为 string
-  - [ ] 7.3 确保既有字段（annotations/scores/sourceAttributions/baselineValidations/sectionWeights/templateId）在 metadata patch 后不丢失
-  - [ ] 7.4 单测覆盖 metadata 扩展的向后兼容性
+- [x] Task 7: 扩展 `ProposalMetadata` 持久化文风选择（AC: #4）
+  - [x] 7.1 在 `src/shared/models/proposal.ts` 的 `ProposalMetadata` 接口新增 `writingStyleId?: WritingStyleId`，并从 `@shared/writing-style-types` 引入类型
+  - [x] 7.2 在 `src/main/services/document-service.ts` 的 `buildDefaultMetadata()` / `normalizeMetadata()` / `parseMetadata()` 中为 `writingStyleId` 提供 `undefined` 默认值（不设默认文风，由 service 层 fallback 到 'general'），并在 parse 阶段校验非 `undefined` 时必须为 string
+  - [x] 7.3 确保既有字段（annotations/scores/sourceAttributions/baselineValidations/sectionWeights/templateId）在 metadata patch 后不丢失
+  - [x] 7.4 单测覆盖 metadata 扩展的向后兼容性
 
 ### 渲染进程 UI
 
-- [ ] Task 8: 文风选择 UI 组件（AC: #2, #3, #7）
-  - [ ] 8.1 新建 `src/renderer/src/modules/editor/components/WritingStyleSelector.tsx`
+- [x] Task 8: 文风选择 UI 组件（AC: #2, #3, #7）
+  - [x] 8.1 新建 `src/renderer/src/modules/editor/components/WritingStyleSelector.tsx`
     - 使用 Ant Design `Select` 组件（或 `Segmented` 用于 3 选项场景）
     - 展示可用文风列表（name + description tooltip）
     - 选中后调用 `window.api.writingStyleUpdateProject()` 持久化
     - 切换时 Ant Design `message.info` 提示"新文风将在下次生成章节时生效"
-  - [ ] 8.2 组件放置位置：编辑器工具栏右侧区域（与 Lovart 风格预设切换模式一致）
+  - [x] 8.2 组件放置位置：编辑器工具栏右侧区域（与 Lovart 风格预设切换模式一致）
     - 当前仓库的 `EditorView.tsx` / `PlateEditor.tsx` 尚未实现可复用 `EditorToolbar`，本 Story 需新增轻量 `EditorToolbar` 容器并放在 `PlateEditor` 上方
     - `EditorToolbar` 右侧集成 `WritingStyleSelector`；左侧可保留空白或后续格式化按钮插槽，禁止添加未接线的假格式按钮
     - 保持 `PlateEditor` 的 `onSyncFlushReady` / `onReplaceSectionReady` 合同不变，不把文风选择逻辑塞进 Plate AST
-  - [ ] 8.3 组件初始化时调用 `window.api.writingStyleList()` 获取可用文风列表
-  - [ ] 8.4 组件初始化时调用 `window.api.documentGetMetadata({ projectId })` 读取 `writingStyleId` 设置初始选中值（默认 `'general'`）；`documentStore` 当前不持有 metadata，禁止假设可直接从 store 读取
-  - [ ] 8.5 若 metadata 中的 `writingStyleId` 不在 `writingStyleList()` 返回列表内，UI fallback 到 `'general'`，但不自动重写 metadata，直到用户显式选择
-  - [ ] 8.6 单测覆盖：渲染、metadata 初始值、无效 metadata fallback、选择切换、持久化调用、提示信息
+  - [x] 8.3 组件初始化时调用 `window.api.writingStyleList()` 获取可用文风列表
+  - [x] 8.4 组件初始化时调用 `window.api.documentGetMetadata({ projectId })` 读取 `writingStyleId` 设置初始选中值（默认 `'general'`）；`documentStore` 当前不持有 metadata，禁止假设可直接从 store 读取
+  - [x] 8.5 若 metadata 中的 `writingStyleId` 不在 `writingStyleList()` 返回列表内，UI fallback 到 `'general'`，但不自动重写 metadata，直到用户显式选择
+  - [x] 8.6 单测覆盖：渲染、metadata 初始值、无效 metadata fallback、选择切换、持久化调用、提示信息
 
 ### 测试
 
-- [ ] Task 9: 单元测试、集成测试与 E2E（AC: #1-#7）
-  - [ ] 9.1 `tests/unit/main/services/writing-style-service.test.ts` — 扫描、缓存、覆盖、metadata 读写
-  - [ ] 9.2 `tests/unit/main/prompts/generate-chapter.prompt.test.ts` — 扩展测试覆盖 writingStyle 注入
-  - [ ] 9.3 `tests/unit/main/services/chapter-generation-service.test.ts` — 扩展测试覆盖文风上下文构建
-  - [ ] 9.4 `tests/unit/main/ipc/writing-style-handlers.test.ts` — IPC 注册与分发
-  - [ ] 9.5 `tests/unit/preload/security.test.ts` — preload 白名单更新
-  - [ ] 9.6 `tests/unit/renderer/modules/editor/components/WritingStyleSelector.test.tsx` — 组件渲染与交互
-  - [ ] 9.7 `tests/unit/renderer/modules/editor/components/EditorView.test.tsx` — 工具栏容器接入、`PlateEditor` 合同保持、`WritingStyleSelector` 获得 projectId
-  - [ ] 9.8 `tests/e2e/stories/story-3-6-writing-style.spec.ts` — 文风选择→刷新后保持→生成章节→验证 prompt 包含文风约束，且旧章节不被自动重写
-  - [ ] 9.9 `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build` 全部通过
+- [x] Task 9: 单元测试、集成测试与 E2E（AC: #1-#7）
+  - [x] 9.1 `tests/unit/main/services/writing-style-service.test.ts` — 扫描、缓存、覆盖、metadata 读写
+  - [x] 9.2 `tests/unit/main/prompts/generate-chapter.prompt.test.ts` — 扩展测试覆盖 writingStyle 注入
+  - [x] 9.3 `tests/unit/main/services/chapter-generation-service.test.ts` — 扩展测试覆盖文风上下文构建
+  - [x] 9.4 `tests/unit/main/ipc/writing-style-handlers.test.ts` — IPC 注册与分发
+  - [x] 9.5 `tests/unit/preload/security.test.ts` — preload 白名单更新
+  - [x] 9.6 `tests/unit/renderer/modules/editor/components/WritingStyleSelector.test.tsx` — 组件渲染与交互
+  - [x] 9.7 `tests/unit/renderer/modules/editor/components/EditorView.test.tsx` — 工具栏容器接入、`PlateEditor` 合同保持、`WritingStyleSelector` 获得 projectId
+  - [x] 9.8 `tests/e2e/stories/story-3-6-writing-style.spec.ts` — 文风选择→刷新后保持→生成章节→验证 prompt 包含文风约束，且旧章节不被自动重写
+  - [x] 9.9 `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm build` 全部通过
 
 ## Dev Notes
 
@@ -373,8 +373,55 @@ src/renderer/src/
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+无调试问题。
 
 ### Completion Notes List
 
+- 实现了完整的文风模板系统：类型定义、JSON 模板数据、后端服务、prompt 注入、IPC 通道、Preload API、渲染端 UI 组件
+- 三种内置文风模板：军工文风、政企文风、通用文风，均以 JSON 文件存储在 `resources/writing-styles/`
+- 文风选择通过 `proposal.meta.json` 持久化，使用 `documentService.updateMetadata()` 确保原子更新
+- 文风约束通过 `generate-chapter.prompt.ts` 的 `writingStyle` 字段注入 prompt，位于必响应条款之后、前序章节摘要之前
+- 支持公司级自定义文风覆盖（`company-data/writing-styles/`），遵循 `template-service` 的双路径解析模式
+- 切换文风不自动重新生成已有章节，UI 提示"新文风将在下次生成章节时生效"
+- 新增 `EditorToolbar` 轻量容器组件，右侧放置文风选择器，未添加未接线的格式按钮
+- 全部 139 测试文件（1164 测试用例）通过，无回归
+- TypeScript 类型检查、ESLint、构建均通过
+
+### Change Log
+
+- 2026-04-07: Story 3.6 文风模板与军工用语控制实现完成
+
 ### File List
+
+**新增文件：**
+- src/shared/writing-style-types.ts
+- resources/writing-styles/military.style.json
+- resources/writing-styles/government.style.json
+- resources/writing-styles/general.style.json
+- src/main/services/writing-style-service.ts
+- src/main/ipc/writing-style-handlers.ts
+- src/renderer/src/modules/editor/components/WritingStyleSelector.tsx
+- src/renderer/src/modules/editor/components/EditorToolbar.tsx
+- tests/unit/main/services/writing-style-service.test.ts
+- tests/unit/main/ipc/writing-style-handlers.test.ts
+- tests/unit/renderer/modules/editor/components/WritingStyleSelector.test.tsx
+- tests/e2e/stories/story-3-6-writing-style.spec.ts
+
+**修改文件：**
+- src/shared/models/proposal.ts — 新增 writingStyleId 字段
+- src/shared/ipc-types.ts — 新增 3 个 writing-style IPC 通道
+- src/main/prompts/generate-chapter.prompt.ts — 新增 writingStyle 字段和写作风格要求区块
+- src/main/services/chapter-generation-service.ts — 注入文风上下文到 agent context
+- src/main/services/agent-orchestrator/agents/generate-agent.ts — 传递 writingStyle 到 prompt
+- src/main/services/document-service.ts — normalizeMetadata/parseMetadata 支持 writingStyleId
+- src/main/ipc/index.ts — 注册 writing-style handlers
+- src/preload/index.ts — 暴露 writingStyleList/Get/UpdateProject
+- src/renderer/src/modules/editor/components/EditorView.tsx — 集成 EditorToolbar
+- tests/unit/preload/security.test.ts — 更新白名单
+- tests/unit/main/prompts/generate-chapter.prompt.test.ts — 新增 writingStyle 测试
+- tests/unit/main/services/chapter-generation-service.test.ts — 新增 writingStyle 集成测试
+- tests/unit/renderer/modules/editor/components/EditorView.test.tsx — 新增 EditorToolbar mock 和测试

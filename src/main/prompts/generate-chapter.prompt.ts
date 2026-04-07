@@ -11,6 +11,7 @@ export interface GenerateChapterContext {
   guidanceText?: string
   scoringWeights?: string
   mandatoryItems?: string
+  writingStyle?: string
   adjacentChaptersBefore?: string
   adjacentChaptersAfter?: string
   strategySeed?: string
@@ -37,6 +38,10 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 
   if (context.mandatoryItems) {
     sections.push(`## 必响应条款\n以下条款必须在章节中明确回应：\n${context.mandatoryItems}`)
+  }
+
+  if (context.writingStyle) {
+    sections.push(`## 写作风格要求\n${context.writingStyle}`)
   }
 
   if (context.adjacentChaptersBefore) {

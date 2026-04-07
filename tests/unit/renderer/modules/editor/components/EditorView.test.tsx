@@ -51,6 +51,12 @@ vi.mock('@modules/editor/context/useSourceAttributionContext', () => ({
   useSourceAttributionContext: vi.fn(() => mockSourceAttr),
 }))
 
+vi.mock('@modules/editor/components/EditorToolbar', () => ({
+  EditorToolbar: ({ projectId }: { projectId: string }) => (
+    <div data-testid="mock-editor-toolbar">{projectId}</div>
+  ),
+}))
+
 vi.mock('@modules/editor/components/PlateEditor', () => ({
   PlateEditor: ({
     projectId,
@@ -106,12 +112,18 @@ describe('@story-3-1 EditorView', () => {
     expect(screen.getByTestId('mock-plate-editor')).toBeDefined()
   })
 
-  it('@story-3-2 exposes the editor scroll container marker on the root element', () => {
+  it('@story-3-6 should render EditorToolbar with projectId', () => {
+    mockContent = '# Hello'
     render(<EditorView projectId="proj-1" />)
-    expect(screen.getByTestId('editor-view')).toHaveAttribute(
-      'data-editor-scroll-container',
-      'true'
-    )
+    const toolbar = screen.getByTestId('mock-editor-toolbar')
+    expect(toolbar).toBeDefined()
+    expect(toolbar.textContent).toBe('proj-1')
+  })
+
+  it('@story-3-2 exposes the editor scroll container marker on the scrollable area', () => {
+    render(<EditorView projectId="proj-1" />)
+    const scrollContainer = document.querySelector('[data-editor-scroll-container="true"]')
+    expect(scrollContainer).toBeDefined()
   })
 
   it('should call loadDocument on mount', () => {

@@ -6,6 +6,7 @@ import { useChapterGenerationContext } from '@modules/editor/context/useChapterG
 import { useSourceAttributionContext } from '@modules/editor/context/useSourceAttributionContext'
 import { PlateEditor } from './PlateEditor'
 import type { ReplaceSectionFn } from './PlateEditor'
+import { EditorToolbar } from './EditorToolbar'
 
 interface EditorViewProps {
   projectId: string
@@ -165,17 +166,16 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   }
 
   return (
-    <div
-      className="h-full overflow-y-auto"
-      data-testid="editor-view"
-      data-editor-scroll-container="true"
-    >
-      <PlateEditor
-        initialContent={content}
-        projectId={projectId}
-        onSyncFlushReady={registerSyncFlush}
-        onReplaceSectionReady={registerReplaceSection}
-      />
+    <div className="flex h-full flex-col" data-testid="editor-view">
+      <EditorToolbar projectId={projectId} />
+      <div className="flex-1 overflow-y-auto" data-editor-scroll-container="true">
+        <PlateEditor
+          initialContent={content}
+          projectId={projectId}
+          onSyncFlushReady={registerSyncFlush}
+          onReplaceSectionReady={registerReplaceSection}
+        />
+      </div>
     </div>
   )
 }

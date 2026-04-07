@@ -7,6 +7,7 @@ import { registerTemplateHandlers } from './template-handlers'
 import { registerChapterHandlers } from './chapter-handlers'
 import { registerAnnotationHandlers } from './annotation-handlers'
 import { registerSourceAttributionHandlers } from './source-attribution-handlers'
+import { registerWritingStyleHandlers } from './writing-style-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
 import type { RegisteredTaskChannels } from './task-handlers'
@@ -16,6 +17,7 @@ import type { RegisteredTemplateChannels } from './template-handlers'
 import type { RegisteredChapterChannels } from './chapter-handlers'
 import type { RegisteredAnnotationChannels } from './annotation-handlers'
 import type { RegisteredSourceAttributionChannels } from './source-attribution-handlers'
+import type { RegisteredWritingStyleChannels } from './writing-style-handlers'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Compile-time exhaustive check: every IpcChannel must be covered by a handler module.
@@ -31,6 +33,7 @@ type _AllRegistered =
   | RegisteredChapterChannels
   | RegisteredAnnotationChannels
   | RegisteredSourceAttributionChannels
+  | RegisteredWritingStyleChannels
 type _Unregistered = Exclude<IpcChannel, _AllRegistered>
 void (true satisfies [_Unregistered] extends [never] ? true : never)
 
@@ -44,4 +47,5 @@ export function registerIpcHandlers(): void {
   registerChapterHandlers()
   registerAnnotationHandlers()
   registerSourceAttributionHandlers()
+  registerWritingStyleHandlers()
 }

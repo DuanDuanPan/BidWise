@@ -87,6 +87,36 @@ describe('@story-3-4 generateChapterPrompt', () => {
     expect(prompt).toContain('差异化竞争策略')
   })
 
+  it('@p1 should include writing style section when provided', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      writingStyle: '文风：军工文风\n语气要求：严谨、精确\n禁用词：非常、大概',
+    })
+    expect(prompt).toContain('写作风格要求')
+    expect(prompt).toContain('军工文风')
+    expect(prompt).toContain('严谨、精确')
+    expect(prompt).toContain('禁用词')
+  })
+
+  it('@p1 should not include writing style section when absent', () => {
+    const prompt = generateChapterPrompt(baseContext)
+    expect(prompt).not.toContain('## 写作风格要求')
+  })
+
+  it('@p1 should place writing style after mandatory items and before adjacent chapters', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      mandatoryItems: '必响应项',
+      writingStyle: '文风约束文本',
+      adjacentChaptersBefore: '前序摘要',
+    })
+    const mandatoryIdx = prompt.indexOf('必响应条款')
+    const styleIdx = prompt.indexOf('写作风格要求')
+    const adjacentIdx = prompt.indexOf('前序章节摘要')
+    expect(mandatoryIdx).toBeLessThan(styleIdx)
+    expect(styleIdx).toBeLessThan(adjacentIdx)
+  })
+
   it('@p1 should include additional context for regeneration', () => {
     const prompt = generateChapterPrompt({
       ...baseContext,
@@ -100,6 +130,7 @@ describe('@story-3-4 generateChapterPrompt', () => {
     const prompt = generateChapterPrompt(baseContext)
     expect(prompt).not.toContain('## 评分标准与权重')
     expect(prompt).not.toContain('## 必响应条款')
+    expect(prompt).not.toContain('## 写作风格要求')
     expect(prompt).not.toContain('## 前序章节摘要')
     expect(prompt).not.toContain('## 后续章节摘要')
     expect(prompt).not.toContain('## 投标策略参考')
@@ -112,6 +143,7 @@ describe('@story-3-4 generateChapterPrompt', () => {
       guidanceText: '指导文本',
       scoringWeights: '评分权重',
       mandatoryItems: '必响应项',
+      writingStyle: '文风约束',
       adjacentChaptersBefore: '前序摘要',
       adjacentChaptersAfter: '后续摘要',
       strategySeed: '策略种子',
@@ -119,7 +151,7 @@ describe('@story-3-4 generateChapterPrompt', () => {
     }
     const prompt = generateChapterPrompt(fullContext)
     const sections = prompt.split('\n\n').filter((s) => s.startsWith('## '))
-    expect(sections.length).toBeGreaterThanOrEqual(8)
+    expect(sections.length).toBeGreaterThanOrEqual(9)
   })
 
   it('@p0 should define a professional system prompt', () => {

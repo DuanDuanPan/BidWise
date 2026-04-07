@@ -104,6 +104,7 @@ function normalizeMetadata(
     ...(meta?.sectionWeights !== undefined ? { sectionWeights: meta.sectionWeights } : {}),
     ...(meta?.sectionIndex !== undefined ? { sectionIndex: meta.sectionIndex } : {}),
     ...(meta?.templateId !== undefined ? { templateId: meta.templateId } : {}),
+    ...(meta?.writingStyleId !== undefined ? { writingStyleId: meta.writingStyleId } : {}),
     lastSavedAt: meta?.lastSavedAt || lastSavedAt,
   }
 }
@@ -166,6 +167,9 @@ function parseMetadata(
   }
   if (metadata.templateId !== undefined && typeof metadata.templateId !== 'string') {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 templateId 必须是字符串`)
+  }
+  if (metadata.writingStyleId !== undefined && typeof metadata.writingStyleId !== 'string') {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 writingStyleId 必须是字符串`)
   }
 
   return metadata

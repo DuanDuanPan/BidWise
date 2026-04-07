@@ -1,6 +1,7 @@
 import type { SectionWeightEntry, ProposalSectionIndexEntry } from '../template-types'
 import type { AnnotationRecord } from '../annotation-types'
 import type { SourceAttribution, BaselineValidation } from '../source-attribution-types'
+import type { WritingStyleId } from '../writing-style-types'
 
 /** 方案文档数据模型 */
 export interface ProposalDocument {
@@ -21,6 +22,7 @@ export interface ProposalMetadata {
   sectionWeights?: SectionWeightEntry[]
   sectionIndex?: ProposalSectionIndexEntry[]
   templateId?: string
+  writingStyleId?: WritingStyleId
   lastSavedAt: string // ISO-8601
 }
 

@@ -88,6 +88,13 @@ import type {
   SourceTaskOutput,
   GetSourceAttributionsOutput,
 } from './source-attribution-types'
+import type {
+  ListWritingStylesOutput,
+  GetWritingStyleInput,
+  GetWritingStyleOutput,
+  UpdateProjectWritingStyleInput,
+  UpdateProjectWritingStyleOutput,
+} from './writing-style-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -219,6 +226,9 @@ export const IPC_CHANNELS = {
   SOURCE_ATTRIBUTE: 'source:attribute',
   SOURCE_VALIDATE_BASELINE: 'source:validate-baseline',
   SOURCE_GET_ATTRIBUTIONS: 'source:get-attributions',
+  WRITING_STYLE_LIST: 'writing-style:list',
+  WRITING_STYLE_GET: 'writing-style:get',
+  WRITING_STYLE_UPDATE_PROJECT: 'writing-style:update-project',
 } as const
 
 /** Filter for task:list queries */
@@ -299,6 +309,12 @@ export type IpcChannelMap = {
     input: GetSourceAttributionsInput
     output: GetSourceAttributionsOutput
   }
+  'writing-style:list': { input: void; output: ListWritingStylesOutput }
+  'writing-style:get': { input: GetWritingStyleInput; output: GetWritingStyleOutput }
+  'writing-style:update-project': {
+    input: UpdateProjectWritingStyleInput
+    output: UpdateProjectWritingStyleOutput
+  }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
@@ -317,7 +333,7 @@ type KebabToCamelCase<S extends string> = S extends `${infer Head}-${infer Tail}
   : S
 
 type ChannelToMethodName<S extends string> = S extends `${infer Domain}:${infer Action}`
-  ? `${Domain}${Capitalize<KebabToCamelCase<Action>>}`
+  ? `${KebabToCamelCase<Domain>}${Capitalize<KebabToCamelCase<Action>>}`
   : KebabToCamelCase<S>
 
 // --- Exhaustive preload API type — derived from IpcChannelMap ---

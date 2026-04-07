@@ -198,6 +198,14 @@ const requestApi = {
 
   sourceGetAttributions: (input: IpcChannelMap['source:get-attributions']['input']) =>
     typedInvoke(IPC_CHANNELS.SOURCE_GET_ATTRIBUTIONS, input),
+
+  writingStyleList: () => typedInvoke(IPC_CHANNELS.WRITING_STYLE_LIST),
+
+  writingStyleGet: (input: IpcChannelMap['writing-style:get']['input']) =>
+    typedInvoke(IPC_CHANNELS.WRITING_STYLE_GET, input),
+
+  writingStyleUpdateProject: (input: IpcChannelMap['writing-style:update-project']['input']) =>
+    typedInvoke(IPC_CHANNELS.WRITING_STYLE_UPDATE_PROJECT, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

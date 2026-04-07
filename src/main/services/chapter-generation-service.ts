@@ -10,6 +10,7 @@ import { resolveProjectDataPath } from '@main/utils/project-paths'
 import { ErrorCode } from '@shared/constants'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { documentService } from '@main/services/document-service'
+import { writingStyleService, serializeStyleForPrompt } from '@main/services/writing-style-service'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
 import { ScoringModelRepository } from '@main/db/repositories/scoring-model-repo'
 import { MandatoryItemRepository } from '@main/db/repositories/mandatory-item-repo'
@@ -252,6 +253,10 @@ export const chapterGenerationService = {
     // Optional strategy seed
     const strategySeed = await readStrategySeed(projectId)
 
+    // Load writing style for prompt injection (fail-fast: config errors must propagate)
+    const writingStyle = await writingStyleService.getProjectWritingStyle(projectId)
+    const writingStyleText = serializeStyleForPrompt(writingStyle)
+
     // Dispatch to agent-orchestrator
     const response = await agentOrchestrator.execute({
       agentType: 'generate',
@@ -263,6 +268,7 @@ export const chapterGenerationService = {
         guidanceText: guidanceText || undefined,
         scoringWeights: scoringWeightsText,
         mandatoryItems: mandatoryItemsText,
+        writingStyle: writingStyleText,
         adjacentChaptersBefore: adjacentBefore,
         adjacentChaptersAfter: adjacentAfter,
         strategySeed,
