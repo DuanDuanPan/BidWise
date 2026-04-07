@@ -16,6 +16,7 @@ import {
   findMarkdownHeading,
   isMarkdownSectionEmpty,
 } from '@shared/chapter-markdown'
+import { createChapterLocatorKey } from '@shared/chapter-locator-key'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
 function extractText(node: unknown): string {
@@ -155,6 +156,9 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   return (
     <div
       data-heading-text={text}
+      data-heading-level={level}
+      data-heading-occurrence={occurrenceIndex}
+      data-heading-locator-key={locator ? createChapterLocatorKey(locator) : undefined}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >

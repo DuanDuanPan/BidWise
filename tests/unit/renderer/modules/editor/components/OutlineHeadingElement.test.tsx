@@ -116,3 +116,95 @@ describe('@story-3-5 ChapterHeadingElement', () => {
     expect(screen.getByText('基线验证中...')).toBeInTheDocument()
   })
 })
+
+describe('@story-4-3 ChapterAwareHeading data attributes', () => {
+  beforeEach(() => {
+    mockContent = '## 系统架构设计\n\n正文段落\n'
+    mockEditorChildren = []
+    mockChapterGen = {
+      statuses: new Map(),
+      currentProjectId: 'proj-1',
+    }
+    mockSourceAttr = {
+      sections: new Map(),
+    }
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('@p0 renders data-heading-level attribute', () => {
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.getAttribute('data-heading-level')).toBe('2')
+  })
+
+  it('@p0 renders data-heading-occurrence attribute', () => {
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.getAttribute('data-heading-occurrence')).toBe('0')
+  })
+
+  it('@p0 renders data-heading-locator-key with correct format', () => {
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.getAttribute('data-heading-locator-key')).toBe('2:系统架构设计:0')
+  })
+
+  it('@p0 data-heading-locator-key is undefined when locator is null (H1 heading)', () => {
+    mockContent = '# 项目标题\n\n正文段落\n'
+
+    const headingElement = {
+      type: 'h1',
+      children: [{ text: '项目标题' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>项目标题</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.hasAttribute('data-heading-locator-key')).toBe(false)
+  })
+})

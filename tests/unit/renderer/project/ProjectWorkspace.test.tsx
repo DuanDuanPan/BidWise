@@ -89,6 +89,10 @@ vi.mock('@modules/editor/lib/scrollToHeading', () => ({
   scrollToHeading: (...args: unknown[]) => mockScrollToHeading(...args),
 }))
 
+vi.mock('@modules/annotation/hooks/useCurrentSection', () => ({
+  useCurrentSection: vi.fn(() => null),
+}))
+
 const mockProject = {
   id: 'p1',
   name: '测试投标项目',
@@ -186,6 +190,7 @@ describe('@story-1-6 ProjectWorkspace', () => {
       taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
       chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
       chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
+      agentExecute: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ask-1' } }),
       agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
       documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
       annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
@@ -331,6 +336,7 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
       chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
       chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
+      agentExecute: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ask-1' } }),
       agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
       documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
       annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
@@ -538,5 +544,25 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
     expect(screen.getByTestId('auto-save-status')).toHaveTextContent('保存失败')
     fireEvent.click(screen.getByTestId('auto-save-retry'))
     expect(saveDocument).toHaveBeenCalledWith('p1')
+  })
+
+  // ── Story 4.3: sopPhase and currentSection prop passing ──
+
+  it('@story-4-3 @p1 passes sopPhase to annotation panel', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+    })
+
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+
+    // AnnotationPanel should render with filters (which only appear when projectId is set)
+    // The annotation-panel should be present in expanded state
+    const panel = screen.getByTestId('annotation-panel')
+    expect(panel).toBeInTheDocument()
   })
 })

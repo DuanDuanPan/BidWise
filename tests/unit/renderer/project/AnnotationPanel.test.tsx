@@ -661,4 +661,196 @@ describe('AnnotationPanel', () => {
       expect(screen.queryByTestId('annotation-card')).not.toBeInTheDocument()
     })
   })
+
+  // ── Story 4.3: 智能批注面板与上下文优先级排序 ──
+
+  describe('Story 4.3: smart annotation panel', () => {
+    it('renders filter controls when projectId is provided', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [makeAnnotation({ id: 'a1' })],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+        />
+      )
+
+      expect(screen.getByTestId('annotation-filters')).toBeInTheDocument()
+    })
+
+    it('renders section label when currentSection is provided', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [makeAnnotation({ id: 'a1', sectionId: '2:公司简介:0' })],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          currentSection={{
+            locator: { title: '公司简介', level: 2, occurrenceIndex: 0 },
+            sectionKey: '2:公司简介:0',
+            label: '公司简介',
+          }}
+        />
+      )
+
+      expect(screen.getByTestId('section-label')).toBeInTheDocument()
+      expect(screen.getByText('当前章节: 公司简介')).toBeInTheDocument()
+    })
+
+    it('shows chapter-level empty state when currentSection has no matching annotations', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [makeAnnotation({ id: 'a1', sectionId: '2:其他章节:0' })],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          currentSection={{
+            locator: { title: '公司简介', level: 2, occurrenceIndex: 0 },
+            sectionKey: '2:公司简介:0',
+            label: '公司简介',
+          }}
+        />
+      )
+
+      expect(screen.getByTestId('annotation-empty-section')).toBeInTheDocument()
+      expect(screen.getByText('本章节 AI 审查完毕，未发现需要您关注的问题')).toBeInTheDocument()
+    })
+
+    it('scopes annotations to current section', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [
+              makeAnnotation({ id: 'a1', sectionId: '2:公司简介:0', content: 'In section' }),
+              makeAnnotation({ id: 'a2', sectionId: '2:技术方案:0', content: 'Not in section' }),
+            ],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          currentSection={{
+            locator: { title: '公司简介', level: 2, occurrenceIndex: 0 },
+            sectionKey: '2:公司简介:0',
+            label: '公司简介',
+          }}
+        />
+      )
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards).toHaveLength(1)
+      expect(screen.getByText('In section')).toBeInTheDocument()
+      expect(screen.queryByText('Not in section')).not.toBeInTheDocument()
+    })
+
+    it('renders ask-system trigger button', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          currentSection={{
+            locator: { title: '公司简介', level: 2, occurrenceIndex: 0 },
+            sectionKey: '2:公司简介:0',
+            label: '公司简介',
+          }}
+        />
+      )
+
+      expect(screen.getByTestId('ask-system-trigger')).toBeInTheDocument()
+    })
+
+    it('preserves shell contract: expanded width 320px', () => {
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          sopPhase="proposal-writing"
+        />
+      )
+      expect(screen.getByTestId('annotation-panel').style.width).toBe('320px')
+    })
+
+    it('preserves shell contract: collapsed width 40px', () => {
+      render(
+        <AnnotationPanel
+          collapsed={true}
+          isCompact={false}
+          onToggle={vi.fn()}
+          sopPhase="proposal-writing"
+        />
+      )
+      expect(screen.getByTestId('annotation-panel').style.width).toBe('40px')
+    })
+
+    it('preserves shell contract: compact icon bar 48px', () => {
+      render(
+        <AnnotationPanel
+          collapsed={true}
+          isCompact={true}
+          onToggle={vi.fn()}
+          sopPhase="proposal-writing"
+        />
+      )
+      expect(screen.getByTestId('annotation-icon-bar')).toBeInTheDocument()
+    })
+  })
 })
