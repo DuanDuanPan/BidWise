@@ -64,6 +64,8 @@ jobs:
 
       - name: Run E2E tests
         run: xvfb-run --auto-servernum -- pnpm test:e2e
+        env:
+          ELECTRON_DISABLE_SANDBOX: 1
 
       - name: Upload test artifacts
         if: failure()
