@@ -185,7 +185,13 @@ timeout:
 # Codex LLM regression runner 会优先执行这些命令；
 # 若 Codex 判断某命令不适用，会在结构化结果中说明跳过原因。
 # 未配置时，Codex 会自主发现项目测试体系并执行回归测试。
-# regression_test_commands 未配置 — Codex 将自主发现项目测试体系并执行回归测试
+# 必须使用 test:unit 而不是裸跑 vitest：build/dev 会把 better-sqlite3 重建到
+# Electron ABI，test:unit 会先重建回宿主 Node ABI，避免 native module mismatch。
+regression_test_commands:
+  - "pnpm test:unit"
+  - "pnpm lint"
+  - "pnpm typecheck"
+  - "pnpm build"
 
 # 向后兼容：单命令格式（当 regression_test_commands 存在时此字段被忽略）
 # regression_test_command: "uv run pytest"
