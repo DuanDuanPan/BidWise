@@ -142,7 +142,7 @@ function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; a
     if (!active || items.length === 0) return
 
     const handleKeyDown = (e: KeyboardEvent): void => {
-      if (!e.altKey) return
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
 
       // Don't intercept when target is inside an input/editor (check ancestors too)
       const target = e.target

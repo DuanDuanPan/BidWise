@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useRef, useState, useEffect, useCallback } from 'react'
 import { Button, Tag, Tooltip, message } from 'antd'
 import { formatRelativeTime } from '@renderer/shared/lib/format-time'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
@@ -21,6 +21,19 @@ export const AnnotationCard = forwardRef<HTMLDivElement, AnnotationCardProps>(
   function AnnotationCard({ annotation, focused }, ref) {
     const updateAnnotation = useAnnotationStore((s) => s.updateAnnotation)
     const { type, status, content, author, createdAt, id } = annotation
+    const contentRef = useRef<HTMLParagraphElement>(null)
+    const [isTruncated, setIsTruncated] = useState(false)
+
+    const checkTruncation = useCallback(() => {
+      const el = contentRef.current
+      if (el) {
+        setIsTruncated(el.scrollHeight > el.clientHeight)
+      }
+    }, [])
+
+    useEffect(() => {
+      checkTruncation()
+    }, [content, checkTruncation])
 
     const color = ANNOTATION_TYPE_COLORS[type]
     const label = ANNOTATION_TYPE_LABELS[type]
@@ -81,8 +94,9 @@ export const AnnotationCard = forwardRef<HTMLDivElement, AnnotationCardProps>(
         </div>
 
         {/* Content */}
-        <Tooltip title={content.length > 80 ? content : undefined}>
+        <Tooltip title={isTruncated ? content : undefined}>
           <p
+            ref={contentRef}
             style={{
               margin: '0 0 8px 0',
               fontSize: 13,
