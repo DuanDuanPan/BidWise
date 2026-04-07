@@ -244,19 +244,32 @@ test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
     const count = await cards.count()
     expect(count).toBeGreaterThanOrEqual(2)
 
+    const getOutline = (
+      cardIndex: number
+    ): Promise<{ color: string; style: string; width: string }> =>
+      cards.nth(cardIndex).evaluate((el) => {
+        const style = window.getComputedStyle(el)
+        return {
+          color: style.outlineColor,
+          style: style.outlineStyle,
+          width: style.outlineWidth,
+        }
+      })
+    const expectedFocusColor = 'rgb(22, 119, 255)'
+
     // First card should be focused by default
-    const firstOutlineWidth = await cards.first().evaluate((el) => el.style.outlineWidth)
-    const firstOutlineStyle = await cards.first().evaluate((el) => el.style.outlineStyle)
-    expect(firstOutlineWidth).toBe('2px')
-    expect(firstOutlineStyle).toBe('solid')
+    const firstOutline = await getOutline(0)
+    expect(firstOutline.width).toBe('2px')
+    expect(firstOutline.style).toBe('solid')
+    expect(firstOutline.color).toBe(expectedFocusColor)
 
     // Press Alt+ArrowDown to move to next
     await testCtx.window.keyboard.press('Alt+ArrowDown')
 
     // Second card should now be focused
-    const secondOutlineWidth = await cards.nth(1).evaluate((el) => el.style.outlineWidth)
-    const secondOutlineStyle = await cards.nth(1).evaluate((el) => el.style.outlineStyle)
-    expect(secondOutlineWidth).toBe('2px')
-    expect(secondOutlineStyle).toBe('solid')
+    const secondOutline = await getOutline(1)
+    expect(secondOutline.width).toBe('2px')
+    expect(secondOutline.style).toBe('solid')
+    expect(secondOutline.color).toBe(expectedFocusColor)
   })
 })
