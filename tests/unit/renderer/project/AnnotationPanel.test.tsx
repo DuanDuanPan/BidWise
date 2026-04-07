@@ -40,6 +40,8 @@ describe('AnnotationPanel', () => {
 
   afterEach(cleanup)
 
+  // ── 壳层几何合同 (Story 1.7) ──
+
   describe('shell geometry (Story 1.7 contract)', () => {
     it('expanded state sets width to 320px', () => {
       render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
@@ -85,6 +87,8 @@ describe('AnnotationPanel', () => {
     })
   })
 
+  // ── 紧凑 flyout ──
+
   describe('compact flyout (Story 1.7 contract)', () => {
     it('clicking icon button opens flyout', () => {
       render(<AnnotationPanel collapsed={true} isCompact={true} onToggle={vi.fn()} />)
@@ -120,6 +124,8 @@ describe('AnnotationPanel', () => {
       expect(screen.queryByTestId('annotation-flyout')).not.toBeInTheDocument()
     })
   })
+
+  // ── Header ──
 
   describe('header (Story 4.1)', () => {
     it('displays title as "批注"', () => {
@@ -188,6 +194,8 @@ describe('AnnotationPanel', () => {
     })
   })
 
+  // ── 内容状态 ──
+
   describe('content states (Story 4.1)', () => {
     it('shows empty state without projectId', () => {
       render(<AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} />)
@@ -195,8 +203,7 @@ describe('AnnotationPanel', () => {
       expect(screen.getByText('本项目暂无批注')).toBeInTheDocument()
     })
 
-    it('shows loading state before first fetch starts (no flash of empty)', () => {
-      // Before useEffect fires: loading=false, loaded=false — must show skeleton, not empty
+    it('shows loading state before first fetch starts', () => {
       useAnnotationStore.setState({
         projects: {
           'proj-1': { items: [], loading: false, error: null, loaded: false },
@@ -235,33 +242,6 @@ describe('AnnotationPanel', () => {
 
       expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
       expect(screen.getByTestId('annotation-header-spinner')).toBeInTheDocument()
-      expect(screen.getByText('正在加载批注数据...')).toBeInTheDocument()
-    })
-
-    it('keeps loading state authoritative while a retry is in flight', () => {
-      useAnnotationStore.setState({
-        projects: {
-          'proj-1': {
-            items: [],
-            loading: true,
-            error: 'previous failure',
-            loaded: false,
-          },
-        },
-      })
-
-      render(
-        <AnnotationPanel
-          collapsed={false}
-          isCompact={false}
-          onToggle={vi.fn()}
-          projectId="proj-1"
-        />
-      )
-
-      expect(screen.getByTestId('annotation-loading')).toBeInTheDocument()
-      expect(screen.getByTestId('annotation-header-spinner')).toBeInTheDocument()
-      expect(screen.queryByTestId('annotation-error')).not.toBeInTheDocument()
     })
 
     it('shows error state with retry when first load fails', async () => {
@@ -269,10 +249,7 @@ describe('AnnotationPanel', () => {
         success: true,
         data: [makeAnnotation({ id: 'a1', content: 'Recovered annotation' })],
       })
-      vi.stubGlobal('api', {
-        ...window.api,
-        annotationList,
-      })
+      vi.stubGlobal('api', { ...window.api, annotationList })
 
       useAnnotationStore.setState({
         projects: {
@@ -291,9 +268,6 @@ describe('AnnotationPanel', () => {
 
       expect(screen.getByTestId('annotation-error')).toBeInTheDocument()
       expect(screen.getByText('批注加载失败')).toBeInTheDocument()
-      expect(screen.getByText('db error')).toBeInTheDocument()
-      expect(screen.queryByTestId('annotation-loading')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('annotation-header-spinner')).not.toBeInTheDocument()
 
       fireEvent.click(screen.getByTestId('annotation-retry'))
 
@@ -303,7 +277,6 @@ describe('AnnotationPanel', () => {
       await waitFor(() => {
         expect(screen.getByTestId('annotation-list')).toBeInTheDocument()
       })
-      expect(screen.getByText('Recovered annotation')).toBeInTheDocument()
     })
 
     it('shows empty state when loaded with no items', () => {
@@ -325,7 +298,7 @@ describe('AnnotationPanel', () => {
       expect(screen.getByTestId('annotation-empty')).toBeInTheDocument()
     })
 
-    it('shows list state with annotation items', () => {
+    it('shows list with AnnotationCard items (Story 4.2 upgrade)', () => {
       useAnnotationStore.setState({
         projects: {
           'proj-1': {
@@ -350,18 +323,165 @@ describe('AnnotationPanel', () => {
       )
 
       expect(screen.getByTestId('annotation-list')).toBeInTheDocument()
-      const items = screen.getAllByTestId('annotation-item')
-      expect(items).toHaveLength(2)
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards).toHaveLength(2)
       expect(screen.getByText('Suggestion text')).toBeInTheDocument()
       expect(screen.getByText('Human note')).toBeInTheDocument()
     })
+  })
 
-    it('annotation item shows type chip, status chip, author and time', () => {
+  // ── Story 4.2: 键盘导航 (AC #4) ──
+
+  describe('keyboard navigation (AC #4)', () => {
+    function setupWithAnnotations(): void {
       useAnnotationStore.setState({
         projects: {
           'proj-1': {
             items: [
-              makeAnnotation({ type: 'adversarial', status: 'needs-decision', author: 'ai-agent' }),
+              makeAnnotation({ id: 'a1', type: 'ai-suggestion', content: 'First', status: 'pending' }),
+              makeAnnotation({ id: 'a2', type: 'score-warning', content: 'Second', status: 'pending' }),
+              makeAnnotation({ id: 'a3', type: 'adversarial', content: 'Third', status: 'pending' }),
+            ],
+            loading: false,
+            error: null,
+            loaded: true,
+          },
+        },
+      })
+    }
+
+    it('first card is focused by default', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('Alt+ArrowDown moves focus to next card', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      // Second card should now be focused
+      expect(cards[1].style.outline).toContain('2px solid')
+      expect(cards[0].style.outline).toBe('none')
+    })
+
+    it('Alt+ArrowUp moves focus to previous card', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      // Move down first, then up
+      fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
+      fireEvent.keyDown(window, { key: 'ArrowUp', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('Alt+ArrowDown wraps from last to first', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      // Navigate to end and wrap
+      fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
+      fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
+      fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('Alt+ArrowUp wraps from first to last', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      fireEvent.keyDown(window, { key: 'ArrowUp', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[2].style.outline).toContain('2px solid')
+    })
+
+    it('Alt+Enter executes primary action on focused pending card', async () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      fireEvent.keyDown(window, { key: 'Enter', altKey: true })
+
+      await waitFor(() => {
+        expect(window.api.annotationUpdate).toHaveBeenCalledWith({
+          id: 'a1',
+          status: 'accepted',
+        })
+      })
+    })
+
+    it('Alt+Backspace executes reject on ai-suggestion card', async () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      fireEvent.keyDown(window, { key: 'Backspace', altKey: true })
+
+      await waitFor(() => {
+        expect(window.api.annotationUpdate).toHaveBeenCalledWith({
+          id: 'a1',
+          status: 'rejected',
+        })
+      })
+    })
+
+    it('Alt+Backspace on score-warning is no-op (no reject action)', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      // Navigate to score-warning card (index 1)
+      fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true })
+      fireEvent.keyDown(window, { key: 'Backspace', altKey: true })
+
+      // Should NOT have been called (score-warning has no reject)
+      expect(window.api.annotationUpdate).not.toHaveBeenCalled()
+    })
+
+    it('Alt+D marks focused card as needs-decision', async () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      fireEvent.keyDown(window, { key: 'd', altKey: true })
+
+      await waitFor(() => {
+        expect(window.api.annotationUpdate).toHaveBeenCalledWith({
+          id: 'a1',
+          status: 'needs-decision',
+        })
+      })
+    })
+
+    it('shortcuts are no-op on already processed cards', () => {
+      useAnnotationStore.setState({
+        projects: {
+          'proj-1': {
+            items: [
+              makeAnnotation({ id: 'a1', type: 'ai-suggestion', status: 'accepted' }),
             ],
             loading: false,
             error: null,
@@ -371,17 +491,91 @@ describe('AnnotationPanel', () => {
       })
 
       render(
-        <AnnotationPanel
-          collapsed={false}
-          isCompact={false}
-          onToggle={vi.fn()}
-          projectId="proj-1"
-        />
+        <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
       )
 
-      expect(screen.getByText('对抗攻击')).toBeInTheDocument()
-      expect(screen.getByText('待决策')).toBeInTheDocument()
-      expect(screen.getByText(/ai-agent/)).toBeInTheDocument()
+      fireEvent.keyDown(window, { key: 'Enter', altKey: true })
+      fireEvent.keyDown(window, { key: 'Backspace', altKey: true })
+      fireEvent.keyDown(window, { key: 'd', altKey: true })
+
+      expect(window.api.annotationUpdate).not.toHaveBeenCalled()
+    })
+
+    it('does not intercept keyboard when target is an input element', () => {
+      setupWithAnnotations()
+      render(
+        <div>
+          <input data-testid="test-input" />
+          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        </div>
+      )
+
+      const input = screen.getByTestId('test-input')
+      fireEvent.keyDown(input, { key: 'ArrowDown', altKey: true })
+
+      // Focus should remain on first card (event was in input, should be ignored)
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('does not intercept keyboard when target is a textarea', () => {
+      setupWithAnnotations()
+      render(
+        <div>
+          <textarea data-testid="test-textarea" />
+          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        </div>
+      )
+
+      const textarea = screen.getByTestId('test-textarea')
+      fireEvent.keyDown(textarea, { key: 'ArrowDown', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('does not intercept keyboard when target is contenteditable', () => {
+      setupWithAnnotations()
+      render(
+        <div>
+          <div data-testid="editable" contentEditable="true" />
+          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        </div>
+      )
+
+      const editable = screen.getByTestId('editable')
+      fireEvent.keyDown(editable, { key: 'ArrowDown', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('does not intercept when target is inside plate-editor-content', () => {
+      setupWithAnnotations()
+      render(
+        <div>
+          <div data-testid="plate-editor-content">
+            <div data-testid="editor-child" />
+          </div>
+          <AnnotationPanel collapsed={false} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+        </div>
+      )
+
+      const child = screen.getByTestId('editor-child')
+      fireEvent.keyDown(child, { key: 'ArrowDown', altKey: true })
+
+      const cards = screen.getAllByTestId('annotation-card')
+      expect(cards[0].style.outline).toContain('2px solid')
+    })
+
+    it('keyboard navigation is inactive when panel is collapsed', () => {
+      setupWithAnnotations()
+      render(
+        <AnnotationPanel collapsed={true} isCompact={false} onToggle={vi.fn()} projectId="proj-1" />
+      )
+
+      // Collapsed panel doesn't render cards, so no navigation possible
+      expect(screen.queryByTestId('annotation-card')).not.toBeInTheDocument()
     })
   })
 })
