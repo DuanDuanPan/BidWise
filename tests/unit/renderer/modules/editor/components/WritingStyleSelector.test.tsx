@@ -331,4 +331,100 @@ describe('@story-3-6 WritingStyleSelector', () => {
       expect(selectionItem?.textContent).toBe('军工文风')
     })
   })
+
+  it('@p0 should keep rollback scoped to the current project after project switch', async () => {
+    let resolveProjectA: (value: unknown) => void
+    let resolveProjectB: (value: unknown) => void
+    const projectAPromise = new Promise((resolve) => {
+      resolveProjectA = resolve
+    })
+    const projectBPromise = new Promise((resolve) => {
+      resolveProjectB = resolve
+    })
+
+    mockDocumentGetMetadata.mockImplementation(({ projectId }: { projectId: string }) =>
+      Promise.resolve({
+        success: true,
+        data: { writingStyleId: projectId === 'proj-a' ? 'general' : 'general' },
+      })
+    )
+
+    mockWritingStyleUpdateProject.mockImplementation(
+      ({ projectId }: { projectId: string; writingStyleId: string }) => {
+        if (projectId === 'proj-a') {
+          return projectAPromise
+        }
+
+        if (projectId === 'proj-b') {
+          return projectBPromise
+        }
+
+        throw new Error(`Unexpected projectId: ${projectId}`)
+      }
+    )
+
+    const { rerender } = render(<WritingStyleSelector projectId="proj-a" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('通用文风')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole('combobox'))
+    })
+    const militaryOption = await screen.findByText('军工文风')
+    await act(async () => {
+      fireEvent.click(militaryOption)
+    })
+
+    await waitFor(() => {
+      expect(mockWritingStyleUpdateProject).toHaveBeenCalledWith({
+        projectId: 'proj-a',
+        writingStyleId: 'military',
+      })
+    })
+
+    rerender(<WritingStyleSelector projectId="proj-b" />)
+
+    await waitFor(() => {
+      expect(mockDocumentGetMetadata).toHaveBeenCalledWith({ projectId: 'proj-b' })
+    })
+
+    await waitFor(() => {
+      const selectionItem = document.querySelector('.ant-select-selection-item')
+      expect(selectionItem?.textContent).toBe('通用文风')
+    })
+
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole('combobox'))
+    })
+    const governmentOption = await screen.findByText('政企文风')
+    await act(async () => {
+      fireEvent.click(governmentOption)
+    })
+
+    await waitFor(() => {
+      expect(mockWritingStyleUpdateProject).toHaveBeenCalledWith({
+        projectId: 'proj-b',
+        writingStyleId: 'government',
+      })
+    })
+
+    await act(async () => {
+      resolveProjectA!({ success: true, data: { writingStyleId: 'military' } })
+    })
+
+    await act(async () => {
+      resolveProjectB!({ success: false, error: { code: 'INTERNAL', message: 'fail' } })
+    })
+
+    await waitFor(() => {
+      expect(mockMessageError).toHaveBeenCalledWith('文风切换失败，请重试')
+    })
+
+    await waitFor(() => {
+      const selectionItem = document.querySelector('.ant-select-selection-item')
+      expect(selectionItem?.textContent).toBe('通用文风')
+    })
+  })
 })

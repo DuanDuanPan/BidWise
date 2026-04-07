@@ -24,8 +24,11 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
   const [selectedId, setSelectedId] = useState<WritingStyleId>('general')
   const [loading, setLoading] = useState(true)
 
+  const activeProjectIdRef = useRef(projectId)
   const confirmedIdRef = useRef<WritingStyleId>('general')
   const requestSeqRef = useRef(0)
+
+  activeProjectIdRef.current = projectId
 
   useEffect(() => {
     let cancelled = false
@@ -69,6 +72,10 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
       const seq = ++requestSeqRef.current
       setSelectedId(styleId)
       const res = await window.api.writingStyleUpdateProject({ projectId, writingStyleId: styleId })
+
+      // Ignore late responses after the user has switched to another project.
+      if (projectId !== activeProjectIdRef.current) return
+
       if (res.success) {
         // Always track the latest persisted value, even if superseded,
         // so rollback targets the real backend state.
