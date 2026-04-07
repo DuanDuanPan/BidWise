@@ -73,7 +73,7 @@ phases:
     type: structured_job
     next_on_success: validating
     workspace: main
-    skip_when: "not story.has_ui"
+    skip_when: 'not story.has_ui'
     batchable: true
     parallel_safe: true
 
@@ -148,16 +148,16 @@ max_concurrent_agents: 4
 # ---------------------------------------------------------------------------
 
 convergent_loop:
-  max_rounds: 3                     # 最大迭代轮次（>= 1）
-  convergence_threshold: 0.5        # 收敛阈值（0.0 ~ 1.0）
+  max_rounds: 3 # 最大迭代轮次（>= 1）
+  convergence_threshold: 0.5 # 收敛阈值（0.0 ~ 1.0）
 
 # ---------------------------------------------------------------------------
 # 超时设置（秒）
 # ---------------------------------------------------------------------------
 
 timeout:
-  structured_job: 1800              # 结构化任务超时：30 分钟
-  interactive_session: 7200         # 交互式会话超时：2 小时
+  structured_job: 1800 # 结构化任务超时：30 分钟
+  interactive_session: 7200 # 交互式会话超时：2 小时
 
 # ---------------------------------------------------------------------------
 # 成本控制（可选）
