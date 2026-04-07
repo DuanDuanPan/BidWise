@@ -15,11 +15,11 @@ function locatorKey(locator: ChapterHeadingLocator): string {
 
 /** Map progress message strings to generation phases */
 function progressToPhase(progress: number, message?: string): ChapterGenerationPhase {
+  if (progress >= 100) return 'completed'
   if (message === 'analyzing') return 'analyzing'
   if (message === 'matching-assets') return 'matching-assets'
   if (message === 'generating') return 'generating'
   if (message === 'annotating-sources') return 'annotating-sources'
-  if (progress >= 100) return 'completed'
   if (progress >= 90) return 'annotating-sources'
   if (progress >= 50) return 'generating'
   if (progress >= 25) return 'matching-assets'

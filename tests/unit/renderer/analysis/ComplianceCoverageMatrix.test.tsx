@@ -216,6 +216,10 @@ describe('ComplianceCoverageMatrix', () => {
 
     const cell = screen.getByTestId('cell-req-1-sec-1')
 
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
     expect(cell.className).toContain('animate-pulse')
 
     await act(async () => {

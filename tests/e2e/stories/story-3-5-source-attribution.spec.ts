@@ -228,11 +228,24 @@ test.describe('Story 3.5: Source Attribution & Baseline Validation', () => {
     )
     await expect(noSourceLabel).toBeVisible({ timeout: 10_000 })
 
-    // The parent PlateElement (paragraph) should have the yellow background
-    const paragraph = noSourceLabel
-      .locator('xpath=ancestor::div[contains(@style, "FFFBE6")]')
-      .first()
-    await expect(paragraph).toBeVisible()
+    // The highlighted container can be a paragraph/list wrapper rather than a div,
+    // so assert on computed style up the ancestor chain instead of raw inline markup.
+    await expect
+      .poll(
+        async () =>
+          noSourceLabel.evaluate((label) => {
+            let current: HTMLElement | null = label as HTMLElement
+            while (current && current !== document.body) {
+              if (window.getComputedStyle(current).backgroundColor === 'rgb(255, 251, 230)') {
+                return true
+              }
+              current = current.parentElement
+            }
+            return false
+          }),
+        { timeout: 5_000 }
+      )
+      .toBe(true)
   })
 
   test('@story-3-5 @p0 baseline mismatch shows red marker', async () => {

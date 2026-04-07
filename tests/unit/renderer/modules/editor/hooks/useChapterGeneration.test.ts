@@ -147,6 +147,24 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
   })
 
+  it('@p0 should treat a 100% generating progress event as completion', async () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startGeneration(mockTarget)
+    })
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-gen-1', progress: 100, message: 'generating' })
+    })
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status!.phase).toBe('completed')
+      expect(status!.generatedContent).toBe('# Generated Content')
+    })
+  })
+
   it('@p0 should detect conflict when section content changed during generation', async () => {
     const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
 
