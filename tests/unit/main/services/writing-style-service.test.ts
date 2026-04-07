@@ -173,6 +173,19 @@ describe('@story-3-6 writingStyleService', () => {
       expect(styles).toHaveLength(0)
     })
 
+    it('@p2 should reject arrays with non-string elements', async () => {
+      const nonStringElements = {
+        ...GENERAL_STYLE,
+        forbiddenWords: [123, null, '有效词'],
+      }
+      mockReaddir.mockResolvedValue(['bad.style.json'])
+      mockReadFile.mockResolvedValue(JSON.stringify(nonStringElements))
+
+      const styles = await writingStyleService.listStyles()
+
+      expect(styles).toHaveLength(0)
+    })
+
     it('@p2 should handle unreadable style files gracefully', async () => {
       mockReaddir.mockResolvedValue(['bad.style.json', 'general.style.json'])
       mockReadFile

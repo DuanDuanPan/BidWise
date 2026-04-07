@@ -44,6 +44,10 @@ function validateStyleFileData(data: unknown, filePath: string): WritingStyleFil
     if (!Array.isArray(obj[field])) {
       throw new Error(`文风模板字段必须为数组: ${field} (${filePath})`)
     }
+    const arr = obj[field] as unknown[]
+    if (arr.some((item) => typeof item !== 'string')) {
+      throw new Error(`文风模板数组元素必须为 string: ${field} (${filePath})`)
+    }
   }
 
   if (obj.exampleSnippet !== undefined && typeof obj.exampleSnippet !== 'string') {
