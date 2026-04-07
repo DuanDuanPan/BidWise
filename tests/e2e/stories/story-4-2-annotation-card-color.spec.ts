@@ -49,6 +49,11 @@ async function launchApp(): Promise<LaunchContext> {
   return { electronApp, window, sandboxHome, projectId }
 }
 
+async function cleanupApp(ctx: LaunchContext): Promise<void> {
+  await ctx.electronApp.close()
+  await rm(ctx.sandboxHome, { recursive: true, force: true })
+}
+
 async function createAnnotation(
   ctx: LaunchContext,
   overrides: Record<string, string> = {}
@@ -117,18 +122,28 @@ async function ensurePanelOpen(ctx: LaunchContext): Promise<void> {
 }
 
 test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
-  let ctx: LaunchContext
+  let ctx: LaunchContext | null = null
 
-  test.beforeAll(async () => {
+  function getContext(): LaunchContext {
+    if (!ctx) {
+      throw new Error('E2E launch context was not initialized')
+    }
+    return ctx
+  }
+
+  test.beforeEach(async () => {
     ctx = await launchApp()
   })
 
-  test.afterAll(async () => {
-    await ctx.electronApp.close()
-    await rm(ctx.sandboxHome, { recursive: true, force: true })
+  test.afterEach(async () => {
+    if (ctx) {
+      await cleanupApp(ctx)
+      ctx = null
+    }
   })
 
   test('five-color left borders render for different annotation types', async () => {
+    const testCtx = getContext()
     const colorMap: Record<string, string> = {
       'ai-suggestion': 'rgb(22, 119, 255)',
       'asset-recommendation': 'rgb(82, 196, 26)',
@@ -144,38 +159,40 @@ test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
       adversarial: 'E2E red card test',
       human: 'E2E purple card test',
     })) {
-      await createAnnotation(ctx, { type, content })
+      await createAnnotation(testCtx, { type, content })
     }
 
-    await refreshAnnotations(ctx)
-    await navigateToProposalWriting(ctx)
-    await ensurePanelOpen(ctx)
+    await refreshAnnotations(testCtx)
+    await navigateToProposalWriting(testCtx)
+    await ensurePanelOpen(testCtx)
 
-    const cards = ctx.window.getByTestId('annotation-card')
+    const cards = testCtx.window.getByTestId('annotation-card')
     const count = await cards.count()
     expect(count).toBeGreaterThanOrEqual(5)
 
     // Check that at least one card has each expected color
     for (const [, expectedColor] of Object.entries(colorMap)) {
       const matchingCard = cards.filter({
-        has: ctx.window.locator(`[style*="${expectedColor}"]`),
+        has: testCtx.window.locator(`[style*="${expectedColor}"]`),
       })
       await expect(matchingCard.first()).toBeVisible({ timeout: 5_000 })
     }
   })
 
   test('action buttons display correct labels for ai-suggestion type', async () => {
-    await createAnnotation(ctx, {
+    const testCtx = getContext()
+
+    await createAnnotation(testCtx, {
       type: 'ai-suggestion',
       content: 'Action button label test',
     })
 
-    await refreshAnnotations(ctx)
-    await navigateToProposalWriting(ctx)
-    await ensurePanelOpen(ctx)
+    await refreshAnnotations(testCtx)
+    await navigateToProposalWriting(testCtx)
+    await ensurePanelOpen(testCtx)
 
     // Find the ai-suggestion card
-    const card = ctx.window.getByText('Action button label test').locator('..')
+    const card = testCtx.window.getByText('Action button label test').locator('..')
 
     await expect(card.getByTestId('annotation-action-accept')).toContainText('采纳')
     await expect(card.getByTestId('annotation-action-reject')).toContainText('驳回')
@@ -183,16 +200,18 @@ test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
   })
 
   test('clicking accept button changes card to accepted state with reduced opacity', async () => {
-    const created = await createAnnotation(ctx, {
+    const testCtx = getContext()
+
+    const created = await createAnnotation(testCtx, {
       type: 'ai-suggestion',
       content: 'Status transition test card',
     })
 
-    await refreshAnnotations(ctx)
-    await navigateToProposalWriting(ctx)
-    await ensurePanelOpen(ctx)
+    await refreshAnnotations(testCtx)
+    await navigateToProposalWriting(testCtx)
+    await ensurePanelOpen(testCtx)
 
-    const card = ctx.window.locator(`[data-annotation-id="${created.id}"]`)
+    const card = testCtx.window.locator(`[data-annotation-id="${created.id}"]`)
     await expect(card).toBeVisible({ timeout: 5_000 })
 
     // Click accept
@@ -211,15 +230,17 @@ test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
   })
 
   test('keyboard navigation Alt+Arrow cycles through cards', async () => {
+    const testCtx = getContext()
+
     // Create multiple annotations
-    await createAnnotation(ctx, { type: 'ai-suggestion', content: 'Nav card A' })
-    await createAnnotation(ctx, { type: 'score-warning', content: 'Nav card B' })
+    await createAnnotation(testCtx, { type: 'ai-suggestion', content: 'Nav card A' })
+    await createAnnotation(testCtx, { type: 'score-warning', content: 'Nav card B' })
 
-    await refreshAnnotations(ctx)
-    await navigateToProposalWriting(ctx)
-    await ensurePanelOpen(ctx)
+    await refreshAnnotations(testCtx)
+    await navigateToProposalWriting(testCtx)
+    await ensurePanelOpen(testCtx)
 
-    const cards = ctx.window.getByTestId('annotation-card')
+    const cards = testCtx.window.getByTestId('annotation-card')
     const count = await cards.count()
     expect(count).toBeGreaterThanOrEqual(2)
 
@@ -230,7 +251,7 @@ test.describe('Story 4.2 Annotation Card Color Coding E2E', () => {
     expect(firstOutlineStyle).toBe('solid')
 
     // Press Alt+ArrowDown to move to next
-    await ctx.window.keyboard.press('Alt+ArrowDown')
+    await testCtx.window.keyboard.press('Alt+ArrowDown')
 
     // Second card should now be focused
     const secondOutlineWidth = await cards.nth(1).evaluate((el) => el.style.outlineWidth)
