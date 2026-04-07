@@ -27,14 +27,18 @@ export class RequirementRepository {
     }
   }
 
-  async findByProject(projectId: string): Promise<RequirementItem[]> {
+  async findByProject(
+    projectId: string,
+    opts?: { includeDeleted?: boolean }
+  ): Promise<RequirementItem[]> {
     try {
-      const rows = await getDb()
-        .selectFrom('requirements')
-        .selectAll()
-        .where('projectId', '=', projectId)
-        .orderBy('sequenceNumber', 'asc')
-        .execute()
+      let query = getDb().selectFrom('requirements').selectAll().where('projectId', '=', projectId)
+
+      if (!opts?.includeDeleted) {
+        query = query.where('status', '!=', 'deleted')
+      }
+
+      const rows = await query.orderBy('sequenceNumber', 'asc').execute()
 
       return rows.map((row) => ({
         id: row.id,

@@ -2,6 +2,8 @@
  * Analysis module shared types — tender import & parsing (Story 2.3)
  */
 
+import type { ChapterHeadingLocator } from './chapter-types'
+
 /** Supported tender file formats */
 export type TenderFormat = 'pdf' | 'docx' | 'doc'
 
@@ -330,4 +332,118 @@ export interface ConfirmCertaintyInput {
 
 export interface BatchConfirmCertaintyInput {
   projectId: string
+}
+
+// ─── Story 2.8: Traceability Matrix ───
+
+export type CoverageStatus = 'covered' | 'partial' | 'uncovered'
+
+export type TraceabilityLinkSource = 'auto' | 'manual'
+
+export type TraceabilityCellState = CoverageStatus | 'none'
+
+export interface TraceabilityLink {
+  id: string
+  projectId: string
+  requirementId: string
+  sectionId: string
+  sectionTitle: string
+  coverageStatus: CoverageStatus
+  confidence: number
+  matchReason?: string | null
+  source: TraceabilityLinkSource
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TraceabilityMatrixCell {
+  requirementId: string
+  requirementDescription: string
+  requirementSequence: number
+  sectionId: string
+  sectionTitle: string
+  cellState: TraceabilityCellState
+  coverageStatus: CoverageStatus | null
+  confidence: number
+  source: TraceabilityLinkSource | null
+  matchReason: string | null
+  linkId: string | null
+  isImpacted: boolean
+}
+
+export interface TraceabilityMatrixColumn {
+  sectionId: string
+  title: string
+  level: 1 | 2 | 3 | 4
+  parentSectionId?: string
+  order: number
+  occurrenceIndex: number
+  weightPercent?: number
+  headingLocator?: ChapterHeadingLocator | null
+}
+
+export interface TraceabilityMatrixRow {
+  requirementId: string
+  sequenceNumber: number
+  description: string
+  category: RequirementCategory
+  cells: TraceabilityMatrixCell[]
+}
+
+export interface TraceabilityStats {
+  totalRequirements: number
+  coveredCount: number
+  partialCount: number
+  uncoveredCount: number
+  coverageRate: number
+}
+
+export interface TraceabilityMatrix {
+  projectId: string
+  rows: TraceabilityMatrixRow[]
+  columns: TraceabilityMatrixColumn[]
+  stats: TraceabilityStats
+  generatedAt: string
+  updatedAt: string
+  recentlyImpactedSectionIds: string[]
+  recentlyAddedRequirementIds: string[]
+}
+
+export interface GenerateMatrixInput {
+  projectId: string
+}
+
+export interface GenerateMatrixResult {
+  taskId: string
+}
+
+export interface GetMatrixInput {
+  projectId: string
+}
+
+export interface CreateLinkInput {
+  projectId: string
+  requirementId: string
+  sectionId: string
+  coverageStatus: CoverageStatus
+}
+
+export interface UpdateLinkInput {
+  id: string
+  patch: Partial<Pick<TraceabilityLink, 'coverageStatus' | 'matchReason'>>
+}
+
+export interface DeleteLinkInput {
+  id: string
+}
+
+export interface ImportAddendumInput {
+  projectId: string
+  content?: string
+  filePath?: string
+  fileName?: string
+}
+
+export interface ImportAddendumResult {
+  taskId: string
 }

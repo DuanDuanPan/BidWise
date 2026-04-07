@@ -1,3 +1,5 @@
+import type { ChapterHeadingLocator } from './chapter-types'
+
 /** 模板章节定义 */
 export interface TemplateSection {
   id: string // 如 "s1", "s1.1"
@@ -51,6 +53,19 @@ export interface SectionWeightEntry {
   scoringCriterionName?: string
   scoringSubItemId?: string
   scoringSubItemName?: string
+}
+
+/** 追溯矩阵章节索引条目 (Story 2.8) */
+export interface ProposalSectionIndexEntry {
+  sectionId: string
+  title: string
+  level: 1 | 2 | 3 | 4
+  parentSectionId?: string
+  order: number
+  occurrenceIndex: number
+  headingLocator: ChapterHeadingLocator
+  weightPercent?: number
+  isKeyFocus?: boolean
 }
 
 // --- IPC 输入/输出类型 ---

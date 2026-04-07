@@ -175,11 +175,16 @@ export class TaskQueueService {
         }
       }
 
+      let lastProgressMessage: string | undefined
+
       const context: TaskExecutorContext = {
         taskId,
         input: parsedInput,
         signal: controller.signal,
         updateProgress: (progress: number, message?: string) => {
+          if (typeof message === 'string' && message.trim().length > 0) {
+            lastProgressMessage = message
+          }
           // Fire-and-forget progress update
           this.repo.update(taskId, { progress }).catch((err) => {
             logger.warn(`Failed to persist progress for task ${taskId}`, err)
@@ -204,7 +209,7 @@ export class TaskQueueService {
         completedAt: now,
       })
 
-      progressEmitter.emit({ taskId, progress: 100 })
+      progressEmitter.emit({ taskId, progress: 100, message: lastProgressMessage })
       progressEmitter.clear(taskId)
       logger.info(`Task completed: ${taskId}`)
 

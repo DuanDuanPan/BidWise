@@ -90,6 +90,7 @@ export type AgentType =
   | 'attribute-sources'
   | 'validate-baseline'
   | 'fog-map'
+  | 'traceability'
 
 /** Task status state machine */
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'

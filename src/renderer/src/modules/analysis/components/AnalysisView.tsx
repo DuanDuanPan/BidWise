@@ -13,9 +13,16 @@ import { StrategySeedList } from './StrategySeedList'
 import { StrategySeedBadge } from './StrategySeedBadge'
 import { FogMapView } from './FogMapView'
 import { FogMapBadge } from './FogMapBadge'
+import { TraceabilityMatrixView } from './TraceabilityMatrixView'
 import type { AnalysisViewProps } from '../types'
+import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
-export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Element {
+export function AnalysisView({
+  projectId,
+  onNavigateToChapter,
+}: AnalysisViewProps & {
+  onNavigateToChapter?: (locator: ChapterHeadingLocator) => void
+}): React.JSX.Element {
   const projectState = useAnalysisStore((state) => getAnalysisProjectState(state, projectId))
   const fetchTenderResult = useAnalysisStore((s) => s.fetchTenderResult)
   const reset = useAnalysisStore((s) => s.reset)
@@ -41,6 +48,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const fetchFogMapSummary = useAnalysisStore((s) => s.fetchFogMapSummary)
   const confirmCertainty = useAnalysisStore((s) => s.confirmCertainty)
   const batchConfirmCertainty = useAnalysisStore((s) => s.batchConfirmCertainty)
+  const fetchMatrix = useAnalysisStore((s) => s.fetchMatrix)
+  const fetchMatrixStats = useAnalysisStore((s) => s.fetchMatrixStats)
 
   const {
     parsedTender,
@@ -74,6 +83,7 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     fogMapProgress,
     fogMapMessage,
     fogMapError,
+    traceabilityStats,
   } = projectState
 
   // On mount / project change: check for existing data
@@ -87,6 +97,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     void fetchSeedSummary(projectId)
     void fetchFogMap(projectId)
     void fetchFogMapSummary(projectId)
+    void fetchMatrix(projectId)
+    void fetchMatrixStats(projectId)
   }, [
     projectId,
     fetchTenderResult,
@@ -98,6 +110,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     fetchSeedSummary,
     fetchFogMap,
     fetchFogMapSummary,
+    fetchMatrix,
+    fetchMatrixStats,
   ])
 
   const [activeTab, setActiveTab] = useState('requirements')
@@ -339,6 +353,33 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
                     onConfirm={confirmCertainty}
                     onBatchConfirm={() => batchConfirmCertainty(projectId)}
                     onNavigateToRequirements={handleNavigateToRequirements}
+                  />
+                ),
+              },
+              {
+                key: 'traceability',
+                label: (
+                  <span>
+                    追溯矩阵
+                    {traceabilityStats && (
+                      <span
+                        className={`ml-1 text-xs ${
+                          traceabilityStats.uncoveredCount > 0
+                            ? 'text-red-500'
+                            : traceabilityStats.coverageRate === 1
+                              ? 'text-green-500'
+                              : 'text-text-tertiary'
+                        }`}
+                      >
+                        ({Math.round(traceabilityStats.coverageRate * 100)}%)
+                      </span>
+                    )}
+                  </span>
+                ),
+                children: (
+                  <TraceabilityMatrixView
+                    projectId={projectId}
+                    onNavigateToChapter={onNavigateToChapter}
                   />
                 ),
               },

@@ -185,7 +185,11 @@ describe('TaskQueueService @story-2-2', () => {
       await queue.execute('task-1', executor)
 
       expect(mockEmit).toHaveBeenCalledWith({ taskId: 'task-1', progress: 50, message: 'halfway' })
-      expect(mockEmit).toHaveBeenCalledWith({ taskId: 'task-1', progress: 100 })
+      expect(mockEmit).toHaveBeenCalledWith({
+        taskId: 'task-1',
+        progress: 100,
+        message: 'halfway',
+      })
     })
 
     it('@p1 should persist checkpoint via setCheckpoint', async () => {

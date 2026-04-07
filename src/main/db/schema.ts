@@ -108,6 +108,20 @@ export interface RequirementCertaintyTable {
   updatedAt: string
 }
 
+export interface TraceabilityLinkTable {
+  id: string
+  projectId: string
+  requirementId: string
+  sectionId: string
+  sectionTitle: string
+  coverageStatus: string // 'covered' | 'partial' | 'uncovered'
+  confidence: number // 0-1
+  matchReason: string | null
+  source: string // 'auto' | 'manual'
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -117,4 +131,5 @@ export interface DB {
   strategySeeds: StrategySeedTable
   annotations: AnnotationTable
   requirementCertainties: RequirementCertaintyTable
+  traceabilityLinks: TraceabilityLinkTable
 }

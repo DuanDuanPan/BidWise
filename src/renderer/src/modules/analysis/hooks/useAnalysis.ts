@@ -12,15 +12,17 @@ const PROGRESS_STALE_THRESHOLD = 10_000
 /** Polling interval for task status (ms) */
 const POLL_INTERVAL = 3_000
 
-type TaskKind = 'import' | 'extraction' | 'mandatory' | 'seed' | 'fog-map'
+type TaskKind = 'import' | 'extraction' | 'mandatory' | 'seed' | 'fog-map' | 'matrix' | 'addendum'
 
-/** Determine whether a taskId is an import, extraction, mandatory, or seed task within a project */
+/** Determine whether a taskId is an import, extraction, mandatory, seed, matrix, or addendum task within a project */
 function classifyTask(projectState: AnalysisProjectState, taskId: string): TaskKind | null {
   if (projectState.importTaskId === taskId) return 'import'
   if (projectState.extractionTaskId === taskId) return 'extraction'
   if (projectState.mandatoryDetectionTaskId === taskId) return 'mandatory'
   if (projectState.seedGenerationTaskId === taskId) return 'seed'
   if (projectState.fogMapTaskId === taskId) return 'fog-map'
+  if (projectState.matrixGenerationTaskId === taskId) return 'matrix'
+  if (projectState.addendumImportTaskId === taskId) return 'addendum'
   return null
 }
 
@@ -37,6 +39,8 @@ export function useAnalysisTaskMonitor(): void {
   const updateExtractionProgress = useAnalysisStore((s) => s.updateExtractionProgress)
   const fetchRequirements = useAnalysisStore((s) => s.fetchRequirements)
   const fetchScoringModel = useAnalysisStore((s) => s.fetchScoringModel)
+  const fetchMatrix = useAnalysisStore((s) => s.fetchMatrix)
+  const fetchMatrixStats = useAnalysisStore((s) => s.fetchMatrixStats)
   const setExtractionCompleted = useAnalysisStore((s) => s.setExtractionCompleted)
   const setError = useAnalysisStore((s) => s.setError)
   const reset = useAnalysisStore((s) => s.reset)
@@ -48,6 +52,10 @@ export function useAnalysisTaskMonitor(): void {
   const setSeedGenerationCompleted = useAnalysisStore((s) => s.setSeedGenerationCompleted)
   const updateFogMapProgress = useAnalysisStore((s) => s.updateFogMapProgress)
   const setFogMapCompleted = useAnalysisStore((s) => s.setFogMapCompleted)
+  const updateMatrixGenerationProgress = useAnalysisStore((s) => s.updateMatrixGenerationProgress)
+  const setMatrixGenerationCompleted = useAnalysisStore((s) => s.setMatrixGenerationCompleted)
+  const updateAddendumImportProgress = useAnalysisStore((s) => s.updateAddendumImportProgress)
+  const setAddendumImportCompleted = useAnalysisStore((s) => s.setAddendumImportCompleted)
 
   const lastProgressTimeRef = useRef<Record<string, number>>({})
   const terminalHandledRef = useRef<Set<string>>(new Set())
@@ -69,6 +77,8 @@ export function useAnalysisTaskMonitor(): void {
         projectState.mandatoryDetectionTaskId,
         projectState.seedGenerationTaskId,
         projectState.fogMapTaskId,
+        projectState.matrixGenerationTaskId,
+        projectState.addendumImportTaskId,
       ]) {
         if (!taskId) continue
         activeTaskIds.add(taskId)
@@ -131,10 +141,15 @@ export function useAnalysisTaskMonitor(): void {
           } else if (kind === 'seed') {
             await setSeedGenerationCompleted(projectId)
             message.success('策略种子生成完成')
-          } else {
-            // fog-map
+          } else if (kind === 'fog-map') {
             await setFogMapCompleted(projectId, taskId)
             message.success('迷雾地图生成完成')
+          } else if (kind === 'matrix') {
+            await setMatrixGenerationCompleted(projectId)
+            message.success('追溯矩阵生成完成')
+          } else if (kind === 'addendum') {
+            await setAddendumImportCompleted(projectId)
+            message.success('补遗导入完成')
           }
           clearTaskTracking(taskId)
           return
@@ -148,8 +163,15 @@ export function useAnalysisTaskMonitor(): void {
             mandatory: '*项检测失败',
             seed: '策略种子生成失败',
             'fog-map': '迷雾地图生成失败',
+            matrix: '追溯矩阵生成失败',
+            addendum: '补遗导入失败',
           }
           const errMsg = task.error ?? errMsgMap[kind]
+          if (kind === 'addendum' && errMsg.includes('追溯映射更新')) {
+            await fetchRequirements(projectId)
+            await fetchMatrix(projectId)
+            await fetchMatrixStats(projectId)
+          }
           setError(projectId, errMsg, kind)
           message.error({
             content: `${errMsgMap[kind]}：${errMsg}`,
@@ -169,6 +191,8 @@ export function useAnalysisTaskMonitor(): void {
               mandatory: '*项检测已取消',
               seed: '策略种子生成已取消',
               'fog-map': '迷雾地图生成已取消',
+              matrix: '追溯矩阵生成已取消',
+              addendum: '补遗导入已取消',
             }
             setError(projectId, cancelledMsgMap[kind], kind)
           }
@@ -185,6 +209,8 @@ export function useAnalysisTaskMonitor(): void {
     },
     [
       clearTaskTracking,
+      fetchMatrix,
+      fetchMatrixStats,
       fetchRequirements,
       fetchScoringModel,
       fetchTenderResult,
@@ -193,6 +219,8 @@ export function useAnalysisTaskMonitor(): void {
       setExtractionCompleted,
       setFogMapCompleted,
       setMandatoryDetectionCompleted,
+      setMatrixGenerationCompleted,
+      setAddendumImportCompleted,
       setParseTaskStatus,
       setSeedGenerationCompleted,
     ]
@@ -212,17 +240,25 @@ export function useAnalysisTaskMonitor(): void {
       if (!kind) return
 
       lastProgressTimeRef.current[event.taskId] = Date.now()
+      const progressMessage =
+        event.message && event.message !== 'failed' && event.message !== 'cancelled'
+          ? event.message
+          : undefined
 
       if (kind === 'import') {
-        updateParseProgress(projectId, event.progress, event.message ?? '')
+        updateParseProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'extraction') {
-        updateExtractionProgress(projectId, event.progress, event.message ?? '')
+        updateExtractionProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'mandatory') {
-        updateMandatoryDetectionProgress(projectId, event.progress, event.message ?? '')
+        updateMandatoryDetectionProgress(projectId, event.progress, progressMessage)
       } else if (kind === 'seed') {
-        updateSeedGenerationProgress(projectId, event.progress, event.message ?? '')
-      } else {
-        updateFogMapProgress(projectId, event.progress, event.message ?? '')
+        updateSeedGenerationProgress(projectId, event.progress, progressMessage)
+      } else if (kind === 'fog-map') {
+        updateFogMapProgress(projectId, event.progress, progressMessage)
+      } else if (kind === 'matrix') {
+        updateMatrixGenerationProgress(projectId, event.progress, progressMessage)
+      } else if (kind === 'addendum') {
+        updateAddendumImportProgress(projectId, event.progress, progressMessage)
       }
 
       if (event.progress >= 100) {
@@ -237,6 +273,8 @@ export function useAnalysisTaskMonitor(): void {
     updateFogMapProgress,
     updateMandatoryDetectionProgress,
     updateSeedGenerationProgress,
+    updateMatrixGenerationProgress,
+    updateAddendumImportProgress,
     updateParseProgress,
   ])
 
@@ -304,6 +342,30 @@ export function useAnalysisTaskMonitor(): void {
 
           if (shouldPoll) {
             void checkTaskStatus(projectId, taskId, 'fog-map')
+          }
+        }
+
+        // Check matrix generation task
+        if (projectState.matrixGenerationTaskId) {
+          const taskId = projectState.matrixGenerationTaskId
+          const shouldPoll =
+            projectState.matrixGenerationProgress >= 100 ||
+            now - (lastProgressTimeRef.current[taskId] ?? now) > PROGRESS_STALE_THRESHOLD
+
+          if (shouldPoll) {
+            void checkTaskStatus(projectId, taskId, 'matrix')
+          }
+        }
+
+        // Check addendum import task
+        if (projectState.addendumImportTaskId) {
+          const taskId = projectState.addendumImportTaskId
+          const shouldPoll =
+            projectState.addendumImportProgress >= 100 ||
+            now - (lastProgressTimeRef.current[taskId] ?? now) > PROGRESS_STALE_THRESHOLD
+
+          if (shouldPoll) {
+            void checkTaskStatus(projectId, taskId, 'addendum')
           }
         }
       }
