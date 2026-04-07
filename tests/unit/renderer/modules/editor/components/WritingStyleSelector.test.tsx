@@ -266,4 +266,69 @@ describe('@story-3-6 WritingStyleSelector', () => {
       expect(mockMessageInfo).toHaveBeenCalledWith('新文风将在下次生成章节时生效')
     })
   })
+
+  it('@p1 should rollback to earlier persisted value when rapid switch causes later failure', async () => {
+    // Scenario: A selects "military", then B selects "government".
+    // A succeeds (persisting "military"), B fails.
+    // UI should rollback to "military" (last persisted), NOT "general" (stale).
+    let resolveA: (v: unknown) => void
+    let resolveB: (v: unknown) => void
+    const promiseA = new Promise((r) => {
+      resolveA = r
+    })
+    const promiseB = new Promise((r) => {
+      resolveB = r
+    })
+
+    let callCount = 0
+    mockWritingStyleUpdateProject.mockImplementation(() => {
+      callCount++
+      return callCount === 1 ? promiseA : promiseB
+    })
+
+    render(<WritingStyleSelector projectId="proj-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('通用文风')).toBeInTheDocument()
+    })
+
+    const select = screen.getByRole('combobox')
+
+    // Request A: select "military"
+    await act(async () => {
+      fireEvent.mouseDown(select)
+    })
+    const militaryOption = await screen.findByText('军工文风')
+    await act(async () => {
+      fireEvent.click(militaryOption)
+    })
+
+    // Request B: rapidly select "government" before A resolves
+    await act(async () => {
+      fireEvent.mouseDown(select)
+    })
+    const govOption = await screen.findByText('政企文风')
+    await act(async () => {
+      fireEvent.click(govOption)
+    })
+
+    // A succeeds (superseded, but should still update confirmedIdRef)
+    await act(async () => {
+      resolveA!({ success: true, data: { writingStyleId: 'military' } })
+    })
+
+    // B fails → should rollback to "military", not "general"
+    await act(async () => {
+      resolveB!({ success: false, error: { code: 'INTERNAL', message: 'fail' } })
+    })
+
+    await waitFor(() => {
+      expect(mockMessageError).toHaveBeenCalledWith('文风切换失败，请重试')
+    })
+
+    await waitFor(() => {
+      const selectionItem = document.querySelector('.ant-select-selection-item')
+      expect(selectionItem?.textContent).toBe('军工文风')
+    })
+  })
 })

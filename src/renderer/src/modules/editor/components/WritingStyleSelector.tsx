@@ -69,11 +69,14 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
       const seq = ++requestSeqRef.current
       setSelectedId(styleId)
       const res = await window.api.writingStyleUpdateProject({ projectId, writingStyleId: styleId })
-      if (seq !== requestSeqRef.current) return // superseded by a newer request
       if (res.success) {
+        // Always track the latest persisted value, even if superseded,
+        // so rollback targets the real backend state.
         confirmedIdRef.current = styleId
-        void message.info('新文风将在下次生成章节时生效')
-      } else {
+        if (seq === requestSeqRef.current) {
+          void message.info('新文风将在下次生成章节时生效')
+        }
+      } else if (seq === requestSeqRef.current) {
         setSelectedId(confirmedIdRef.current)
         void message.error('文风切换失败，请重试')
       }
