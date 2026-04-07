@@ -767,7 +767,8 @@ bidwise/
     ├── assets/                     ← 资产库
     ├── terminology/                ← 术语库
     ├── templates/                  ← Word 模板
-    └── baselines/                  ← 产品能力基线
+    ├── baselines/                  ← 产品能力基线
+    └── writing-styles/             ← 公司级文风模板（覆盖内置文风）
 ```
 
 ### 架构边界
