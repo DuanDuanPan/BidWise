@@ -39,6 +39,15 @@ import type {
   UpdateSeedInput,
   DeleteSeedInput,
   AddSeedInput,
+  GenerateFogMapInput,
+  GenerateFogMapResult,
+  GetFogMapInput,
+  FogMapItem,
+  GetFogMapSummaryInput,
+  FogMapSummary,
+  ConfirmCertaintyInput,
+  RequirementCertainty,
+  BatchConfirmCertaintyInput,
 } from './analysis-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 import type {
@@ -170,6 +179,11 @@ export const IPC_CHANNELS = {
   ANALYSIS_UPDATE_SEED: 'analysis:update-seed',
   ANALYSIS_DELETE_SEED: 'analysis:delete-seed',
   ANALYSIS_ADD_SEED: 'analysis:add-seed',
+  ANALYSIS_GENERATE_FOG_MAP: 'analysis:generate-fog-map',
+  ANALYSIS_GET_FOG_MAP: 'analysis:get-fog-map',
+  ANALYSIS_GET_FOG_MAP_SUMMARY: 'analysis:get-fog-map-summary',
+  ANALYSIS_CONFIRM_CERTAINTY: 'analysis:confirm-certainty',
+  ANALYSIS_BATCH_CONFIRM_CERTAINTY: 'analysis:batch-confirm-certainty',
   DOCUMENT_LOAD: 'document:load',
   DOCUMENT_SAVE: 'document:save',
   DOCUMENT_SAVE_SYNC: 'document:save-sync',
@@ -236,6 +250,11 @@ export type IpcChannelMap = {
   'analysis:update-seed': { input: UpdateSeedInput; output: StrategySeed }
   'analysis:delete-seed': { input: DeleteSeedInput; output: void }
   'analysis:add-seed': { input: AddSeedInput; output: StrategySeed }
+  'analysis:generate-fog-map': { input: GenerateFogMapInput; output: GenerateFogMapResult }
+  'analysis:get-fog-map': { input: GetFogMapInput; output: FogMapItem[] | null }
+  'analysis:get-fog-map-summary': { input: GetFogMapSummaryInput; output: FogMapSummary | null }
+  'analysis:confirm-certainty': { input: ConfirmCertaintyInput; output: RequirementCertainty }
+  'analysis:batch-confirm-certainty': { input: BatchConfirmCertaintyInput; output: void }
   'document:load': { input: { projectId: string }; output: ProposalDocument }
   'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
   'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }

@@ -254,3 +254,80 @@ export interface AddSeedInput {
   reasoning: string
   suggestion: string
 }
+
+// ─── Story 2.9: Fog Map (Requirement Certainty) ───
+
+export type CertaintyLevel = 'clear' | 'ambiguous' | 'risky'
+
+export interface RequirementCertainty {
+  id: string
+  requirementId: string
+  certaintyLevel: CertaintyLevel
+  reason: string
+  suggestion: string
+  confirmed: boolean
+  confirmedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FogMapItem extends RequirementCertainty {
+  requirement: Pick<
+    RequirementItem,
+    'id' | 'sequenceNumber' | 'description' | 'sourcePages' | 'category' | 'priority'
+  >
+}
+
+export interface FogMapSummary {
+  total: number
+  clear: number
+  ambiguous: number
+  risky: number
+  confirmed: number
+  fogClearingPercentage: number
+}
+
+export interface FogMapSnapshot {
+  projectId: string
+  items: Array<{
+    id: string
+    requirementId: string
+    requirementSequenceNumber: number
+    requirementDescription: string
+    requirementCategory: string
+    sourcePages: number[]
+    priority: string
+    certaintyLevel: CertaintyLevel
+    reason: string
+    suggestion: string
+    confirmed: boolean
+    confirmedAt: string | null
+  }>
+  summary: FogMapSummary
+  generatedAt: string
+  updatedAt: string
+}
+
+export interface GenerateFogMapInput {
+  projectId: string
+}
+
+export interface GenerateFogMapResult {
+  taskId: string
+}
+
+export interface GetFogMapInput {
+  projectId: string
+}
+
+export interface GetFogMapSummaryInput {
+  projectId: string
+}
+
+export interface ConfirmCertaintyInput {
+  id: string
+}
+
+export interface BatchConfirmCertaintyInput {
+  projectId: string
+}

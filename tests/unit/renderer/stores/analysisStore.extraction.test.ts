@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { useAnalysisStore, getAnalysisProjectState } from '@renderer/stores/analysisStore'
+import {
+  useAnalysisStore,
+  getAnalysisProjectState,
+  EMPTY_ANALYSIS_PROJECT_STATE,
+} from '@renderer/stores/analysisStore'
 import type { ApiResponse } from '@shared/ipc-types'
 import type { ExtractionTaskResult, RequirementItem, ScoringModel } from '@shared/analysis-types'
 
@@ -62,6 +66,7 @@ function mockApi(overrides: Partial<typeof window.api> = {}): void {
         success: true,
         data: { ...mockScoringModel, confirmedAt: '2026-03-21T01:00:00.000Z' },
       }),
+    taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     ...overrides,
   })
 }
@@ -78,6 +83,44 @@ describe('analysisStore — extraction actions (Story 2.5)', () => {
       const state = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
       expect(state.extractionTaskId).toBe('ext-task-1')
       expect(state.extractionLoading).toBe(false)
+    })
+
+    it('should cancel and invalidate stale fog map state before re-extraction', async () => {
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMapTaskId: 'fog-task-1',
+            fogMapLoading: true,
+            fogMapProgress: 72,
+            fogMapMessage: '正在生成旧迷雾地图...',
+            fogMapError: '旧错误',
+            fogMap: [],
+            fogMapSummary: {
+              total: 0,
+              clear: 0,
+              ambiguous: 0,
+              risky: 0,
+              confirmed: 0,
+              fogClearingPercentage: 0,
+            },
+          },
+        },
+      })
+
+      await useAnalysisStore.getState().extractRequirements('proj-1')
+
+      expect(window.api.taskCancel).toHaveBeenCalledWith('fog-task-1')
+
+      const state = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      expect(state.extractionTaskId).toBe('ext-task-1')
+      expect(state.fogMapTaskId).toBeNull()
+      expect(state.fogMapLoading).toBe(false)
+      expect(state.fogMapProgress).toBe(0)
+      expect(state.fogMapMessage).toBe('')
+      expect(state.fogMapError).toBeNull()
+      expect(state.fogMap).toBeNull()
+      expect(state.fogMapSummary).toBeNull()
     })
 
     it('should set error on failure', async () => {
@@ -185,6 +228,44 @@ describe('analysisStore — extraction actions (Story 2.5)', () => {
       expect(state.extractionTaskId).toBeNull()
       expect(state.extractionProgress).toBe(100)
       expect(state.extractionLoading).toBe(false)
+    })
+
+    it('should invalidate stale fog map task state when extraction completes', () => {
+      useAnalysisStore.setState({
+        projects: {
+          'proj-1': {
+            ...EMPTY_ANALYSIS_PROJECT_STATE,
+            fogMapTaskId: 'fog-task-1',
+            fogMapLoading: true,
+            fogMapProgress: 55,
+            fogMapMessage: '旧迷雾任务仍在运行',
+            fogMapError: '旧错误',
+            fogMap: [],
+            fogMapSummary: {
+              total: 0,
+              clear: 0,
+              ambiguous: 0,
+              risky: 0,
+              confirmed: 0,
+              fogClearingPercentage: 0,
+            },
+          },
+        },
+      })
+
+      useAnalysisStore.getState().setExtractionCompleted('proj-1', {
+        requirements: mockRequirements,
+        scoringModel: mockScoringModel,
+      })
+
+      const state = getAnalysisProjectState(useAnalysisStore.getState(), 'proj-1')
+      expect(state.fogMapTaskId).toBeNull()
+      expect(state.fogMapLoading).toBe(false)
+      expect(state.fogMapProgress).toBe(0)
+      expect(state.fogMapMessage).toBe('')
+      expect(state.fogMapError).toBeNull()
+      expect(state.fogMap).toBeNull()
+      expect(state.fogMapSummary).toBeNull()
     })
   })
 })

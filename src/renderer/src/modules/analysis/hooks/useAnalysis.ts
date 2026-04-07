@@ -12,7 +12,7 @@ const PROGRESS_STALE_THRESHOLD = 10_000
 /** Polling interval for task status (ms) */
 const POLL_INTERVAL = 3_000
 
-type TaskKind = 'import' | 'extraction' | 'mandatory' | 'seed'
+type TaskKind = 'import' | 'extraction' | 'mandatory' | 'seed' | 'fog-map'
 
 /** Determine whether a taskId is an import, extraction, mandatory, or seed task within a project */
 function classifyTask(projectState: AnalysisProjectState, taskId: string): TaskKind | null {
@@ -20,6 +20,7 @@ function classifyTask(projectState: AnalysisProjectState, taskId: string): TaskK
   if (projectState.extractionTaskId === taskId) return 'extraction'
   if (projectState.mandatoryDetectionTaskId === taskId) return 'mandatory'
   if (projectState.seedGenerationTaskId === taskId) return 'seed'
+  if (projectState.fogMapTaskId === taskId) return 'fog-map'
   return null
 }
 
@@ -45,6 +46,8 @@ export function useAnalysisTaskMonitor(): void {
   const setMandatoryDetectionCompleted = useAnalysisStore((s) => s.setMandatoryDetectionCompleted)
   const updateSeedGenerationProgress = useAnalysisStore((s) => s.updateSeedGenerationProgress)
   const setSeedGenerationCompleted = useAnalysisStore((s) => s.setSeedGenerationCompleted)
+  const updateFogMapProgress = useAnalysisStore((s) => s.updateFogMapProgress)
+  const setFogMapCompleted = useAnalysisStore((s) => s.setFogMapCompleted)
 
   const lastProgressTimeRef = useRef<Record<string, number>>({})
   const terminalHandledRef = useRef<Set<string>>(new Set())
@@ -65,6 +68,7 @@ export function useAnalysisTaskMonitor(): void {
         projectState.extractionTaskId,
         projectState.mandatoryDetectionTaskId,
         projectState.seedGenerationTaskId,
+        projectState.fogMapTaskId,
       ]) {
         if (!taskId) continue
         activeTaskIds.add(taskId)
@@ -94,6 +98,11 @@ export function useAnalysisTaskMonitor(): void {
         }
 
         const task = res.data
+        const latestProjectState = getAnalysisProjectState(useAnalysisStore.getState(), projectId)
+        if (classifyTask(latestProjectState, taskId) !== kind) {
+          clearTaskTracking(taskId)
+          return
+        }
 
         if (task.status === 'completed') {
           terminalHandledRef.current.add(taskId)
@@ -119,10 +128,13 @@ export function useAnalysisTaskMonitor(): void {
           } else if (kind === 'mandatory') {
             await setMandatoryDetectionCompleted(projectId)
             message.success('必响应项检测完成')
-          } else {
-            // seed
+          } else if (kind === 'seed') {
             await setSeedGenerationCompleted(projectId)
             message.success('策略种子生成完成')
+          } else {
+            // fog-map
+            await setFogMapCompleted(projectId, taskId)
+            message.success('迷雾地图生成完成')
           }
           clearTaskTracking(taskId)
           return
@@ -135,6 +147,7 @@ export function useAnalysisTaskMonitor(): void {
             extraction: '抽取失败',
             mandatory: '*项检测失败',
             seed: '策略种子生成失败',
+            'fog-map': '迷雾地图生成失败',
           }
           const errMsg = task.error ?? errMsgMap[kind]
           setError(projectId, errMsg, kind)
@@ -148,7 +161,17 @@ export function useAnalysisTaskMonitor(): void {
 
         if (task.status === 'cancelled') {
           terminalHandledRef.current.add(taskId)
-          reset(projectId)
+          if (kind === 'import') {
+            reset(projectId)
+          } else {
+            const cancelledMsgMap: Record<Exclude<TaskKind, 'import'>, string> = {
+              extraction: '抽取任务已取消',
+              mandatory: '*项检测已取消',
+              seed: '策略种子生成已取消',
+              'fog-map': '迷雾地图生成已取消',
+            }
+            setError(projectId, cancelledMsgMap[kind], kind)
+          }
           clearTaskTracking(taskId)
           return
         }
@@ -168,6 +191,7 @@ export function useAnalysisTaskMonitor(): void {
       reset,
       setError,
       setExtractionCompleted,
+      setFogMapCompleted,
       setMandatoryDetectionCompleted,
       setParseTaskStatus,
       setSeedGenerationCompleted,
@@ -195,8 +219,10 @@ export function useAnalysisTaskMonitor(): void {
         updateExtractionProgress(projectId, event.progress, event.message ?? '')
       } else if (kind === 'mandatory') {
         updateMandatoryDetectionProgress(projectId, event.progress, event.message ?? '')
-      } else {
+      } else if (kind === 'seed') {
         updateSeedGenerationProgress(projectId, event.progress, event.message ?? '')
+      } else {
+        updateFogMapProgress(projectId, event.progress, event.message ?? '')
       }
 
       if (event.progress >= 100) {
@@ -208,6 +234,7 @@ export function useAnalysisTaskMonitor(): void {
   }, [
     checkTaskStatus,
     updateExtractionProgress,
+    updateFogMapProgress,
     updateMandatoryDetectionProgress,
     updateSeedGenerationProgress,
     updateParseProgress,
@@ -265,6 +292,18 @@ export function useAnalysisTaskMonitor(): void {
 
           if (shouldPoll) {
             void checkTaskStatus(projectId, taskId, 'seed')
+          }
+        }
+
+        // Check fog map generation task
+        if (projectState.fogMapTaskId) {
+          const taskId = projectState.fogMapTaskId
+          const shouldPoll =
+            projectState.fogMapProgress >= 100 ||
+            now - (lastProgressTimeRef.current[taskId] ?? now) > PROGRESS_STALE_THRESHOLD
+
+          if (shouldPoll) {
+            void checkTaskStatus(projectId, taskId, 'fog-map')
           }
         }
       }

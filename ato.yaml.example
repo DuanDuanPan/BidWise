@@ -1,0 +1,152 @@
+# ATO 声明式工作流配置
+# ================================
+# 本文件定义系统的角色、阶段序列、转换规则和阈值参数。
+# 配置变更需重启系统生效（FR51）。
+#
+# 使用方法：
+#   cp ato.yaml.example ato.yaml
+#   根据项目需求编辑 ato.yaml
+
+# ---------------------------------------------------------------------------
+# CLI 工具全局默认参数
+# ---------------------------------------------------------------------------
+
+cli_defaults:
+  codex:
+    model: gpt-5.4
+    reasoning_effort: xhigh
+    reasoning_summary_format: experimental
+
+# ---------------------------------------------------------------------------
+# 角色定义
+# ---------------------------------------------------------------------------
+
+roles:
+  creator:
+    cli: claude
+  ux_designer:
+    cli: claude
+  validator:
+    cli: codex
+  developer:
+    cli: claude
+  reviewer:
+    cli: codex
+  fixer:
+    cli: claude
+  qa:
+    cli: codex
+
+# ---------------------------------------------------------------------------
+# 阶段序列
+# ---------------------------------------------------------------------------
+
+phases:
+  - name: creating
+    role: creator
+    type: structured_job
+    next_on_success: designing
+    workspace: main
+
+  - name: designing
+    role: ux_designer
+    type: structured_job
+    next_on_success: validating
+    workspace: main
+    skip_when: "not story.has_ui"
+
+  - name: validating
+    role: validator
+    type: convergent_loop
+    next_on_success: dev_ready
+    next_on_failure: creating
+    workspace: main
+
+  - name: dev_ready
+    role: developer
+    type: structured_job
+    next_on_success: developing
+    workspace: main
+
+  - name: developing
+    role: developer
+    type: structured_job
+    next_on_success: reviewing
+    workspace: worktree
+
+  - name: reviewing
+    role: reviewer
+    type: convergent_loop
+    next_on_success: qa_testing
+    next_on_failure: fixing
+    workspace: worktree
+
+  - name: fixing
+    role: fixer
+    type: structured_job
+    next_on_success: reviewing
+    workspace: worktree
+
+  - name: qa_testing
+    role: qa
+    type: convergent_loop
+    next_on_success: uat
+    next_on_failure: fixing
+    workspace: worktree
+
+  - name: uat
+    role: developer
+    type: interactive_session
+    next_on_success: merging
+    next_on_failure: fixing
+    workspace: worktree
+
+  - name: merging
+    role: developer
+    type: structured_job
+    next_on_success: regression
+    workspace: main
+
+  - name: regression
+    role: qa
+    type: structured_job
+    next_on_success: done
+    next_on_failure: fixing
+    workspace: main
+
+# ---------------------------------------------------------------------------
+# 并发控制
+# ---------------------------------------------------------------------------
+
+max_concurrent_agents: 4
+
+# ---------------------------------------------------------------------------
+# Convergent Loop 参数
+# ---------------------------------------------------------------------------
+
+convergent_loop:
+  max_rounds: 3
+  convergence_threshold: 0.5
+
+# ---------------------------------------------------------------------------
+# 超时设置（秒）
+# ---------------------------------------------------------------------------
+
+timeout:
+  structured_job: 1800
+  interactive_session: 7200
+  idle_timeout: 1800
+
+# ---------------------------------------------------------------------------
+# Merge & Regression 配置
+# ---------------------------------------------------------------------------
+
+regression_test_commands:
+  - "pnpm test:unit"
+  - "pnpm lint"
+  - "pnpm typecheck"
+
+merge_rebase_timeout: 120
+merge_conflict_resolution_max_attempts: 1
+
+model_map: {}

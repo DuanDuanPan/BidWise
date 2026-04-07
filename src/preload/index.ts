@@ -115,6 +115,22 @@ const requestApi = {
   analysisAddSeed: (input: IpcChannelMap['analysis:add-seed']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_ADD_SEED, input),
 
+  analysisGenerateFogMap: (input: IpcChannelMap['analysis:generate-fog-map']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GENERATE_FOG_MAP, input),
+
+  analysisGetFogMap: (input: IpcChannelMap['analysis:get-fog-map']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_FOG_MAP, input),
+
+  analysisGetFogMapSummary: (input: IpcChannelMap['analysis:get-fog-map-summary']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_FOG_MAP_SUMMARY, input),
+
+  analysisConfirmCertainty: (input: IpcChannelMap['analysis:confirm-certainty']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_CONFIRM_CERTAINTY, input),
+
+  analysisBatchConfirmCertainty: (
+    input: IpcChannelMap['analysis:batch-confirm-certainty']['input']
+  ) => typedInvoke(IPC_CHANNELS.ANALYSIS_BATCH_CONFIRM_CERTAINTY, input),
+
   documentLoad: (input: IpcChannelMap['document:load']['input']) =>
     typedInvoke(IPC_CHANNELS.DOCUMENT_LOAD, input),
 

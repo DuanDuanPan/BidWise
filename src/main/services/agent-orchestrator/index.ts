@@ -7,6 +7,7 @@ import { extractAgentHandler } from './agents/extract-agent'
 import { seedAgentHandler } from './agents/seed-agent'
 import { attributeSourcesAgentHandler } from './agents/attribute-sources-agent'
 import { validateBaselineAgentHandler } from './agents/validate-baseline-agent'
+import { fogMapAgentHandler } from './agents/fog-map-agent'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
@@ -17,3 +18,4 @@ agentOrchestrator.registerAgent('extract', extractAgentHandler)
 agentOrchestrator.registerAgent('seed', seedAgentHandler)
 agentOrchestrator.registerAgent('attribute-sources', attributeSourcesAgentHandler)
 agentOrchestrator.registerAgent('validate-baseline', validateBaselineAgentHandler)
+agentOrchestrator.registerAgent('fog-map', fogMapAgentHandler)

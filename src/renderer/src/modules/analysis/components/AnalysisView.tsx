@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { message, Button, Tabs, Alert, Progress } from 'antd'
 import { FileSearchOutlined, LoadingOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { getAnalysisProjectState, useAnalysisStore } from '@renderer/stores'
@@ -11,6 +11,8 @@ import { MandatoryItemsList } from './MandatoryItemsList'
 import { MandatoryItemsBadge } from './MandatoryItemsBadge'
 import { StrategySeedList } from './StrategySeedList'
 import { StrategySeedBadge } from './StrategySeedBadge'
+import { FogMapView } from './FogMapView'
+import { FogMapBadge } from './FogMapBadge'
 import type { AnalysisViewProps } from '../types'
 
 export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Element {
@@ -34,6 +36,11 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const updateSeed = useAnalysisStore((s) => s.updateSeed)
   const deleteSeed = useAnalysisStore((s) => s.deleteSeed)
   const addSeed = useAnalysisStore((s) => s.addSeed)
+  const generateFogMap = useAnalysisStore((s) => s.generateFogMap)
+  const fetchFogMap = useAnalysisStore((s) => s.fetchFogMap)
+  const fetchFogMapSummary = useAnalysisStore((s) => s.fetchFogMapSummary)
+  const confirmCertainty = useAnalysisStore((s) => s.confirmCertainty)
+  const batchConfirmCertainty = useAnalysisStore((s) => s.batchConfirmCertainty)
 
   const {
     parsedTender,
@@ -61,6 +68,12 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     seedGenerationProgress,
     seedGenerationMessage,
     seedGenerationError,
+    fogMap,
+    fogMapSummary,
+    fogMapTaskId,
+    fogMapProgress,
+    fogMapMessage,
+    fogMapError,
   } = projectState
 
   // On mount / project change: check for existing data
@@ -72,6 +85,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     void fetchMandatorySummary(projectId)
     void fetchSeeds(projectId)
     void fetchSeedSummary(projectId)
+    void fetchFogMap(projectId)
+    void fetchFogMapSummary(projectId)
   }, [
     projectId,
     fetchTenderResult,
@@ -81,7 +96,15 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
     fetchMandatorySummary,
     fetchSeeds,
     fetchSeedSummary,
+    fetchFogMap,
+    fetchFogMapSummary,
   ])
+
+  const [activeTab, setActiveTab] = useState('requirements')
+
+  const handleNavigateToRequirements = useCallback(() => {
+    setActiveTab('requirements')
+  }, [])
 
   const handleCancel = async (): Promise<void> => {
     if (!importTaskId) return
@@ -115,6 +138,7 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
   const isMandatoryDetecting =
     mandatoryDetectionTaskId !== null || projectState.mandatoryDetectionLoading
   const isSeedGenerating = seedGenerationTaskId !== null || projectState.seedGenerationLoading
+  const isFogMapGenerating = fogMapTaskId !== null || projectState.fogMapLoading
 
   // Error state (no parsed result)
   if (!hasParsedResult && error && !isParsing) {
@@ -224,7 +248,8 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
         {/* Extraction results — Requirements + Scoring Model tabs */}
         {hasExtractionResult && (
           <Tabs
-            defaultActiveKey="requirements"
+            activeKey={activeTab}
+            onChange={setActiveTab}
             items={[
               {
                 key: 'requirements',
@@ -295,6 +320,25 @@ export function AnalysisView({ projectId }: AnalysisViewProps): React.JSX.Elemen
                         await updateSeed(s.id, { status: 'confirmed' })
                       }
                     }}
+                  />
+                ),
+              },
+              {
+                key: 'fog-map',
+                label: <FogMapBadge summary={fogMapSummary} />,
+                children: (
+                  <FogMapView
+                    fogMap={fogMap}
+                    fogMapSummary={fogMapSummary}
+                    requirements={requirements}
+                    generating={isFogMapGenerating}
+                    progress={fogMapProgress}
+                    progressMessage={fogMapMessage}
+                    error={fogMapError}
+                    onGenerate={() => generateFogMap(projectId)}
+                    onConfirm={confirmCertainty}
+                    onBatchConfirm={() => batchConfirmCertainty(projectId)}
+                    onNavigateToRequirements={handleNavigateToRequirements}
                   />
                 ),
               },

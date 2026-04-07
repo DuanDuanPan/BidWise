@@ -89,6 +89,7 @@ export type AgentType =
   | 'seed'
   | 'attribute-sources'
   | 'validate-baseline'
+  | 'fog-map'
 
 /** Task status state machine */
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -97,7 +98,14 @@ export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cance
 export type TaskPriority = 'low' | 'normal' | 'high'
 
 /** Whitelist categories for async task queue */
-export type TaskCategory = 'ai-agent' | 'ocr' | 'import' | 'export' | 'git-sync' | 'semantic-search'
+export type TaskCategory =
+  | 'ai'
+  | 'ai-agent'
+  | 'ocr'
+  | 'import'
+  | 'export'
+  | 'git-sync'
+  | 'semantic-search'
 
 /** Progress event pushed from main → renderer via webContents.send */
 export interface TaskProgressEvent {

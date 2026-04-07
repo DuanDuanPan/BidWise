@@ -7,6 +7,7 @@ import * as migration004 from './migrations/004_create_requirements_scoring'
 import * as migration005 from './migrations/005_create_mandatory_items'
 import * as migration006 from './migrations/006_create_strategy_seeds'
 import * as migration007 from './migrations/007_create_annotations'
+import * as migration008 from './migrations/008_create_requirement_certainties'
 import { createLogger } from '@main/utils/logger'
 
 const logger = createLogger('db:migrator')
@@ -20,6 +21,7 @@ const migrations: Record<string, Migration> = {
   '005_create_mandatory_items': migration005,
   '006_create_strategy_seeds': migration006,
   '007_create_annotations': migration007,
+  '008_create_requirement_certainties': migration008,
 }
 
 export async function runMigrations(): Promise<void> {
