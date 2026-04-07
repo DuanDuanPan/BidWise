@@ -1,77 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { CommentOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
-import { Alert, Badge, Button, Skeleton, Tag, Tooltip } from 'antd'
+import { Alert, Badge, Button, Skeleton, Tooltip, message } from 'antd'
 import {
   useProjectAnnotations,
   usePendingAnnotationCount,
 } from '@renderer/modules/annotation/hooks/useAnnotation'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
-import { formatRelativeTime } from '@renderer/shared/lib/format-time'
-import type { AnnotationRecord, AnnotationType, AnnotationStatus } from '@shared/annotation-types'
+import { AnnotationCard } from '@renderer/modules/annotation/components/AnnotationCard'
+import { ANNOTATION_TYPE_ACTIONS } from '@renderer/modules/annotation/constants/annotation-colors'
+import type { AnnotationRecord } from '@shared/annotation-types'
 
 interface AnnotationPanelProps {
   collapsed: boolean
   isCompact: boolean
   onToggle: () => void
   projectId?: string
-}
-
-const TYPE_LABELS: Record<AnnotationType, string> = {
-  'ai-suggestion': 'AI 建议',
-  'asset-recommendation': '资产推荐',
-  'score-warning': '评分预警',
-  adversarial: '对抗攻击',
-  human: '人工批注',
-  'cross-role': '跨角色',
-}
-
-const TYPE_COLORS: Record<AnnotationType, string> = {
-  'ai-suggestion': 'blue',
-  'asset-recommendation': 'green',
-  'score-warning': 'orange',
-  adversarial: 'red',
-  human: 'purple',
-  'cross-role': 'cyan',
-}
-
-const STATUS_LABELS: Record<AnnotationStatus, string> = {
-  pending: '待处理',
-  accepted: '已采纳',
-  rejected: '已拒绝',
-  'needs-decision': '待决策',
-}
-
-const STATUS_COLORS: Record<AnnotationStatus, string> = {
-  pending: 'default',
-  accepted: 'success',
-  rejected: 'error',
-  'needs-decision': 'processing',
-}
-
-function AnnotationItem({ item }: { item: AnnotationRecord }): React.JSX.Element {
-  return (
-    <div
-      role="listitem"
-      className="flex flex-col gap-1 rounded-md p-3"
-      style={{ backgroundColor: 'var(--color-bg-global)' }}
-      data-testid="annotation-item"
-    >
-      <div className="flex items-center gap-1.5">
-        <Tag color={TYPE_COLORS[item.type]} style={{ margin: 0, fontSize: 11 }}>
-          {TYPE_LABELS[item.type]}
-        </Tag>
-        <Tag color={STATUS_COLORS[item.status]} style={{ margin: 0, fontSize: 11 }}>
-          {STATUS_LABELS[item.status]}
-        </Tag>
-      </div>
-      <p className="text-caption m-0 line-clamp-3" style={{ color: 'var(--color-text-primary)' }}>
-        {item.content}
-      </p>
-      <span className="text-caption" style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
-        {item.author} · {formatRelativeTime(item.createdAt)}
-      </span>
-    </div>
-  )
 }
 
 function LoadingContent(): React.JSX.Element {
@@ -104,22 +47,8 @@ function EmptyContent(): React.JSX.Element {
   )
 }
 
-function ListContent({ items }: { items: AnnotationRecord[] }): React.JSX.Element {
-  return (
-    <div
-      role="list"
-      className="flex flex-1 flex-col gap-2 overflow-y-auto p-4"
-      data-testid="annotation-list"
-    >
-      {items.map((item) => (
-        <AnnotationItem key={item.id} item={item} />
-      ))}
-    </div>
-  )
-}
-
 function ErrorContent({
-  message,
+  message: errorMessage,
   onRetry,
 }: {
   message: string
@@ -131,7 +60,7 @@ function ErrorContent({
         type="error"
         showIcon
         message="批注加载失败"
-        description={message}
+        description={errorMessage}
         action={
           <Button size="small" onClick={onRetry} data-testid="annotation-retry">
             重试
@@ -151,10 +80,149 @@ function shouldShowLoadingState(state: {
   return state.loading || !state.error
 }
 
-function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element {
+function ListContent({
+  items,
+  focusedIndex,
+  cardRefs,
+}: {
+  items: AnnotationRecord[]
+  focusedIndex: number
+  cardRefs: React.MutableRefObject<Map<number, HTMLDivElement>>
+}): React.JSX.Element {
+  return (
+    <div
+      role="list"
+      className="flex flex-1 flex-col gap-2 overflow-y-auto p-4"
+      data-testid="annotation-list"
+    >
+      {items.map((item, index) => (
+        <AnnotationCard
+          key={item.id}
+          annotation={item}
+          focused={index === focusedIndex}
+          ref={(el) => {
+            if (el) {
+              cardRefs.current.set(index, el)
+            } else {
+              cardRefs.current.delete(index)
+            }
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function clampIndex(index: number, length: number): number {
+  if (length === 0) return -1
+  if (index < 0) return 0
+  if (index >= length) return length - 1
+  return index
+}
+
+function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; active: boolean }): {
+  focusedIndex: number
+  cardRefs: React.MutableRefObject<Map<number, HTMLDivElement>>
+} {
+  const [rawIndex, setFocusedIndex] = useState(items.length > 0 ? 0 : -1)
+  const focusedIndex = clampIndex(rawIndex, items.length)
+  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const updateAnnotation = useAnnotationStore((s) => s.updateAnnotation)
+
+  // Scroll focused card into view
+  useEffect(() => {
+    if (focusedIndex >= 0) {
+      const el = cardRefs.current.get(focusedIndex)
+      el?.scrollIntoView?.({ block: 'nearest' })
+      el?.focus?.({ preventScroll: true })
+    }
+  }, [focusedIndex])
+
+  useEffect(() => {
+    if (!active || items.length === 0) return
+
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (!e.altKey) return
+
+      // Don't intercept when target is inside an input/editor (check ancestors too)
+      const target = e.target
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          'input, textarea, [contenteditable="true"], [role="textbox"], [data-testid="plate-editor-content"]'
+        )
+      ) {
+        return
+      }
+
+      const key = e.key
+
+      if (key === 'ArrowUp') {
+        e.preventDefault()
+        setFocusedIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1))
+        return
+      }
+
+      if (key === 'ArrowDown') {
+        e.preventDefault()
+        setFocusedIndex((prev) => (prev >= items.length - 1 ? 0 : prev + 1))
+        return
+      }
+
+      // Status-changing shortcuts: only for pending cards
+      if (key === 'Enter' || key === 'Backspace' || key === 'd' || key === 'D') {
+        e.preventDefault()
+        const focused = items[focusedIndex]
+        if (!focused) return
+
+        if (focused.status !== 'pending') {
+          void message.info('该批注已处理，无需重复操作')
+          return
+        }
+
+        const actions = ANNOTATION_TYPE_ACTIONS[focused.type]
+
+        if (key === 'Enter') {
+          const primary = actions.find((a) => a.primary && a.targetStatus)
+          if (primary?.targetStatus) {
+            void updateAnnotation({ id: focused.id, status: primary.targetStatus })
+          }
+        } else if (key === 'Backspace') {
+          const rejectAction = actions.find((a) => a.targetStatus === 'rejected')
+          if (rejectAction) {
+            void updateAnnotation({ id: focused.id, status: 'rejected' })
+          } else {
+            void message.info('该类型批注没有驳回操作')
+          }
+        } else {
+          // Alt+D
+          void updateAnnotation({ id: focused.id, status: 'needs-decision' })
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [active, items, focusedIndex, updateAnnotation])
+
+  return { focusedIndex, cardRefs }
+}
+
+function PanelBody({
+  projectId,
+  active,
+}: {
+  projectId?: string
+  active: boolean
+}): React.JSX.Element {
   const project = useProjectAnnotations(projectId ?? '')
   const loadAnnotations = useAnnotationStore((state) => state.loadAnnotations)
   const { items, loaded, error } = project
+
+  const { focusedIndex, cardRefs } = useKeyboardNavigation({
+    items,
+    active: active && !!projectId,
+  })
 
   if (!projectId) {
     return <EmptyContent />
@@ -168,7 +236,7 @@ function PanelContent({ projectId }: { projectId?: string }): React.JSX.Element 
   if (items.length === 0) {
     return <EmptyContent />
   }
-  return <ListContent items={items} />
+  return <ListContent items={items} focusedIndex={focusedIndex} cardRefs={cardRefs} />
 }
 
 function PendingPill({ projectId }: { projectId?: string }): React.JSX.Element | null {
@@ -324,7 +392,7 @@ export function AnnotationPanel({
                   <HeaderSpinner projectId={projectId} />
                 </div>
               </div>
-              <PanelContent projectId={projectId} />
+              <PanelBody projectId={projectId} active={true} />
             </div>
           </div>
         )}
@@ -405,8 +473,8 @@ export function AnnotationPanel({
           </button>
         </div>
 
-        {/* Content area — loading / empty / list */}
-        <PanelContent projectId={projectId} />
+        {/* Content area */}
+        <PanelBody projectId={projectId} active={true} />
       </div>
     </aside>
   )
