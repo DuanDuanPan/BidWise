@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-07
+last_updated: 2026-04-07  # merge worktrees 2-8, 2-9, 3-4
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -77,7 +77,7 @@ development_status:
   3-3-template-driven-proposal-skeleton: done
   3-4-ai-chapter-generation: done
   3-5-source-attribution-baseline-validation: done
-  3-6-writing-style-template: review
+  3-6-writing-style-template: backlog
   3-7-drawio-embedded-editing: backlog
   3-8-mermaid-diagram-generation: backlog
   epic-3-retrospective: optional

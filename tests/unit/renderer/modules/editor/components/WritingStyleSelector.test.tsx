@@ -189,6 +189,62 @@ describe('@story-3-6 WritingStyleSelector', () => {
     })
   })
 
+  it('@p1 should fallback to general when style list fails', async () => {
+    mockWritingStyleList.mockResolvedValue({
+      success: false,
+      error: { code: 'INTERNAL', message: 'Service unavailable' },
+    })
+
+    render(<WritingStyleSelector projectId="proj-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('通用文风')).toBeInTheDocument()
+    })
+  })
+
+  it('@p1 should render company styles with 自定义 tag and divider', async () => {
+    mockWritingStyleList.mockResolvedValue({
+      success: true,
+      data: {
+        styles: [
+          ...MOCK_STYLES,
+          {
+            id: 'custom-1',
+            name: '行业文风',
+            description: '行业文风描述',
+            source: 'company',
+          },
+        ],
+      },
+    })
+
+    render(<WritingStyleSelector projectId="proj-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('通用文风')).toBeInTheDocument()
+    })
+
+    const select = screen.getByRole('combobox')
+    await act(async () => {
+      fireEvent.mouseDown(select)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('行业文风')).toBeInTheDocument()
+      expect(screen.getByText('自定义')).toBeInTheDocument()
+    })
+  })
+
+  it('@p1 should have aria-label for accessibility', async () => {
+    render(<WritingStyleSelector projectId="proj-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('通用文风')).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('combobox')).toHaveAttribute('aria-label', '选择写作风格')
+  })
+
   it('@p1 should show info message after successful style change', async () => {
     render(<WritingStyleSelector projectId="proj-1" />)
 
