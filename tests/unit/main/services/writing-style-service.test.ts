@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
 
 const mockReaddir = vi.hoisted(() => vi.fn())
 const mockReadFile = vi.hoisted(() => vi.fn())
@@ -112,6 +113,18 @@ describe('@story-3-6 writingStyleService', () => {
 
       // source should be overridden to 'built-in' regardless of file content
       expect(styles[0].source).toBe('built-in')
+    })
+
+    it('@p1 should fall back to cwd resources when app path resources are absent', async () => {
+      const cwdStyleDir = join(process.cwd(), 'resources', 'writing-styles')
+      mockExistsSync.mockImplementation((path: string) => path === cwdStyleDir)
+      mockReaddir.mockResolvedValue(['general.style.json'])
+      mockReadFile.mockResolvedValue(JSON.stringify(GENERAL_STYLE))
+
+      const styles = await writingStyleService.listStyles()
+
+      expect(styles).toHaveLength(1)
+      expect(mockReaddir).toHaveBeenCalledWith(cwdStyleDir)
     })
 
     it('@p1 should override built-in with company styles of same id', async () => {

@@ -9,10 +9,15 @@
  */
 import { ErrorCode } from '@shared/constants'
 import { AiProxyError } from '@main/utils/errors'
+import { app } from 'electron'
+import { appendFile, mkdir } from 'fs/promises'
+import { dirname, join } from 'path'
 import type { AiProvider, AiProviderCallOptions } from './provider-adapter'
 import type { AiChatRequest, AiChatResponse } from '@shared/ai-types'
 
 const FORCE_ERROR_SECTION_RE = /## (?:编写指导|补充说明)\n[\s\S]*?__E2E_FORCE_ERROR__/
+const PROMPT_CAPTURE_ENV = 'BIDWISE_E2E_AI_MOCK_CAPTURE_PROMPTS'
+const PROMPT_CAPTURE_FILE = 'e2e-ai-prompts.jsonl'
 
 const MOCK_CHAPTER_CONTENT = `### 方案概述
 
@@ -34,6 +39,20 @@ const MOCK_CHAPTER_CONTENT = `### 方案概述
 - 第四阶段：试运行与验收交付（2 周）
 `
 
+async function capturePromptForE2e(request: AiChatRequest): Promise<void> {
+  if (process.env[PROMPT_CAPTURE_ENV] !== 'true') return
+
+  const filePath = join(app.getPath('userData'), 'data', 'logs', PROMPT_CAPTURE_FILE)
+  const entry = {
+    timestamp: new Date().toISOString(),
+    model: request.model,
+    messages: request.messages,
+  }
+
+  await mkdir(dirname(filePath), { recursive: true })
+  await appendFile(filePath, JSON.stringify(entry) + '\n', 'utf-8')
+}
+
 export class MockAiProvider implements AiProvider {
   readonly name = 'mock'
 
@@ -44,6 +63,8 @@ export class MockAiProvider implements AiProvider {
 
     const delayMs = parseInt(process.env.BIDWISE_E2E_AI_MOCK_DELAY_MS ?? '500', 10)
     await this.sleep(delayMs, options?.signal)
+
+    await capturePromptForE2e(request)
 
     const userContent = request.messages.find((m) => m.role === 'user')?.content ?? ''
     if (FORCE_ERROR_SECTION_RE.test(userContent)) {

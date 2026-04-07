@@ -60,7 +60,11 @@ function validateStyleFileData(data: unknown, filePath: string): WritingStyleFil
 let styleCache: WritingStyleTemplate[] | null = null
 
 function getBuiltinStyleDir(): string {
-  return join(app.getAppPath(), 'resources', 'writing-styles')
+  const candidates = [
+    join(app.getAppPath(), 'resources', 'writing-styles'),
+    join(process.cwd(), 'resources', 'writing-styles'),
+  ]
+  return candidates.find((dir) => existsSync(dir)) ?? candidates[0]
 }
 
 function resolveCompanyStyleDir(): string | null {

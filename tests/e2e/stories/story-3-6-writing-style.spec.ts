@@ -1,6 +1,6 @@
-import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { _electron as electron } from 'playwright'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -20,7 +20,14 @@ type SeededProject = {
   rootPath: string
 }
 
+type CapturedAiPrompt = {
+  timestamp: string
+  model: string
+  messages: Array<{ role: string; content: string }>
+}
+
 const APP_ENTRY = resolve(__dirname, '../../../out/main/index.js')
+const PROMPT_CAPTURE_FILE = 'e2e-ai-prompts.jsonl'
 
 test.setTimeout(120_000)
 
@@ -39,6 +46,9 @@ async function launchStoryApp(): Promise<LaunchContext> {
       XDG_CONFIG_HOME: join(sandboxHome, '.config'),
       XDG_DATA_HOME: join(sandboxHome, '.local', 'share'),
       BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
+      BIDWISE_E2E_AI_MOCK: 'true',
+      BIDWISE_E2E_AI_MOCK_DELAY_MS: '100',
+      BIDWISE_E2E_AI_MOCK_CAPTURE_PROMPTS: 'true',
       ELECTRON_IS_DEV: '0',
       NODE_ENV: 'test',
     },
@@ -104,14 +114,81 @@ async function seedProposalFiles(
   await writeFile(join(rootPath, 'proposal.meta.json'), JSON.stringify(defaultMeta, null, 2))
 }
 
-async function navigateToEditor(window: Page, projectName: string): Promise<void> {
-  // Navigate to the project
-  await window.getByText(projectName).first().click()
-  // Wait for the editor to load (proposal-writing stage shows EditorView)
-  await window.waitForTimeout(1000)
+async function navigateToEditor(window: Page, projectId: string): Promise<void> {
+  const targetHash = `#/project/${projectId}`
+  const currentHash = await window.evaluate(() => window.location.hash)
+
+  if (currentHash === targetHash) {
+    await window.evaluate(() => {
+      window.location.hash = '#/'
+    })
+    await expect(window.getByTestId('project-kanban')).toBeVisible({ timeout: 15_000 })
+  }
+
+  await window.evaluate((id) => {
+    window.location.hash = `#/project/${id}`
+  }, projectId)
+
+  await expect(window.getByTestId('project-workspace')).toBeVisible({ timeout: 30_000 })
+
+  const editorView = window.getByTestId('editor-view')
+  if (!(await editorView.isVisible().catch(() => false))) {
+    const sopTab = window.getByTestId('sop-stage-proposal-writing')
+    if (await sopTab.isVisible().catch(() => false)) {
+      await sopTab.click()
+    }
+  }
+
+  await expect(editorView).toBeVisible({ timeout: 15_000 })
+  await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
 }
 
-async function teardown(ctx: LaunchContext): Promise<void> {
+async function revealChapterAction(
+  window: Page,
+  headingTitle: string,
+  actionTestId: 'chapter-generate-btn' | 'chapter-regenerate-btn'
+): Promise<Locator> {
+  const heading = window.getByTestId('editor-view').getByText(headingTitle, { exact: true }).first()
+  await expect(heading).toBeVisible({ timeout: 10_000 })
+  await heading.hover()
+
+  const action = window.locator(`[data-testid="${actionTestId}"]`).first()
+  await expect(action).toBeVisible({ timeout: 10_000 })
+  return action
+}
+
+async function clickWritingStyleOption(window: Page, label: string): Promise<void> {
+  const dropdown = window.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+  await expect(dropdown).toBeVisible({ timeout: 10_000 })
+  await dropdown.getByText(label, { exact: true }).click()
+}
+
+async function readCapturedAiPrompts(userDataPath: string): Promise<CapturedAiPrompt[]> {
+  const filePath = join(userDataPath, 'data', 'logs', PROMPT_CAPTURE_FILE)
+  let raw: string
+  try {
+    raw = await readFile(filePath, 'utf-8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+
+  return raw
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as CapturedAiPrompt)
+}
+
+function findCapturedUserPrompt(prompts: CapturedAiPrompt[], chapterTitle: string): string {
+  for (let i = prompts.length - 1; i >= 0; i--) {
+    const userPrompt = prompts[i].messages.find((m) => m.role === 'user')?.content ?? ''
+    if (userPrompt.includes(`## 章节标题：${chapterTitle}`)) return userPrompt
+  }
+  return ''
+}
+
+async function teardown(ctx?: LaunchContext): Promise<void> {
+  if (!ctx) return
   await ctx.electronApp.close()
   await rm(ctx.sandboxHome, { recursive: true, force: true })
 }
@@ -119,7 +196,9 @@ async function teardown(ctx: LaunchContext): Promise<void> {
 // ─── E2E Tests ───────────────────────────────────────────
 
 test.describe('@story-3-6 Writing Style Template E2E', () => {
-  let ctx: LaunchContext
+  test.describe.configure({ timeout: 120_000 })
+
+  let ctx: LaunchContext | undefined
   let project: SeededProject
 
   const PROPOSAL_MD = `# 投标技术方案
@@ -145,51 +224,66 @@ test.describe('@story-3-6 Writing Style Template E2E', () => {
   })
 
   test('should display writing style selector in editor toolbar', async () => {
-    await navigateToEditor(ctx.window, project.name)
-    const selector = ctx.window.getByTestId('writing-style-selector')
+    await navigateToEditor(ctx!.window, project.id)
+    const selector = ctx!.window.getByTestId('writing-style-selector')
     await expect(selector).toBeVisible({ timeout: 10_000 })
   })
 
   test('should default to general style', async () => {
-    await navigateToEditor(ctx.window, project.name)
-    const selector = ctx.window.getByTestId('writing-style-selector')
+    await navigateToEditor(ctx!.window, project.id)
+    const selector = ctx!.window.getByTestId('writing-style-selector')
     await expect(selector).toBeVisible({ timeout: 10_000 })
-    await expect(ctx.window.getByText('通用文风')).toBeVisible()
+    await expect(ctx!.window.getByText('通用文风')).toBeVisible()
   })
 
   test('should persist style selection across page reload', async () => {
-    await navigateToEditor(ctx.window, project.name)
-    const selector = ctx.window.locator('[data-testid="writing-style-selector"]')
+    await navigateToEditor(ctx!.window, project.id)
+    const selector = ctx!.window.locator('[data-testid="writing-style-selector"]')
     await expect(selector).toBeVisible({ timeout: 10_000 })
 
     // Change to military style
     await selector.click()
-    await ctx.window.getByText('军工文风').click()
-    await ctx.window.waitForTimeout(500)
+    await clickWritingStyleOption(ctx!.window, '军工文风')
+    await expect
+      .poll(async () => {
+        const res = await ctx!.window.evaluate(
+          async ({ pid }) => window.api.documentGetMetadata({ projectId: pid }),
+          { pid: project.id }
+        )
+        return res.success ? res.data.writingStyleId : null
+      })
+      .toBe('military')
 
     // Reload page
-    await ctx.window.reload()
-    await ctx.window.waitForTimeout(2000)
+    await ctx!.window.reload()
+    await ctx!.window.waitForLoadState('domcontentloaded')
 
     // Navigate back to editor
-    await navigateToEditor(ctx.window, project.name)
+    await navigateToEditor(ctx!.window, project.id)
 
     // Verify military style is still selected
-    await expect(ctx.window.getByText('军工文风')).toBeVisible({ timeout: 10_000 })
+    await expect(ctx!.window.getByText('军工文风')).toBeVisible({ timeout: 10_000 })
   })
 
   test('should persist writingStyleId in proposal.meta.json (AC #4)', async () => {
-    await navigateToEditor(ctx.window, project.name)
-    const selector = ctx.window.locator('[data-testid="writing-style-selector"]')
+    await navigateToEditor(ctx!.window, project.id)
+    const selector = ctx!.window.locator('[data-testid="writing-style-selector"]')
     await expect(selector).toBeVisible({ timeout: 10_000 })
 
     // Change to government style
     await selector.click()
-    await ctx.window.getByText('政企文风').click()
-    await ctx.window.waitForTimeout(1000)
+    await clickWritingStyleOption(ctx!.window, '政企文风')
+    await expect
+      .poll(async () => {
+        const res = await ctx!.window.evaluate(
+          async ({ pid }) => window.api.documentGetMetadata({ projectId: pid }),
+          { pid: project.id }
+        )
+        return res.success ? res.data.writingStyleId : null
+      })
+      .toBe('government')
 
     // Read meta file to verify persistence
-    const { readFile } = await import('node:fs/promises')
     const metaPath = join(project.rootPath, 'proposal.meta.json')
     const metaRaw = await readFile(metaPath, 'utf-8')
     const meta = JSON.parse(metaRaw) as ProposalMetadata & { writingStyleId?: string }
@@ -197,8 +291,10 @@ test.describe('@story-3-6 Writing Style Template E2E', () => {
   })
 
   test('chapter generation prompt includes writing style constraints (AC #5)', async () => {
+    await navigateToEditor(ctx!.window, project.id)
+
     // Set military style for the project via IPC
-    const updateRes = await ctx.window.evaluate(
+    const updateRes = await ctx!.window.evaluate(
       async ({ pid }) => {
         return await window.api.writingStyleUpdateProject({
           projectId: pid,
@@ -210,7 +306,7 @@ test.describe('@story-3-6 Writing Style Template E2E', () => {
     expect(updateRes.success).toBe(true)
 
     // Retrieve the full military style template via IPC
-    const styleRes = await ctx.window.evaluate(async () => {
+    const styleRes = await ctx!.window.evaluate(async () => {
       return await window.api.writingStyleGet({ styleId: 'military' })
     })
     expect(styleRes.success).toBe(true)
@@ -228,27 +324,31 @@ test.describe('@story-3-6 Writing Style Template E2E', () => {
     expect(style.sentencePatterns.length).toBeGreaterThan(0)
     expect(style.sentencePatterns.every((p: string) => typeof p === 'string')).toBe(true)
 
-    // Verify the project's writing style resolves to military via IPC
-    const listRes = await ctx.window.evaluate(async () => {
-      return await window.api.writingStyleList()
-    })
-    expect(listRes.success).toBe(true)
-    const styles = (listRes as { success: true; data: { styles: WritingStyleTemplate[] } }).data
-      .styles
-    expect(styles.some((s: WritingStyleTemplate) => s.id === 'military')).toBe(true)
+    const generateBtn = await revealChapterAction(ctx!.window, '项目概述', 'chapter-generate-btn')
+    await generateBtn.click()
 
-    // Verify the project metadata has the correct writingStyleId for prompt injection
-    const metaRes = await ctx.window.evaluate(
-      async ({ pid }) => {
-        return await window.api.documentGetMetadata({ projectId: pid })
-      },
-      { pid: project.id }
+    await expect
+      .poll(
+        async () =>
+          findCapturedUserPrompt(await readCapturedAiPrompts(ctx!.userDataPath), '项目概述'),
+        { timeout: 30_000 }
+      )
+      .toContain('## 写作风格要求')
+
+    const prompt = findCapturedUserPrompt(
+      await readCapturedAiPrompts(ctx!.userDataPath),
+      '项目概述'
     )
-    expect(metaRes.success).toBe(true)
-    const meta = (
-      metaRes as { success: true; data: ProposalMetadata & { writingStyleId?: string } }
-    ).data
-    expect(meta.writingStyleId).toBe('military')
+    expect(prompt).toContain('文风：军工文风')
+    expect(prompt).toContain(style.toneGuidance)
+    expect(prompt).toContain('用语规范')
+    expect(prompt).toContain(style.vocabularyRules[0])
+    expect(prompt).toContain('禁用词（请勿使用以下词语）')
+    expect(prompt).toContain(style.forbiddenWords[0])
+    expect(prompt).toContain('句式约束')
+    expect(prompt).toContain(style.sentencePatterns[0])
+
+    await expect(ctx!.window.getByText('方案概述').first()).toBeVisible({ timeout: 15_000 })
   })
 
   test('should not auto-rewrite existing chapter content on style switch (AC #7)', async () => {
@@ -262,20 +362,34 @@ test.describe('@story-3-6 Writing Style Template E2E', () => {
 ## 系统架构设计
 
 > 请设计系统整体架构
-`
+    `
     await writeFile(join(project.rootPath, 'proposal.md'), proposalWithContent, 'utf-8')
 
-    await navigateToEditor(ctx.window, project.name)
-    const selector = ctx.window.locator('[data-testid="writing-style-selector"]')
+    const resetRes = await ctx!.window.evaluate(
+      async ({ pid }) =>
+        window.api.writingStyleUpdateProject({ projectId: pid, writingStyleId: 'government' }),
+      { pid: project.id }
+    )
+    expect(resetRes.success).toBe(true)
+
+    await navigateToEditor(ctx!.window, project.id)
+    const selector = ctx!.window.locator('[data-testid="writing-style-selector"]')
     await expect(selector).toBeVisible({ timeout: 10_000 })
 
     // Switch to military style
     await selector.click()
-    await ctx.window.getByText('军工文风').click()
-    await ctx.window.waitForTimeout(1000)
+    await clickWritingStyleOption(ctx!.window, '军工文风')
+    await expect
+      .poll(async () => {
+        const res = await ctx!.window.evaluate(
+          async ({ pid }) => window.api.documentGetMetadata({ projectId: pid }),
+          { pid: project.id }
+        )
+        return res.success ? res.data.writingStyleId : null
+      })
+      .toBe('military')
 
     // Verify existing chapter content is unchanged
-    const { readFile } = await import('node:fs/promises')
     const mdContent = await readFile(join(project.rootPath, 'proposal.md'), 'utf-8')
     expect(mdContent).toContain('本项目是一个已有内容的章节。')
   })
