@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Select, message, Tooltip, Tag } from 'antd'
+import { EditOutlined } from '@ant-design/icons'
 import type { WritingStyleTemplate, WritingStyleId } from '@shared/writing-style-types'
 
 const FALLBACK_GENERAL: WritingStyleTemplate = {
@@ -112,6 +113,9 @@ export function WritingStyleSelector({ projectId }: WritingStyleSelectorProps): 
       onChange={handleChange}
       loading={loading}
       size="small"
+      variant="borderless"
+      placement="bottomRight"
+      prefix={<EditOutlined />}
       style={{ minWidth: 120 }}
       options={options}
       optionRender={(option) => {
