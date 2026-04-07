@@ -153,8 +153,12 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   const showRegenerateButton = canAct && !chapterEmpty
 
   return (
-    <div onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
-      <PlateElement {...props} data-heading-text={text}>
+    <div
+      data-heading-text={text}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+    >
+      <PlateElement {...props}>
         <span className="relative inline-flex items-center gap-1">
           {children}
           {showGenerateButton && hovering && (
@@ -218,9 +222,9 @@ export function OutlineHeadingElement(props: PlateElementProps): React.JSX.Eleme
   const text = extractText(element).trim()
 
   return (
-    <PlateElement {...props} data-heading-text={text}>
-      {children}
-    </PlateElement>
+    <div data-heading-text={text}>
+      <PlateElement {...props}>{children}</PlateElement>
+    </div>
   )
 }
 

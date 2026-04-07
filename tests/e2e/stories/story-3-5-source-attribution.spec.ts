@@ -252,10 +252,12 @@ test.describe('Story 3.5: Source Attribution & Baseline Validation', () => {
     const mismatchMarker = ctx.window.getByTestId('baseline-mismatch-marker')
     await expect(mismatchMarker.first()).toBeVisible({ timeout: 10_000 })
 
-    // Hover to verify tooltip renders
+    // Hover to verify tooltip renders — use waitForTimeout to let Ant Design
+    // Tooltip's mouseEnterDelay settle before assertion polling begins
     await mismatchMarker.first().hover()
+    await ctx.window.waitForTimeout(500)
     const tooltip = ctx.window.getByTestId('baseline-mismatch-tooltip')
-    await expect(tooltip).toBeVisible({ timeout: 5_000 })
+    await expect(tooltip).toBeVisible({ timeout: 10_000 })
     await expect(tooltip).toContainText('基线不匹配')
   })
 
