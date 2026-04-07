@@ -4,6 +4,7 @@ import {
   scoringExtractor,
   mandatoryItemDetector,
   strategySeedGenerator,
+  traceabilityMatrixService,
 } from '@main/services/document-parser'
 import type { IpcChannel } from '@shared/ipc-types'
 
@@ -74,6 +75,34 @@ const analysisHandlerMap: { [C in AnalysisChannel]: () => void } = {
     createIpcHandler('analysis:delete-seed', (input) => strategySeedGenerator.deleteSeed(input.id)),
   'analysis:add-seed': () =>
     createIpcHandler('analysis:add-seed', (input) => strategySeedGenerator.addSeed(input)),
+  'analysis:generate-matrix': () =>
+    createIpcHandler('analysis:generate-matrix', (input) =>
+      traceabilityMatrixService.generate(input)
+    ),
+  'analysis:get-matrix': () =>
+    createIpcHandler('analysis:get-matrix', (input) =>
+      traceabilityMatrixService.getMatrix(input.projectId)
+    ),
+  'analysis:get-matrix-stats': () =>
+    createIpcHandler('analysis:get-matrix-stats', (input) =>
+      traceabilityMatrixService.getStats(input.projectId)
+    ),
+  'analysis:create-link': () =>
+    createIpcHandler('analysis:create-link', (input) =>
+      traceabilityMatrixService.createLink(input)
+    ),
+  'analysis:update-link': () =>
+    createIpcHandler('analysis:update-link', (input) =>
+      traceabilityMatrixService.updateLink(input.id, input.patch)
+    ),
+  'analysis:delete-link': () =>
+    createIpcHandler('analysis:delete-link', (input) =>
+      traceabilityMatrixService.deleteLink(input.id)
+    ),
+  'analysis:import-addendum': () =>
+    createIpcHandler('analysis:import-addendum', (input) =>
+      traceabilityMatrixService.importAddendum(input)
+    ),
 }
 
 export type RegisteredAnalysisChannels = AnalysisChannel

@@ -1,4 +1,4 @@
-import type { SectionWeightEntry } from '../template-types'
+import type { SectionWeightEntry, ProposalSectionIndexEntry } from '../template-types'
 
 /** 方案文档数据模型 */
 export interface ProposalDocument {
@@ -15,6 +15,7 @@ export interface ProposalMetadata {
   annotations: [] // Alpha 阶段空数组占位，Epic 4 填充
   scores: [] // Alpha 阶段空数组占位，Epic 7 填充
   sectionWeights?: SectionWeightEntry[]
+  sectionIndex?: ProposalSectionIndexEntry[]
   templateId?: string
   lastSavedAt: string // ISO-8601
 }

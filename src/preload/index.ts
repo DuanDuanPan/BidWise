@@ -115,6 +115,27 @@ const requestApi = {
   analysisAddSeed: (input: IpcChannelMap['analysis:add-seed']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_ADD_SEED, input),
 
+  analysisGenerateMatrix: (input: IpcChannelMap['analysis:generate-matrix']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GENERATE_MATRIX, input),
+
+  analysisGetMatrix: (input: IpcChannelMap['analysis:get-matrix']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_MATRIX, input),
+
+  analysisGetMatrixStats: (input: IpcChannelMap['analysis:get-matrix-stats']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_GET_MATRIX_STATS, input),
+
+  analysisCreateLink: (input: IpcChannelMap['analysis:create-link']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_CREATE_LINK, input),
+
+  analysisUpdateLink: (input: IpcChannelMap['analysis:update-link']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_UPDATE_LINK, input),
+
+  analysisDeleteLink: (input: IpcChannelMap['analysis:delete-link']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_DELETE_LINK, input),
+
+  analysisImportAddendum: (input: IpcChannelMap['analysis:import-addendum']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANALYSIS_IMPORT_ADDENDUM, input),
+
   documentLoad: (input: IpcChannelMap['document:load']['input']) =>
     typedInvoke(IPC_CHANNELS.DOCUMENT_LOAD, input),
 

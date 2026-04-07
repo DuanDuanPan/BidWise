@@ -6,7 +6,7 @@ import {
   FileSearchOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { useCurrentProject } from '../hooks/useCurrentProject'
 import { useContextRestore } from '../hooks/useContextRestore'
 import { useSopNavigation } from '../hooks/useSopNavigation'
@@ -33,7 +33,7 @@ import { commandRegistry, useCommandPalette } from '@renderer/shared/command-pal
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { useDocumentStore } from '@renderer/stores'
 import { SOP_STAGES } from '../types'
-import type { ChapterGenerationPhase } from '@shared/chapter-types'
+import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
 
 export function ProjectWorkspace(): React.JSX.Element {
   const navigate = useNavigate()
@@ -130,6 +130,40 @@ export function ProjectWorkspace(): React.JSX.Element {
     }
     return map
   }, [chapterGen.statuses])
+
+  // Cross-stage chapter navigation bridge (Story 2.8)
+  const pendingLocatorRef = useRef<ChapterHeadingLocator | null>(null)
+
+  const handleNavigateToChapter = useCallback(
+    (locator: ChapterHeadingLocator): void => {
+      if (currentStageKey !== 'proposal-writing') {
+        pendingLocatorRef.current = locator
+        navigateToStage('proposal-writing')
+      } else {
+        scrollToHeading(
+          document.querySelector('[data-editor-scroll-container="true"]') as HTMLElement | null,
+          locator
+        )
+      }
+    },
+    [currentStageKey, navigateToStage]
+  )
+
+  // When stage changes to proposal-writing and there's a pending locator, scroll to it
+  useEffect(() => {
+    if (currentStageKey === 'proposal-writing' && pendingLocatorRef.current) {
+      const locator = pendingLocatorRef.current
+      pendingLocatorRef.current = null
+      // Wait for editor to mount
+      const timer = setTimeout(() => {
+        scrollToHeading(
+          document.querySelector('[data-editor-scroll-container="true"]') as HTMLElement | null,
+          locator
+        )
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [currentStageKey])
 
   if (loading && !currentProject) {
     return (
@@ -232,7 +266,7 @@ export function ProjectWorkspace(): React.JSX.Element {
           }
           center={
             currentStageKey === 'requirements-analysis' && projectId ? (
-              <AnalysisView projectId={projectId} />
+              <AnalysisView projectId={projectId} onNavigateToChapter={handleNavigateToChapter} />
             ) : isSolutionDesign && projectId ? (
               <SolutionDesignView
                 projectId={projectId}

@@ -3,6 +3,7 @@ export { TenderImportService } from './tender-import'
 export { ScoringExtractor } from './scoring-extractor'
 export { MandatoryItemDetector } from './mandatory-item-detector'
 export { StrategySeedGenerator } from './strategy-seed-generator'
+export { TraceabilityMatrixService } from './traceability-matrix-service'
 export { extractPdfText } from './pdf-extractor'
 export type { PdfExtractResult } from './pdf-extractor'
 export { extractWordText, convertDocToDocx } from './word-extractor'
@@ -14,9 +15,11 @@ import { TenderImportService } from './tender-import'
 import { ScoringExtractor } from './scoring-extractor'
 import { MandatoryItemDetector } from './mandatory-item-detector'
 import { StrategySeedGenerator } from './strategy-seed-generator'
+import { TraceabilityMatrixService } from './traceability-matrix-service'
 
 export const rfpParser = new RfpParser()
 export const tenderImportService = new TenderImportService()
 export const scoringExtractor = new ScoringExtractor()
 export const mandatoryItemDetector = new MandatoryItemDetector()
 export const strategySeedGenerator = new StrategySeedGenerator()
+export const traceabilityMatrixService = new TraceabilityMatrixService()

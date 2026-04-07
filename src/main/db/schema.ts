@@ -83,6 +83,20 @@ export interface StrategySeedTable {
   updatedAt: string
 }
 
+export interface TraceabilityLinkTable {
+  id: string
+  projectId: string
+  requirementId: string
+  sectionId: string
+  sectionTitle: string
+  coverageStatus: string // 'covered' | 'partial' | 'uncovered'
+  confidence: number // 0-1
+  matchReason: string | null
+  source: string // 'auto' | 'manual'
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -90,4 +104,5 @@ export interface DB {
   scoringModels: ScoringModelTable
   mandatoryItems: MandatoryItemTable
   strategySeeds: StrategySeedTable
+  traceabilityLinks: TraceabilityLinkTable
 }
