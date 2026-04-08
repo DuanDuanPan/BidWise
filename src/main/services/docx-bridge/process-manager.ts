@@ -97,7 +97,7 @@ export class ProcessManager {
     }
 
     // SIGTERM
-    if (this.child && !this.child.killed) {
+    if (this.child && this.child.exitCode === null) {
       this.child.kill('SIGTERM')
       const exited = await this.waitForExit(2_000)
       if (exited) {
@@ -107,8 +107,8 @@ export class ProcessManager {
       }
     }
 
-    // SIGKILL
-    if (this.child && !this.child.killed) {
+    // SIGKILL — check exitCode, not killed (killed only means "signal was sent")
+    if (this.child && this.child.exitCode === null) {
       this.child.kill('SIGKILL')
       logger.warn('Python 进程已 SIGKILL 强制终止')
     }
@@ -134,7 +134,7 @@ export class ProcessManager {
 
   getStatus(): DocxBridgeStatus {
     return {
-      ready: this.child !== null && this.port !== null && !this.child.killed,
+      ready: this.child !== null && this.port !== null && this.child.exitCode === null,
       port: this.port ?? undefined,
       pid: this.child?.pid ?? undefined,
     }
@@ -301,7 +301,7 @@ export class ProcessManager {
   }
 
   private cleanup(): void {
-    if (this.child && !this.child.killed) {
+    if (this.child && this.child.exitCode === null) {
       try {
         this.child.kill('SIGKILL')
       } catch {

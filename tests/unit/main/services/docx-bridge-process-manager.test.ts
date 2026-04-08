@@ -39,13 +39,18 @@ function createMockChildProcess() {
     stderr: EventEmitter
     pid: number
     killed: boolean
+    exitCode: number | null
     kill: Mock
   }
   child.stdout = stdout
   child.stderr = stderr
   child.pid = 12345
   child.killed = false
-  child.kill = vi.fn()
+  child.exitCode = null
+  // Simulate real Node.js behavior: kill() sets killed = true
+  child.kill = vi.fn().mockImplementation(() => {
+    child.killed = true
+  })
   return child
 }
 
@@ -131,7 +136,38 @@ describe('ProcessManager', () => {
   })
 
   describe('stopProcess', () => {
-    it('sends POST /api/shutdown then SIGTERM then SIGKILL', async () => {
+    it('sends POST /api/shutdown then SIGTERM then SIGKILL when process does not exit', async () => {
+      const mockChild = createMockChildProcess()
+      mockSpawn.mockReturnValue(mockChild)
+
+      const startPromise = manager.startProcess()
+      mockChild.stdout.emit('data', Buffer.from('READY:5000\n'))
+      await startPromise
+
+      // Shutdown request fails — falls through to SIGTERM
+      mockFetch.mockRejectedValue(new Error('connection refused'))
+
+      const stopPromise = manager.stopProcess()
+
+      // Advance past shutdown timeout + SIGTERM wait (5s + 2s)
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      await stopPromise
+
+      // Verify shutdown was attempted
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:5000/api/shutdown',
+        expect.objectContaining({ method: 'POST' })
+      )
+
+      // Verify SIGTERM then SIGKILL — kill() sets killed=true (like real Node.js)
+      // but code uses exitCode (stays null) so SIGKILL is still reachable
+      expect(mockChild.kill).toHaveBeenCalledTimes(3) // SIGTERM + SIGKILL in stop + SIGKILL in cleanup
+      expect(mockChild.kill.mock.calls[0][0]).toBe('SIGTERM')
+      expect(mockChild.kill.mock.calls[1][0]).toBe('SIGKILL')
+    })
+
+    it('stops after SIGTERM if process exits in time', async () => {
       const mockChild = createMockChildProcess()
       mockSpawn.mockReturnValue(mockChild)
 
@@ -142,17 +178,22 @@ describe('ProcessManager', () => {
       // Shutdown request fails
       mockFetch.mockRejectedValue(new Error('connection refused'))
 
+      // When SIGTERM is sent, simulate the process exiting
+      mockChild.kill.mockImplementation((signal: string) => {
+        mockChild.killed = true
+        if (signal === 'SIGTERM') {
+          mockChild.exitCode = 0
+          process.nextTick(() => mockChild.emit('exit', 0))
+        }
+      })
+
       const stopPromise = manager.stopProcess()
-
-      // The process won't exit naturally, so SIGTERM and SIGKILL will be sent
       await vi.advanceTimersByTimeAsync(10_000)
-
       await stopPromise
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://127.0.0.1:5000/api/shutdown',
-        expect.objectContaining({ method: 'POST' })
-      )
+      // Only SIGTERM should have been sent — no SIGKILL needed
+      expect(mockChild.kill).toHaveBeenCalledTimes(1)
+      expect(mockChild.kill.mock.calls[0][0]).toBe('SIGTERM')
     })
   })
 
