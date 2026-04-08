@@ -1,5 +1,9 @@
 /** Mermaid 架构图类型定义 — Story 3.8 */
 
+/** Default template inserted for new Mermaid diagrams */
+export const MERMAID_DEFAULT_TEMPLATE = `graph TD
+  A[开始] --> B[结束]`
+
 /** Mermaid 元素节点数据（Plate void element） */
 export interface MermaidElementData {
   diagramId: string

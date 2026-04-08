@@ -225,8 +225,8 @@ test.describe('Story 3.8 — Mermaid 架构图草图生成', () => {
 
     const proposalMd = await readFile(join(project.rootPath, 'proposal.md'), 'utf-8')
 
-    // Should contain mermaid comment
-    expect(proposalMd).toMatch(/<!-- mermaid:[^:]+:[^>]+\.svg -->/)
+    // Should contain mermaid comment (3-field format: id:filename:caption)
+    expect(proposalMd).toMatch(/<!-- mermaid:[^:]+:[^:]+\.svg(?::.*?)? -->/)
     // Should contain mermaid fenced code block
     expect(proposalMd).toContain('```mermaid')
   })
@@ -236,7 +236,7 @@ test.describe('Story 3.8 — Mermaid 架构图草图生成', () => {
 
     // Find the SVG file in assets/
     const proposalMd = await readFile(join(project.rootPath, 'proposal.md'), 'utf-8')
-    const match = proposalMd.match(/<!-- mermaid:[^:]+:([^>]+\.svg) -->/)
+    const match = proposalMd.match(/<!-- mermaid:[^:]+:([^:]+\.svg)(?::.*?)? -->/)
     expect(match).toBeTruthy()
 
     const svgFileName = match![1]

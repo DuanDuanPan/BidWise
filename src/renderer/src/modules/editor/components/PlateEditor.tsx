@@ -8,6 +8,7 @@ import { replaceMarkdownSection } from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
 import { MERMAID_ELEMENT_TYPE } from '@modules/editor/plugins/mermaidPlugin'
+import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
 
 export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => boolean
 export type InsertDrawioFn = () => void
@@ -192,7 +193,7 @@ export function PlateEditor({
         type: MERMAID_ELEMENT_TYPE,
         diagramId,
         assetFileName,
-        source: '',
+        source: MERMAID_DEFAULT_TEMPLATE,
         caption: '',
         children: [{ text: '' }],
       },

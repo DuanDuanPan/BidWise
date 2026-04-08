@@ -7,11 +7,9 @@ import mermaid from 'mermaid'
 import { useProjectStore } from '@renderer/stores'
 import { MermaidRenderer } from './MermaidRenderer'
 import type { MermaidElement as MermaidElementType } from '@modules/editor/plugins/mermaidPlugin'
+import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
 
 type MermaidMode = 'editing' | 'preview'
-
-const DEFAULT_TEMPLATE = `graph TD
-  A[开始] --> B[结束]`
 
 export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const { children, element } = props
@@ -20,9 +18,9 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const projectId = useProjectStore((s) => s.currentProject?.id)
   const node = element as unknown as MermaidElementType
 
-  const isNewNode = !node.source
+  const isNewNode = !node.source || (!node.lastModified && node.source === MERMAID_DEFAULT_TEMPLATE)
   const [mode, setMode] = useState<MermaidMode>(isNewNode ? 'editing' : 'preview')
-  const [localSource, setLocalSource] = useState(node.source || DEFAULT_TEMPLATE)
+  const [localSource, setLocalSource] = useState(node.source || MERMAID_DEFAULT_TEMPLATE)
   const [localCaption, setLocalCaption] = useState(node.caption || '')
   const [previewSvg, setPreviewSvg] = useState('')
   const [errorLine, setErrorLine] = useState<number | undefined>(undefined)
