@@ -21,7 +21,7 @@ import { colors, bgColors, annotationColors, sopColors } from '../../theme/token
 
 function ColorSwatch({ name, color }: { name: string; color: string }): React.JSX.Element {
   return (
-    <div className="gap-sm flex items-center">
+    <div className="flex items-center gap-2">
       <div className="h-8 w-8 rounded-md border border-gray-200" style={{ background: color }} />
       <div>
         <div className="text-body-small font-medium">{name}</div>
@@ -33,16 +33,16 @@ function ColorSwatch({ name, color }: { name: string; color: string }): React.JS
 
 export function DesignSystemDemo(): React.JSX.Element {
   return (
-    <div className="bg-bg-global p-lg min-h-screen" data-testid="design-system-demo">
-      <h1 className="text-h1 mb-lg">Design System Demo</h1>
+    <div className="bg-bg-global min-h-screen p-6" data-testid="design-system-demo">
+      <h1 className="text-h1 mb-6">Design System Demo</h1>
 
       {/* 色彩系统 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">色彩系统</h2>
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">色彩系统</h2>
 
-        <div className="mb-md">
-          <h3 className="text-h3 mb-sm">品牌色 & 语义色</h3>
-          <div className="gap-md flex flex-wrap" data-testid="color-palette">
+        <div className="mb-4">
+          <h3 className="text-h3 mb-2">品牌色 & 语义色</h3>
+          <div className="flex flex-wrap gap-4" data-testid="color-palette">
             <ColorSwatch name="品牌主色" color={colors.brand} />
             <ColorSwatch name="品牌浅色" color={colors.brandLight} />
             <ColorSwatch name="成功" color={colors.success} />
@@ -52,9 +52,9 @@ export function DesignSystemDemo(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="mb-md">
-          <h3 className="text-h3 mb-sm">批注五色</h3>
-          <div className="gap-md flex flex-wrap" data-testid="annotation-colors">
+        <div className="mb-4">
+          <h3 className="text-h3 mb-2">批注五色</h3>
+          <div className="flex flex-wrap gap-4" data-testid="annotation-colors">
             <ColorSwatch name="AI建议" color={annotationColors.ai} />
             <ColorSwatch name="资产推荐" color={annotationColors.asset} />
             <ColorSwatch name="评分预警" color={annotationColors.score} />
@@ -63,9 +63,9 @@ export function DesignSystemDemo(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="mb-md">
-          <h3 className="text-h3 mb-sm">SOP 状态色</h3>
-          <div className="gap-md flex flex-wrap" data-testid="sop-colors">
+        <div className="mb-4">
+          <h3 className="text-h3 mb-2">SOP 状态色</h3>
+          <div className="flex flex-wrap gap-4" data-testid="sop-colors">
             <ColorSwatch name="空闲" color={sopColors.idle} />
             <ColorSwatch name="进行中" color={sopColors.active} />
             <ColorSwatch name="完成" color={sopColors.done} />
@@ -74,15 +74,15 @@ export function DesignSystemDemo(): React.JSX.Element {
         </div>
 
         <div>
-          <h3 className="text-h3 mb-sm">底色分层</h3>
-          <div className="gap-md flex" data-testid="bg-colors">
-            <div className="bg-bg-global p-md rounded-md border border-gray-200">
+          <h3 className="text-h3 mb-2">底色分层</h3>
+          <div className="flex gap-4" data-testid="bg-colors">
+            <div className="bg-bg-global rounded-md border border-gray-200 p-4">
               <span className="text-body-small">全局底色 {bgColors.global}</span>
             </div>
-            <div className="bg-bg-content p-md rounded-md border border-gray-200">
+            <div className="bg-bg-content rounded-md border border-gray-200 p-4">
               <span className="text-body-small">内容底色 {bgColors.content}</span>
             </div>
-            <div className="bg-bg-sidebar p-md rounded-md border border-gray-200">
+            <div className="bg-bg-sidebar rounded-md border border-gray-200 p-4">
               <span className="text-body-small">侧栏底色 {bgColors.sidebar}</span>
             </div>
           </div>
@@ -90,9 +90,9 @@ export function DesignSystemDemo(): React.JSX.Element {
       </section>
 
       {/* 排版层级 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">排版层级</h2>
-        <div className="bg-bg-content p-lg rounded-lg shadow-sm" data-testid="typography">
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">排版层级</h2>
+        <div className="bg-bg-content rounded-lg p-6 shadow-sm" data-testid="typography">
           <p className="text-h1">H1 — 24px / 600 / 1.4</p>
           <p className="text-h2">H2 — 20px / 600 / 1.4</p>
           <p className="text-h3">H3 — 16px / 600 / 1.5</p>
@@ -101,14 +101,14 @@ export function DesignSystemDemo(): React.JSX.Element {
           <p className="text-body-proposal">Body Proposal — 14px / 400 / 1.8（方案正文）</p>
           <p className="text-body-small">Body Small — 12px / 400 / 1.6</p>
           <p className="text-caption">Caption — 12px / 400 / 1.4</p>
-          <p className="mt-md text-body-small font-mono">JetBrains Mono — 等宽字体</p>
+          <p className="text-body-small mt-4 font-mono">JetBrains Mono — 等宽字体</p>
         </div>
       </section>
 
       {/* 间距可视化 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">间距系统 (8px 基准网格)</h2>
-        <div className="gap-sm flex items-end" data-testid="spacing">
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">间距系统 (8px 基准网格)</h2>
+        <div className="flex items-end gap-2" data-testid="spacing">
           {[
             { name: 'xs', size: '4px' },
             { name: 'sm', size: '8px' },
@@ -118,7 +118,7 @@ export function DesignSystemDemo(): React.JSX.Element {
             { name: '2xl', size: '48px' },
           ].map((s) => (
             <div key={s.name} className="flex flex-col items-center">
-              <div className="bg-brand mb-xs" style={{ width: s.size, height: s.size }} />
+              <div className="bg-brand mb-1" style={{ width: s.size, height: s.size }} />
               <span className="text-caption">{s.name}</span>
               <span className="text-caption text-gray-400">{s.size}</span>
             </div>
@@ -127,25 +127,25 @@ export function DesignSystemDemo(): React.JSX.Element {
       </section>
 
       {/* Ant Design 组件 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">Ant Design 组件 + Tailwind 共存</h2>
-        <div className="gap-md flex flex-wrap" data-testid="antd-components">
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">Ant Design 组件 + Tailwind 共存</h2>
+        <div className="flex flex-wrap gap-4" data-testid="antd-components">
           <Card title="Card 标题" className="w-72">
             <p className="text-body">Card 内容，使用 Tailwind text-body class</p>
-            <div className="mt-sm gap-xs flex">
+            <div className="mt-2 flex gap-1">
               <Tag color="blue">标签A</Tag>
               <Tag color="green">标签B</Tag>
               <Tag color="orange">标签C</Tag>
             </div>
           </Card>
-          <div className="gap-sm flex flex-col">
+          <div className="flex flex-col gap-2">
             <Button type="primary">主按钮</Button>
             <Button>默认按钮</Button>
             <Button type="dashed">虚线按钮</Button>
             <Button type="text">文本按钮</Button>
           </div>
         </div>
-        <div className="mt-md">
+        <div className="mt-4">
           <Steps
             size="small"
             current={1}
@@ -157,7 +157,7 @@ export function DesignSystemDemo(): React.JSX.Element {
             ]}
           />
         </div>
-        <div className="mt-md">
+        <div className="mt-4">
           <Table
             size="small"
             dataSource={[
@@ -175,10 +175,10 @@ export function DesignSystemDemo(): React.JSX.Element {
       </section>
 
       {/* AC-5: Tailwind 覆盖 Ant Design 样式 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">Tailwind 覆盖 Ant Design 示例</h2>
-        <div className="gap-md flex flex-wrap" data-testid="tailwind-override">
-          <Button type="primary" className="px-xl rounded-full">
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">Tailwind 覆盖 Ant Design 示例</h2>
+        <div className="flex flex-wrap gap-4" data-testid="tailwind-override">
+          <Button type="primary" className="rounded-full px-8">
             圆角覆盖按钮
           </Button>
           <Card className="border-brand w-72 border-2 !shadow-none" title="Tailwind 覆盖 Card">
@@ -188,12 +188,12 @@ export function DesignSystemDemo(): React.JSX.Element {
       </section>
 
       {/* 自定义图标 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">自定义图标</h2>
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">自定义图标</h2>
 
-        <div className="mb-md">
-          <h3 className="text-h3 mb-sm">批注类型 (1rem / 1.25rem)</h3>
-          <div className="gap-lg flex flex-wrap" data-testid="annotation-icons">
+        <div className="mb-4">
+          <h3 className="text-h3 mb-2">批注类型 (1rem / 1.25rem)</h3>
+          <div className="flex flex-wrap gap-6" data-testid="annotation-icons">
             {[
               { Icon: AnnotationAiIcon, name: 'AI建议', color: annotationColors.ai },
               { Icon: AnnotationAssetIcon, name: '资产推荐', color: annotationColors.asset },
@@ -201,8 +201,8 @@ export function DesignSystemDemo(): React.JSX.Element {
               { Icon: AnnotationAttackIcon, name: '对抗攻击', color: annotationColors.attack },
               { Icon: AnnotationHumanIcon, name: '人工批注', color: annotationColors.human },
             ].map(({ Icon, name, color }) => (
-              <div key={name} className="gap-xs flex flex-col items-center">
-                <div className="gap-sm flex">
+              <div key={name} className="flex flex-col items-center gap-1">
+                <div className="flex gap-2">
                   <Icon size="1rem" color={color} />
                   <Icon size="1.25rem" color={color} />
                 </div>
@@ -212,9 +212,9 @@ export function DesignSystemDemo(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="mb-md">
-          <h3 className="text-h3 mb-sm">SOP 阶段</h3>
-          <div className="gap-lg flex flex-wrap" data-testid="sop-icons">
+        <div className="mb-4">
+          <h3 className="text-h3 mb-2">SOP 阶段</h3>
+          <div className="flex flex-wrap gap-6" data-testid="sop-icons">
             {[
               { Icon: SopAnalysisIcon, name: '需求分析' },
               { Icon: SopDesignIcon, name: '方案设计' },
@@ -223,8 +223,8 @@ export function DesignSystemDemo(): React.JSX.Element {
               { Icon: SopReviewIcon, name: '评审打磨' },
               { Icon: SopDeliveryIcon, name: '交付归档' },
             ].map(({ Icon, name }) => (
-              <div key={name} className="gap-xs flex flex-col items-center">
-                <div className="gap-sm flex">
+              <div key={name} className="flex flex-col items-center gap-1">
+                <div className="flex gap-2">
                   <Icon size="1rem" />
                   <Icon size="1.25rem" />
                 </div>
@@ -235,16 +235,16 @@ export function DesignSystemDemo(): React.JSX.Element {
         </div>
 
         <div>
-          <h3 className="text-h3 mb-sm">其他图标</h3>
-          <div className="gap-lg flex flex-wrap" data-testid="other-icons">
+          <h3 className="text-h3 mb-2">其他图标</h3>
+          <div className="flex flex-wrap gap-6" data-testid="other-icons">
             {[
               { Icon: CrossfireIcon, name: '交叉火力' },
               { Icon: SourceAssetIcon, name: '资产库' },
               { Icon: SourceKnowledgeIcon, name: '知识库' },
               { Icon: SourceAiIcon, name: 'AI推理' },
             ].map(({ Icon, name }) => (
-              <div key={name} className="gap-xs flex flex-col items-center">
-                <div className="gap-sm flex">
+              <div key={name} className="flex flex-col items-center gap-1">
+                <div className="flex gap-2">
                   <Icon size="1rem" />
                   <Icon size="1.25rem" />
                 </div>
@@ -256,10 +256,10 @@ export function DesignSystemDemo(): React.JSX.Element {
       </section>
 
       {/* 动效 Token */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">动效 Token</h2>
-        <div className="bg-bg-content p-lg rounded-lg shadow-sm" data-testid="animation-tokens">
-          <div className="text-body-small space-y-xs">
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">动效 Token</h2>
+        <div className="bg-bg-content rounded-lg p-6 shadow-sm" data-testid="animation-tokens">
+          <div className="text-body-small space-y-1">
             <p>
               <code className="font-mono">--duration-micro: 150ms</code> — 微交互
             </p>
@@ -283,9 +283,9 @@ export function DesignSystemDemo(): React.JSX.Element {
       </section>
 
       {/* 跨平台 */}
-      <section className="mb-xl">
-        <h2 className="text-h2 mb-md">跨平台工具</h2>
-        <div className="bg-bg-content p-lg rounded-lg shadow-sm" data-testid="platform-utils">
+      <section className="mb-8">
+        <h2 className="text-h2 mb-4">跨平台工具</h2>
+        <div className="bg-bg-content rounded-lg p-6 shadow-sm" data-testid="platform-utils">
           <p className="text-body">
             修饰键: <code className="font-mono">{modKey}</code>
           </p>

@@ -34,13 +34,6 @@
   --color-sop-done: #52c41a;
   --color-sop-warning: #faad14;
 
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-  --spacing-2xl: 48px;
-
   /* 圆角 */
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -61,6 +54,22 @@
 
   --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/*
+ * 间距 token 独立于 @theme 定义，避免 --spacing-xl 等名称与 Tailwind v4
+ * 的 --container-xl (max-w-xl) 产生命名空间冲突。
+ * 这些变量仅用于 inline style 引用 (var(--spacing-lg))，不作为 Tailwind 工具类使用。
+ */
+@layer base {
+  :root {
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    --spacing-2xl: 48px;
+  }
 }
 
 /* JetBrains Mono 本地字体（Electron 桌面应用离线可用） */
