@@ -177,7 +177,13 @@ if (process.platform === 'darwin') {
 const coldStartMs = await new Promise((resolve, reject) => {
   const child = spawn(binaryPath, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' },
+    env: {
+      ...process.env,
+      ELECTRON_ENABLE_LOGGING: '1',
+      // macOS unpacked builds are ad-hoc re-signed in this smoke test. Disable
+      // the renderer sandbox so the helper app can launch under that signature.
+      ...(process.platform === 'darwin' ? { ELECTRON_DISABLE_SANDBOX: '1' } : {}),
+    },
   })
 
   let output = ''
