@@ -44,6 +44,7 @@ const mockMermaidSaveAsset = vi
   .mockResolvedValue({ success: true, data: { assetPath: '/tmp/assets/test.svg' } })
 const mockMermaidDeleteAsset = vi.fn().mockResolvedValue({ success: true, data: undefined })
 const mockMessageWarning = vi.fn()
+const mockModalConfirm = vi.fn()
 
 Object.defineProperty(window, 'api', {
   value: {
@@ -53,46 +54,18 @@ Object.defineProperty(window, 'api', {
   writable: true,
 })
 
-// Mock antd Modal
+// Mock antd App.useApp to provide message + modal
 vi.mock('antd', async () => {
   const actual = await vi.importActual('antd')
-  const Modal = ({
-    open,
-    title,
-    children,
-    onOk,
-    onCancel,
-    okText,
-    cancelText,
-  }: {
-    open?: boolean
-    title?: React.ReactNode
-    children?: React.ReactNode
-    onOk?: () => void
-    onCancel?: () => void
-    okText?: string
-    cancelText?: string
-  }): React.JSX.Element | null => {
-    if (!open) return null
-    return (
-      <div data-testid="mermaid-delete-modal">
-        <div>{title}</div>
-        <div>{children}</div>
-        {cancelText ? <button onClick={onCancel}>{cancelText}</button> : null}
-        {okText ? <button onClick={onOk}>{okText}</button> : null}
-      </div>
-    )
-  }
-
   return {
     ...actual,
     App: {
       ...(actual as Record<string, unknown>).App,
       useApp: () => ({
         message: { warning: mockMessageWarning },
+        modal: { confirm: mockModalConfirm },
       }),
     },
-    Modal,
   }
 })
 
@@ -223,9 +196,17 @@ describe('@story-3-8 MermaidElement', () => {
     renderMermaidElement({ source: 'graph LR\n  A-->B' })
 
     fireEvent.click(screen.getByTestId('mermaid-delete-btn'))
-    expect(screen.getByTestId('mermaid-delete-modal')).toBeDefined()
+    expect(mockModalConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '确认删除',
+        okText: '删除',
+      })
+    )
 
-    fireEvent.click(screen.getByText('删除'))
+    // Simulate user clicking "删除" by invoking the onOk callback
+    const confirmConfig = mockModalConfirm.mock.calls[0][0] as { onOk: () => void }
+    confirmConfig.onOk()
+
     expect(mockRemoveNodes).toHaveBeenCalledWith({ at: [0] })
     expect(mockMermaidDeleteAsset).toHaveBeenCalledWith({
       projectId: 'proj-test',
