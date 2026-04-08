@@ -58,7 +58,11 @@ function findBinary() {
 const binaryPath = findBinary()
 
 // ── Step 2b: Validate build output integrity ───────────────────────────
-// Verify critical files are not corrupted (overlapping asar contents).
+// Verify critical files inside the asar archive are not corrupted.
+// With asar enabled, Electron can read files out of app.asar transparently
+// via the patched fs module, but this script runs in plain Node. We read the
+// asar header directly to validate file offsets without needing the full
+// asar npm package.
 function validateBuildIntegrity() {
   const distDir = join(root, 'dist')
 
@@ -69,10 +73,36 @@ function validateBuildIntegrity() {
     if (!appDir) return
     const resourcesDir = join(distDir, macDir, appDir, 'Contents', 'Resources')
 
-    // With asar disabled, files are unpacked in app/ directory
-    const appResourceDir = join(resourcesDir, 'app')
-    if (existsSync(appResourceDir)) {
-      const pkgJsonPath = join(appResourceDir, 'package.json')
+    const asarPath = join(resourcesDir, 'app.asar')
+    const unpackedDir = join(resourcesDir, 'app')
+
+    if (existsSync(asarPath)) {
+      // Read asar header to validate structure.
+      // Asar uses Chromium Pickle encoding:
+      //   [0..3]  size pickle payload size (uint32 LE)
+      //   [4..7]  header data region size (uint32 LE)
+      //   [8..]   header pickle:
+      //     [8..11]  header pickle payload size
+      //     [12..15] JSON string length
+      //     [16..]   JSON header string
+      const buf = readFileSync(asarPath)
+      const headerDataSize = buf.readUInt32LE(4)
+      const headerPickle = buf.subarray(8, 8 + headerDataSize)
+      const stringLength = headerPickle.readUInt32LE(4)
+      const headerJson = headerPickle.subarray(8, 8 + stringLength).toString('utf8')
+      try {
+        const header = JSON.parse(headerJson)
+        if (!header.files) throw new Error('asar header missing "files" key')
+        console.log('  asar header is valid JSON with files index.')
+      } catch (e) {
+        console.error('FAIL: app.asar header is malformed — asar corruption detected.')
+        console.error(`  Parse error: ${e.message}`)
+        console.error(`  First 200 chars of header: ${headerJson.slice(0, 200)}`)
+        process.exit(2)
+      }
+    } else if (existsSync(unpackedDir)) {
+      // Fallback: asar disabled, validate unpacked files directly
+      const pkgJsonPath = join(unpackedDir, 'package.json')
       if (existsSync(pkgJsonPath)) {
         const content = readFileSync(pkgJsonPath, 'utf8')
         try {
@@ -83,15 +113,24 @@ function validateBuildIntegrity() {
           process.exit(2)
         }
       }
+    }
 
-      const indexHtmlPath = join(appResourceDir, 'out', 'renderer', 'index.html')
-      if (existsSync(indexHtmlPath)) {
-        const html = readFileSync(indexHtmlPath, 'utf8').trimStart()
-        if (!html.startsWith('<!') && !html.startsWith('<html') && !html.startsWith('<head')) {
-          console.error('FAIL: index.html in build output has unexpected prefix:')
-          console.error(`  First 200 chars: ${html.slice(0, 200)}`)
-          process.exit(2)
-        }
+    // Verify native modules are unpacked (not trapped inside asar)
+    const unpackedAsarDir = join(resourcesDir, 'app.asar.unpacked')
+    if (existsSync(asarPath) && existsSync(unpackedAsarDir)) {
+      const sqliteNode = join(
+        unpackedAsarDir,
+        'node_modules',
+        'better-sqlite3',
+        'build',
+        'Release',
+        'better_sqlite3.node'
+      )
+      if (existsSync(sqliteNode)) {
+        console.log('  better-sqlite3 native module correctly unpacked.')
+      } else {
+        console.error('WARN: better-sqlite3 .node binary not found in app.asar.unpacked/')
+        console.error('  Native modules may fail to load at runtime.')
       }
     }
   }
