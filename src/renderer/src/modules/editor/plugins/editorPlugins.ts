@@ -27,6 +27,8 @@ import {
   ChapterHeadingElement,
 } from '@modules/editor/components/OutlineHeadingElement'
 import { SourceAwareParagraph } from '@modules/editor/components/SourceAwareParagraph'
+import { DrawioPlugin } from '@modules/editor/plugins/drawioPlugin'
+import { DrawioElement } from '@modules/editor/components/DrawioElement'
 
 export const editorPlugins = [
   ParagraphPlugin.withComponent(SourceAwareParagraph),
@@ -48,6 +50,7 @@ export const editorPlugins = [
   TablePlugin,
   CodeBlockPlugin,
   CodeLinePlugin,
+  DrawioPlugin.withComponent(DrawioElement),
   MarkdownPlugin.configure({
     options: {
       remarkPlugins: [remarkGfm],

@@ -48,6 +48,10 @@ vi.mock('platejs/react', () => ({
       },
     },
   })),
+  createPlatePlugin: vi.fn((config: Record<string, unknown>) => ({
+    ...config,
+    withComponent: vi.fn(() => ({ ...config })),
+  })),
   usePlateEditor: vi.fn(() => mockEditor),
   Plate: ({
     children,

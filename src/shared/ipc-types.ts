@@ -95,6 +95,13 @@ import type {
   UpdateProjectWritingStyleInput,
   UpdateProjectWritingStyleOutput,
 } from './writing-style-types'
+import type {
+  SaveDrawioAssetInput,
+  SaveDrawioAssetOutput,
+  LoadDrawioAssetInput,
+  LoadDrawioAssetOutput,
+  DeleteDrawioAssetInput,
+} from './drawio-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -229,6 +236,9 @@ export const IPC_CHANNELS = {
   WRITING_STYLE_LIST: 'writing-style:list',
   WRITING_STYLE_GET: 'writing-style:get',
   WRITING_STYLE_UPDATE_PROJECT: 'writing-style:update-project',
+  DRAWIO_SAVE_ASSET: 'drawio:save-asset',
+  DRAWIO_LOAD_ASSET: 'drawio:load-asset',
+  DRAWIO_DELETE_ASSET: 'drawio:delete-asset',
 } as const
 
 /** Filter for task:list queries */
@@ -315,6 +325,9 @@ export type IpcChannelMap = {
     input: UpdateProjectWritingStyleInput
     output: UpdateProjectWritingStyleOutput
   }
+  'drawio:save-asset': { input: SaveDrawioAssetInput; output: SaveDrawioAssetOutput }
+  'drawio:load-asset': { input: LoadDrawioAssetInput; output: LoadDrawioAssetOutput | null }
+  'drawio:delete-asset': { input: DeleteDrawioAssetInput; output: void }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

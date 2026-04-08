@@ -5,7 +5,7 @@ import { useDocument } from '@modules/editor/hooks/useDocument'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
 import { useSourceAttributionContext } from '@modules/editor/context/useSourceAttributionContext'
 import { PlateEditor } from './PlateEditor'
-import type { ReplaceSectionFn } from './PlateEditor'
+import type { ReplaceSectionFn, InsertDrawioFn } from './PlateEditor'
 import { EditorToolbar } from './EditorToolbar'
 
 interface EditorViewProps {
@@ -20,8 +20,10 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const loadDocument = useDocumentStore((s) => s.loadDocument)
   const syncFlushRef = useRef<(() => string) | null>(null)
   const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
+  const insertDrawioRef = useRef<InsertDrawioFn | null>(null)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
+  const [insertDrawioAvailable, setInsertDrawioAvailable] = useState(false)
   const chapterGen = useChapterGenerationContext()
   const chapterStatuses = chapterGen?.statuses
   const sourceAttr = useSourceAttributionContext()
@@ -33,6 +35,15 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const registerReplaceSection = useCallback((fn: ReplaceSectionFn | null): void => {
     replaceSectionRef.current = fn
     setReplaceSectionVersion((version) => version + 1)
+  }, [])
+
+  const registerInsertDrawio = useCallback((fn: InsertDrawioFn | null): void => {
+    insertDrawioRef.current = fn
+    setInsertDrawioAvailable(fn !== null)
+  }, [])
+
+  const handleInsertDrawio = useCallback(() => {
+    insertDrawioRef.current?.()
   }, [])
 
   const flushEditorContent = useCallback((): string | null => syncFlushRef.current?.() ?? null, [])
@@ -167,13 +178,18 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col" data-testid="editor-view">
-      <EditorToolbar projectId={projectId} />
+      <EditorToolbar
+        projectId={projectId}
+        onInsertDrawio={handleInsertDrawio}
+        insertDrawioDisabled={!insertDrawioAvailable}
+      />
       <div className="flex-1 overflow-y-auto" data-editor-scroll-container="true">
         <PlateEditor
           initialContent={content}
           projectId={projectId}
           onSyncFlushReady={registerSyncFlush}
           onReplaceSectionReady={registerReplaceSection}
+          onInsertDrawioReady={registerInsertDrawio}
         />
       </div>
     </div>

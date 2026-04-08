@@ -123,6 +123,9 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'writingStyleList',
       'writingStyleGet',
       'writingStyleUpdateProject',
+      'drawioSaveAsset',
+      'drawioLoadAsset',
+      'drawioDeleteAsset',
       'onTaskProgress',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)

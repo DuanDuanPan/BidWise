@@ -206,6 +206,15 @@ const requestApi = {
 
   writingStyleUpdateProject: (input: IpcChannelMap['writing-style:update-project']['input']) =>
     typedInvoke(IPC_CHANNELS.WRITING_STYLE_UPDATE_PROJECT, input),
+
+  drawioSaveAsset: (input: IpcChannelMap['drawio:save-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.DRAWIO_SAVE_ASSET, input),
+
+  drawioLoadAsset: (input: IpcChannelMap['drawio:load-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.DRAWIO_LOAD_ASSET, input),
+
+  drawioDeleteAsset: (input: IpcChannelMap['drawio:delete-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.DRAWIO_DELETE_ASSET, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer
