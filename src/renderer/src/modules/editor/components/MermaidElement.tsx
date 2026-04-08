@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlateElement, useEditorRef, useSelected } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
-import { App, Button, Modal, Tooltip } from 'antd'
+import { App, Button, Tooltip } from 'antd'
 import mermaid from 'mermaid'
 import { useProjectStore } from '@renderer/stores'
 import { MermaidRenderer } from './MermaidRenderer'
@@ -16,7 +16,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const editor = useEditorRef()
   const selected = useSelected()
   const projectId = useProjectStore((s) => s.currentProject?.id)
-  const { message: messageApi } = App.useApp()
+  const { message: messageApi, modal } = App.useApp()
   const node = element as unknown as MermaidElementType
 
   const isNewNode = !node.source || (!node.lastModified && node.source === MERMAID_DEFAULT_TEMPLATE)
@@ -25,8 +25,6 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const [localCaption, setLocalCaption] = useState(node.caption || '')
   const [previewSvg, setPreviewSvg] = useState('')
   const [errorLine, setErrorLine] = useState<number | undefined>(undefined)
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-
   // Track the latest successfully rendered source+svg pair
   const lastSuccessRef = useRef<{ source: string; svg: string } | null>(null)
   const initialRenderDone = useRef(false)
@@ -98,32 +96,31 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   }, [])
 
   const handleDelete = useCallback(() => {
-    setDeleteConfirmOpen(true)
-  }, [])
+    modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这个 Mermaid 图表吗？',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        const path = editor.api.findPath(element)
+        if (!path) return
+        editor.tf.removeNodes({ at: path })
 
-  const confirmDelete = useCallback(() => {
-    setDeleteConfirmOpen(false)
-
-    const path = editor.api.findPath(element)
-    if (!path) return
-    editor.tf.removeNodes({ at: path })
-
-    // Best-effort asset deletion
-    if (projectId && node.assetFileName) {
-      void window.api
-        .mermaidDeleteAsset({
-          projectId,
-          assetFileName: node.assetFileName,
-        })
-        .catch(() => {
-          console.warn('Mermaid 资产删除失败 (best-effort)')
-        })
-    }
-  }, [editor, element, projectId, node.assetFileName])
-
-  const cancelDelete = useCallback(() => {
-    setDeleteConfirmOpen(false)
-  }, [])
+        // Best-effort asset deletion
+        if (projectId && node.assetFileName) {
+          void window.api
+            .mermaidDeleteAsset({
+              projectId,
+              assetFileName: node.assetFileName,
+            })
+            .catch(() => {
+              console.warn('Mermaid 资产删除失败 (best-effort)')
+            })
+        }
+      },
+    })
+  }, [modal, editor, element, projectId, node.assetFileName])
 
   const handleCaptionBlur = useCallback(() => {
     if (localCaption !== node.caption) {
@@ -317,17 +314,6 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
           </div>
         )}
       </div>
-      <Modal
-        open={deleteConfirmOpen}
-        title="确认删除"
-        okText="删除"
-        okType="danger"
-        cancelText="取消"
-        onOk={confirmDelete}
-        onCancel={cancelDelete}
-      >
-        <p>确定要删除这个 Mermaid 图表吗？</p>
-      </Modal>
       {children}
     </PlateElement>
   )
