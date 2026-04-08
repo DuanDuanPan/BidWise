@@ -9,11 +9,17 @@ mermaid.initialize({
   logLevel: 'error',
 })
 
+/** Extract line number from Mermaid error messages (e.g. "Parse error on line 3:") */
+function extractErrorLine(errorMsg: string): number | undefined {
+  const match = errorMsg.match(/line\s+(\d+)/i)
+  return match ? parseInt(match[1], 10) : undefined
+}
+
 interface MermaidRendererProps {
   source: string
   diagramId: string
   onRenderSuccess?: (svg: string) => void
-  onRenderError?: (error: string) => void
+  onRenderError?: (error: string, errorLine?: number) => void
 }
 
 const DEBOUNCE_MS = 500
@@ -47,7 +53,7 @@ export function MermaidRenderer({
         if (token !== renderCounterRef.current) return
         const msg = err instanceof Error ? err.message : String(err)
         setErrorMessage(msg)
-        onRenderError?.(msg)
+        onRenderError?.(msg, extractErrorLine(msg))
         setRendering(false)
         return
       }
@@ -75,7 +81,7 @@ export function MermaidRenderer({
         if (token !== renderCounterRef.current) return
         const msg = err instanceof Error ? err.message : String(err)
         setErrorMessage(msg)
-        onRenderError?.(msg)
+        onRenderError?.(msg, extractErrorLine(msg))
         setRendering(false)
       }
     },

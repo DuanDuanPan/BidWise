@@ -20,7 +20,7 @@ const DRAWIO_PLACEHOLDER_RE = /DRAWIO-PH-(\d+)-END/g
 
 // ── Mermaid Markdown patterns ──
 
-const MERMAID_COMMENT_RE = /^<!-- mermaid:([^:]+):(.+?) -->$/
+const MERMAID_COMMENT_RE = /^<!-- mermaid:([^:]+):([^:]+?)(?::(.*)?)? -->$/
 const MERMAID_FENCE_START_RE = /^```mermaid\s*$/
 const MERMAID_FENCE_END_RE = /^```\s*$/
 
@@ -90,7 +90,8 @@ export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
     const block = mermaidBlocks[index]
     if (!block) return ''
 
-    const comment = `<!-- mermaid:${block.diagramId}:${block.assetFileName} -->`
+    const encodedCaption = block.caption ? encodeURIComponent(block.caption) : ''
+    const comment = `<!-- mermaid:${block.diagramId}:${block.assetFileName}:${encodedCaption} -->`
     return `${comment}\n\`\`\`mermaid\n${block.source}\n\`\`\``
   })
 
@@ -105,8 +106,10 @@ export function deserializeFromMarkdown(
   // 1. Pre-process: extract drawio & mermaid blocks and replace with placeholders
   const drawioDataMap: Map<number, { diagramId: string; assetFileName: string; caption: string }> =
     new Map()
-  const mermaidDataMap: Map<number, { diagramId: string; assetFileName: string; source: string }> =
-    new Map()
+  const mermaidDataMap: Map<
+    number,
+    { diagramId: string; assetFileName: string; source: string; caption: string }
+  > = new Map()
 
   const lines = markdown.split('\n')
   const processedLines: string[] = []
@@ -137,6 +140,7 @@ export function deserializeFromMarkdown(
     if (mermaidCommentMatch && i + 1 < lines.length && MERMAID_FENCE_START_RE.test(lines[i + 1])) {
       const diagramId = mermaidCommentMatch[1]
       const assetFileName = mermaidCommentMatch[2]
+      const caption = mermaidCommentMatch[3] ? decodeURIComponent(mermaidCommentMatch[3]) : ''
       const sourceLines: string[] = []
       let j = i + 2
       while (j < lines.length && !MERMAID_FENCE_END_RE.test(lines[j])) {
@@ -147,6 +151,7 @@ export function deserializeFromMarkdown(
         diagramId,
         assetFileName,
         source: sourceLines.join('\n'),
+        caption,
       })
       processedLines.push(
         `${MERMAID_PLACEHOLDER_PREFIX}${mermaidPlaceholderIndex}${MERMAID_PLACEHOLDER_SUFFIX}`
@@ -169,6 +174,7 @@ export function deserializeFromMarkdown(
         diagramId: crypto.randomUUID(),
         assetFileName: `mermaid-${shortId}.svg`,
         source: sourceLines.join('\n'),
+        caption: '',
       })
       processedLines.push(
         `${MERMAID_PLACEHOLDER_PREFIX}${mermaidPlaceholderIndex}${MERMAID_PLACEHOLDER_SUFFIX}`
@@ -219,7 +225,7 @@ export function deserializeFromMarkdown(
               diagramId: data.diagramId,
               assetFileName: data.assetFileName,
               source: data.source,
-              caption: '',
+              caption: data.caption,
               children: [{ text: '' }],
             }
           }

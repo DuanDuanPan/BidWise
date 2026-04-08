@@ -18,6 +18,9 @@ function validateAssetFileName(assetFileName: string): void {
   if (assetFileName !== basename(assetFileName)) {
     throw new ValidationError('assetFileName must be a basename without path separators')
   }
+  if (assetFileName.includes('\\')) {
+    throw new ValidationError('assetFileName must not contain backslashes')
+  }
   if (assetFileName.includes('..')) {
     throw new ValidationError('assetFileName must not contain ".."')
   }

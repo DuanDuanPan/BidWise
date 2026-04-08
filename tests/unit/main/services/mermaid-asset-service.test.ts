@@ -122,5 +122,16 @@ describe('@story-3-8 mermaid-asset-service', () => {
         })
       ).rejects.toThrow()
     })
+
+    it('rejects filenames with backslashes', async () => {
+      await expect(
+        mermaidAssetService.saveMermaidAsset({
+          projectId: 'proj-1',
+          diagramId: 'uuid-1',
+          svgContent: '<svg/>',
+          assetFileName: 'mermaid\\evil.svg',
+        })
+      ).rejects.toThrow('assetFileName must not contain backslashes')
+    })
   })
 })

@@ -64,10 +64,29 @@ describe('@story-3-8 mermaid serialization', () => {
 
       const result = serializeToMarkdown(editor)
 
-      expect(result).toContain('<!-- mermaid:uuid-1:mermaid-abc123.svg -->')
+      expect(result).toContain('<!-- mermaid:uuid-1:mermaid-abc123.svg: -->')
       expect(result).toContain('```mermaid')
       expect(result).toContain('graph TD\n  A[开始] --> B[结束]')
       expect(result).toContain('```')
+    })
+
+    it('serializes caption via URL-encoding in the comment', () => {
+      const editor = createMockEditor([
+        {
+          type: MERMAID_ELEMENT_TYPE,
+          diagramId: 'uuid-cap',
+          assetFileName: 'mermaid-cap.svg',
+          source: 'graph TD\n  A-->B',
+          caption: '系统架构图',
+          children: [{ text: '' }],
+        },
+      ])
+
+      const result = serializeToMarkdown(editor)
+
+      expect(result).toContain(
+        `<!-- mermaid:uuid-cap:mermaid-cap.svg:${encodeURIComponent('系统架构图')} -->`
+      )
     })
 
     it('delegates to default serializer when no special blocks exist', () => {
@@ -101,8 +120,8 @@ describe('@story-3-8 mermaid serialization', () => {
 
       const result = serializeToMarkdown(editor)
 
-      expect(result).toContain('<!-- mermaid:id-1:mermaid-aaa.svg -->')
-      expect(result).toContain('<!-- mermaid:id-2:mermaid-bbb.svg -->')
+      expect(result).toContain('<!-- mermaid:id-1:mermaid-aaa.svg: -->')
+      expect(result).toContain('<!-- mermaid:id-2:mermaid-bbb.svg: -->')
       expect(result).toContain('graph TD\n  A-->B')
       expect(result).toContain('sequenceDiagram\n  A->>B: Hello')
     })
@@ -211,9 +230,55 @@ describe('@story-3-8 mermaid serialization', () => {
       const editor2 = createMockEditor([mermaidNode])
       const result = serializeToMarkdown(editor2)
 
-      expect(result).toContain('<!-- mermaid:uuid-rt:mermaid-rt.svg -->')
+      expect(result).toContain('<!-- mermaid:uuid-rt:mermaid-rt.svg: -->')
       expect(result).toContain('```mermaid')
       expect(result).toContain(sourceCode)
+    })
+
+    it('round-trips caption through serialize→deserialize', () => {
+      const caption = '系统架构图'
+      const serialized = [
+        `<!-- mermaid:uuid-cap:mermaid-cap.svg:${encodeURIComponent(caption)} -->`,
+        '```mermaid',
+        'graph TD',
+        '  A-->B',
+        '```',
+      ].join('\n')
+
+      const editor = createMockEditor()
+      const nodes = deserializeFromMarkdown(editor, serialized)
+
+      const mermaidNode = nodes.find(
+        (n) => (n as Record<string, unknown>).type === MERMAID_ELEMENT_TYPE
+      ) as Record<string, unknown>
+      expect(mermaidNode).toBeDefined()
+      expect(mermaidNode.caption).toBe(caption)
+
+      // Re-serialize and verify caption persists
+      const editor2 = createMockEditor([mermaidNode])
+      const result = serializeToMarkdown(editor2)
+      expect(result).toContain(
+        `<!-- mermaid:uuid-cap:mermaid-cap.svg:${encodeURIComponent(caption)} -->`
+      )
+    })
+
+    it('deserializes old format (no caption field) with empty caption', () => {
+      const editor = createMockEditor()
+      const markdown = [
+        '<!-- mermaid:uuid-old:mermaid-old.svg -->',
+        '```mermaid',
+        'graph TD',
+        '  A-->B',
+        '```',
+      ].join('\n')
+
+      const nodes = deserializeFromMarkdown(editor, markdown)
+
+      const mermaidNode = nodes.find(
+        (n) => (n as Record<string, unknown>).type === MERMAID_ELEMENT_TYPE
+      ) as Record<string, unknown>
+      expect(mermaidNode).toBeDefined()
+      expect(mermaidNode.caption).toBe('')
     })
   })
 })
