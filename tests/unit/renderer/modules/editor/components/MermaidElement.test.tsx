@@ -43,6 +43,7 @@ const mockMermaidSaveAsset = vi
   .fn()
   .mockResolvedValue({ success: true, data: { assetPath: '/tmp/assets/test.svg' } })
 const mockMermaidDeleteAsset = vi.fn().mockResolvedValue({ success: true, data: undefined })
+const mockMessageWarning = vi.fn()
 
 Object.defineProperty(window, 'api', {
   value: {
@@ -55,15 +56,43 @@ Object.defineProperty(window, 'api', {
 // Mock antd Modal
 vi.mock('antd', async () => {
   const actual = await vi.importActual('antd')
+  const Modal = ({
+    open,
+    title,
+    children,
+    onOk,
+    onCancel,
+    okText,
+    cancelText,
+  }: {
+    open?: boolean
+    title?: React.ReactNode
+    children?: React.ReactNode
+    onOk?: () => void
+    onCancel?: () => void
+    okText?: string
+    cancelText?: string
+  }): React.JSX.Element | null => {
+    if (!open) return null
+    return (
+      <div data-testid="mermaid-delete-modal">
+        <div>{title}</div>
+        <div>{children}</div>
+        {cancelText ? <button onClick={onCancel}>{cancelText}</button> : null}
+        {okText ? <button onClick={onOk}>{okText}</button> : null}
+      </div>
+    )
+  }
+
   return {
     ...actual,
-    Modal: {
-      ...(actual as Record<string, unknown>).Modal,
-      confirm: vi.fn(({ onOk }: { onOk: () => void }) => {
-        // Auto-confirm for testing
-        onOk()
+    App: {
+      ...(actual as Record<string, unknown>).App,
+      useApp: () => ({
+        message: { warning: mockMessageWarning },
       }),
     },
+    Modal,
   }
 })
 
@@ -194,8 +223,9 @@ describe('@story-3-8 MermaidElement', () => {
     renderMermaidElement({ source: 'graph LR\n  A-->B' })
 
     fireEvent.click(screen.getByTestId('mermaid-delete-btn'))
+    expect(screen.getByTestId('mermaid-delete-modal')).toBeDefined()
 
-    // Modal.confirm auto-confirms via our mock
+    fireEvent.click(screen.getByText('删除'))
     expect(mockRemoveNodes).toHaveBeenCalledWith({ at: [0] })
     expect(mockMermaidDeleteAsset).toHaveBeenCalledWith({
       projectId: 'proj-test',

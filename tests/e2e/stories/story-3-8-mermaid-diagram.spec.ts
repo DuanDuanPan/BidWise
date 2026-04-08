@@ -226,7 +226,7 @@ test.describe('Story 3.8 — Mermaid 架构图草图生成', () => {
     const proposalMd = await readFile(join(project.rootPath, 'proposal.md'), 'utf-8')
 
     // Should contain mermaid comment (3-field format: id:filename:caption)
-    expect(proposalMd).toMatch(/<!-- mermaid:[^:]+:[^:]+\.svg(?::.*?)? -->/)
+    expect(proposalMd).toMatch(/<!-- mermaid:[^:]+:[^:]+\.svg:[^>]* -->/)
     // Should contain mermaid fenced code block
     expect(proposalMd).toContain('```mermaid')
   })
@@ -236,7 +236,7 @@ test.describe('Story 3.8 — Mermaid 架构图草图生成', () => {
 
     // Find the SVG file in assets/
     const proposalMd = await readFile(join(project.rootPath, 'proposal.md'), 'utf-8')
-    const match = proposalMd.match(/<!-- mermaid:[^:]+:([^:]+\.svg)(?::.*?)? -->/)
+    const match = proposalMd.match(/<!-- mermaid:[^:]+:([^:]+\.svg):[^>]* -->/)
     expect(match).toBeTruthy()
 
     const svgFileName = match![1]
@@ -248,12 +248,11 @@ test.describe('Story 3.8 — Mermaid 架构图草图生成', () => {
     const deleteBtn = ctx.window.getByTestId('mermaid-delete-btn').first()
     await deleteBtn.click()
 
-    // Confirm deletion dialog (auto-confirmed in E2E or wait for element removal)
-    // Ant Design Modal.confirm renders in document body
-    const okBtn = ctx.window.locator('.ant-modal-confirm-btns .ant-btn-dangerous')
-    if (await okBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await okBtn.click()
-    }
+    const confirmDialog = ctx.window.getByRole('dialog', { name: '确认删除' })
+    await expect(confirmDialog).toBeVisible({ timeout: 3_000 })
+
+    const okBtn = confirmDialog.getByRole('button', { name: /删\s*除/ })
+    await okBtn.click()
 
     await expect(ctx.window.getByTestId('mermaid-element')).toHaveCount(0, { timeout: 10_000 })
   })
@@ -265,7 +264,7 @@ test.describe('Story 3.8 — Mermaid 架构图草图生成', () => {
       '',
       '## 系统架构',
       '',
-      '<!-- mermaid:e2e-test-id:mermaid-e2e-test.svg -->',
+      '<!-- mermaid:e2e-test-id:mermaid-e2e-test.svg: -->',
       '```mermaid',
       'graph TD',
       '  A[系统入口] --> B[业务处理]',

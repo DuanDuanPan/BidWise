@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlateElement, useEditorRef, useSelected } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
-import { Button, Modal, Tooltip, message } from 'antd'
+import { App, Button, Modal, Tooltip } from 'antd'
 import mermaid from 'mermaid'
 import { useProjectStore } from '@renderer/stores'
 import { MermaidRenderer } from './MermaidRenderer'
@@ -16,6 +16,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const editor = useEditorRef()
   const selected = useSelected()
   const projectId = useProjectStore((s) => s.currentProject?.id)
+  const { message: messageApi } = App.useApp()
   const node = element as unknown as MermaidElementType
 
   const isNewNode = !node.source || (!node.lastModified && node.source === MERMAID_DEFAULT_TEMPLATE)
@@ -24,6 +25,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const [localCaption, setLocalCaption] = useState(node.caption || '')
   const [previewSvg, setPreviewSvg] = useState('')
   const [errorLine, setErrorLine] = useState<number | undefined>(undefined)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
   // Track the latest successfully rendered source+svg pair
   const lastSuccessRef = useRef<{ source: string; svg: string } | null>(null)
@@ -65,17 +67,17 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
         assetFileName: node.assetFileName,
       })
       if (!res.success) {
-        void message.warning('SVG 资产保存失败，将在下次完成编辑时重试')
+        void messageApi.warning('SVG 资产保存失败，将在下次完成编辑时重试')
       }
     },
-    [projectId, node.diagramId, node.assetFileName]
+    [messageApi, projectId, node.diagramId, node.assetFileName]
   )
 
   const exitEditMode = useCallback(() => {
     // Check if the latest success render matches current source
     const success = lastSuccessRef.current
     if (!success || success.source !== localSource) {
-      void message.warning('当前语法有误或尚未渲染完成，请修正后再完成')
+      void messageApi.warning('当前语法有误或尚未渲染完成，请修正后再完成')
       return
     }
 
@@ -89,38 +91,39 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
     setMode('preview')
 
     void saveAsset(success.svg)
-  }, [localSource, localCaption, updateNodeData, saveAsset])
+  }, [localSource, localCaption, messageApi, updateNodeData, saveAsset])
 
   const handleEdit = useCallback(() => {
     setMode('editing')
   }, [])
 
   const handleDelete = useCallback(() => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这个 Mermaid 图表吗？',
-      okText: '删除',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: () => {
-        const path = editor.api.findPath(element)
-        if (!path) return
-        editor.tf.removeNodes({ at: path })
+    setDeleteConfirmOpen(true)
+  }, [])
 
-        // Best-effort asset deletion
-        if (projectId && node.assetFileName) {
-          void window.api
-            .mermaidDeleteAsset({
-              projectId,
-              assetFileName: node.assetFileName,
-            })
-            .catch(() => {
-              console.warn('Mermaid 资产删除失败 (best-effort)')
-            })
-        }
-      },
-    })
+  const confirmDelete = useCallback(() => {
+    setDeleteConfirmOpen(false)
+
+    const path = editor.api.findPath(element)
+    if (!path) return
+    editor.tf.removeNodes({ at: path })
+
+    // Best-effort asset deletion
+    if (projectId && node.assetFileName) {
+      void window.api
+        .mermaidDeleteAsset({
+          projectId,
+          assetFileName: node.assetFileName,
+        })
+        .catch(() => {
+          console.warn('Mermaid 资产删除失败 (best-effort)')
+        })
+    }
   }, [editor, element, projectId, node.assetFileName])
+
+  const cancelDelete = useCallback(() => {
+    setDeleteConfirmOpen(false)
+  }, [])
 
   const handleCaptionBlur = useCallback(() => {
     if (localCaption !== node.caption) {
@@ -314,6 +317,17 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
           </div>
         )}
       </div>
+      <Modal
+        open={deleteConfirmOpen}
+        title="确认删除"
+        okText="删除"
+        okType="danger"
+        cancelText="取消"
+        onOk={confirmDelete}
+        onCancel={cancelDelete}
+      >
+        <p>确定要删除这个 Mermaid 图表吗？</p>
+      </Modal>
       {children}
     </PlateElement>
   )
