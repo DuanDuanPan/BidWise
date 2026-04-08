@@ -220,6 +220,12 @@ const requestApi = {
     typedInvoke(IPC_CHANNELS.DOCX_RENDER, input),
 
   docxHealth: () => typedInvoke(IPC_CHANNELS.DOCX_HEALTH),
+
+  mermaidSaveAsset: (input: IpcChannelMap['mermaid:save-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.MERMAID_SAVE_ASSET, input),
+
+  mermaidDeleteAsset: (input: IpcChannelMap['mermaid:delete-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.MERMAID_DELETE_ASSET, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

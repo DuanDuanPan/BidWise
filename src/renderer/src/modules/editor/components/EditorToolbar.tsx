@@ -1,17 +1,21 @@
 import { Button, Tooltip } from 'antd'
-import { DeploymentUnitOutlined } from '@ant-design/icons'
+import { DeploymentUnitOutlined, FunctionOutlined } from '@ant-design/icons'
 import { WritingStyleSelector } from './WritingStyleSelector'
 
 interface EditorToolbarProps {
   projectId: string
   onInsertDrawio?: () => void
   insertDrawioDisabled?: boolean
+  onInsertMermaid?: () => void
+  insertMermaidDisabled?: boolean
 }
 
 export function EditorToolbar({
   projectId,
   onInsertDrawio,
   insertDrawioDisabled,
+  onInsertMermaid,
+  insertMermaidDisabled,
 }: EditorToolbarProps): React.JSX.Element {
   return (
     <div
@@ -31,6 +35,21 @@ export function EditorToolbar({
               data-testid="insert-drawio-btn"
             >
               插入架构图
+            </Button>
+          </Tooltip>
+        )}
+        {onInsertMermaid && (
+          <Tooltip title="插入 Mermaid 图表">
+            <Button
+              type="text"
+              size="small"
+              icon={<FunctionOutlined />}
+              disabled={insertMermaidDisabled}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onInsertMermaid}
+              data-testid="insert-mermaid-btn"
+            >
+              插入 Mermaid 图表
             </Button>
           </Tooltip>
         )}

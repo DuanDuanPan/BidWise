@@ -29,6 +29,8 @@ import {
 import { SourceAwareParagraph } from '@modules/editor/components/SourceAwareParagraph'
 import { DrawioPlugin } from '@modules/editor/plugins/drawioPlugin'
 import { DrawioElement } from '@modules/editor/components/DrawioElement'
+import { MermaidPlugin } from '@modules/editor/plugins/mermaidPlugin'
+import { MermaidElement } from '@modules/editor/components/MermaidElement'
 
 export const editorPlugins = [
   ParagraphPlugin.withComponent(SourceAwareParagraph),
@@ -51,6 +53,7 @@ export const editorPlugins = [
   CodeBlockPlugin,
   CodeLinePlugin,
   DrawioPlugin.withComponent(DrawioElement),
+  MermaidPlugin.withComponent(MermaidElement),
   MarkdownPlugin.configure({
     options: {
       remarkPlugins: [remarkGfm],

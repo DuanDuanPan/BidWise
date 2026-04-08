@@ -7,9 +7,12 @@ import { useDocumentStore } from '@renderer/stores'
 import { replaceMarkdownSection } from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
+import { MERMAID_ELEMENT_TYPE } from '@modules/editor/plugins/mermaidPlugin'
+import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
 
 export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => boolean
 export type InsertDrawioFn = () => void
+export type InsertMermaidFn = () => void
 
 interface PlateEditorProps {
   initialContent: string
@@ -17,6 +20,7 @@ interface PlateEditorProps {
   onSyncFlushReady?: (flush: (() => string) | null) => void
   onReplaceSectionReady?: (fn: ReplaceSectionFn | null) => void
   onInsertDrawioReady?: (fn: InsertDrawioFn | null) => void
+  onInsertMermaidReady?: (fn: InsertMermaidFn | null) => void
 }
 
 function generateShortId(): string {
@@ -29,6 +33,7 @@ export function PlateEditor({
   onSyncFlushReady,
   onReplaceSectionReady,
   onInsertDrawioReady,
+  onInsertMermaidReady,
 }: PlateEditorProps): React.JSX.Element {
   const updateContent = useDocumentStore((s) => s.updateContent)
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -176,6 +181,26 @@ export function PlateEditor({
     )
   }, [editor])
 
+  const insertMermaid: InsertMermaidFn = useCallback(() => {
+    const at = editor.selection ?? lastSelectionRef.current ?? [editor.children.length]
+
+    const shortId = generateShortId()
+    const diagramId = crypto.randomUUID()
+    const assetFileName = `mermaid-${shortId}.svg`
+
+    editor.tf.insertNodes(
+      {
+        type: MERMAID_ELEMENT_TYPE,
+        diagramId,
+        assetFileName,
+        source: MERMAID_DEFAULT_TEMPLATE,
+        caption: '',
+        children: [{ text: '' }],
+      },
+      { at, select: true }
+    )
+  }, [editor])
+
   useEffect(() => {
     onReplaceSectionReady?.(replaceSectionContent)
     return () => onReplaceSectionReady?.(null)
@@ -190,6 +215,11 @@ export function PlateEditor({
     onInsertDrawioReady?.(insertDrawio)
     return () => onInsertDrawioReady?.(null)
   }, [insertDrawio, onInsertDrawioReady])
+
+  useEffect(() => {
+    onInsertMermaidReady?.(insertMermaid)
+    return () => onInsertMermaidReady?.(null)
+  }, [insertMermaid, onInsertMermaidReady])
 
   useEffect(() => {
     return () => {

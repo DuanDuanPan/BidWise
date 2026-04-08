@@ -245,6 +245,21 @@ describe('@story-3-1 PlateEditor', () => {
     )
   })
 
+  it('@story-3-8 registers an insertMermaid handler via onInsertMermaidReady', () => {
+    const onInsertMermaidReady = vi.fn()
+
+    render(
+      <PlateEditor
+        initialContent=""
+        projectId="proj-1"
+        onInsertMermaidReady={onInsertMermaidReady}
+      />
+    )
+
+    expect(onInsertMermaidReady).toHaveBeenCalledTimes(1)
+    expect(typeof onInsertMermaidReady.mock.calls[0]?.[0]).toBe('function')
+  })
+
   it('serializes on change after debounce and updates the document store', async () => {
     vi.useFakeTimers()
 

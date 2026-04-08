@@ -128,6 +128,8 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'drawioDeleteAsset',
       'docxRender',
       'docxHealth',
+      'mermaidSaveAsset',
+      'mermaidDeleteAsset',
       'onTaskProgress',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)
