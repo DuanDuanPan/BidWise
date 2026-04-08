@@ -5,7 +5,7 @@ import { useDocument } from '@modules/editor/hooks/useDocument'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
 import { useSourceAttributionContext } from '@modules/editor/context/useSourceAttributionContext'
 import { PlateEditor } from './PlateEditor'
-import type { ReplaceSectionFn, InsertDrawioFn } from './PlateEditor'
+import type { ReplaceSectionFn, InsertDrawioFn, InsertMermaidFn } from './PlateEditor'
 import { EditorToolbar } from './EditorToolbar'
 
 interface EditorViewProps {
@@ -21,9 +21,11 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const syncFlushRef = useRef<(() => string) | null>(null)
   const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
   const insertDrawioRef = useRef<InsertDrawioFn | null>(null)
+  const insertMermaidRef = useRef<InsertMermaidFn | null>(null)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const [insertDrawioAvailable, setInsertDrawioAvailable] = useState(false)
+  const [insertMermaidAvailable, setInsertMermaidAvailable] = useState(false)
   const chapterGen = useChapterGenerationContext()
   const chapterStatuses = chapterGen?.statuses
   const sourceAttr = useSourceAttributionContext()
@@ -42,8 +44,17 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
     setInsertDrawioAvailable(fn !== null)
   }, [])
 
+  const registerInsertMermaid = useCallback((fn: InsertMermaidFn | null): void => {
+    insertMermaidRef.current = fn
+    setInsertMermaidAvailable(fn !== null)
+  }, [])
+
   const handleInsertDrawio = useCallback(() => {
     insertDrawioRef.current?.()
+  }, [])
+
+  const handleInsertMermaid = useCallback(() => {
+    insertMermaidRef.current?.()
   }, [])
 
   const flushEditorContent = useCallback((): string | null => syncFlushRef.current?.() ?? null, [])
@@ -182,6 +193,8 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
         projectId={projectId}
         onInsertDrawio={handleInsertDrawio}
         insertDrawioDisabled={!insertDrawioAvailable}
+        onInsertMermaid={handleInsertMermaid}
+        insertMermaidDisabled={!insertMermaidAvailable}
       />
       <div className="flex-1 overflow-y-auto" data-editor-scroll-container="true">
         <PlateEditor
@@ -190,6 +203,7 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
           onSyncFlushReady={registerSyncFlush}
           onReplaceSectionReady={registerReplaceSection}
           onInsertDrawioReady={registerInsertDrawio}
+          onInsertMermaidReady={registerInsertMermaid}
         />
       </div>
     </div>

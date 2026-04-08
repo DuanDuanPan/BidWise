@@ -103,6 +103,11 @@ import type {
   DeleteDrawioAssetInput,
 } from './drawio-types'
 import type { RenderDocxInput, RenderDocxOutput, DocxHealthData } from './docx-types'
+import type {
+  SaveMermaidAssetInput,
+  SaveMermaidAssetOutput,
+  DeleteMermaidAssetInput,
+} from './mermaid-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -242,6 +247,8 @@ export const IPC_CHANNELS = {
   DRAWIO_DELETE_ASSET: 'drawio:delete-asset',
   DOCX_RENDER: 'docx:render',
   DOCX_HEALTH: 'docx:health',
+  MERMAID_SAVE_ASSET: 'mermaid:save-asset',
+  MERMAID_DELETE_ASSET: 'mermaid:delete-asset',
 } as const
 
 /** Filter for task:list queries */
@@ -333,6 +340,8 @@ export type IpcChannelMap = {
   'drawio:delete-asset': { input: DeleteDrawioAssetInput; output: void }
   'docx:render': { input: RenderDocxInput; output: RenderDocxOutput }
   'docx:health': { input: void; output: DocxHealthData }
+  'mermaid:save-asset': { input: SaveMermaidAssetInput; output: SaveMermaidAssetOutput }
+  'mermaid:delete-asset': { input: DeleteMermaidAssetInput; output: void }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
