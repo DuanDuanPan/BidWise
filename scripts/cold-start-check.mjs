@@ -14,6 +14,16 @@ const THRESHOLD_MS = 5000
 const LAUNCH_TIMEOUT_MS = 30000
 const root = resolve(import.meta.dirname, '..')
 
+function parseColdStartMs(output) {
+  const match = output.match(/cold-start:\s*([\d.]+)\s*(ms|s)/)
+  if (!match) return null
+
+  const value = parseFloat(match[1])
+  if (Number.isNaN(value)) return null
+
+  return match[2] === 's' ? value * 1000 : value
+}
+
 // ── Step 1: Build unpacked app ──────────────────────────────────────────
 console.log('Building unpacked app with electron-builder --dir …')
 execSync('pnpm build && pnpm exec electron-builder --dir', {
@@ -178,10 +188,9 @@ const coldStartMs = await new Promise((resolve, reject) => {
 
   function processOutput(chunk) {
     output += chunk.toString()
-    const match = output.match(/cold-start:\s*([\d.]+)\s*ms/)
-    if (match) {
+    const ms = parseColdStartMs(output)
+    if (ms !== null) {
       clearTimeout(timer)
-      const ms = parseFloat(match[1])
       child.kill('SIGTERM')
       resolve(ms)
     }
