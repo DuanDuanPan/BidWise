@@ -11,6 +11,7 @@ import { runMigrations } from '@main/db/migrator'
 import { taskQueue } from '@main/services/task-queue'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { createLogger } from '@main/utils/logger'
+import { docxBridgeService } from '@main/services/docx-bridge'
 
 const logger = createLogger('main')
 
@@ -72,6 +73,11 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers()
 
+  // Start docx-bridge in background — must not block window creation
+  void docxBridgeService.start().catch((err) => {
+    logger.warn(`docx-bridge 后台启动失败: ${err}`)
+  })
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
@@ -90,5 +96,14 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', async () => {
-  await destroyDb()
+  try {
+    await docxBridgeService.stop()
+  } catch (err) {
+    logger.error(`docx-bridge 关闭异常: ${err}`)
+  }
+  try {
+    await destroyDb()
+  } catch (err) {
+    logger.error(`数据库关闭异常: ${err}`)
+  }
 })

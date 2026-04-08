@@ -102,6 +102,7 @@ import type {
   LoadDrawioAssetOutput,
   DeleteDrawioAssetInput,
 } from './drawio-types'
+import type { RenderDocxInput, RenderDocxOutput, DocxHealthData } from './docx-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -239,6 +240,8 @@ export const IPC_CHANNELS = {
   DRAWIO_SAVE_ASSET: 'drawio:save-asset',
   DRAWIO_LOAD_ASSET: 'drawio:load-asset',
   DRAWIO_DELETE_ASSET: 'drawio:delete-asset',
+  DOCX_RENDER: 'docx:render',
+  DOCX_HEALTH: 'docx:health',
 } as const
 
 /** Filter for task:list queries */
@@ -328,6 +331,8 @@ export type IpcChannelMap = {
   'drawio:save-asset': { input: SaveDrawioAssetInput; output: SaveDrawioAssetOutput }
   'drawio:load-asset': { input: LoadDrawioAssetInput; output: LoadDrawioAssetOutput | null }
   'drawio:delete-asset': { input: DeleteDrawioAssetInput; output: void }
+  'docx:render': { input: RenderDocxInput; output: RenderDocxOutput }
+  'docx:health': { input: void; output: DocxHealthData }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

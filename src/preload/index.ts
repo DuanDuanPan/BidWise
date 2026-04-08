@@ -215,6 +215,11 @@ const requestApi = {
 
   drawioDeleteAsset: (input: IpcChannelMap['drawio:delete-asset']['input']) =>
     typedInvoke(IPC_CHANNELS.DRAWIO_DELETE_ASSET, input),
+
+  docxRender: (input: IpcChannelMap['docx:render']['input']) =>
+    typedInvoke(IPC_CHANNELS.DOCX_RENDER, input),
+
+  docxHealth: () => typedInvoke(IPC_CHANNELS.DOCX_HEALTH),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

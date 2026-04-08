@@ -9,6 +9,7 @@ import { registerAnnotationHandlers } from './annotation-handlers'
 import { registerSourceAttributionHandlers } from './source-attribution-handlers'
 import { registerWritingStyleHandlers } from './writing-style-handlers'
 import { registerDrawioHandlers } from './drawio-handlers'
+import { registerDocxBridgeHandlers } from './docx-bridge-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
 import type { RegisteredTaskChannels } from './task-handlers'
@@ -20,6 +21,7 @@ import type { RegisteredAnnotationChannels } from './annotation-handlers'
 import type { RegisteredSourceAttributionChannels } from './source-attribution-handlers'
 import type { RegisteredWritingStyleChannels } from './writing-style-handlers'
 import type { RegisteredDrawioChannels } from './drawio-handlers'
+import type { RegisteredDocxBridgeChannels } from './docx-bridge-handlers'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Compile-time exhaustive check: every IpcChannel must be covered by a handler module.
@@ -37,6 +39,7 @@ type _AllRegistered =
   | RegisteredSourceAttributionChannels
   | RegisteredWritingStyleChannels
   | RegisteredDrawioChannels
+  | RegisteredDocxBridgeChannels
 type _Unregistered = Exclude<IpcChannel, _AllRegistered>
 void (true satisfies [_Unregistered] extends [never] ? true : never)
 
@@ -52,4 +55,5 @@ export function registerIpcHandlers(): void {
   registerSourceAttributionHandlers()
   registerWritingStyleHandlers()
   registerDrawioHandlers()
+  registerDocxBridgeHandlers()
 }

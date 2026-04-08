@@ -1,0 +1,21 @@
+from fastapi import APIRouter
+
+from docx_renderer.engine.renderer import RendererError, render_markdown_to_docx
+from docx_renderer.models.schemas import ErrorDetail, ErrorResponse, RenderRequest, RenderResult, SuccessResponse
+
+router = APIRouter()
+
+
+@router.post("/render-documents")
+async def render_documents(
+    request: RenderRequest,
+) -> SuccessResponse[RenderResult] | ErrorResponse:
+    try:
+        result = render_markdown_to_docx(
+            markdown_content=request.markdown_content,
+            output_path=request.output_path,
+            template_path=request.template_path,
+        )
+        return SuccessResponse(data=result)
+    except RendererError as e:
+        return ErrorResponse(error=ErrorDetail(code=e.code, message=str(e)))

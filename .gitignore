@@ -41,6 +41,14 @@ _bmad-output/implementation-artifacts/task-monitor.pid
 .serena/
 nohup.out
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+python/.venv/
+*.egg-info/
+
 # ATO runtime
 .ato/
 .worktrees/

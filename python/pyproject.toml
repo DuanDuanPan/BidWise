@@ -1,0 +1,12 @@
+[project]
+name = "bidwise-docx-renderer"
+version = "0.1.0"
+description = "BidWise docx rendering engine"
+requires-python = ">=3.12"
+
+[project.scripts]
+bidwise-docx = "docx_renderer.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

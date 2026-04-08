@@ -59,3 +59,10 @@ export class DocumentSaveError extends BidWiseError {
     this.name = 'DocumentSaveError'
   }
 }
+
+export class DocxBridgeError extends BidWiseError {
+  constructor(code: string, message: string, cause?: unknown) {
+    super(code, message, cause)
+    this.name = 'DocxBridgeError'
+  }
+}
