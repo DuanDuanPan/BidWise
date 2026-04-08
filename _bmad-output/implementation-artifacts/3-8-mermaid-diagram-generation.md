@@ -159,8 +159,8 @@ graph TD
     - 将 mermaid void element 替换为占位段落
     - 后处理：将占位段落替换为 AC5 所示的 HTML 注释 + Mermaid 围栏代码块
   - [x] 6.2 在 `deserializeFromMarkdown()` 中扩展
-    - 预扫描：识别 HTML 注释 `<!-- mermaid:xxx:xxx -->` + 紧随的 ```` ```mermaid ``` ```` 代码块
-    - 提取 diagramId、assetFileName、source
+    - 预扫描：识别 HTML 注释 `<!-- mermaid:{diagramId}:{assetFileName}:{encodedCaption} -->` + 紧随的 ```` ```mermaid ``` ```` 代码块
+    - 提取 diagramId、assetFileName、encodedCaption（可选，URL-decoded 为 caption）、source
     - 替换为占位段落 → 反序列化后恢复为 mermaid void element
   - [x] 6.3 裸 mermaid 代码块兼容
     - 识别无 HTML 注释的 ```` ```mermaid ``` ```` 代码块（导入场景）
@@ -244,7 +244,7 @@ graph TD
 架构决策 D5 要求 Markdown 100% 标准可读。Mermaid 图表天然适配此要求：
 
 ````
-<!-- mermaid:550e8400-e29b-41d4-a716-446655440000:mermaid-a1b2c3.svg -->
+<!-- mermaid:550e8400-e29b-41d4-a716-446655440000:mermaid-a1b2c3.svg:%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E5%9B%BE -->
 ```mermaid
 graph TD
   A[系统入口] --> B[业务处理]
@@ -252,7 +252,7 @@ graph TD
 ```
 ````
 
-- 第一行 HTML 注释：存储 `diagramId` 和 `assetFileName`，用于反序列化恢复 void element 和定位资产文件
+- 第一行 HTML 注释：存储 `diagramId`、`assetFileName` 和 `encodedCaption`（URL-encoded 标题，可选），用于反序列化恢复 void element、定位资产文件和恢复标题
 - `assetFileName` 已包含 `.svg` 扩展名；主进程写入 `assets/{assetFileName}`，不得生成 `*.svg.svg`
 - 后续行：标准 Mermaid 围栏代码块，任何 Markdown 查看器/编辑器都能直接显示或渲染
 - `.svg` 资产文件是渲染缓存，供 Epic 8 导出流程直接消费

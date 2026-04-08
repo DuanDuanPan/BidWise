@@ -192,7 +192,7 @@ export function PlateEditor({
         type: MERMAID_ELEMENT_TYPE,
         diagramId,
         assetFileName,
-        source: 'graph TD\n  A[开始] --> B[结束]',
+        source: '',
         caption: '',
         children: [{ text: '' }],
       },
