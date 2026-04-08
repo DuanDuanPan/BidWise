@@ -79,7 +79,7 @@ development_status:
   3-5-source-attribution-baseline-validation: done
   3-6-writing-style-template: done
   3-7-drawio-embedded-editing: done
-  3-8-mermaid-diagram-generation: ready-for-dev
+  3-8-mermaid-diagram-generation: done
   epic-3-retrospective: optional
 
   # ── Epic 4: 批注式人机协作 (4 stories) ──
