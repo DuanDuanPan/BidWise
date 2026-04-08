@@ -46,13 +46,14 @@ So that 我可以用文字快速描述架构，系统自动渲染为可视化图
 **When** 编辑器自动保存触发 Markdown 序列化
 **Then** Mermaid void element 序列化为 HTML 注释 + 标准 Mermaid 围栏代码块：
 ````
-<!-- mermaid:{diagramId}:{assetFileName} -->
+<!-- mermaid:{diagramId}:{assetFileName}:{encodedCaption} -->
 ```mermaid
 graph TD
   A --> B
 ```
 ````
-反序列化时识别此模式并恢复为可编辑的 Mermaid void element
+其中 `{encodedCaption}` 是 URL-encoded 的标题文本（空标题序列化为空字符串）。
+反序列化时识别此模式并恢复为可编辑的 Mermaid void element，同时恢复 `caption` 字段
 
 **Given** 导入的 Markdown 文件包含无 HTML 注释的裸 ```` ```mermaid ```` 围栏代码块
 **When** 编辑器反序列化
@@ -102,7 +103,7 @@ graph TD
 
 - [x] **Task 4: Mermaid SVG 渲染组件** (AC: #2, #3)
   - [x] 4.1 创建 `src/renderer/src/modules/editor/components/MermaidRenderer.tsx`
-    - Props：`source: string`, `diagramId: string`, `onRenderSuccess?: (svg: string) => void`, `onRenderError?: (error: string) => void`
+    - Props：`source: string`, `diagramId: string`, `onRenderSuccess?: (svg: string) => void`, `onRenderError?: (error: string, errorLine?: number) => void`
     - 调用 `mermaid.render(uniqueId, source)` 获取 `{ svg, bindFunctions? }`；本 Story 使用 `securityLevel: 'strict'`，默认不启用 click/tooltip 交互
     - 通过 `useRef` + `innerHTML` 注入 SVG（mermaid 要求 DOM 操作）
     - 500ms 防抖：`source` 变化后等待 500ms 再触发渲染；不要在 textarea input handler 中同步调用 mermaid

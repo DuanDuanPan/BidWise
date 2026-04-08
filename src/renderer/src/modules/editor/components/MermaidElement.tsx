@@ -20,7 +20,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const projectId = useProjectStore((s) => s.currentProject?.id)
   const node = element as unknown as MermaidElementType
 
-  const isNewNode = !node.source || (!node.lastModified && node.source === DEFAULT_TEMPLATE)
+  const isNewNode = !node.source
   const [mode, setMode] = useState<MermaidMode>(isNewNode ? 'editing' : 'preview')
   const [localSource, setLocalSource] = useState(node.source || DEFAULT_TEMPLATE)
   const [localCaption, setLocalCaption] = useState(node.caption || '')

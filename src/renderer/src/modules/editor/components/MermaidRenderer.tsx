@@ -53,6 +53,7 @@ export function MermaidRenderer({
         if (token !== renderCounterRef.current) return
         const msg = err instanceof Error ? err.message : String(err)
         setErrorMessage(msg)
+        if (svgContainerRef.current) svgContainerRef.current.innerHTML = ''
         onRenderError?.(msg, extractErrorLine(msg))
         setRendering(false)
         return
@@ -81,6 +82,7 @@ export function MermaidRenderer({
         if (token !== renderCounterRef.current) return
         const msg = err instanceof Error ? err.message : String(err)
         setErrorMessage(msg)
+        if (svgContainerRef.current) svgContainerRef.current.innerHTML = ''
         onRenderError?.(msg, extractErrorLine(msg))
         setRendering(false)
       }

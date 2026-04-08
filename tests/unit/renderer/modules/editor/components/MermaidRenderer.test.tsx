@@ -69,7 +69,7 @@ describe('@story-3-8 MermaidRenderer', () => {
     })
 
     expect(screen.getByTestId('mermaid-error')).toHaveTextContent('Syntax error at line 3')
-    expect(onError).toHaveBeenCalledWith('Syntax error at line 3')
+    expect(onError).toHaveBeenCalledWith('Syntax error at line 3', 3)
     expect(mockMermaid.render).not.toHaveBeenCalled()
   })
 
@@ -85,7 +85,7 @@ describe('@story-3-8 MermaidRenderer', () => {
     })
 
     expect(screen.getByTestId('mermaid-error')).toHaveTextContent('Render failed')
-    expect(onError).toHaveBeenCalledWith('Render failed')
+    expect(onError).toHaveBeenCalledWith('Render failed', undefined)
   })
 
   it('preserves last successful SVG on subsequent error', async () => {

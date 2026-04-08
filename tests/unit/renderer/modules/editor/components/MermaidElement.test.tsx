@@ -174,9 +174,9 @@ describe('@story-3-8 MermaidElement', () => {
     // Mock parse to fail — render won't produce a successful SVG
     mockMermaid.parse.mockRejectedValue(new Error('bad syntax'))
 
-    // Change source to something invalid
-    const editor = screen.getByTestId('mermaid-source-editor')
-    fireEvent.change(editor, { target: { value: 'broken syntax' } })
+    // Change source to something invalid — target the textarea inside the editor
+    const textarea = screen.getByTestId('mermaid-source-editor').querySelector('textarea')!
+    fireEvent.change(textarea, { target: { value: 'broken syntax' } })
 
     await act(async () => {
       vi.advanceTimersByTime(500)
