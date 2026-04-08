@@ -75,7 +75,7 @@ describe('ProcessManager', () => {
       const result = await startPromise
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'python3',
+        expect.stringContaining('python3'),
         ['-m', 'docx_renderer', '--host', '127.0.0.1', '--port', '0'],
         expect.objectContaining({
           cwd: expect.stringContaining('python'),
@@ -83,6 +83,10 @@ describe('ProcessManager', () => {
           stdio: ['ignore', 'pipe', 'pipe'],
         })
       )
+      // In dev mode, executable should be the venv python3
+      const actualExe = mockSpawn.mock.calls[0][0] as string
+      expect(actualExe).toContain('.venv')
+      expect(actualExe).toContain('python3')
       expect(result.port).toBe(8765)
       expect(result.pid).toBe(12345)
     })

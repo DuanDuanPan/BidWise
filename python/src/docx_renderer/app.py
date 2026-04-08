@@ -6,7 +6,9 @@ import time
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from docx_renderer.models.schemas import ErrorDetail, ErrorResponse
 from docx_renderer.routes.health import router as health_router
@@ -22,6 +24,33 @@ def create_app() -> FastAPI:
     app.include_router(shutdown_router, prefix="/api")
 
     app.state.start_time = time.time()
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        messages = "; ".join(
+            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
+        )
+        resp = ErrorResponse(
+            error=ErrorDetail(code="VALIDATION_ERROR", message=messages)
+        )
+        return JSONResponse(
+            status_code=422,
+            content=resp.model_dump(by_alias=True),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        _request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        resp = ErrorResponse(
+            error=ErrorDetail(code="HTTP_ERROR", message=str(exc.detail))
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=resp.model_dump(by_alias=True),
+        )
 
     @app.exception_handler(Exception)
     async def global_exception_handler(_request: Request, exc: Exception) -> JSONResponse:

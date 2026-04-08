@@ -17,7 +17,10 @@ const MAX_CONSECUTIVE_FAILURES = 3
 
 function resolvePythonExecutable(): string {
   if (is.dev) {
-    return process.platform === 'win32' ? 'python' : 'python3'
+    const cwd = resolve(app.getAppPath(), 'python')
+    const venvBin = process.platform === 'win32' ? 'Scripts' : 'bin'
+    const venvExe = process.platform === 'win32' ? 'python.exe' : 'python3'
+    return join(cwd, '.venv', venvBin, venvExe)
   }
   const ext = process.platform === 'win32' ? 'python.exe' : 'python3'
   return join(process.resourcesPath, 'python', 'bin', ext)
@@ -275,7 +278,13 @@ export class ProcessManager {
 
   private waitForExit(timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
-      if (!this.child || this.child.killed) {
+      if (!this.child) {
+        resolve(true)
+        return
+      }
+
+      // Check if process already exited (exitCode is non-null after exit)
+      if (this.child.exitCode !== null) {
         resolve(true)
         return
       }
