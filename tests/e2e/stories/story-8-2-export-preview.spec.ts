@@ -59,8 +59,14 @@ async function createProjectAndNavigate(window: Page): Promise<string> {
     { pid: projectId }
   )
 
+  // Reload so the Zustand store picks up the IPC-created project
+  await window.reload()
+  await window.waitForLoadState('domcontentloaded')
+  await expect(window.getByTestId('project-kanban')).toBeVisible()
+  await expect(window.getByTestId(`project-card-${projectId}`)).toBeVisible()
+
   // Navigate to project workspace
-  await window.getByTestId('project-kanban').getByText('预览测试项目').click()
+  await window.getByTestId(`project-card-${projectId}`).click()
   await expect(window.getByTestId('project-workspace')).toBeVisible()
 
   return projectId

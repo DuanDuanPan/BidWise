@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { existsSync } from 'fs'
 import { join, resolve } from 'path'
 import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
@@ -194,6 +195,17 @@ export class ProcessManager {
       const pythonExe = resolvePythonExecutable()
       const cwd = resolvePythonCwd()
       const pythonPath = join(cwd, 'src')
+
+      if (!existsSync(pythonExe)) {
+        settle(
+          reject,
+          new DocxBridgeError(
+            ErrorCode.DOCX_BRIDGE_UNAVAILABLE,
+            `Python venv/deps missing: ${pythonExe} not found. Run: python -m venv python/.venv && python/.venv/bin/pip install -e './python[test]'`
+          )
+        )
+        return
+      }
 
       const child = spawn(
         pythonExe,

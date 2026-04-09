@@ -200,6 +200,20 @@ async function revealChapterAction(
   return action
 }
 
+/** Hover-and-click in one pass — prevents stale-handle issues when
+ *  a prior generation task triggers re-renders between reveal and click. */
+async function clickChapterAction(
+  page: Page,
+  headingTitle: string,
+  actionTestId: 'chapter-generate-btn' | 'chapter-regenerate-btn'
+): Promise<void> {
+  const heading = page.getByTestId('editor-view').getByText(headingTitle, { exact: true }).first()
+  await expect(heading).toBeVisible({ timeout: 10_000 })
+  const headingBlock = heading.locator('xpath=ancestor::*[@data-heading-text]').first()
+  await headingBlock.hover()
+  await headingBlock.locator(`[data-testid="${actionTestId}"]`).click({ timeout: 10_000 })
+}
+
 async function startTaskProgressCapture(page: Page): Promise<void> {
   await page.evaluate(() => {
     const g = window as Window & {
@@ -330,15 +344,8 @@ test.describe('Story 3.4: AI Chapter Generation E2E', () => {
     await expect(window.getByTestId('plate-editor-content')).toBeVisible({ timeout: 15_000 })
     await startTaskProgressCapture(window)
 
-    const firstGenerateBtn = await revealChapterAction(window, '项目概述', 'chapter-generate-btn')
-    await firstGenerateBtn.click()
-
-    const secondGenerateBtn = await revealChapterAction(
-      window,
-      '系统架构设计',
-      'chapter-generate-btn'
-    )
-    await secondGenerateBtn.click()
+    await clickChapterAction(window, '项目概述', 'chapter-generate-btn')
+    await clickChapterAction(window, '系统架构设计', 'chapter-generate-btn')
 
     // At least one progress indicator should appear
     await expect
