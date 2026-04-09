@@ -1,0 +1,29 @@
+# .graphifyignore - BidWise
+# Patterns follow gitignore semantics (fnmatch against relative path)
+
+# ── Lock files & config boilerplate ──────────────────
+pnpm-lock.yaml
+tsconfig*.json
+postcss.config.js
+eslint.config.mjs
+electron-builder.yml
+electron.vite.config.ts
+vitest.config.ts
+playwright.config.ts
+ato.yaml
+ato.yaml.example
+
+# ── Build & test artifacts ───────────────────────────
+playwright-report
+test-results
+
+# ── BMad framework internals (not project code) ─────
+_bmad
+
+# ── Company data (potentially sensitive) ─────────────
+company-data
+
+# ── Misc non-source ──────────────────────────────────
+scripts
+resources/templates
+resources/writing-styles
