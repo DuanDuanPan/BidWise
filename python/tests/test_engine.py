@@ -14,9 +14,10 @@ def test_render_heading_levels(tmp_path):
     assert result.render_time_ms >= 0
 
     doc = Document(output)
-    assert doc.paragraphs[0].text == "H1"
-    assert doc.paragraphs[1].text == "H2"
-    assert doc.paragraphs[2].text == "H3"
+    # TOC is auto-inserted before the first heading: 目录, (TOC field), H1, H2, H3
+    assert doc.paragraphs[0].text == "目录"
+    heading_texts = [p.text for p in doc.paragraphs if p.text in ("H1", "H2", "H3")]
+    assert heading_texts == ["H1", "H2", "H3"]
 
 
 def test_render_mixed_content(tmp_path):

@@ -275,6 +275,56 @@ describe('exportService', () => {
       )
     })
 
+    it('executor merges inputTemplatePath with styles/pageSetup from template-mapping.json', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-merge')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({
+        projectId: 'proj-1',
+        templatePath: '/explicit/override.docx',
+      })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Merge Test',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      // template-mapping.json has styles and pageSetup alongside a different templatePath
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({
+          templatePath: '/json/template.docx',
+          styles: { heading1: '标题 1', bodyText: '正文' },
+          pageSetup: { contentWidthMm: 160 },
+        })
+      )
+      mockDocxBridgeService.renderDocx.mockResolvedValue({
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 40,
+      })
+
+      await capturedExecutor!(mockCtx)
+
+      // inputTemplatePath takes precedence over JSON templatePath
+      // but styles and pageSetup from JSON are still passed through
+      expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templatePath: '/explicit/override.docx',
+          styleMapping: { heading1: '标题 1', bodyText: '正文' },
+          pageSetup: { contentWidthMm: 160 },
+        }),
+        { signal: controller.signal }
+      )
+    })
+
     it('executor handles legacy format (only templatePath)', async () => {
       mockTaskQueue.enqueue.mockResolvedValue('task-legacy')
       let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined

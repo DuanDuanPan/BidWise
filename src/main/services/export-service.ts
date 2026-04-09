@@ -148,27 +148,33 @@ async function resolveTemplateMapping(
 ): Promise<ResolvedTemplateMapping> {
   const warnings: string[] = []
 
+  // Resolve the explicit input template path (if provided)
+  let explicitTemplatePath: string | undefined
   if (inputTemplatePath) {
-    let resolvedInput = inputTemplatePath
-    if (!isAbsolute(inputTemplatePath)) {
-      resolvedInput = await resolveRelativeTemplatePath(inputTemplatePath, projectId)
+    if (isAbsolute(inputTemplatePath)) {
+      explicitTemplatePath = inputTemplatePath
+    } else {
+      explicitTemplatePath = await resolveRelativeTemplatePath(inputTemplatePath, projectId)
     }
-    return { templatePath: resolvedInput, warnings }
   }
 
-  let raw: string
+  // Always attempt to read template-mapping.json for styles/pageSetup
+  let raw: string | undefined
   try {
     const projectRoot = resolveProjectDataPath(projectId)
     const mappingPath = join(projectRoot, 'template-mapping.json')
     raw = await readFile(mappingPath, 'utf-8')
   } catch {
     // No template-mapping.json — allowed, fall back to defaults
+    if (explicitTemplatePath) {
+      return { templatePath: explicitTemplatePath, warnings }
+    }
     return { warnings }
   }
 
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(raw!)
   } catch (err) {
     throw new ValidationError(
       `template-mapping.json 格式错误: ${err instanceof Error ? err.message : String(err)}`
@@ -181,9 +187,9 @@ async function resolveTemplateMapping(
 
   const obj = parsed as Record<string, unknown>
 
-  // Resolve templatePath
-  let templatePath: string | undefined
-  if (typeof obj.templatePath === 'string' && obj.templatePath.length > 0) {
+  // Resolve templatePath — explicit input takes precedence over JSON
+  let templatePath: string | undefined = explicitTemplatePath
+  if (!templatePath && typeof obj.templatePath === 'string' && obj.templatePath.length > 0) {
     const rawPath = obj.templatePath
     if (isAbsolute(rawPath)) {
       templatePath = rawPath

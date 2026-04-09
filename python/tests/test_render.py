@@ -743,3 +743,135 @@ def test_warnings_not_blocking_render(client: TestClient, tmp_output: str):
     assert os.path.exists(tmp_output)
     # Warnings should be recorded
     assert len(body["data"]["warnings"]) > 0
+
+
+# === Regression tests for blocking fixes ===
+
+
+def test_inline_code_paragraph_style_falls_back_to_monospace(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """When codeBlock maps to a PARAGRAPH style, inline code must fall back to monospace font."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "para-code-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("ParaCode", WD_STYLE_TYPE.PARAGRAPH)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "Use `print()` here",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"codeBlock": "ParaCode"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    code_runs = [r for r in para.runs if r.text == "print()"]
+    assert len(code_runs) == 1
+    # Should fall back to Courier New, not crash with ValueError
+    assert code_runs[0].font.name == "Courier New"
+
+
+def test_toc_inserted_before_first_heading_not_at_start(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """TOC should be inserted before the first heading, preserving any template preamble."""
+    # Create a template with preamble paragraphs (simulating a cover page)
+    template_path = str(tmp_path / "preamble-template.docx")
+    template_doc = Document()
+    template_doc.add_paragraph("公司名称")
+    template_doc.add_paragraph("封面页")
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# 第一章\n\n正文内容",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # Template preamble should come first
+    assert texts[0] == "公司名称"
+    assert texts[1] == "封面页"
+    # Then TOC title
+    assert texts[2] == "目录"
+    # Then TOC field (empty text), then heading
+    heading_idx = texts.index("第一章")
+    assert heading_idx > 2
+
+
+def test_image_width_scaled_to_content_width(client: TestClient, tmp_output: str, tmp_path):
+    """Large images must be scaled down so their width equals content_width_mm."""
+    import struct
+    import zlib
+
+    from docx.shared import Mm
+
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    # Create a wide 2000x100 PNG (at default 96 DPI, ~528mm wide, well over 150mm)
+    width, height = 2000, 100
+    raw = b""
+    for _y in range(height):
+        raw += b"\x00"
+        for _x in range(width):
+            raw += b"\xff\x00\x00\xff"
+    compressed = zlib.compress(raw)
+
+    def chunk(chunk_type, data):
+        c = chunk_type + data
+        crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+        return struct.pack(">I", len(data)) + c + crc
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    png += chunk(b"IDAT", compressed)
+    png += chunk(b"IEND", b"")
+
+    with open(os.path.join(assets_dir, "wide.png"), "wb") as f:
+        f.write(png)
+
+    content_width = 150
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![wide](assets/wide.png)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+            "pageSetup": {"contentWidthMm": content_width},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    # Find the inline shape in the document
+    from docx.oxml.ns import qn
+
+    inline_shapes = doc.inline_shapes
+    assert len(inline_shapes) == 1
+    shape = inline_shapes[0]
+    expected_width = Mm(content_width)
+    # Allow 1% tolerance for rounding
+    assert abs(shape.width - expected_width) / expected_width < 0.01

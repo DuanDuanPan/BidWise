@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.opc.exceptions import PackageNotFoundError
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -112,11 +113,13 @@ def _append_inline_runs(
     doc: Optional[Document] = None,
 ) -> None:
     """Parse inline Markdown formatting and append runs to a paragraph."""
-    # Resolve inline code style once: prefer style_mapping.code_block as character style
+    # Resolve inline code style once: only use if it is a CHARACTER style
     inline_code_style: Optional[str] = None
     code_style_name = _get_style_key(style_mapping, "code_block")
     if code_style_name and doc and _style_exists(doc, code_style_name):
-        inline_code_style = code_style_name
+        style_obj = doc.styles[code_style_name]
+        if style_obj.type == WD_STYLE_TYPE.CHARACTER:
+            inline_code_style = code_style_name
 
     pos = 0
     for m in _INLINE_PATTERN.finditer(text):
@@ -248,28 +251,17 @@ def _handle_image(
         if page_setup and page_setup.content_width_mm:
             content_width_mm = page_setup.content_width_mm
 
+        content_width_emu = Mm(content_width_mm)
+
         paragraph = doc.add_paragraph()
         run = paragraph.add_run()
-        run.add_picture(resolved)
+        shape = run.add_picture(resolved)
 
-        # Get the inline shape that was just added
-        inline_shape = run.element.findall(qn("w:drawing"))
-        if inline_shape:
-            # Use image dimensions to check if scaling needed
-            w_px, _ = _get_image_size(resolved)
-            if w_px is not None:
-                # Approximate: assume 96 DPI for pixel-to-mm conversion
-                w_mm = w_px * 25.4 / 96
-                if w_mm > content_width_mm:
-                    # Re-add with width constraint
-                    paragraph.clear()
-                    run = paragraph.add_run()
-                    run.add_picture(resolved, width=Mm(content_width_mm))
-        else:
-            # Fallback: just add with width constraint
-            paragraph.clear()
-            run = paragraph.add_run()
-            run.add_picture(resolved, width=Mm(content_width_mm))
+        # Scale down if the image's physical width exceeds content area
+        if shape.width > content_width_emu:
+            ratio = content_width_emu / shape.width
+            shape.width = content_width_emu
+            shape.height = int(shape.height * ratio)
     except Exception as e:
         warnings.append(f"图片插入失败: {image_path_raw}: {e}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
@@ -280,8 +272,9 @@ def add_toc(
     title: str = "目录",
     toc_style: Optional[str] = None,
     warnings: Optional[list[str]] = None,
+    first_heading_element=None,
 ) -> None:
-    """Insert TOC field code at the beginning of the document."""
+    """Insert TOC field code before the first heading in the document."""
     if warnings is None:
         warnings = []
 
@@ -316,13 +309,20 @@ def add_toc(
     fld_char_end.set(qn("w:fldCharType"), "end")
     run._r.append(fld_char_end)
 
-    # Move TOC elements to the beginning of the document body
     body = doc.element.body
-    # Move the field paragraph first (it will end up second)
-    body.insert(0, paragraph._p)
-    # Then move the title paragraph (it will end up first)
-    if title:
-        body.insert(0, p._p)
+
+    if first_heading_element is not None:
+        # Insert TOC elements just before the first heading
+        # Insert the field paragraph first (it will sit between title and heading)
+        first_heading_element.addprevious(paragraph._p)
+        # Then insert title before the field paragraph
+        if title:
+            paragraph._p.addprevious(p._p)
+    else:
+        # Fallback: insert at document beginning
+        body.insert(0, paragraph._p)
+        if title:
+            body.insert(0, p._p)
 
 
 def render_markdown_to_docx(
@@ -403,7 +403,7 @@ def _parse_markdown(
 
     lines = content.split("\n")
     i = 0
-    has_headings = False
+    first_heading_element = None
 
     while i < len(lines):
         line = lines[i]
@@ -444,7 +444,6 @@ def _parse_markdown(
         # Headings
         heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
         if heading_match:
-            has_headings = True
             level = len(heading_match.group(1))
             text = heading_match.group(2).strip()
             style_key = _HEADING_STYLE_KEYS.get(level, "heading1")
@@ -457,6 +456,8 @@ def _parse_markdown(
             else:
                 p = doc.add_paragraph()
                 _append_inline_runs(p, text, style_mapping, warnings, doc)
+            if first_heading_element is None:
+                first_heading_element = p._p
             i += 1
             continue
 
@@ -504,9 +505,15 @@ def _parse_markdown(
         i += 1
 
     # Insert TOC if there are headings
-    if has_headings:
+    if first_heading_element is not None:
         toc_style = _get_style_key(style_mapping, "toc")
-        add_toc(doc, title="目录", toc_style=toc_style, warnings=warnings)
+        add_toc(
+            doc,
+            title="目录",
+            toc_style=toc_style,
+            warnings=warnings,
+            first_heading_element=first_heading_element,
+        )
 
 
 def _parse_table(
