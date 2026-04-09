@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { _electron as electron } from 'playwright'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -176,4 +176,73 @@ test('@story-8-2 @p1 cancel during loading dismisses overlay', async () => {
     },
     { BIDWISE_E2E_EXPORT_PREVIEW_DELAY_MS: '5000' }
   )
+})
+
+test('@story-8-2 @p1 preview ready → back to edit closes modal (AC4)', async () => {
+  await withIsolatedApp(
+    async (window) => {
+      await createProjectAndNavigate(window)
+
+      await window.getByTestId('preview-btn').click()
+
+      // Wait for preview to reach ready state — confirm button only renders in ready state
+      const confirmBtn = window.getByTestId('confirm-export-btn')
+      await expect(confirmBtn).toBeVisible({ timeout: 30_000 })
+
+      // Click 返回编辑
+      await window.getByTestId('back-to-edit-btn').click()
+
+      // Modal should close: confirm button disappears, workspace stays intact
+      await expect(confirmBtn).not.toBeVisible({ timeout: 5_000 })
+      await expect(window.getByTestId('project-workspace')).toBeVisible()
+    },
+    { BIDWISE_E2E_EXPORT_PREVIEW_MOCK: 'true' }
+  )
+})
+
+test('@story-8-2 @p1 confirm export: cancel preserves modal, retry succeeds with toast (AC5)', async () => {
+  const exportOutputPath = join(mkdtempSync(join(tmpdir(), 'bidwise-e2e-ac5-')), 'test-output.docx')
+
+  try {
+    await withIsolatedApp(
+      async (window) => {
+        await createProjectAndNavigate(window)
+
+        await window.getByTestId('preview-btn').click()
+
+        // Wait for ready state
+        const confirmBtn = window.getByTestId('confirm-export-btn')
+        await expect(confirmBtn).toBeVisible({ timeout: 30_000 })
+
+        // First 确认导出 → dialog cancel → modal stays open
+        await confirmBtn.click()
+        // Confirm button should still be visible (modal persists after cancel)
+        await expect(confirmBtn).toBeVisible({ timeout: 5_000 })
+
+        // Second 确认导出 → dialog auto-save → success Toast
+        await confirmBtn.click()
+
+        // Success toast should appear
+        const toast = window.locator('.ant-message-success')
+        await expect(toast).toBeVisible({ timeout: 10_000 })
+        await expect(toast).toContainText('导出')
+
+        // Modal should close
+        await expect(confirmBtn).not.toBeVisible({ timeout: 5_000 })
+      },
+      {
+        BIDWISE_E2E_EXPORT_PREVIEW_MOCK: 'true',
+        BIDWISE_E2E_EXPORT_DIALOG_PATH: exportOutputPath,
+        BIDWISE_E2E_EXPORT_DIALOG_CANCEL_COUNT: '1',
+      }
+    )
+  } finally {
+    // Clean up exported file
+    if (existsSync(exportOutputPath)) unlinkSync(exportOutputPath)
+    try {
+      rmSync(resolve(exportOutputPath, '..'), { recursive: true, force: true })
+    } catch {
+      // Best-effort
+    }
+  }
 })
