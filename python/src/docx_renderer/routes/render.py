@@ -15,6 +15,9 @@ async def render_documents(
             markdown_content=request.markdown_content,
             output_path=request.output_path,
             template_path=request.template_path,
+            style_mapping=request.style_mapping,
+            page_setup=request.page_setup,
+            project_path=request.project_path,
         )
         return SuccessResponse(data=result)
     except RendererError as e:

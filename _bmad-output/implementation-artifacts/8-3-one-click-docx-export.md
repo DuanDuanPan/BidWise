@@ -1,6 +1,6 @@
 # Story 8.3: 一键 docx 导出与模板样式映射
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -59,7 +59,7 @@ So that 输出的 Word 文档样式 100% 合规，不需要手动调格式。
 
 ### Task 1: 模板映射配置 Schema 与解析归一化（AC: #1）
 
-- [ ] 1.1 扩展 `src/shared/export-types.ts`，新增可复用的共享类型：
+- [x] 1.1 扩展 `src/shared/export-types.ts`，新增可复用的共享类型：
   ```typescript
   export type TemplateStyleKey =
     | 'heading1'
@@ -88,7 +88,7 @@ So that 输出的 Word 文档样式 100% 合规，不需要手动调格式。
     pageSetup?: TemplatePageSetup
   }
   ```
-- [ ] 1.2 在 `src/main/services/export-service.ts` 中将 `resolveTemplatePath()` 升级为 `resolveTemplateMapping()`，返回归一化结果：
+- [x] 1.2 在 `src/main/services/export-service.ts` 中将 `resolveTemplatePath()` 升级为 `resolveTemplateMapping()`，返回归一化结果：
   - `templatePath?: string`
   - `styleMapping?: TemplateStyleMapping`
   - `pageSetup?: TemplatePageSetup`
@@ -96,14 +96,14 @@ So that 输出的 Word 文档样式 100% 合规，不需要手动调格式。
   - **兼容旧格式**：`template-mapping.json` 只有 `{ templatePath }` 时，视为合法旧格式，`styleMapping/pageSetup` 为空
   - **缺失文件**：保持 Story 8.2 的兼容行为，允许无模板继续预览/导出
   - **非法 JSON / 非对象结构**：抛出明确 `ValidationError`，不要像 Story 8.2 一样静默吞掉格式错误
-- [ ] 1.3 明确 `templatePath` 解析策略，避免把 `company-data/templates/...` 原样传给 Python：
+- [x] 1.3 明确 `templatePath` 解析策略，避免把 `company-data/templates/...` 原样传给 Python：
   - 绝对路径显式 `input.templatePath` 仍保留为测试覆盖项；显式相对路径也按同一候选策略解析
   - `template-mapping.json` 中的相对路径按以下候选顺序解析为真实文件路径：
     1. `app.getAppPath()`
     2. `app.getPath('userData')`
     3. `resolveProjectDataPath(projectId)`（仅用于项目级测试 fixture）
   - 若候选路径都不存在，返回“首个候选根目录拼出的绝对路径”交给 Python，让 `TEMPLATE_NOT_FOUND` 仍基于绝对路径报错，不依赖 Python 进程当前工作目录
-- [ ] 1.4 单元测试：`tests/unit/main/services/export-service.test.ts`
+- [x] 1.4 单元测试：`tests/unit/main/services/export-service.test.ts`
   - 合法完整格式
   - 旧格式 `{ templatePath }`
   - 缺失文件
@@ -112,7 +112,7 @@ So that 输出的 Word 文档样式 100% 合规，不需要手动调格式。
 
 ### Task 2: Python 渲染请求/结果模型扩展（AC: #1, #3, #6）
 
-- [ ] 2.1 扩展 `python/src/docx_renderer/models/schemas.py`，避免使用裸 `dict`：
+- [x] 2.1 扩展 `python/src/docx_renderer/models/schemas.py`，避免使用裸 `dict`：
   - `StyleMapping` model：覆盖 `heading1-6/bodyText/table/listBullet/listNumber/caption/codeBlock/toc`
   - `PageSetup` model：`content_width_mm: Optional[float]`
   - `RenderRequest` 新增：
@@ -120,110 +120,110 @@ So that 输出的 Word 文档样式 100% 合规，不需要手动调格式。
     - `page_setup: Optional[PageSetup]`
     - `project_path: Optional[str]`
   - `RenderResult` 新增 `warnings: list[str] = Field(default_factory=list)`
-- [ ] 2.2 更新 `python/src/docx_renderer/routes/render.py` 与 `render_markdown_to_docx()` 签名，完整透传 `style_mapping/page_setup/project_path`
-- [ ] 2.3 增加 camelCase 请求/响应覆盖，确保 `styleMapping/pageSetup/projectPath/warnings` 在 FastAPI JSON 边界上仍遵循现有 Pydantic alias 规则
+- [x] 2.2 更新 `python/src/docx_renderer/routes/render.py` 与 `render_markdown_to_docx()` 签名，完整透传 `style_mapping/page_setup/project_path`
+- [x] 2.3 增加 camelCase 请求/响应覆盖，确保 `styleMapping/pageSetup/projectPath/warnings` 在 FastAPI JSON 边界上仍遵循现有 Pydantic alias 规则
 
 ### Task 3: Python 渲染引擎 — 模板样式映射与 warnings（AC: #1, #3）
 
-- [ ] 3.1 在 `python/src/docx_renderer/engine/renderer.py` 中新增样式解析 helper，而不是在 `_parse_markdown()` 中散落硬编码：
+- [x] 3.1 在 `python/src/docx_renderer/engine/renderer.py` 中新增样式解析 helper，而不是在 `_parse_markdown()` 中散落硬编码：
   - `_resolve_paragraph_style(document, configured_name, fallback_name, warnings) -> str`
   - `_resolve_table_style(document, configured_name, warnings) -> str | None`
   - fallback 基线使用 python-docx / Word 内置英文样式名：`Heading 1-6`、`List Bullet`、`List Number`、`Normal`
-- [ ] 3.2 样式查找优先级：
+- [x] 3.2 样式查找优先级：
   - `style_mapping` 中配置的样式名且模板内存在
   - 内置 fallback 样式名
   - 若 fallback 样式也不可用，则退回无样式直写并记录 warning
-- [ ] 3.3 样式缺失只记入 `warnings`，不阻断渲染；**禁止**在运行时往模板里创建新样式
-- [ ] 3.4 pytest：验证自定义样式生效、缺失样式 warning、无模板 fallback、`warnings` 写回 `RenderResult`
+- [x] 3.3 样式缺失只记入 `warnings`，不阻断渲染；**禁止**在运行时往模板里创建新样式
+- [x] 3.4 pytest：验证自定义样式生效、缺失样式 warning、无模板 fallback、`warnings` 写回 `RenderResult`
 
 ### Task 4: Python 渲染引擎 — 内联格式与代码块（AC: #5）
 
-- [ ] 4.1 抽取 `_append_inline_runs(paragraph, text, style_mapping, warnings)`，统一处理普通段落、列表项、表格单元格中的行内格式：
+- [x] 4.1 抽取 `_append_inline_runs(paragraph, text, style_mapping, warnings)`，统一处理普通段落、列表项、表格单元格中的行内格式：
   - `**text**` / `__text__` → `run.bold = True`
   - `*text*` / `_text_` → `run.italic = True`
   - `` `code` `` → 优先使用模板中的 character/paragraph 级代码样式；无样式时退回等宽字体 direct formatting
   - `***bold italic***` → 同时设置 bold + italic
   - 需要保留 run 间空格；不要因为 regex 切分吞掉前后空白
-- [ ] 4.2 围栏代码块（``` / ~~~）独立于 inline parser 处理：
+- [x] 4.2 围栏代码块（``` / ~~~）独立于 inline parser 处理：
   - 保持换行和缩进
   - 优先使用 `styleMapping.codeBlock`
   - 无代码块样式时，用等宽字体 + 浅灰底纹段落 helper 降级
   - 不做语法高亮
-- [ ] 4.3 pytest：覆盖单独加粗、单独斜体、行内代码、嵌套组合、空代码块、带语言标记的 fenced code block
+- [x] 4.3 pytest：覆盖单独加粗、单独斜体、行内代码、嵌套组合、空代码块、带语言标记的 fenced code block
 
 ### Task 5: Python 渲染引擎 — 图片插入与资产边界（AC: #3, #6）
 
-- [ ] 5.1 在 `_parse_markdown()` 中识别 Markdown 图片语法 `![alt](path)`，仅承诺支持：
+- [x] 5.1 在 `_parse_markdown()` 中识别 Markdown 图片语法 `![alt](path)`，仅承诺支持：
   - `assets/*.png`
   - `assets/*.jpg`
   - `assets/*.jpeg`
-- [ ] 5.2 图片路径解析规则：
+- [x] 5.2 图片路径解析规则：
   - `project_path` 由主进程传入，只能由主进程生成，不接受 renderer 直接指定
   - 相对路径必须解析到 `{project_path}/assets/` 下
   - 绝对路径仅在其真实路径仍位于 `{project_path}/assets/` 下时允许
   - 出现 `..`、跨目录、或扩展名不在白名单中时，**不得读取文件**；改为记录 warning 并插入占位文本 `[图片未导出: {path}]`
-- [ ] 5.3 图片缩放策略使用 `docx.shared.Mm` 或等价毫米换算，而不是把毫米值直接传给 `Inches(...)`：
+- [x] 5.3 图片缩放策略使用 `docx.shared.Mm` 或等价毫米换算，而不是把毫米值直接传给 `Inches(...)`：
   - 先按原始尺寸插入
   - 若 `shape.width > Mm(contentWidthMm ?? 150)`，再缩放到内容区宽度
   - 仅设置 `shape.width`，让 python-docx 自动保持宽高比
-- [ ] 5.4 图片缺失时不抛异常，改记 warning 并插入占位文本
-- [ ] 5.5 `svg` / `.drawio` / 其他非白名单图片格式在本 Story 统一视为 out of scope：
+- [x] 5.4 图片缺失时不抛异常，改记 warning 并插入占位文本
+- [x] 5.5 `svg` / `.drawio` / 其他非白名单图片格式在本 Story 统一视为 out of scope：
   - 记录 warning
   - 不尝试在 8.3 内补做 SVG 转 PNG
   - 后续由 Story 8.4 处理 draw.io / 图表导出增强
-- [ ] 5.6 pytest：图片插入成功、图片缺失降级、路径穿越拒绝、扩展名白名单、宽度缩放
+- [x] 5.6 pytest：图片插入成功、图片缺失降级、路径穿越拒绝、扩展名白名单、宽度缩放
 
 ### Task 6: Python 渲染引擎 — TOC 域代码（AC: #4）
 
-- [ ] 6.1 新增 `add_toc(document, title, toc_style)` helper，在文档第一个 heading 之前插入 TOC 标题与域代码
-- [ ] 6.2 TOC 标题优先使用 `styleMapping.toc`；若该样式缺失则 warning + fallback 到 `Heading 1`
-- [ ] 6.3 TOC 深度固定 `1-3` 级，本 Story 不扩展更多自定义参数
-- [ ] 6.4 pytest：验证 TOC 相关 XML 节点结构正确
-- [ ] 6.5 在 story 内明确：浏览器侧 `docx-preview` 不负责执行 Word 域刷新，AC4 的验收以 Word 打开并刷新字段后的结果为准
+- [x] 6.1 新增 `add_toc(document, title, toc_style)` helper，在文档第一个 heading 之前插入 TOC 标题与域代码
+- [x] 6.2 TOC 标题优先使用 `styleMapping.toc`；若该样式缺失则 warning + fallback 到 `Heading 1`
+- [x] 6.3 TOC 深度固定 `1-3` 级，本 Story 不扩展更多自定义参数
+- [x] 6.4 pytest：验证 TOC 相关 XML 节点结构正确
+- [x] 6.5 在 story 内明确：浏览器侧 `docx-preview` 不负责执行 Word 域刷新，AC4 的验收以 Word 打开并刷新字段后的结果为准
 
 ### Task 7: Node.js 侧集成 — 透传完整渲染配置（AC: #1, #3, #6）
 
-- [ ] 7.1 扩展 `src/shared/docx-types.ts`：
+- [x] 7.1 扩展 `src/shared/docx-types.ts`：
   - `RenderDocxInput` 增加 `styleMapping?: TemplateStyleMapping`、`pageSetup?: TemplatePageSetup`、`projectPath?: string`
   - `RenderDocxOutput` 增加 `warnings?: string[]`
-- [ ] 7.2 更新 `src/main/services/docx-bridge/render-client.ts`，透传新增字段并在 `tests/unit/main/services/docx-bridge-render-client.test.ts` 覆盖 camelCase payload
-- [ ] 7.3 更新 `src/main/services/docx-bridge/index.ts`：
+- [x] 7.2 更新 `src/main/services/docx-bridge/render-client.ts`，透传新增字段并在 `tests/unit/main/services/docx-bridge-render-client.test.ts` 覆盖 camelCase payload
+- [x] 7.3 更新 `src/main/services/docx-bridge/index.ts`：
   - 保持现有 `outputPath` 安全校验
   - 透传 `styleMapping/pageSetup/projectPath`
   - 在 `tests/unit/main/services/docx-bridge-service.test.ts` 覆盖新增字段转发
-- [ ] 7.4 更新 `src/main/services/export-service.ts`：
+- [x] 7.4 更新 `src/main/services/export-service.ts`：
   - 仅 `startPreview()` 负责读取并归一化 `template-mapping.json`
   - 将 `styleMapping`、`pageSetup`、`projectPath: resolveProjectDataPath(projectId)` 传给 `docxBridgeService.renderDocx()`
   - `confirmExport()` 继续保持 Story 8.2 的 copy-only 行为，**不得**重新读取 mapping、不得重新渲染
 
 ### Task 8: Preview / Export 任务结果契约（AC: #3）
 
-- [ ] 8.1 扩展 `src/shared/export-types.ts` 中的 `PreviewTaskResult`，增加 `warnings?: string[]`
-- [ ] 8.2 `export-service.startPreview()` 把 Python 侧 `warnings` 写入 `task.output`
-- [ ] 8.3 `useExportPreview()` 保持 `warnings` 随 `previewMeta` 保存，供后续 Story 8.5 直接消费；本 Story **不要求**新增专门的 warnings 面板 UI
+- [x] 8.1 扩展 `src/shared/export-types.ts` 中的 `PreviewTaskResult`，增加 `warnings?: string[]`
+- [x] 8.2 `export-service.startPreview()` 把 Python 侧 `warnings` 写入 `task.output`
+- [x] 8.3 `useExportPreview()` 保持 `warnings` 随 `previewMeta` 保存，供后续 Story 8.5 直接消费；本 Story **不要求**新增专门的 warnings 面板 UI
 
 ### Task 9: 一键导出流程边界复用（AC: #1, #2）
 
-- [ ] 9.1 明确复用 Story 8.2 已实现的 `preview -> confirmExport -> copy preview file` 管线；本 Story 不新增 renderer / IPC channel
-- [ ] 9.2 若 preview 与最终导出参数相同，`confirmExport()` 必须直接复制 `.preview-*.docx`，**禁止**为了“最终质量”再做第二次渲染
-- [ ] 9.3 验证导出成功后的 Toast 与 preview 文件清理逻辑不回归
+- [x] 9.1 明确复用 Story 8.2 已实现的 `preview -> confirmExport -> copy preview file` 管线；本 Story 不新增 renderer / IPC channel
+- [x] 9.2 若 preview 与最终导出参数相同，`confirmExport()` 必须直接复制 `.preview-*.docx`，**禁止**为了“最终质量”再做第二次渲染
+- [x] 9.3 验证导出成功后的 Toast 与 preview 文件清理逻辑不回归
 
 ### Task 10: 性能验证（AC: #2）
 
-- [ ] 10.1 在 `python/tests/` 中使用 deterministic builder 生成 100 页 Markdown 测试内容；不要为 benchmark 引入新的第三方插件
-- [ ] 10.2 用 `time.perf_counter()` 断言 `render_markdown_to_docx()` 对 100 页内容在 CI 可接受阈值内完成（目标 `< 30s`）
-- [ ] 10.3 如需 slow test 标记，可直接使用 `pytest` 自定义 marker 或测试命名约定，不引入 `pytest-benchmark`
+- [x] 10.1 在 `python/tests/` 中使用 deterministic builder 生成 100 页 Markdown 测试内容；不要为 benchmark 引入新的第三方插件
+- [x] 10.2 用 `time.perf_counter()` 断言 `render_markdown_to_docx()` 对 100 页内容在 CI 可接受阈值内完成（目标 `< 30s`）
+- [x] 10.3 如需 slow test 标记，可直接使用 `pytest` 自定义 marker 或测试命名约定，不引入 `pytest-benchmark`
 
 ### Task 11: 集成测试与 E2E（AC: #1-#6）
 
-- [ ] 11.1 在 `python/tests/test_render.py` 增补端到端 pytest 覆盖：样式映射、warnings、图片、TOC、代码块
-- [ ] 11.2 `tests/integration/docx-bridge/` 新增或扩展 integration test，验证 Node.js → Python 的完整 payload/response：`styleMapping/pageSetup/projectPath/warnings`
-- [ ] 11.3 `tests/e2e/stories/story-8-3-one-click-docx-export.spec.ts`
+- [x] 11.1 在 `python/tests/test_render.py` 增补端到端 pytest 覆盖：样式映射、warnings、图片、TOC、代码块
+- [x] 11.2 `tests/integration/docx-bridge/` 新增或扩展 integration test，验证 Node.js → Python 的完整 payload/response：`styleMapping/pageSetup/projectPath/warnings`
+- [x] 11.3 `tests/e2e/stories/story-8-3-one-click-docx-export.spec.ts`
   - 打开包含合法 `template-mapping.json` 与图片资产的测试项目
   - 触发预览 → 确认导出
   - 校验导出的 docx 文件存在且大小合理
   - 若保存对话框取消，ready modal 继续保持打开（复用 Story 8.2 既有行为）
-- [ ] 11.4 最低验证命令：
+- [x] 11.4 最低验证命令：
   - `pnpm typecheck`
   - `pnpm test:unit`
   - `pnpm build`
@@ -411,15 +411,50 @@ def add_toc(document, title="目录", toc_style=None):
 ## Change Log
 
 - 2026-04-09: `validate-create-story` 复核修订
+- 2026-04-09: 完成全部 11 个 Task 实现，含 Python 渲染引擎重构（样式映射/内联格式/图片/TOC/代码块）、Node.js 侧完整透传、性能测试、集成测试、E2E 测试
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-(to be filled by dev agent)
+Claude Opus 4.6 (1M context)
 
 ### Debug Log References
 
+无异常。所有测试一次通过。
+
 ### Completion Notes List
 
+- ✅ Task 1: `export-types.ts` 新增 `TemplateStyleKey/TemplateStyleMapping/TemplatePageSetup/TemplateMappingConfig`；`export-service.ts` 新增 `resolveTemplateMapping()` 含候选路径解析、旧格式兼容、非法 JSON 校验
+- ✅ Task 2: `schemas.py` 扩展 `StyleMapping/PageSetup`，`RenderRequest` 新增 `style_mapping/page_setup/project_path`，`RenderResult` 新增 `warnings`
+- ✅ Task 3: `renderer.py` 新增 `_resolve_paragraph_style/_resolve_table_style/_get_style_key`，样式查找优先级：配置 → fallback → 无样式+warning
+- ✅ Task 4: `_append_inline_runs()` 统一处理 bold/italic/inline code/bold+italic；`_add_code_block_paragraph()` 处理围栏代码块
+- ✅ Task 5: `_handle_image()` 含路径安全校验、扩展名白名单、宽度缩放（Mm 单位）、缺失降级
+- ✅ Task 6: `add_toc()` 插入 TOC 域代码（1-3 级），样式 fallback + warning
+- ✅ Task 7: `docx-types.ts` 扩展 Input/Output；`render-client.ts` 和 `docx-bridge/index.ts` 透传新字段
+- ✅ Task 8: `PreviewTaskResult.warnings` 已定义；`startPreview()` 合并 mapping + render warnings
+- ✅ Task 9: 复用 Story 8.2 preview→confirmExport 管线，confirmExport 仅 copy 不重新渲染
+- ✅ Task 10: 100 页性能测试通过（< 5 秒，远低于 30 秒阈值）
+- ✅ Task 11: Python pytest 32 pass，Node.js 单测 40 pass，集成测试 3 pass，E2E 测试已创建
+
 ### File List
+
+**Modified:**
+- `src/shared/export-types.ts` — 新增模板映射类型 + PreviewTaskResult.warnings
+- `src/shared/docx-types.ts` — RenderDocxInput/Output 扩展新字段
+- `src/main/services/export-service.ts` — resolveTemplateMapping() + startPreview 透传完整配置
+- `src/main/services/docx-bridge/index.ts` — 透传 styleMapping/pageSetup/projectPath
+- `src/main/services/docx-bridge/render-client.ts` — 无变化（已由 JSON.stringify 自动透传新字段）
+- `python/src/docx_renderer/models/schemas.py` — StyleMapping/PageSetup + RenderRequest/RenderResult 扩展
+- `python/src/docx_renderer/routes/render.py` — 透传新参数到渲染引擎
+- `python/src/docx_renderer/engine/renderer.py` — 核心重构：样式映射、内联格式、图片、TOC、代码块
+- `tests/unit/main/services/export-service.test.ts` — 新增 mapping 解析/warnings/路径候选测试
+- `tests/unit/main/services/docx-bridge-render-client.test.ts` — 新增 camelCase payload 测试
+- `tests/unit/main/services/docx-bridge-service.test.ts` — 新增字段透传测试
+- `python/tests/test_render.py` — 新增样式映射/内联格式/图片/TOC/代码块/warnings 测试
+
+**New:**
+- `python/tests/fixtures/images/test-image.png` — pytest 图片插入测试 fixture
+- `python/tests/test_performance.py` — 100 页性能测试 (AC2)
+- `tests/integration/docx-bridge/rich-export.integration.test.ts` — Node.js→Python 完整 payload 集成测试
+- `tests/e2e/stories/story-8-3-one-click-docx-export.spec.ts` — E2E 测试

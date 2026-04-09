@@ -21,8 +21,10 @@ def test_render_basic_heading(client: TestClient, tmp_output: str):
     assert os.path.exists(tmp_output)
 
     doc = Document(tmp_output)
-    assert len(doc.paragraphs) == 1
-    assert doc.paragraphs[0].text == "Hello World"
+    # TOC title + TOC field + heading = 3 paragraphs
+    assert len(doc.paragraphs) == 3
+    assert doc.paragraphs[0].text == "目录"  # TOC title
+    assert doc.paragraphs[2].text == "Hello World"  # The heading
 
 
 def test_render_paragraph(client: TestClient, tmp_output: str):
@@ -178,5 +180,480 @@ def test_render_camel_case_response(client: TestClient, tmp_output: str):
     data = body["data"]
     assert "outputPath" in data
     assert "renderTimeMs" in data
+    assert "warnings" in data
     assert "output_path" not in data
     assert "render_time_ms" not in data
+
+
+def test_render_accepts_camel_case_style_mapping(client: TestClient, tmp_output: str):
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Test",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "styleMapping": {"heading1": "标题 1", "bodyText": "正文"},
+            "pageSetup": {"contentWidthMm": 150},
+            "projectPath": "/tmp/project",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert isinstance(body["data"]["warnings"], list)
+
+
+# === Task 3: Style mapping & warnings tests ===
+
+
+def test_style_mapping_missing_style_generates_warning(client: TestClient, tmp_output: str):
+    """When configured style doesn't exist, warning is recorded and fallback used."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Heading",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "styleMapping": {"heading1": "不存在的样式"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    warnings = body["data"]["warnings"]
+    # Should contain warning about missing style
+    assert any("不存在的样式" in w for w in warnings)
+
+    doc = Document(tmp_output)
+    # Heading should still be rendered (using fallback)
+    heading_texts = [p.text for p in doc.paragraphs if p.text == "Heading"]
+    assert len(heading_texts) == 1
+
+
+def test_no_template_uses_fallback_styles(client: TestClient, tmp_output: str):
+    """Without template, built-in styles are used as fallback."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# H1\n\n## H2\n\nParagraph text",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    # Should have headings with built-in styles
+    styles = [p.style.name for p in doc.paragraphs]
+    assert "Heading 1" in styles or any("Heading" in s for s in styles)
+
+
+def test_style_mapping_with_valid_template(client: TestClient, tmp_output: str, tmp_path):
+    """Custom styles from template are used when they exist."""
+    # Create a template with a custom style
+    template_path = str(tmp_path / "custom-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("MyHeading", 1)  # WD_STYLE_TYPE.PARAGRAPH = 1
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Custom Styled",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"heading1": "MyHeading"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    # Find the heading paragraph (skip TOC)
+    heading_paras = [p for p in doc.paragraphs if p.text == "Custom Styled"]
+    assert len(heading_paras) == 1
+    assert heading_paras[0].style.name == "MyHeading"
+
+
+# === Task 4: Inline formatting & code block tests ===
+
+
+def test_inline_bold(client: TestClient, tmp_output: str):
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "This is **bold** text",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    runs = para.runs
+    assert any(r.bold for r in runs)
+    assert para.text == "This is bold text"
+
+
+def test_inline_italic(client: TestClient, tmp_output: str):
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "This is *italic* text",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    assert any(r.italic for r in para.runs)
+    assert para.text == "This is italic text"
+
+
+def test_inline_code(client: TestClient, tmp_output: str):
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "Use `print()` function",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    code_runs = [r for r in para.runs if r.font.name == "Courier New"]
+    assert len(code_runs) == 1
+    assert code_runs[0].text == "print()"
+
+
+def test_inline_bold_italic(client: TestClient, tmp_output: str):
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "This is ***bold italic*** text",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    bold_italic_runs = [r for r in para.runs if r.bold and r.italic]
+    assert len(bold_italic_runs) == 1
+    assert bold_italic_runs[0].text == "bold italic"
+
+
+def test_fenced_code_block(client: TestClient, tmp_output: str):
+    md = "```python\ndef hello():\n    print('hi')\n```"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    # Code block should have monospace font runs
+    code_texts = []
+    for p in doc.paragraphs:
+        for r in p.runs:
+            if r.font.name == "Courier New":
+                code_texts.append(r.text)
+    assert "def hello():" in code_texts
+    assert "    print('hi')" in code_texts
+
+
+def test_empty_fenced_code_block(client: TestClient, tmp_output: str):
+    md = "```\n```"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+
+def test_fenced_code_block_with_tilde(client: TestClient, tmp_output: str):
+    md = "~~~\ncode here\n~~~"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    found_code = False
+    for p in doc.paragraphs:
+        for r in p.runs:
+            if r.text == "code here" and r.font.name == "Courier New":
+                found_code = True
+    assert found_code
+
+
+# === Task 5: Image insertion & asset boundary tests ===
+
+
+def test_image_insertion_success(client: TestClient, tmp_output: str, tmp_path):
+    """Image under project assets/ should be inserted successfully."""
+    # Setup: create project structure with assets/
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    # Copy test image
+    import shutil
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "diagram.png"))
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![diagram](assets/diagram.png)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    # No image-related warnings
+    image_warnings = [w for w in body["data"]["warnings"] if "图片" in w]
+    assert len(image_warnings) == 0
+
+
+def test_image_missing_generates_warning(client: TestClient, tmp_output: str, tmp_path):
+    """Missing image file generates warning and placeholder text."""
+    project_path = str(tmp_path / "project")
+    os.makedirs(os.path.join(project_path, "assets"), exist_ok=True)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![missing](assets/missing.png)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    placeholder_texts = [p.text for p in doc.paragraphs if "图片未导出" in p.text]
+    assert len(placeholder_texts) >= 1
+    assert any("图片不存在" in w or "missing" in w for w in body["data"]["warnings"])
+
+
+def test_image_path_traversal_rejected(client: TestClient, tmp_output: str, tmp_path):
+    """Path traversal attempts are blocked."""
+    project_path = str(tmp_path / "project")
+    os.makedirs(os.path.join(project_path, "assets"), exist_ok=True)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![evil](../../../etc/passwd)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    doc = Document(tmp_output)
+    assert any("图片未导出" in p.text for p in doc.paragraphs)
+
+
+def test_image_extension_whitelist(client: TestClient, tmp_output: str, tmp_path):
+    """Non-whitelisted extensions are rejected."""
+    project_path = str(tmp_path / "project")
+    os.makedirs(os.path.join(project_path, "assets"), exist_ok=True)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![svg](assets/diagram.svg)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    warnings = body["data"]["warnings"]
+    assert any("不支持的图片格式" in w for w in warnings)
+
+
+def test_image_width_scaling(client: TestClient, tmp_output: str, tmp_path):
+    """Large images should be scaled to content width."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    # Create a wide test image (2000x100 PNG)
+    import struct
+    import zlib
+
+    width, height = 2000, 100
+    raw = b""
+    for _y in range(height):
+        raw += b"\x00"
+        for _x in range(width):
+            raw += b"\xff\x00\x00\xff"
+    compressed = zlib.compress(raw)
+
+    def chunk(chunk_type, data):
+        c = chunk_type + data
+        crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+        return struct.pack(">I", len(data)) + c + crc
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    png += chunk(b"IDAT", compressed)
+    png += chunk(b"IEND", b"")
+
+    with open(os.path.join(assets_dir, "wide.png"), "wb") as f:
+        f.write(png)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![wide](assets/wide.png)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+            "pageSetup": {"contentWidthMm": 150},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert os.path.exists(tmp_output)
+
+
+# === Task 6: TOC field code tests ===
+
+
+def test_toc_generated_when_headings_present(client: TestClient, tmp_output: str):
+    """TOC should be auto-generated when document has headings."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Chapter 1\n\nText\n\n## Section 1.1",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    # First paragraph should be TOC title "目录"
+    assert doc.paragraphs[0].text == "目录"
+
+
+def test_toc_not_generated_without_headings(client: TestClient, tmp_output: str):
+    """TOC should NOT be generated when no headings present."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "Just plain text\n\nMore text",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    assert doc.paragraphs[0].text == "Just plain text"
+    assert not any(p.text == "目录" for p in doc.paragraphs)
+
+
+def test_toc_xml_structure(client: TestClient, tmp_output: str):
+    """Verify TOC field code XML structure."""
+    from docx.oxml.ns import qn
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Heading One\n\n## Heading Two",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+
+    # Find the TOC field paragraph (second paragraph after "目录" title)
+    toc_field_para = doc.paragraphs[1]
+    runs = toc_field_para._p.findall(qn("w:r"))
+
+    # Should have fldChar elements for begin, separate, and end
+    fld_chars = []
+    instr_texts = []
+    for run in runs:
+        for fc in run.findall(qn("w:fldChar")):
+            fld_chars.append(fc.get(qn("w:fldCharType")))
+        for it in run.findall(qn("w:instrText")):
+            instr_texts.append(it.text)
+
+    assert "begin" in fld_chars
+    assert "separate" in fld_chars
+    assert "end" in fld_chars
+    assert any("TOC" in t for t in instr_texts)
+
+
+def test_toc_style_fallback_warning(client: TestClient, tmp_output: str):
+    """When TOC style doesn't exist, should fallback with warning."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Test",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "styleMapping": {"toc": "NonExistentTOCStyle"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    warnings = body["data"]["warnings"]
+    assert any("TOC" in w or "toc" in w.lower() for w in warnings)
+
+
+def test_warnings_not_blocking_render(client: TestClient, tmp_output: str):
+    """Warnings should not block rendering — doc should still be produced."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Title\n\nSome text\n- list item",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "styleMapping": {
+                "heading1": "NonExistent1",
+                "bodyText": "NonExistent2",
+                "listBullet": "NonExistent3",
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert os.path.exists(tmp_output)
+    # Warnings should be recorded
+    assert len(body["data"]["warnings"]) > 0

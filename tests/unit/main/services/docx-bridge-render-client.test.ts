@@ -128,6 +128,35 @@ describe('render-client', () => {
       ).rejects.toThrow('渲染请求失败')
     })
 
+    it('sends new fields (styleMapping/pageSetup/projectPath/warnings) in camelCase payload', async () => {
+      const mockResult = {
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 42.5,
+        warnings: ['样式不存在'],
+      }
+      mockFetch.mockResolvedValue({
+        json: () => Promise.resolve({ success: true, data: mockResult }),
+      })
+
+      const input = {
+        markdownContent: '# Hello',
+        outputPath: '/tmp/out.docx',
+        projectId: 'proj-1',
+        styleMapping: { heading1: '标题 1', bodyText: '正文' },
+        pageSetup: { contentWidthMm: 150 },
+        projectPath: '/tmp/project/data',
+      }
+      const result = await renderDocx(input)
+
+      const sentBody = JSON.parse(
+        (mockFetch.mock.calls[0][1] as RequestInit).body as string
+      )
+      expect(sentBody.styleMapping).toEqual({ heading1: '标题 1', bodyText: '正文' })
+      expect(sentBody.pageSetup).toEqual({ contentWidthMm: 150 })
+      expect(sentBody.projectPath).toBe('/tmp/project/data')
+      expect(result.warnings).toEqual(['样式不存在'])
+    })
+
     it('throws DOCX_BRIDGE_UNAVAILABLE when engine not ready', async () => {
       mockGetStatus.mockReturnValue({ ready: false })
 

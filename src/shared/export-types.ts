@@ -1,3 +1,30 @@
+export type TemplateStyleKey =
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'heading4'
+  | 'heading5'
+  | 'heading6'
+  | 'bodyText'
+  | 'table'
+  | 'listBullet'
+  | 'listNumber'
+  | 'caption'
+  | 'codeBlock'
+  | 'toc'
+
+export type TemplateStyleMapping = Partial<Record<TemplateStyleKey, string>>
+
+export interface TemplatePageSetup {
+  contentWidthMm?: number
+}
+
+export interface TemplateMappingConfig {
+  templatePath?: string
+  styles?: TemplateStyleMapping
+  pageSetup?: TemplatePageSetup
+}
+
 export type StartExportPreviewInput = {
   projectId: string
   templatePath?: string
@@ -12,6 +39,7 @@ export type PreviewTaskResult = {
   fileName: string
   pageCount?: number
   renderTimeMs: number
+  warnings?: string[]
 }
 
 export type LoadPreviewContentInput = {

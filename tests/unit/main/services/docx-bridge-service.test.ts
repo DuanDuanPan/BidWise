@@ -130,6 +130,34 @@ describe('docxBridgeService', () => {
       expect(result).toEqual(mockResult)
     })
 
+    it('forwards styleMapping/pageSetup/projectPath to render client', async () => {
+      const mockResult = {
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 42,
+        warnings: ['test warning'],
+      }
+      mockRenderDocxHttp.mockResolvedValue(mockResult)
+
+      const result = await docxBridgeService.renderDocx({
+        markdownContent: '# Test',
+        outputPath: 'output.docx',
+        projectId: 'proj-1',
+        styleMapping: { heading1: '标题 1' },
+        pageSetup: { contentWidthMm: 150 },
+        projectPath: '/tmp/project',
+      })
+
+      expect(mockRenderDocxHttp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          styleMapping: { heading1: '标题 1' },
+          pageSetup: { contentWidthMm: 150 },
+          projectPath: '/tmp/project',
+        }),
+        undefined
+      )
+      expect(result.warnings).toEqual(['test warning'])
+    })
+
     it('passes abort options through to the render client', async () => {
       const controller = new AbortController()
       mockRenderDocxHttp.mockResolvedValue({ outputPath: '/tmp/out.docx', renderTimeMs: 42 })

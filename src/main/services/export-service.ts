@@ -1,6 +1,6 @@
 import { join, basename, relative, isAbsolute } from 'path'
-import { readFile, writeFile, copyFile, rm, readdir, stat, mkdir } from 'fs/promises'
-import { dialog } from 'electron'
+import { readFile, writeFile, copyFile, rm, readdir, stat, mkdir, access } from 'fs/promises'
+import { dialog, app } from 'electron'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError, ValidationError } from '@main/utils/errors'
 import { ErrorCode } from '@shared/constants'
@@ -19,6 +19,8 @@ import type {
   ConfirmExportOutput,
   CleanupPreviewInput,
   PreviewTaskResult,
+  TemplateStyleMapping,
+  TemplatePageSetup,
 } from '@shared/export-types'
 
 const logger = createLogger('export-service')
@@ -110,30 +112,98 @@ function validateTempPath(projectId: string, tempPath: string): void {
   }
 }
 
-async function resolveTemplatePath(
+export type ResolvedTemplateMapping = {
+  templatePath?: string
+  styleMapping?: TemplateStyleMapping
+  pageSetup?: TemplatePageSetup
+  warnings: string[]
+}
+
+async function resolveRelativeTemplatePath(
+  relativePath: string,
+  projectId: string
+): Promise<string> {
+  const candidates = [
+    join(app.getAppPath(), relativePath),
+    join(app.getPath('userData'), relativePath),
+    join(resolveProjectDataPath(projectId), relativePath),
+  ]
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  // Return first candidate so Python reports TEMPLATE_NOT_FOUND with an absolute path
+  return candidates[0]
+}
+
+async function resolveTemplateMapping(
   projectId: string,
   inputTemplatePath?: string
-): Promise<string | undefined> {
-  if (inputTemplatePath) return inputTemplatePath
+): Promise<ResolvedTemplateMapping> {
+  const warnings: string[] = []
 
+  if (inputTemplatePath) {
+    return { templatePath: inputTemplatePath, warnings }
+  }
+
+  let raw: string
   try {
     const projectRoot = resolveProjectDataPath(projectId)
     const mappingPath = join(projectRoot, 'template-mapping.json')
-    const raw = await readFile(mappingPath, 'utf-8')
-    const parsed: unknown = JSON.parse(raw)
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed) &&
-      'templatePath' in parsed &&
-      typeof (parsed as Record<string, unknown>).templatePath === 'string'
-    ) {
-      return (parsed as Record<string, string>).templatePath
-    }
+    raw = await readFile(mappingPath, 'utf-8')
   } catch {
-    // No template-mapping.json or invalid — fall back to no template
+    // No template-mapping.json — allowed, fall back to defaults
+    return { warnings }
   }
-  return undefined
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    throw new ValidationError(
+      `template-mapping.json 格式错误: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ValidationError('template-mapping.json 必须是一个 JSON 对象')
+  }
+
+  const obj = parsed as Record<string, unknown>
+
+  // Resolve templatePath
+  let templatePath: string | undefined
+  if (typeof obj.templatePath === 'string' && obj.templatePath.length > 0) {
+    const rawPath = obj.templatePath
+    if (isAbsolute(rawPath)) {
+      templatePath = rawPath
+    } else {
+      templatePath = await resolveRelativeTemplatePath(rawPath, projectId)
+    }
+  }
+
+  // Parse styles
+  let styleMapping: TemplateStyleMapping | undefined
+  if (obj.styles && typeof obj.styles === 'object' && !Array.isArray(obj.styles)) {
+    styleMapping = obj.styles as TemplateStyleMapping
+  }
+
+  // Parse pageSetup
+  let pageSetup: TemplatePageSetup | undefined
+  if (obj.pageSetup && typeof obj.pageSetup === 'object' && !Array.isArray(obj.pageSetup)) {
+    const ps = obj.pageSetup as Record<string, unknown>
+    if (typeof ps.contentWidthMm === 'number') {
+      pageSetup = { contentWidthMm: ps.contentWidthMm }
+    }
+  }
+
+  return { templatePath, styleMapping, pageSetup, warnings }
 }
 
 async function cleanupPreviewFiles(projectId: string, specificPath?: string): Promise<void> {
@@ -199,7 +269,8 @@ export const exportService = {
         }
 
         ctx.updateProgress(30, '正在解析模板')
-        const templatePath = await resolveTemplatePath(input.projectId, input.templatePath)
+        const mapping = await resolveTemplateMapping(input.projectId, input.templatePath)
+        const projectPath = resolveProjectDataPath(input.projectId)
 
         ctx.updateProgress(50, '正在生成 docx 预览')
         const timestamp = Date.now()
@@ -221,8 +292,11 @@ export const exportService = {
               {
                 markdownContent: doc.content,
                 outputPath,
-                templatePath,
+                templatePath: mapping.templatePath,
                 projectId: input.projectId,
+                styleMapping: mapping.styleMapping,
+                pageSetup: mapping.pageSetup,
+                projectPath,
               },
               { signal: ctx.signal }
             )
@@ -241,11 +315,13 @@ export const exportService = {
 
         ctx.updateProgress(100, 'completed')
 
+        const allWarnings = [...mapping.warnings, ...(renderResult.warnings ?? [])]
         const result: PreviewTaskResult = {
           tempPath: renderResult.outputPath,
           fileName,
           pageCount: renderResult.pageCount,
           renderTimeMs: renderResult.renderTimeMs,
+          warnings: allWarnings.length > 0 ? allWarnings : undefined,
         }
         return result
       })

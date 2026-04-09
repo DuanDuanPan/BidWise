@@ -29,8 +29,13 @@ const mockRm = vi.fn()
 const mockReaddir = vi.fn()
 const mockStat = vi.fn()
 
+const mockAccess = vi.fn()
+
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/bidwise-test' },
+  app: {
+    getPath: (name: string) => (name === 'userData' ? '/tmp/bidwise-test' : '/tmp/bidwise-test'),
+    getAppPath: () => '/tmp/bidwise-app',
+  },
   dialog: mockDialog,
 }))
 
@@ -69,6 +74,7 @@ vi.mock('fs/promises', () => ({
   rm: (...args: unknown[]) => mockRm(...args),
   readdir: (...args: unknown[]) => mockReaddir(...args),
   stat: (...args: unknown[]) => mockStat(...args),
+  access: (...args: unknown[]) => mockAccess(...args),
 }))
 
 import { exportService } from '@main/services/export-service'
@@ -208,7 +214,7 @@ describe('exportService', () => {
         lastSavedAt: '2026-04-09T00:00:00Z',
         version: 1,
       })
-      // Return a valid template-mapping.json
+      // Return a valid template-mapping.json with absolute templatePath
       mockReadFile.mockResolvedValue(JSON.stringify({ templatePath: '/path/to/template.docx' }))
       mockDocxBridgeService.renderDocx.mockResolvedValue({
         outputPath: '/tmp/out.docx',
@@ -220,6 +226,227 @@ describe('exportService', () => {
       expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
         expect.objectContaining({
           templatePath: '/path/to/template.docx',
+        }),
+        { signal: controller.signal }
+      )
+    })
+
+    it('executor resolves full mapping config with styles and pageSetup', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-full-mapping')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Full Mapping',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({
+          templatePath: '/abs/template.docx',
+          styles: { heading1: '标题 1', bodyText: '正文' },
+          pageSetup: { contentWidthMm: 150 },
+        })
+      )
+      mockDocxBridgeService.renderDocx.mockResolvedValue({
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 50,
+      })
+
+      await capturedExecutor!(mockCtx)
+
+      expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          styleMapping: { heading1: '标题 1', bodyText: '正文' },
+          pageSetup: { contentWidthMm: 150 },
+          projectPath: expect.stringContaining('proj-1'),
+        }),
+        { signal: controller.signal }
+      )
+    })
+
+    it('executor handles legacy format (only templatePath)', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-legacy')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Legacy',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      // Legacy format: only templatePath
+      mockReadFile.mockResolvedValue(JSON.stringify({ templatePath: '/legacy/template.docx' }))
+      mockDocxBridgeService.renderDocx.mockResolvedValue({
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 30,
+      })
+
+      await capturedExecutor!(mockCtx)
+
+      expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templatePath: '/legacy/template.docx',
+          styleMapping: undefined,
+          pageSetup: undefined,
+        }),
+        { signal: controller.signal }
+      )
+    })
+
+    it('executor throws ValidationError on invalid JSON in template-mapping.json', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-bad-json')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Bad JSON',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      mockReadFile.mockResolvedValue('not valid json {{{')
+
+      await expect(capturedExecutor!(mockCtx)).rejects.toThrow('template-mapping.json 格式错误')
+    })
+
+    it('executor throws ValidationError on non-object JSON (array)', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-array-json')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Array',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      mockReadFile.mockResolvedValue('[1, 2, 3]')
+
+      await expect(capturedExecutor!(mockCtx)).rejects.toThrow(
+        'template-mapping.json 必须是一个 JSON 对象'
+      )
+    })
+
+    it('executor resolves relative templatePath using candidate paths', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-rel-path')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Relative',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({ templatePath: 'company-data/templates/standard.docx' })
+      )
+      // First candidate (appPath) fails, second candidate (userData) succeeds
+      mockAccess
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockResolvedValueOnce(undefined)
+      mockDocxBridgeService.renderDocx.mockResolvedValue({
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 20,
+      })
+
+      await capturedExecutor!(mockCtx)
+
+      expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templatePath: '/tmp/bidwise-test/company-data/templates/standard.docx',
+        }),
+        { signal: controller.signal }
+      )
+    })
+
+    it('executor falls back to first candidate path when no candidate exists', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-no-candidate')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# No candidate',
+        lastSavedAt: '2026-04-09T00:00:00Z',
+        version: 1,
+      })
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({ templatePath: 'company-data/missing.docx' })
+      )
+      // All candidates fail
+      mockAccess
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockRejectedValueOnce(new Error('ENOENT'))
+      mockDocxBridgeService.renderDocx.mockResolvedValue({
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 10,
+      })
+
+      await capturedExecutor!(mockCtx)
+
+      // Falls back to first candidate (appPath)
+      expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templatePath: '/tmp/bidwise-app/company-data/missing.docx',
         }),
         { signal: controller.signal }
       )
