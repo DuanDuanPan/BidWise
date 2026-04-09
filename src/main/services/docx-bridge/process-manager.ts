@@ -16,6 +16,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 5_000
 const MAX_CONSECUTIVE_FAILURES = 3
 
 function resolvePythonExecutable(): string {
+  if (process.env.BIDWISE_PYTHON_EXE) return process.env.BIDWISE_PYTHON_EXE
   if (is.dev) {
     const cwd = resolve(app.getAppPath(), 'python')
     const venvBin = process.platform === 'win32' ? 'Scripts' : 'bin'

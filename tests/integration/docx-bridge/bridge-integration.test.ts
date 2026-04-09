@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { join, resolve } from 'path'
 import { existsSync, mkdirSync, rmSync } from 'fs'
 
@@ -9,9 +9,31 @@ const STARTUP_TIMEOUT = 30_000
 const TMP_DIR = resolve(__dirname, '../../../test-results/integration-docx')
 
 function resolvePythonExe(): string {
-  // Prefer venv Python if available
-  const venvPython = join(PYTHON_CWD, '.venv', 'bin', 'python3')
+  // 1. Explicit override (CI, worktrees, custom setups)
+  if (process.env.BIDWISE_PYTHON_EXE) return process.env.BIDWISE_PYTHON_EXE
+
+  // 2. Local venv
+  const venvBin = process.platform === 'win32' ? 'Scripts' : 'bin'
+  const venvExeName = process.platform === 'win32' ? 'python.exe' : 'python3'
+  const venvPython = join(PYTHON_CWD, '.venv', venvBin, venvExeName)
   if (existsSync(venvPython)) return venvPython
+
+  // 3. Main worktree venv (for git worktree checkouts where .venv is gitignored)
+  try {
+    const result = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: PYTHON_CWD,
+      encoding: 'utf8',
+    })
+    if (result.status === 0) {
+      const mainRoot = resolve(result.stdout.trim(), '..')
+      const mainVenv = join(mainRoot, 'python', '.venv', venvBin, venvExeName)
+      if (existsSync(mainVenv)) return mainVenv
+    }
+  } catch {
+    // git not available — skip
+  }
+
+  // 4. System Python (last resort)
   return process.platform === 'win32' ? 'python' : 'python3'
 }
 
@@ -29,13 +51,18 @@ function startPythonProcess(): Promise<{ port: number; pid: number }> {
     })
 
     pythonProcess = child
+    let settled = false
 
     const timeout = setTimeout(() => {
       child.kill('SIGKILL')
-      reject(new Error('Python process did not emit READY within timeout'))
+      if (!settled) {
+        settled = true
+        reject(new Error('Python process did not emit READY within timeout'))
+      }
     }, STARTUP_TIMEOUT)
 
     let stdoutBuffer = ''
+    let stderrBuffer = ''
 
     child.stdout!.on('data', (data: Buffer) => {
       stdoutBuffer += data.toString()
@@ -48,14 +75,17 @@ function startPythonProcess(): Promise<{ port: number; pid: number }> {
           clearTimeout(timeout)
           const port = parseInt(match[1], 10)
           actualPort = port
-          resolve({ port, pid: child.pid! })
+          if (!settled) {
+            settled = true
+            resolve({ port, pid: child.pid! })
+          }
           return
         }
       }
     })
 
     child.stderr!.on('data', (data: Buffer) => {
-      // Suppress stderr in test output unless debugging
+      stderrBuffer += data.toString()
       if (process.env.DEBUG) {
         console.error(`[Python stderr] ${data.toString().trim()}`)
       }
@@ -63,7 +93,20 @@ function startPythonProcess(): Promise<{ port: number; pid: number }> {
 
     child.on('error', (err) => {
       clearTimeout(timeout)
-      reject(err)
+      if (!settled) {
+        settled = true
+        reject(err)
+      }
+    })
+
+    // Fail fast if Python exits before emitting READY
+    child.on('exit', (code) => {
+      clearTimeout(timeout)
+      if (!settled) {
+        settled = true
+        const detail = stderrBuffer.trim() ? `\nstderr: ${stderrBuffer.trim()}` : ''
+        reject(new Error(`Python process exited before READY (code=${code})${detail}`))
+      }
     })
   })
 }
