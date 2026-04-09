@@ -149,7 +149,11 @@ async function resolveTemplateMapping(
   const warnings: string[] = []
 
   if (inputTemplatePath) {
-    return { templatePath: inputTemplatePath, warnings }
+    let resolvedInput = inputTemplatePath
+    if (!isAbsolute(inputTemplatePath)) {
+      resolvedInput = await resolveRelativeTemplatePath(inputTemplatePath, projectId)
+    }
+    return { templatePath: resolvedInput, warnings }
   }
 
   let raw: string

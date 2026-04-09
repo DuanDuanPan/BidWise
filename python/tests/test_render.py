@@ -636,6 +636,92 @@ def test_toc_style_fallback_warning(client: TestClient, tmp_output: str):
     assert any("TOC" in w or "toc" in w.lower() for w in warnings)
 
 
+def test_inline_code_uses_style_mapping(client: TestClient, tmp_output: str, tmp_path):
+    """Inline code should use codeBlock style from style_mapping when available in template."""
+    # Create template with a character style named "CodeChar"
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "code-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("CodeChar", WD_STYLE_TYPE.CHARACTER)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "Use `print()` here",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"codeBlock": "CodeChar"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    code_runs = [r for r in para.runs if r.text == "print()"]
+    assert len(code_runs) == 1
+    assert code_runs[0].style.name == "CodeChar"
+
+
+def test_inline_code_fallback_without_style(client: TestClient, tmp_output: str):
+    """Inline code should fallback to Courier New when codeBlock style does not exist."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "Use `print()` here",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "styleMapping": {"codeBlock": "NonExistentCodeStyle"},
+        },
+    )
+    assert response.status_code == 200
+    doc = Document(tmp_output)
+    para = doc.paragraphs[0]
+    code_runs = [r for r in para.runs if r.font.name == "Courier New"]
+    assert len(code_runs) == 1
+    assert code_runs[0].text == "print()"
+
+
+def test_image_symlink_outside_assets_rejected(client: TestClient, tmp_output: str, tmp_path):
+    """Symlink inside assets/ pointing outside project should be rejected."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    # Create a file outside the project
+    outside_file = str(tmp_path / "secret.png")
+    with open(outside_file, "wb") as f:
+        # Minimal valid PNG header
+        f.write(b"\x89PNG\r\n\x1a\n")
+
+    # Create symlink inside assets pointing to outside file
+    symlink_path = os.path.join(assets_dir, "linked.png")
+    os.symlink(outside_file, symlink_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "![linked](assets/linked.png)",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    # Should have a warning about the image being outside assets
+    warnings = body["data"]["warnings"]
+    assert any("assets" in w for w in warnings)
+    # Should have placeholder text, not the image content
+    doc = Document(tmp_output)
+    assert any("图片未导出" in p.text for p in doc.paragraphs)
+
+
 def test_warnings_not_blocking_render(client: TestClient, tmp_output: str):
     """Warnings should not block rendering — doc should still be produced."""
     response = client.post(

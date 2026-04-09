@@ -2,10 +2,12 @@ import { describe, it, expect, afterAll } from 'vitest'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { join, resolve } from 'path'
 import { existsSync, mkdirSync, rmSync } from 'fs'
+import type { RenderDocxInput, RenderDocxOutput } from '@shared/docx-types'
 
 const PYTHON_CWD = resolve(__dirname, '../../../python')
 const PYTHON_SRC = join(PYTHON_CWD, 'src')
 const STARTUP_TIMEOUT = 30_000
+const RENDER_TIMEOUT_MS = 60_000
 const TMP_DIR = resolve(__dirname, '../../../test-results/integration-rich-export')
 
 function resolvePythonExe(): string {
@@ -103,7 +105,42 @@ function startPythonProcess(): Promise<{ port: number; pid: number }> {
   })
 }
 
-describe('rich-export integration (Node.js → Python full payload)', () => {
+/**
+ * Mirrors the contract of src/main/services/docx-bridge/render-client.ts renderDocx():
+ * same JSON body format, same timeout, same response parsing and error discrimination.
+ * This allows the integration test to validate the wire protocol that docx-bridge uses
+ * without importing the module (which depends on Electron processManager).
+ */
+async function renderDocxViaHttp(
+  port: number,
+  input: RenderDocxInput
+): Promise<RenderDocxOutput> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('DOCX_RENDER_TIMEOUT')), RENDER_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/render-documents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    })
+
+    const json = (await response.json()) as
+      | { success: true; data: RenderDocxOutput }
+      | { success: false; error: { code: string; message: string } }
+
+    if (!json.success) {
+      throw new Error(`Render failed [${json.error.code}]: ${json.error.message}`)
+    }
+
+    return json.data
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+describe('rich-export integration (Node.js → Python via docx-bridge protocol)', () => {
   it(
     'starts Python process',
     async () => {
@@ -113,71 +150,65 @@ describe('rich-export integration (Node.js → Python full payload)', () => {
     STARTUP_TIMEOUT
   )
 
-  it('renders with styleMapping/pageSetup/projectPath and returns warnings', async () => {
+  it('renders with styleMapping/pageSetup/projectPath via docx-bridge protocol', async () => {
     expect(actualPort).not.toBeNull()
 
     mkdirSync(TMP_DIR, { recursive: true })
     const outputPath = join(TMP_DIR, 'rich-export.docx')
 
-    const response = await fetch(`http://127.0.0.1:${actualPort}/api/render-documents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        markdownContent:
-          '# 第一章 方案概述\n\n这是 **加粗** 和 *斜体* 正文。\n\n## 1.1 技术方案\n\n- 要点一\n- 要点二\n\n```python\ndef hello():\n    pass\n```\n\n| 项目 | 说明 |\n| --- | --- |\n| A | B |\n',
-        outputPath,
-        projectId: 'rich-test',
-        styleMapping: {
-          heading1: 'NonExistentH1',
-          bodyText: '正文',
-        },
-        pageSetup: { contentWidthMm: 150 },
-        projectPath: TMP_DIR,
-      }),
-    })
-
-    const body = (await response.json()) as {
-      success: boolean
-      data: {
-        outputPath: string
-        renderTimeMs: number
-        warnings: string[]
-      }
+    const input: RenderDocxInput = {
+      markdownContent:
+        '# 第一章 方案概述\n\n这是 **加粗** 和 *斜体* 正文。\n\n## 1.1 技术方案\n\n- 要点一\n- 要点二\n\n```python\ndef hello():\n    pass\n```\n\n| 项目 | 说明 |\n| --- | --- |\n| A | B |\n',
+      outputPath,
+      projectId: 'rich-test',
+      styleMapping: {
+        heading1: 'NonExistentH1',
+        bodyText: '正文',
+      },
+      pageSetup: { contentWidthMm: 150 },
+      projectPath: TMP_DIR,
     }
 
-    expect(body.success).toBe(true)
-    expect(body.data.outputPath).toBe(outputPath)
+    const data = await renderDocxViaHttp(actualPort!, input)
+
+    expect(data.outputPath).toBe(outputPath)
     expect(existsSync(outputPath)).toBe(true)
-    expect(body.data.renderTimeMs).toBeGreaterThanOrEqual(0)
+    expect(data.renderTimeMs).toBeGreaterThanOrEqual(0)
     // Should have warnings about missing styles
-    expect(body.data.warnings).toBeDefined()
-    expect(body.data.warnings.length).toBeGreaterThan(0)
-    expect(body.data.warnings.some((w: string) => w.includes('NonExistentH1'))).toBe(true)
+    expect(data.warnings).toBeDefined()
+    expect(data.warnings!.length).toBeGreaterThan(0)
+    expect(data.warnings!.some((w: string) => w.includes('NonExistentH1'))).toBe(true)
   })
 
-  it('renders with camelCase fields in request', async () => {
+  it('renders with camelCase fields via docx-bridge protocol', async () => {
     expect(actualPort).not.toBeNull()
     const outputPath = join(TMP_DIR, 'camel-case-test.docx')
 
-    const response = await fetch(`http://127.0.0.1:${actualPort}/api/render-documents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        markdownContent: '# Test',
-        outputPath,
-        projectId: 'camel-test',
-        styleMapping: { heading1: 'Heading 1' },
-        pageSetup: { contentWidthMm: 160 },
-      }),
-    })
-
-    const body = (await response.json()) as {
-      success: boolean
-      data: { warnings: string[] }
+    const input: RenderDocxInput = {
+      markdownContent: '# Test',
+      outputPath,
+      projectId: 'camel-test',
+      styleMapping: { heading1: 'Heading 1' },
+      pageSetup: { contentWidthMm: 160 },
     }
-    expect(body.success).toBe(true)
-    // Check camelCase response fields
-    expect(Array.isArray(body.data.warnings)).toBe(true)
+
+    const data = await renderDocxViaHttp(actualPort!, input)
+
+    expect(Array.isArray(data.warnings)).toBe(true)
+  })
+
+  it('returns structured error for invalid template via docx-bridge protocol', async () => {
+    expect(actualPort).not.toBeNull()
+    const outputPath = join(TMP_DIR, 'error-test.docx')
+
+    const input: RenderDocxInput = {
+      markdownContent: '# Test',
+      outputPath,
+      projectId: 'error-test',
+      templatePath: '/nonexistent/template.docx',
+    }
+
+    await expect(renderDocxViaHttp(actualPort!, input)).rejects.toThrow('TEMPLATE_NOT_FOUND')
   })
 
   afterAll(() => {

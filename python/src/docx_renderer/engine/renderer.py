@@ -109,8 +109,15 @@ def _append_inline_runs(
     text: str,
     style_mapping: Optional[StyleMapping],
     warnings: list[str],
+    doc: Optional[Document] = None,
 ) -> None:
     """Parse inline Markdown formatting and append runs to a paragraph."""
+    # Resolve inline code style once: prefer style_mapping.code_block as character style
+    inline_code_style: Optional[str] = None
+    code_style_name = _get_style_key(style_mapping, "code_block")
+    if code_style_name and doc and _style_exists(doc, code_style_name):
+        inline_code_style = code_style_name
+
     pos = 0
     for m in _INLINE_PATTERN.finditer(text):
         # Add text before match as a plain run
@@ -130,7 +137,10 @@ def _append_inline_runs(
         elif m.group(7):  # inline code (`)
             code_text = m.group(8)
             run = paragraph.add_run(code_text)
-            run.font.name = _CODE_FONT
+            if inline_code_style:
+                run.style = doc.styles[inline_code_style]
+            else:
+                run.font.name = _CODE_FONT
 
         pos = m.end()
 
@@ -203,19 +213,19 @@ def _handle_image(
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
         return
 
-    # Resolve image path
+    # Resolve image path — use realpath to follow symlinks for security
     if project_path and not os.path.isabs(image_path_raw):
-        resolved = os.path.normpath(os.path.join(project_path, image_path_raw))
-        # Security: ensure resolved path is under {project_path}/assets/
-        assets_dir = os.path.normpath(os.path.join(project_path, "assets"))
+        resolved = os.path.realpath(os.path.join(project_path, image_path_raw))
+        # Security: ensure real path is under {project_path}/assets/
+        assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
         if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
             warnings.append(f"图片路径不在 assets/ 目录下: {image_path_raw}")
             doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
             return
     elif os.path.isabs(image_path_raw):
-        resolved = os.path.normpath(image_path_raw)
+        resolved = os.path.realpath(image_path_raw)
         if project_path:
-            assets_dir = os.path.normpath(os.path.join(project_path, "assets"))
+            assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
             if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
                 warnings.append(f"绝对路径图片不在 assets/ 目录下: {image_path_raw}")
                 doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
@@ -226,14 +236,7 @@ def _handle_image(
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
         return
 
-    # Check path traversal (.. components)
-    rel_from_project = os.path.relpath(resolved, project_path) if project_path else ""
-    if ".." in rel_from_project.split(os.sep):
-        warnings.append(f"图片路径包含路径穿越: {image_path_raw}")
-        doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-        return
-
-    # Check file exists
+    # Check file exists (resolved is already a realpath)
     if not os.path.exists(resolved):
         warnings.append(f"图片文件不存在: {resolved}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
@@ -450,10 +453,10 @@ def _parse_markdown(
             resolved = _resolve_paragraph_style(doc, configured, fallback, warnings)
             if resolved:
                 p = doc.add_paragraph(style=resolved)
-                _append_inline_runs(p, text, style_mapping, warnings)
+                _append_inline_runs(p, text, style_mapping, warnings, doc)
             else:
                 p = doc.add_paragraph()
-                _append_inline_runs(p, text, style_mapping, warnings)
+                _append_inline_runs(p, text, style_mapping, warnings, doc)
             i += 1
             continue
 
@@ -474,7 +477,7 @@ def _parse_markdown(
             configured = _get_style_key(style_mapping, "list_bullet")
             resolved = _resolve_paragraph_style(doc, configured, "List Bullet", warnings)
             p = doc.add_paragraph(style=resolved)
-            _append_inline_runs(p, ul_match.group(1), style_mapping, warnings)
+            _append_inline_runs(p, ul_match.group(1), style_mapping, warnings, doc)
             i += 1
             continue
 
@@ -484,7 +487,7 @@ def _parse_markdown(
             configured = _get_style_key(style_mapping, "list_number")
             resolved = _resolve_paragraph_style(doc, configured, "List Number", warnings)
             p = doc.add_paragraph(style=resolved)
-            _append_inline_runs(p, ol_match.group(1), style_mapping, warnings)
+            _append_inline_runs(p, ol_match.group(1), style_mapping, warnings, doc)
             i += 1
             continue
 
@@ -497,7 +500,7 @@ def _parse_markdown(
         configured = _get_style_key(style_mapping, "body_text")
         resolved = _resolve_paragraph_style(doc, configured, "Normal", warnings) if configured else None
         p = doc.add_paragraph(style=resolved)
-        _append_inline_runs(p, line, style_mapping, warnings)
+        _append_inline_runs(p, line, style_mapping, warnings, doc)
         i += 1
 
     # Insert TOC if there are headings
@@ -542,4 +545,4 @@ def _parse_table(
                 # Clear default paragraph and use inline formatting
                 cell.text = ""
                 p = cell.paragraphs[0]
-                _append_inline_runs(p, cell_text, style_mapping, warnings if warnings else [])
+                _append_inline_runs(p, cell_text, style_mapping, warnings if warnings else [], doc)
