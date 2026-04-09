@@ -9,7 +9,10 @@ const APP_ENTRY = resolve(__dirname, '../../../out/main/index.js')
 
 test.setTimeout(120_000)
 
-async function withIsolatedApp(run: (window: Page) => Promise<void>): Promise<void> {
+async function withIsolatedApp(
+  run: (window: Page) => Promise<void>,
+  extraEnv?: Record<string, string>
+): Promise<void> {
   const testHome = mkdtempSync(join(tmpdir(), 'bidwise-story-8-2-'))
   const electronApp = await electron.launch({
     args: [APP_ENTRY],
@@ -22,6 +25,7 @@ async function withIsolatedApp(run: (window: Page) => Promise<void>): Promise<vo
       XDG_CONFIG_HOME: join(testHome, '.config'),
       XDG_DATA_HOME: join(testHome, '.local', 'share'),
       BIDWISE_USER_DATA_DIR: join(testHome, 'bidwise-data'),
+      ...extraEnv,
     },
   })
 
@@ -154,23 +158,22 @@ test('@story-8-2 @p1 Escape closes error/ready modal', async () => {
 })
 
 test('@story-8-2 @p1 cancel during loading dismisses overlay', async () => {
-  await withIsolatedApp(async (window) => {
-    await createProjectAndNavigate(window)
+  await withIsolatedApp(
+    async (window) => {
+      await createProjectAndNavigate(window)
 
-    await window.getByTestId('preview-btn').click()
+      await window.getByTestId('preview-btn').click()
 
-    // Wait for loading overlay to appear
-    const overlay = window.getByTestId('export-preview-loading-overlay')
-    const errorAlert = window.getByTestId('preview-error-alert')
-    await expect(overlay.or(errorAlert)).toBeVisible({ timeout: 10_000 })
+      // E2E delay guarantees the loading overlay stays visible long enough to cancel
+      const overlay = window.getByTestId('export-preview-loading-overlay')
+      await expect(overlay).toBeVisible({ timeout: 10_000 })
 
-    // If still in loading state, cancel it
-    if (await overlay.isVisible().catch(() => false)) {
       await window.getByTestId('cancel-preview-btn').click()
       await expect(overlay).not.toBeVisible({ timeout: 5_000 })
-    }
 
-    // Workspace should still be functional
-    await expect(window.getByTestId('project-workspace')).toBeVisible()
-  })
+      // Workspace should still be functional
+      await expect(window.getByTestId('project-workspace')).toBeVisible()
+    },
+    { BIDWISE_E2E_EXPORT_PREVIEW_DELAY_MS: '5000' }
+  )
 })

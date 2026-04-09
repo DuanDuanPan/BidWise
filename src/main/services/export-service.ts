@@ -25,6 +25,30 @@ const logger = createLogger('export-service')
 
 const PREVIEW_FILE_PATTERN = /^\.preview-\d+\.docx$/
 
+async function maybeDelayForE2E(signal?: AbortSignal): Promise<void> {
+  const delayMs = Number.parseInt(process.env.BIDWISE_E2E_EXPORT_PREVIEW_DELAY_MS ?? '0', 10)
+  if (!Number.isFinite(delayMs) || delayMs <= 0) return
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, delayMs)
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timer)
+        reject(signal.reason)
+        return
+      }
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer)
+          reject(signal.reason)
+        },
+        { once: true }
+      )
+    }
+  })
+}
+
 /** Active preview task per project — used to cancel stale tasks on re-trigger */
 const activePreviewTasks = new Map<string, string>()
 
@@ -124,6 +148,7 @@ export const exportService = {
     // Fire-and-forget execution
     taskQueue
       .execute(taskId, async (ctx) => {
+        await maybeDelayForE2E(ctx.signal)
         ctx.updateProgress(10, '正在加载方案')
 
         const doc = await documentService.load(input.projectId)
