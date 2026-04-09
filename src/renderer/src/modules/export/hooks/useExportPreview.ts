@@ -161,6 +161,11 @@ export function useExportPreview(): UseExportPreviewReturn {
   const triggerPreview = useCallback(
     async (projectId: string) => {
       cleanupSubscription()
+      // Cancel the previous in-flight task if known (defense-in-depth with main-process cancellation)
+      const previousTaskId = currentTaskIdRef.current
+      if (previousTaskId) {
+        window.api.taskCancel(previousTaskId).catch(() => {})
+      }
       currentTaskIdRef.current = null
       const requestId = ++requestIdRef.current
 
@@ -177,7 +182,13 @@ export function useExportPreview(): UseExportPreviewReturn {
         const res = await window.api.exportPreview({ projectId })
 
         // Guard: if cancelled, closed, unmounted, or a new request started during the await, bail
-        if (requestIdRef.current !== requestId) return
+        if (requestIdRef.current !== requestId) {
+          // Cancel the orphaned task to free task-queue slot and prevent orphan files
+          if (res.success) {
+            window.api.taskCancel(res.data.taskId).catch(() => {})
+          }
+          return
+        }
 
         if (!res.success) {
           const errMsg = !res.success && 'error' in res ? res.error.message : '启动预览失败'

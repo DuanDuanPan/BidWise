@@ -24,6 +24,9 @@ const logger = createLogger('export-service')
 
 const PREVIEW_FILE_PATTERN = /^\.preview-\d+\.docx$/
 
+/** Active preview task per project — used to cancel stale tasks on re-trigger */
+const activePreviewTasks = new Map<string, string>()
+
 function getExportsDir(projectId: string): string {
   return join(resolveProjectDataPath(projectId), 'exports')
 }
@@ -98,6 +101,15 @@ async function cleanupPreviewFiles(projectId: string, specificPath?: string): Pr
 
 export const exportService = {
   async startPreview(input: StartExportPreviewInput): Promise<StartExportPreviewOutput> {
+    // Cancel any in-flight preview for the same project
+    const previousTaskId = activePreviewTasks.get(input.projectId)
+    if (previousTaskId) {
+      taskQueue.cancel(previousTaskId).catch(() => {
+        // Task may already be completed/cancelled — safe to ignore
+      })
+      logger.info(`已取消旧预览任务: ${previousTaskId} (项目: ${input.projectId})`)
+    }
+
     // Clean up old preview files first
     await cleanupPreviewFiles(input.projectId)
 
@@ -105,6 +117,8 @@ export const exportService = {
       category: 'export',
       input: { projectId: input.projectId },
     })
+
+    activePreviewTasks.set(input.projectId, taskId)
 
     // Fire-and-forget execution
     taskQueue
@@ -143,6 +157,12 @@ export const exportService = {
       })
       .catch((err) => {
         logger.error(`预览任务失败: ${taskId}`, err)
+      })
+      .finally(() => {
+        // Remove from active map only if this task is still the current one
+        if (activePreviewTasks.get(input.projectId) === taskId) {
+          activePreviewTasks.delete(input.projectId)
+        }
       })
 
     return { taskId }
