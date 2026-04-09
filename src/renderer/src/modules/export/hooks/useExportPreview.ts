@@ -161,6 +161,7 @@ export function useExportPreview(): UseExportPreviewReturn {
   const triggerPreview = useCallback(
     async (projectId: string) => {
       cleanupSubscription()
+      currentTaskIdRef.current = null
       const requestId = ++requestIdRef.current
 
       setState({
