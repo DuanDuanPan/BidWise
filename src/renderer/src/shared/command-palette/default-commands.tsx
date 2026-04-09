@@ -30,17 +30,15 @@ export function createDefaultCommands(
     action: () => navigate('/'),
   })
 
-  // 操作类：导出文档占位 (AC3)
+  // 操作类：导出预览（需在项目工作空间内使用，workspace 挂载时会用真实命令覆盖）
   commands.push({
     id: 'command-palette:export-document',
-    label: '导出文档',
+    label: '导出预览',
     category: 'action',
-    keywords: ['导出', '文档', 'export', 'docx'],
+    keywords: ['导出', '预览', '文档', 'export', 'preview', 'docx'],
     icon: <ExportOutlined />,
     shortcut: formatShortcut('Ctrl+E'),
-    action: () => messageApi.info('导出功能即将推出', 2),
-    disabled: true,
-    badge: '即将推出',
+    action: () => messageApi.info('请先进入项目工作空间再使用导出预览', 2),
   })
 
   // 操作类：批注面板切换（Story 1-7 未合并，disabled 占位）

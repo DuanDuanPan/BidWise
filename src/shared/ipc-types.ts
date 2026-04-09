@@ -110,6 +110,15 @@ import type {
 } from './drawio-types'
 import type { RenderDocxInput, RenderDocxOutput, DocxHealthData } from './docx-types'
 import type {
+  StartExportPreviewInput,
+  StartExportPreviewOutput,
+  LoadPreviewContentInput,
+  LoadPreviewContentOutput,
+  ConfirmExportInput,
+  ConfirmExportOutput,
+  CleanupPreviewInput,
+} from './export-types'
+import type {
   SaveMermaidAssetInput,
   SaveMermaidAssetOutput,
   DeleteMermaidAssetInput,
@@ -261,6 +270,10 @@ export const IPC_CHANNELS = {
   NOTIFICATION_MARK_ALL_READ: 'notification:mark-all-read',
   NOTIFICATION_COUNT_UNREAD: 'notification:count-unread',
   NOTIFICATION_NEW_EVENT: 'notification:new',
+  EXPORT_PREVIEW: 'export:preview',
+  EXPORT_LOAD_PREVIEW: 'export:load-preview',
+  EXPORT_CONFIRM: 'export:confirm',
+  EXPORT_CLEANUP_PREVIEW: 'export:cleanup-preview',
 } as const
 
 /** Filter for task:list queries */
@@ -359,6 +372,10 @@ export type IpcChannelMap = {
   'notification:mark-read': { input: MarkReadInput; output: NotificationRecord }
   'notification:mark-all-read': { input: MarkAllReadInput; output: void }
   'notification:count-unread': { input: { targetUser: string }; output: number }
+  'export:preview': { input: StartExportPreviewInput; output: StartExportPreviewOutput }
+  'export:load-preview': { input: LoadPreviewContentInput; output: LoadPreviewContentOutput }
+  'export:confirm': { input: ConfirmExportInput; output: ConfirmExportOutput }
+  'export:cleanup-preview': { input: CleanupPreviewInput; output: void }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

@@ -29,19 +29,14 @@ export function useGlobalShortcuts(
         return
       }
 
+      // If event was already handled by a capture-phase listener (e.g., ProjectWorkspace Cmd+E), skip
+      if (e.defaultPrevented) return
+
       // Cmd/Ctrl+S → auto-save intercept (AC2)
       if (e.key === 's') {
         e.preventDefault()
         e.stopPropagation()
         messageApi.info('已自动保存', 2)
-        return
-      }
-
-      // Cmd/Ctrl+E → export placeholder (AC3)
-      if (e.key === 'e') {
-        e.preventDefault()
-        e.stopPropagation()
-        messageApi.info('导出功能即将推出', 2)
         return
       }
     }

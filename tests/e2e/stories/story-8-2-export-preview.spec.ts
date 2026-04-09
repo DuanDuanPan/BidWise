@@ -1,0 +1,148 @@
+import { test, expect, type Page } from '@playwright/test'
+import { _electron as electron } from 'playwright'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+
+const MODIFIER_KEY = process.platform === 'darwin' ? 'Meta' : 'Control'
+const APP_ENTRY = resolve(__dirname, '../../../out/main/index.js')
+
+test.setTimeout(120_000)
+
+async function withIsolatedApp(run: (window: Page) => Promise<void>): Promise<void> {
+  const testHome = mkdtempSync(join(tmpdir(), 'bidwise-story-8-2-'))
+  const electronApp = await electron.launch({
+    args: [APP_ENTRY],
+    env: {
+      ...process.env,
+      HOME: testHome,
+      USERPROFILE: testHome,
+      APPDATA: join(testHome, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(testHome, 'AppData', 'Local'),
+      XDG_CONFIG_HOME: join(testHome, '.config'),
+      XDG_DATA_HOME: join(testHome, '.local', 'share'),
+      BIDWISE_USER_DATA_DIR: join(testHome, 'bidwise-data'),
+    },
+  })
+
+  try {
+    const window = await electronApp.firstWindow()
+    await window.waitForLoadState('domcontentloaded')
+    await expect(window).toHaveTitle('BidWise')
+    await expect(window.getByTestId('project-kanban')).toBeVisible()
+    await run(window)
+  } finally {
+    await electronApp.close()
+    rmSync(testHome, { recursive: true, force: true })
+  }
+}
+
+async function createProjectAndNavigate(window: Page): Promise<string> {
+  const response = await window.evaluate(async () => {
+    return window.api.projectCreate({
+      name: '预览测试项目',
+      customerName: '测试客户',
+      proposalType: 'presale-technical',
+    })
+  })
+  const projectId = (response as { success: true; data: { id: string } }).data.id
+
+  // Save some content to proposal.md
+  await window.evaluate(
+    async ({ pid }) => {
+      await window.api.documentSave({
+        projectId: pid,
+        content:
+          '# 项目概述\n\n这是一份测试方案文档。\n\n## 系统设计\n\n### 技术架构\n\n详细描述。',
+      })
+    },
+    { pid: projectId }
+  )
+
+  // Navigate to project workspace
+  await window.getByTestId('project-kanban').getByText('预览测试项目').click()
+  await expect(window.getByTestId('project-workspace')).toBeVisible()
+
+  return projectId
+}
+
+test('@story-8-2 @p0 preview button renders and is enabled when document has content', async () => {
+  await withIsolatedApp(async (window) => {
+    await createProjectAndNavigate(window)
+
+    const previewBtn = window.getByTestId('preview-btn')
+    await expect(previewBtn).toBeVisible()
+    await expect(previewBtn).toBeEnabled()
+  })
+})
+
+test('@story-8-2 @p0 clicking preview shows loading overlay', async () => {
+  await withIsolatedApp(async (window) => {
+    await createProjectAndNavigate(window)
+
+    const previewBtn = window.getByTestId('preview-btn')
+    await previewBtn.click()
+
+    // Should show loading overlay (may be brief if bridge is not available)
+    const overlay = window.getByTestId('export-preview-loading-overlay')
+    // Either loading overlay appears, or we get an error modal
+    await expect(overlay.or(window.getByTestId('preview-error-alert'))).toBeVisible({
+      timeout: 10_000,
+    })
+  })
+})
+
+test('@story-8-2 @p1 Cmd/Ctrl+E triggers preview in workspace', async () => {
+  await withIsolatedApp(async (window) => {
+    await createProjectAndNavigate(window)
+
+    await window.keyboard.press(`${MODIFIER_KEY}+e`)
+
+    // Should show loading overlay or error (docx bridge may not be running)
+    const overlay = window.getByTestId('export-preview-loading-overlay')
+    await expect(overlay.or(window.getByTestId('preview-error-alert'))).toBeVisible({
+      timeout: 10_000,
+    })
+  })
+})
+
+test('@story-8-2 @p0 preview error shows friendly message and retry', async () => {
+  await withIsolatedApp(async (window) => {
+    await createProjectAndNavigate(window)
+
+    // Click preview — without Python process running, this should fail
+    await window.getByTestId('preview-btn').click()
+
+    // Wait for error state
+    const errorAlert = window.getByTestId('preview-error-alert')
+    await expect(errorAlert).toBeVisible({ timeout: 30_000 })
+
+    // Retry button should be available
+    await expect(window.getByTestId('retry-btn')).toBeVisible()
+
+    // Back to edit should work
+    await window.getByTestId('back-to-edit-btn').click()
+
+    // Modal should close and workspace should be intact
+    await expect(window.getByTestId('project-workspace')).toBeVisible()
+  })
+})
+
+test('@story-8-2 @p1 Escape closes error/ready modal', async () => {
+  await withIsolatedApp(async (window) => {
+    await createProjectAndNavigate(window)
+
+    await window.getByTestId('preview-btn').click()
+
+    // Wait for either loading or error state
+    const overlay = window.getByTestId('export-preview-loading-overlay')
+    const errorAlert = window.getByTestId('preview-error-alert')
+    await expect(overlay.or(errorAlert)).toBeVisible({ timeout: 30_000 })
+
+    // If we're in error state, try Escape to close the modal
+    if (await errorAlert.isVisible().catch(() => false)) {
+      await window.keyboard.press('Escape')
+      await expect(window.getByTestId('project-workspace')).toBeVisible()
+    }
+  })
+})

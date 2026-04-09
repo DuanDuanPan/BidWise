@@ -47,6 +47,7 @@
     "@platejs/table": "^52.0.11",
     "antd": "5.29.3",
     "better-sqlite3": "^12.8.0",
+    "docx-preview": "^0.3.7",
     "fuse.js": "^7.1.0",
     "kysely": "^0.28.13",
     "mammoth": "^1.12.0",

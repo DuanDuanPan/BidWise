@@ -93,6 +93,10 @@ vi.mock('@modules/annotation/hooks/useCurrentSection', () => ({
   useCurrentSection: vi.fn(() => null),
 }))
 
+vi.mock('docx-preview', () => ({
+  renderAsync: vi.fn().mockResolvedValue(undefined),
+}))
+
 const mockProject = {
   id: 'p1',
   name: '测试投标项目',
@@ -203,6 +207,10 @@ describe('@story-1-6 ProjectWorkspace', () => {
       notificationMarkAllRead: vi.fn().mockResolvedValue({ success: true, data: undefined }),
       notificationCountUnread: vi.fn().mockResolvedValue({ success: true, data: 0 }),
       onNotificationNew: vi.fn().mockReturnValue(() => {}),
+      exportPreview: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'exp-1' } }),
+      exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
+      exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
+      exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
     mockScrollToHeading.mockReset()
@@ -355,6 +363,10 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       notificationMarkAllRead: vi.fn().mockResolvedValue({ success: true, data: undefined }),
       notificationCountUnread: vi.fn().mockResolvedValue({ success: true, data: 0 }),
       onNotificationNew: vi.fn().mockReturnValue(() => {}),
+      exportPreview: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'exp-1' } }),
+      exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
+      exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
+      exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
     })
     mockNavigate.mockClear()
   })
@@ -576,5 +588,75 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
     // The annotation-panel should be present in expanded state
     const panel = screen.getByTestId('annotation-panel')
     expect(panel).toBeInTheDocument()
+  })
+})
+
+describe('@story-8-2 ProjectWorkspace export preview', () => {
+  beforeEach(() => {
+    latestChapterPhases = undefined
+    mockChapterStatuses = new Map()
+    mockSourceSections = new Map()
+    useProjectStore.setState({
+      currentProject: null,
+      loading: false,
+      error: null,
+      projects: [],
+    })
+    useDocumentStore.setState({
+      content: '',
+      loading: false,
+      error: null,
+      autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+    })
+    useAnnotationStore.setState({ projects: {} })
+    vi.stubGlobal('api', {
+      projectGet: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
+      projectUpdate: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
+      projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      projectCreate: vi.fn(),
+      projectDelete: vi.fn(),
+      projectArchive: vi.fn(),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
+      analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
+      taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
+      chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
+      agentExecute: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ask-1' } }),
+      agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
+      documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
+      annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      exportPreview: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'exp-1' } }),
+      exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
+      exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
+      exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+    })
+    mockNavigate.mockClear()
+  })
+  afterEach(cleanup)
+
+  it('@p0 renders preview button in header', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    expect(screen.getByTestId('preview-btn')).toBeInTheDocument()
+  })
+
+  it('@p0 preview button is disabled when document is empty', async () => {
+    useDocumentStore.setState({ content: '' })
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    expect(screen.getByTestId('preview-btn')).toBeDisabled()
+  })
+
+  it('@p0 preview button is enabled when document has content', async () => {
+    useDocumentStore.setState({ content: '# 方案内容' })
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+    expect(screen.getByTestId('preview-btn')).not.toBeDisabled()
   })
 })
