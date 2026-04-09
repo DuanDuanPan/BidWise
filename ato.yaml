@@ -178,21 +178,78 @@ timeout:
 #     qa_testing: codex-mini-latest
 
 # ---------------------------------------------------------------------------
+# 跨项目测试策略分层（UAT 验证配置）
+# ---------------------------------------------------------------------------
+# test_catalog 定义“抽象 layer 名 → 项目真实命令”的映射。
+# phase_test_policy 定义不同 phase 如何消费这些 layer。
+#
+# 约束：
+# - required_layers 必跑，按声明顺序执行
+# - optional_layers 是候选追加层，按声明顺序尝试
+# - allow_discovery 控制是否允许在声明集合外追加发现/诊断命令
+# - max_additional_commands 约束单次 phase 执行尝试中的追加命令数
+# - allowed_when:
+#     never / after_required_commands / after_required_failure / always
+
+test_catalog:
+  lint:
+    commands:
+      - 'pnpm lint'
+  typecheck:
+    commands:
+      - 'pnpm typecheck'
+  unit:
+    commands:
+      - 'pnpm test:unit'
+  integration:
+    commands:
+      - 'pnpm python:setup && pnpm test:python'
+  build:
+    commands:
+      - 'pnpm build'
+  smoke:
+    commands:
+      - 'pnpm test:e2e:smoke'
+
+phase_test_policy:
+  qa_testing:
+    required_layers:
+      - lint
+      - typecheck
+      - unit
+    optional_layers:
+      - integration
+      - build
+      - smoke
+    allow_discovery: true
+    max_additional_commands: 3
+    allowed_when: after_required_commands
+
+  regression:
+    required_layers:
+      - unit
+      - lint
+      - typecheck
+      - build
+    optional_layers:
+      - integration
+      - smoke
+    allow_discovery: true
+    max_additional_commands: 2
+    allowed_when: after_required_commands
+
+# ---------------------------------------------------------------------------
 # Merge & Regression 配置
 # ---------------------------------------------------------------------------
 
-# 回归测试基线命令（操作者提供的基线命令列表）
-# Codex LLM regression runner 会优先执行这些命令；
-# 若 Codex 判断某命令不适用，会在结构化结果中说明跳过原因。
-# 未配置时，Codex 会自主发现项目测试体系并执行回归测试。
-# 必须使用 test:unit 而不是裸跑 vitest：build/dev 会把 better-sqlite3 重建到
-# Electron ABI，test:unit 会先重建回宿主 Node ABI，避免 native module mismatch。
-regression_test_commands:
-  - 'pnpm test:unit'
-  - 'pnpm lint'
-  - 'pnpm typecheck'
-  - 'pnpm build'
-
+# Legacy regression fallback（当前已由 phase_test_policy.regression 接管）
+# 需要回退到旧 baseline 路径时，再取消注释以下配置：
+# regression_test_commands:
+#   - 'pnpm test:unit'
+#   - 'pnpm lint'
+#   - 'pnpm typecheck'
+#   - 'pnpm build'
+#
 # 向后兼容：单命令格式（当 regression_test_commands 存在时此字段被忽略）
 # regression_test_command: "uv run pytest"
 
