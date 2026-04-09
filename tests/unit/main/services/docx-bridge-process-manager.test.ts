@@ -23,6 +23,11 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
 }))
 
+const mockExistsSync = vi.fn().mockReturnValue(true)
+vi.mock('fs', () => ({
+  existsSync: (...args: unknown[]) => mockExistsSync(...args),
+}))
+
 // Mock global fetch
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
@@ -60,6 +65,7 @@ describe('ProcessManager', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
+    mockExistsSync.mockReturnValue(true)
     manager = new ProcessManager()
   })
 
@@ -132,6 +138,18 @@ describe('ProcessManager', () => {
 
       await expect(manager.startProcess()).rejects.toThrow('Python 进程启动失败，已重试 3 次')
       expect(mockSpawn).toHaveBeenCalledTimes(3)
+    })
+
+    it('rejects when python venv executable does not exist', async () => {
+      vi.useRealTimers()
+      mockExistsSync.mockReturnValue(false)
+
+      const err = await manager.startProcess().catch((e: Error) => e)
+      // Retry loop wraps the inner error; verify the cause carries the venv message
+      expect(err).toBeInstanceOf(Error)
+      expect((err as Error).message).toContain('已重试')
+      expect((err as { cause?: Error }).cause?.message).toContain('Python venv/deps missing')
+      expect(mockSpawn).not.toHaveBeenCalled()
     })
   })
 

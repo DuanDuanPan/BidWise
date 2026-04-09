@@ -122,6 +122,17 @@ export function ProjectWorkspace(): React.JSX.Element {
     }
   }, [navigateToStage, registerCommand, unregisterCommand])
 
+  // Eagerly hydrate document store at workspace mount so that preview availability
+  // does not depend on EditorView being rendered (user may land on another tab).
+  const loadDocument = useDocumentStore((s) => s.loadDocument)
+  const loadedProjectId = useDocumentStore((s) => s.loadedProjectId)
+
+  useEffect(() => {
+    if (projectId && loadedProjectId !== projectId) {
+      void loadDocument(projectId)
+    }
+  }, [projectId, loadedProjectId, loadDocument])
+
   // Export preview integration (Story 8.2)
   const exportPreview = useExportPreview()
   const hasDocumentContent = useDocumentStore((s) => s.content.trim().length > 0)
