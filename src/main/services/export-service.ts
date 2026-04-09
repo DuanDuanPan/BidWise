@@ -9,6 +9,7 @@ import { documentService } from '@main/services/document-service'
 import { projectService } from '@main/services/project-service'
 import { docxBridgeService } from '@main/services/docx-bridge'
 import { taskQueue } from '@main/services/task-queue'
+import { throwIfAborted } from '@main/utils/abort'
 import type {
   StartExportPreviewInput,
   StartExportPreviewOutput,
@@ -137,13 +138,30 @@ export const exportService = {
         const timestamp = Date.now()
         const fileName = `.preview-${timestamp}.docx`
         const outputPath = fileName
+        const previewPath = join(getExportsDir(input.projectId), fileName)
 
-        const renderResult = await docxBridgeService.renderDocx({
-          markdownContent: doc.content,
-          outputPath,
-          templatePath,
-          projectId: input.projectId,
-        })
+        let renderResult
+        try {
+          renderResult = await docxBridgeService.renderDocx(
+            {
+              markdownContent: doc.content,
+              outputPath,
+              templatePath,
+              projectId: input.projectId,
+            },
+            { signal: ctx.signal }
+          )
+        } catch (err) {
+          if (ctx.signal.aborted) {
+            await cleanupPreviewFiles(input.projectId, previewPath)
+          }
+          throw err
+        }
+
+        if (ctx.signal.aborted) {
+          await cleanupPreviewFiles(input.projectId, renderResult.outputPath)
+          throwIfAborted(ctx.signal, `Preview task ${ctx.taskId} cancelled`)
+        }
 
         ctx.updateProgress(100, 'completed')
 

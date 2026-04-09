@@ -124,9 +124,28 @@ describe('docxBridgeService', () => {
         expect.objectContaining({
           markdownContent: '# Test',
           outputPath: expect.stringContaining('exports'),
-        })
+        }),
+        undefined
       )
       expect(result).toEqual(mockResult)
+    })
+
+    it('passes abort options through to the render client', async () => {
+      const controller = new AbortController()
+      mockRenderDocxHttp.mockResolvedValue({ outputPath: '/tmp/out.docx', renderTimeMs: 42 })
+
+      await docxBridgeService.renderDocx(
+        {
+          markdownContent: '# Test',
+          outputPath: 'output.docx',
+          projectId: 'proj-1',
+        },
+        { signal: controller.signal }
+      )
+
+      expect(mockRenderDocxHttp).toHaveBeenCalledWith(expect.any(Object), {
+        signal: controller.signal,
+      })
     })
   })
 

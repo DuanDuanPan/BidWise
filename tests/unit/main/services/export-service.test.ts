@@ -16,6 +16,7 @@ const mockProjectService = vi.hoisted(() => ({
 const mockTaskQueue = vi.hoisted(() => ({
   enqueue: vi.fn(),
   execute: vi.fn(),
+  cancel: vi.fn(),
 }))
 
 const mockDialog = vi.hoisted(() => ({
@@ -77,6 +78,7 @@ describe('exportService', () => {
     vi.clearAllMocks()
     mockReaddir.mockResolvedValue([])
     mockRm.mockResolvedValue(undefined)
+    mockTaskQueue.cancel.mockResolvedValue(undefined)
   })
 
   describe('startPreview', () => {
@@ -95,13 +97,20 @@ describe('exportService', () => {
 
     it('fires execute and does not await it', async () => {
       mockTaskQueue.enqueue.mockResolvedValue('task-456')
-      // Simulate a long-running execute that never resolves in this tick
-      mockTaskQueue.execute.mockReturnValue(new Promise(() => {}))
+      let resolveExecute: (() => void) | undefined
+      mockTaskQueue.execute.mockReturnValue(
+        new Promise((resolve) => {
+          resolveExecute = () => resolve({})
+        })
+      )
 
       const result = await exportService.startPreview({ projectId: 'proj-1' })
 
       expect(result).toEqual({ taskId: 'task-456' })
       expect(mockTaskQueue.execute).toHaveBeenCalledWith('task-456', expect.any(Function))
+
+      resolveExecute?.()
+      await Promise.resolve()
     })
 
     it('cleans up old preview files before enqueuing', async () => {
@@ -113,6 +122,18 @@ describe('exportService', () => {
 
       // Should delete .preview-*.docx files but not other.docx
       expect(mockRm).toHaveBeenCalledTimes(2)
+    })
+
+    it('cancels the previous preview task when the same project re-triggers', async () => {
+      mockTaskQueue.enqueue.mockResolvedValueOnce('task-1').mockResolvedValueOnce('task-2')
+      mockTaskQueue.execute
+        .mockReturnValueOnce(new Promise(() => {}))
+        .mockResolvedValueOnce({})
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      expect(mockTaskQueue.cancel).toHaveBeenCalledWith('task-1')
     })
 
     it('executor calls docxBridgeService.renderDocx with correct params', async () => {
@@ -128,8 +149,10 @@ describe('exportService', () => {
       await exportService.startPreview({ projectId: 'proj-1' })
 
       // Now execute the captured executor
+      const controller = new AbortController()
       const mockCtx = {
         updateProgress: vi.fn(),
+        signal: controller.signal,
       }
       mockDocumentService.load.mockResolvedValue({
         projectId: 'proj-1',
@@ -152,7 +175,8 @@ describe('exportService', () => {
         expect.objectContaining({
           markdownContent: '# Test Proposal',
           projectId: 'proj-1',
-        })
+        }),
+        { signal: controller.signal }
       )
       expect(result).toEqual(
         expect.objectContaining({
@@ -175,7 +199,11 @@ describe('exportService', () => {
 
       await exportService.startPreview({ projectId: 'proj-1' })
 
-      const mockCtx = { updateProgress: vi.fn() }
+      const controller = new AbortController()
+      const mockCtx = {
+        updateProgress: vi.fn(),
+        signal: controller.signal,
+      }
       mockDocumentService.load.mockResolvedValue({
         projectId: 'proj-1',
         content: '# Proposal',
@@ -194,7 +222,8 @@ describe('exportService', () => {
       expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
         expect.objectContaining({
           templatePath: '/path/to/template.docx',
-        })
+        }),
+        { signal: controller.signal }
       )
     })
   })

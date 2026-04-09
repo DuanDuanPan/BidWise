@@ -65,6 +65,38 @@ describe('render-client', () => {
       expect(result).toEqual(mockResult)
     })
 
+    it('aborts the HTTP request when the caller signal aborts', async () => {
+      mockFetch.mockImplementation((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true }
+          )
+        })
+      })
+
+      const controller = new AbortController()
+      const promise = renderDocx(
+        {
+          markdownContent: '# Test',
+          outputPath: '/tmp/out.docx',
+          projectId: 'proj-1',
+        },
+        { signal: controller.signal }
+      )
+
+      controller.abort(new Error('preview cancelled'))
+
+      await expect(promise).rejects.toThrow('渲染请求失败')
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:9000/api/render-documents',
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        })
+      )
+    })
+
     it('throws DocxBridgeError when Python returns error response', async () => {
       mockFetch.mockResolvedValue({
         json: () =>

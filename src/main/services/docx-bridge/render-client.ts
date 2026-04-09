@@ -9,6 +9,15 @@ const logger = createLogger('docx-bridge-client')
 const RENDER_TIMEOUT_MS = 60_000
 const HEALTH_TIMEOUT_MS = 5_000
 
+type FetchWithTimeoutOptions = {
+  signal?: AbortSignal
+  timeoutMs: number
+}
+
+type RenderDocxOptions = {
+  signal?: AbortSignal
+}
+
 function getBaseUrl(): string {
   const status = processManager.getStatus()
   if (!status.ready || !status.port) {
@@ -17,21 +26,49 @@ function getBaseUrl(): string {
   return `http://127.0.0.1:${status.port}`
 }
 
+function bindAbortSignal(controller: AbortController, signal?: AbortSignal): () => void {
+  if (!signal) {
+    return () => {}
+  }
+
+  if (signal.aborted) {
+    controller.abort(signal.reason)
+    return () => {}
+  }
+
+  const onAbort = (): void => {
+    if (!controller.signal.aborted) {
+      controller.abort(signal.reason)
+    }
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => signal.removeEventListener('abort', onAbort)
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
-  timeoutMs: number
+  options: FetchWithTimeoutOptions
 ): Promise<Response> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const unbindAbort = bindAbortSignal(controller, options.signal)
+  const timeout = setTimeout(() => {
+    if (!controller.signal.aborted) {
+      controller.abort(new Error('DOCX_RENDER_TIMEOUT'))
+    }
+  }, options.timeoutMs)
   try {
     return await fetch(url, { ...init, signal: controller.signal })
   } finally {
     clearTimeout(timeout)
+    unbindAbort()
   }
 }
 
-export async function renderDocx(input: RenderDocxInput): Promise<RenderDocxOutput> {
+export async function renderDocx(
+  input: RenderDocxInput,
+  options?: RenderDocxOptions
+): Promise<RenderDocxOutput> {
   const baseUrl = getBaseUrl()
   const url = `${baseUrl}/api/render-documents`
 
@@ -46,7 +83,10 @@ export async function renderDocx(input: RenderDocxInput): Promise<RenderDocxOutp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       },
-      RENDER_TIMEOUT_MS
+      {
+        signal: options?.signal,
+        timeoutMs: RENDER_TIMEOUT_MS,
+      }
     )
   } catch (err) {
     throw new DocxBridgeError(
@@ -74,7 +114,7 @@ export async function checkHealth(): Promise<DocxHealthData> {
 
   let response: Response
   try {
-    response = await fetchWithTimeout(url, { method: 'GET' }, HEALTH_TIMEOUT_MS)
+    response = await fetchWithTimeout(url, { method: 'GET' }, { timeoutMs: HEALTH_TIMEOUT_MS })
   } catch (err) {
     throw new DocxBridgeError(
       ErrorCode.DOCX_BRIDGE_UNAVAILABLE,
