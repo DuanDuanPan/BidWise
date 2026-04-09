@@ -90,6 +90,8 @@ async function createRichExportProject(
           '',
           '## 1.2 系统架构',
           '',
+          '![架构图](assets/diagram.png)',
+          '',
           '详细描述系统架构设计。',
         ].join('\n'),
       })
@@ -124,7 +126,7 @@ async function createRichExportProject(
     writeFileSync(
       join(projectDataDir, 'template-mapping.json'),
       JSON.stringify({
-        styleMapping: { heading1: 'Heading 1', bodyText: 'Normal' },
+        styles: { heading1: 'Heading 1', bodyText: 'Normal' },
         pageSetup: { contentWidthMm: 160 },
       })
     )
@@ -203,7 +205,7 @@ test('@story-8-3 @p1 cancel during loading returns to workspace', async () => {
 
 test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', async () => {
   await withIsolatedApp(async (window, electronApp) => {
-    await createRichExportProject(window, electronApp)
+    const projectId = await createRichExportProject(window, electronApp)
 
     // Prepare a temp directory for the exported file
     const exportDir = mkdtempSync(join(tmpdir(), 'bidwise-export-'))
@@ -226,23 +228,57 @@ test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', asyn
       const errorAlert = window.getByTestId('preview-error-alert')
       await expect(confirmBtn.or(errorAlert)).toBeVisible({ timeout: 60_000 })
 
-      // If Python bridge is not available, verify error UI is functional then skip
+      // If Python bridge is not available, create a stub preview file and test
+      // confirmExport via IPC so the confirm→copy chain is always exercised
       if (await errorAlert.isVisible()) {
-        // Even on skip, validate error UI controls exist
+        // Validate error UI controls exist even in fallback path
         await expect(window.getByTestId('retry-btn')).toBeVisible()
         await expect(window.getByTestId('back-to-edit-btn')).toBeVisible()
-        test.skip(true, 'Python bridge not available — cannot complete full export flow')
-        return
+
+        // Close the error modal so we can exercise confirmExport via IPC
+        await window.getByTestId('back-to-edit-btn').click()
+        await expect(window.getByTestId('project-workspace')).toBeVisible()
+
+        // Create a stub preview .docx in the project exports dir
+        const projectDataDir = await electronApp.evaluate(
+          ({ app }, pid) => {
+            const path = require('path')
+            return path.resolve(app.getPath('userData'), 'data', 'projects', pid)
+          },
+          projectId
+        )
+        const exportsDir = join(projectDataDir, 'exports')
+        mkdirSync(exportsDir, { recursive: true })
+        const stubFileName = `.preview-${Date.now()}.docx`
+        const stubPath = join(exportsDir, stubFileName)
+        // Minimal valid ZIP (end-of-central-directory record) — passes PK magic-byte check
+        const minimalZip = Buffer.from([
+          0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ])
+        writeFileSync(stubPath, minimalZip)
+
+        // Call confirmExport directly via IPC
+        const confirmResult = await window.evaluate(
+          async ({ pid, tempPath }) => {
+            return window.api.exportConfirm({ projectId: pid, tempPath })
+          },
+          { pid: projectId, tempPath: stubPath }
+        )
+        const result = confirmResult as { success: boolean; data?: { outputPath?: string; fileSize?: number } }
+        expect(result.success).toBe(true)
+        expect(result.data?.outputPath).toBe(exportPath)
+        expect(result.data?.fileSize).toBeGreaterThan(0)
+      } else {
+        // Preview loaded successfully — verify preview container has content
+        await expect(window.getByTestId('docx-preview-container')).toBeVisible()
+
+        // Confirm export (triggers mocked save dialog)
+        await confirmBtn.click()
+
+        // Wait for modal to close (export completed)
+        await expect(window.getByTestId('export-preview-modal')).not.toBeVisible({ timeout: 30_000 })
       }
-
-      // Preview loaded successfully — verify preview container has content
-      await expect(window.getByTestId('docx-preview-container')).toBeVisible()
-
-      // Confirm export (triggers mocked save dialog)
-      await confirmBtn.click()
-
-      // Wait for modal to close (export completed)
-      await expect(window.getByTestId('export-preview-modal')).not.toBeVisible({ timeout: 30_000 })
 
       // Verify .docx file was saved to the mocked path
       expect(existsSync(exportPath)).toBe(true)
