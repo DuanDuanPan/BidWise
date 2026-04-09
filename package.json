@@ -6,7 +6,7 @@
   "author": "BidWise Team",
   "scripts": {
     "dev": "pnpm native:rebuild:electron && electron-vite dev",
-    "build": "pnpm native:rebuild:electron && electron-vite build",
+    "build": "pnpm native:rebuild:electron && pnpm python:setup && electron-vite build",
     "start": "electron-vite preview",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
@@ -31,8 +31,8 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "pnpm build && electron-builder --dir",
     "build:win": "pnpm build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux",
+    "build:mac": "pnpm build && electron-builder --mac",
+    "build:linux": "pnpm build && electron-builder --linux",
     "prepare": "husky"
   },
   "dependencies": {

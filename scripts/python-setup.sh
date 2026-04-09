@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# Idempotent bootstrap for python/.venv used by docx-bridge integration tests.
+# Idempotent bootstrap for python/.venv used by docx-bridge integration tests
+# and packaged export preview runtime.
 # Creates the venv (Python 3.12) and installs python/requirements.txt when
 # the venv is missing or stale (requirements changed since last install).
 #
-# Preferred tool chain: uv > pip.  Falls back gracefully.
+# We intentionally create the venv with copied interpreter binaries instead of
+# symlinks. electron-builder preserves venv symlinks inside the macOS app
+# bundle, and codesign rejects absolute targets such as Homebrew's
+# /opt/homebrew/opt/python@3.12/bin/python3.12.
+#
+# Preferred tool chain for dependency installation: uv > pip. Falls back
+# gracefully.
 # Exit 0 on success so callers can chain: pnpm python:setup && vitest run
 
 set -euo pipefail
@@ -14,6 +21,8 @@ PYTHON_DIR="$PROJECT_ROOT/python"
 VENV_DIR="$PYTHON_DIR/.venv"
 REQ_FILE="$PYTHON_DIR/requirements.txt"
 STAMP_FILE="$VENV_DIR/.requirements-stamp"
+VENV_PYTHON_BIN="$VENV_DIR/bin/python3"
+VENV_PYTHON_VERSIONED_BIN="$VENV_DIR/bin/python3.12"
 
 # --- locate Python 3.12 ---------------------------------------------------
 find_python312() {
@@ -36,14 +45,16 @@ if [[ -z "$PYTHON_BIN" ]]; then
   exit 1
 fi
 
+# --- recreate symlinked venvs that break packaged macOS builds -------------
+if [[ -f "$VENV_DIR/pyvenv.cfg" ]] && [[ -L "$VENV_PYTHON_BIN" || -L "$VENV_PYTHON_VERSIONED_BIN" ]]; then
+  echo "Recreating python venv with copied interpreter binaries ..."
+  rm -rf "$VENV_DIR"
+fi
+
 # --- create venv if missing ------------------------------------------------
 if [[ ! -f "$VENV_DIR/pyvenv.cfg" ]]; then
   echo "Creating python venv at $VENV_DIR ..."
-  if command -v uv &>/dev/null; then
-    uv venv --python "$PYTHON_BIN" "$VENV_DIR"
-  else
-    "$PYTHON_BIN" -m venv "$VENV_DIR"
-  fi
+  "$PYTHON_BIN" -m venv --copies "$VENV_DIR"
 fi
 
 # --- install / refresh deps when requirements.txt is newer than stamp ------
