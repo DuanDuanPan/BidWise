@@ -126,9 +126,7 @@ describe('exportService', () => {
 
     it('cancels the previous preview task when the same project re-triggers', async () => {
       mockTaskQueue.enqueue.mockResolvedValueOnce('task-1').mockResolvedValueOnce('task-2')
-      mockTaskQueue.execute
-        .mockReturnValueOnce(new Promise(() => {}))
-        .mockResolvedValueOnce({})
+      mockTaskQueue.execute.mockReturnValueOnce(new Promise(() => {})).mockResolvedValueOnce({})
 
       await exportService.startPreview({ projectId: 'proj-1' })
       await exportService.startPreview({ projectId: 'proj-1' })

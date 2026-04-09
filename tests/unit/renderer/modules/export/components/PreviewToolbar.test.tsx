@@ -91,12 +91,7 @@ describe('PreviewToolbar', () => {
 
   it('displays arbitrary zoom percentage from prop', () => {
     render(
-      <PreviewToolbar
-        fileName="test.docx"
-        zoom={0.82}
-        onZoomChange={vi.fn()}
-        onFitPage={vi.fn()}
-      />
+      <PreviewToolbar fileName="test.docx" zoom={0.82} onZoomChange={vi.fn()} onFitPage={vi.fn()} />
     )
 
     expect(screen.getByTestId('zoom-level')).toHaveTextContent('82%')
@@ -112,12 +107,7 @@ describe('PreviewToolbar', () => {
 
   it('disables zoom out at min level', () => {
     render(
-      <PreviewToolbar
-        fileName="test.docx"
-        zoom={0.5}
-        onZoomChange={vi.fn()}
-        onFitPage={vi.fn()}
-      />
+      <PreviewToolbar fileName="test.docx" zoom={0.5} onZoomChange={vi.fn()} onFitPage={vi.fn()} />
     )
 
     expect(screen.getByTestId('zoom-out-btn')).toBeDisabled()
