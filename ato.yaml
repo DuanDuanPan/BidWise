@@ -222,7 +222,7 @@ phase_test_policy:
       - build
       - smoke
     allow_discovery: true
-    max_additional_commands: 3
+    max_additional_commands: 6
     allowed_when: after_required_commands
 
   regression:
@@ -235,7 +235,7 @@ phase_test_policy:
       - integration
       - smoke
     allow_discovery: true
-    max_additional_commands: 2
+    max_additional_commands: 6
     allowed_when: after_required_commands
 
 # ---------------------------------------------------------------------------
