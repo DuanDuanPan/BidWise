@@ -17,10 +17,11 @@ const APP_ENTRY = resolve(__dirname, '../../../out/main/index.js')
 test.setTimeout(120_000)
 
 async function withIsolatedApp(
-  run: (window: Page, electronApp: ElectronApplication) => Promise<void>,
+  run: (window: Page, electronApp: ElectronApplication, userDataDir: string) => Promise<void>,
   extraEnv?: Record<string, string>
 ): Promise<void> {
   const testHome = mkdtempSync(join(tmpdir(), 'bidwise-story-8-3-'))
+  const userDataDir = join(testHome, 'bidwise-data')
   const electronApp = await electron.launch({
     args: [APP_ENTRY],
     env: {
@@ -31,7 +32,7 @@ async function withIsolatedApp(
       LOCALAPPDATA: join(testHome, 'AppData', 'Local'),
       XDG_CONFIG_HOME: join(testHome, '.config'),
       XDG_DATA_HOME: join(testHome, '.local', 'share'),
-      BIDWISE_USER_DATA_DIR: join(testHome, 'bidwise-data'),
+      BIDWISE_USER_DATA_DIR: userDataDir,
       ...extraEnv,
     },
   })
@@ -41,17 +42,14 @@ async function withIsolatedApp(
     await window.waitForLoadState('domcontentloaded')
     await expect(window).toHaveTitle('BidWise')
     await expect(window.getByTestId('project-kanban')).toBeVisible()
-    await run(window, electronApp)
+    await run(window, electronApp, userDataDir)
   } finally {
     await electronApp.close()
     rmSync(testHome, { recursive: true, force: true })
   }
 }
 
-async function createRichExportProject(
-  window: Page,
-  electronApp?: ElectronApplication
-): Promise<string> {
+async function createRichExportProject(window: Page, userDataDir?: string): Promise<string> {
   const response = await window.evaluate(async () => {
     return window.api.projectCreate({
       name: '导出测试项目',
@@ -101,14 +99,8 @@ async function createRichExportProject(
 
   // Prepare image asset so the renderer's image path is exercised
   let assetsDir: string | undefined
-  if (electronApp) {
-    const projectDataDir = await electronApp.evaluate(
-      ({ app }, pid) => {
-        const path = require('path')
-        return path.resolve(app.getPath('userData'), 'data', 'projects', pid)
-      },
-      projectId
-    )
+  if (userDataDir) {
+    const projectDataDir = join(userDataDir, 'data', 'projects', projectId)
     assetsDir = join(projectDataDir, 'assets')
   }
   if (assetsDir) {
@@ -143,6 +135,29 @@ async function createRichExportProject(
   await expect(window.getByTestId('project-workspace')).toBeVisible()
 
   return projectId
+}
+
+async function waitForDocxBridge(window: Page, timeoutMs = 30_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    const isReady = await window.evaluate(async () => {
+      try {
+        const response = await window.api.docxHealth()
+        return response.success
+      } catch {
+        return false
+      }
+    })
+
+    if (isReady) {
+      return true
+    }
+
+    await window.waitForTimeout(500)
+  }
+
+  return false
 }
 
 test('@story-8-3 @p0 preview triggers for project with rich content', async () => {
@@ -204,8 +219,8 @@ test('@story-8-3 @p1 cancel during loading returns to workspace', async () => {
 })
 
 test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', async () => {
-  await withIsolatedApp(async (window, electronApp) => {
-    const projectId = await createRichExportProject(window, electronApp)
+  await withIsolatedApp(async (window, electronApp, userDataDir) => {
+    await createRichExportProject(window, userDataDir)
 
     // Prepare a temp directory for the exported file
     const exportDir = mkdtempSync(join(tmpdir(), 'bidwise-export-'))
@@ -213,72 +228,31 @@ test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', asyn
 
     try {
       // Mock dialog.showSaveDialog to return a known path (no native dialog prompt)
-      await electronApp.evaluate(
-        ({ dialog }, filePath) => {
-          dialog.showSaveDialog = async () => ({ canceled: false, filePath })
-        },
-        exportPath
+      await electronApp.evaluate(({ dialog }, filePath) => {
+        dialog.showSaveDialog = async () => ({ canceled: false, filePath })
+      }, exportPath)
+
+      const bridgeReady = await waitForDocxBridge(window)
+      test.skip(
+        bridgeReady === false,
+        'Python bridge not available — cannot complete full export flow'
       )
 
       // Trigger preview
       await window.getByTestId('preview-btn').click()
 
-      // Wait for preview to fully load (confirm button visible) or error
+      // Wait for preview to fully load via the real renderer path
       const confirmBtn = window.getByTestId('confirm-export-btn')
-      const errorAlert = window.getByTestId('preview-error-alert')
-      await expect(confirmBtn.or(errorAlert)).toBeVisible({ timeout: 60_000 })
+      await expect(confirmBtn).toBeVisible({ timeout: 60_000 })
 
-      // If Python bridge is not available, create a stub preview file and test
-      // confirmExport via IPC so the confirm→copy chain is always exercised
-      if (await errorAlert.isVisible()) {
-        // Validate error UI controls exist even in fallback path
-        await expect(window.getByTestId('retry-btn')).toBeVisible()
-        await expect(window.getByTestId('back-to-edit-btn')).toBeVisible()
+      // Preview loaded successfully — verify preview container has content
+      await expect(window.getByTestId('docx-preview-container')).toBeVisible()
 
-        // Close the error modal so we can exercise confirmExport via IPC
-        await window.getByTestId('back-to-edit-btn').click()
-        await expect(window.getByTestId('project-workspace')).toBeVisible()
+      // Confirm export (triggers mocked save dialog)
+      await confirmBtn.click()
 
-        // Create a stub preview .docx in the project exports dir
-        const projectDataDir = await electronApp.evaluate(
-          ({ app }, pid) => {
-            const path = require('path')
-            return path.resolve(app.getPath('userData'), 'data', 'projects', pid)
-          },
-          projectId
-        )
-        const exportsDir = join(projectDataDir, 'exports')
-        mkdirSync(exportsDir, { recursive: true })
-        const stubFileName = `.preview-${Date.now()}.docx`
-        const stubPath = join(exportsDir, stubFileName)
-        // Minimal valid ZIP (end-of-central-directory record) — passes PK magic-byte check
-        const minimalZip = Buffer.from([
-          0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ])
-        writeFileSync(stubPath, minimalZip)
-
-        // Call confirmExport directly via IPC
-        const confirmResult = await window.evaluate(
-          async ({ pid, tempPath }) => {
-            return window.api.exportConfirm({ projectId: pid, tempPath })
-          },
-          { pid: projectId, tempPath: stubPath }
-        )
-        const result = confirmResult as { success: boolean; data?: { outputPath?: string; fileSize?: number } }
-        expect(result.success).toBe(true)
-        expect(result.data?.outputPath).toBe(exportPath)
-        expect(result.data?.fileSize).toBeGreaterThan(0)
-      } else {
-        // Preview loaded successfully — verify preview container has content
-        await expect(window.getByTestId('docx-preview-container')).toBeVisible()
-
-        // Confirm export (triggers mocked save dialog)
-        await confirmBtn.click()
-
-        // Wait for modal to close (export completed)
-        await expect(window.getByTestId('export-preview-modal')).not.toBeVisible({ timeout: 30_000 })
-      }
+      // Wait for modal to close (export completed)
+      await expect(window.getByTestId('export-preview-modal')).not.toBeVisible({ timeout: 30_000 })
 
       // Verify .docx file was saved to the mocked path
       expect(existsSync(exportPath)).toBe(true)
@@ -289,6 +263,7 @@ test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', asyn
       const header = readFileSync(exportPath).subarray(0, 2)
       expect(header[0]).toBe(0x50) // 'P'
       expect(header[1]).toBe(0x4b) // 'K'
+      expect(readFileSync(exportPath).includes(Buffer.from('word/media/'))).toBe(true)
 
       // Workspace should still be functional
       await expect(window.getByTestId('project-workspace')).toBeVisible()

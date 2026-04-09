@@ -311,12 +311,14 @@ def add_toc(
 
     # Add TOC title paragraph
     if title:
+        if not toc_style:
+            warnings.append("未配置 TOC 标题样式，使用 fallback 'Heading 1'")
         style = _resolve_paragraph_style(
             doc,
             toc_style,
             "Heading 1",
             warnings,
-        ) if toc_style else None
+        )
         p = doc.add_paragraph(title, style=style)
     else:
         p = doc.add_paragraph()

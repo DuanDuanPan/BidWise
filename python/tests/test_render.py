@@ -636,6 +636,29 @@ def test_toc_style_fallback_warning(client: TestClient, tmp_output: str):
     assert any("TOC" in w or "toc" in w.lower() for w in warnings)
 
 
+def test_toc_missing_style_mapping_falls_back_to_heading1_with_warning(
+    client: TestClient, tmp_output: str
+):
+    """When toc style is omitted, TOC title should still use Heading 1 and emit a warning."""
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Test",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "styleMapping": {"heading1": "Heading 1"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    warnings = body["data"]["warnings"]
+    assert any("TOC" in w or "toc" in w.lower() for w in warnings)
+
+    doc = Document(tmp_output)
+    assert doc.paragraphs[0].text == "目录"
+    assert doc.paragraphs[0].style.name == "Heading 1"
+
+
 def test_inline_code_uses_style_mapping(client: TestClient, tmp_output: str, tmp_path):
     """Inline code should use codeBlock style from style_mapping when available in template."""
     # Create template with a character style named "CodeChar"
