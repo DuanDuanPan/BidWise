@@ -223,6 +223,9 @@ export function useExportPreview(): UseExportPreviewReturn {
         // Poll current status to catch already-finished tasks.
         handleTaskComplete(taskId, projectId)
       } catch (err) {
+        // Guard: if cancelled, closed, unmounted, or a new request started during the await, bail
+        if (requestIdRef.current !== requestId) return
+
         setState((prev) => ({
           ...prev,
           phase: 'error',
