@@ -31,19 +31,22 @@ export function ExportPreviewModal({
   const bodyRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
   const [renderedPageCount, setRenderedPageCount] = useState<number | undefined>(pageCount)
+  const [renderError, setRenderError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || !docxBase64 || !bodyRef.current) return
 
     const container = bodyRef.current
+    setRenderError(null)
     clearPreview(container)
     renderDocxPreview(docxBase64, container)
       .then(() => {
         const count = getRenderedPageCount(container)
         if (count != null) setRenderedPageCount(count)
       })
-      .catch(() => {
-        // Render failure is shown via error state in parent
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : '文档预览渲染失败'
+        setRenderError(msg)
       })
   }, [open, docxBase64])
 
@@ -55,9 +58,11 @@ export function ExportPreviewModal({
     if (bodyRef.current) clearPreview(bodyRef.current)
     setZoom(1)
     setRenderedPageCount(undefined)
+    setRenderError(null)
   }, [])
 
-  const hasError = error != null
+  const effectiveError = error ?? renderError
+  const hasError = effectiveError != null
   const hasContent = docxBase64 != null && !hasError
 
   return (
@@ -114,7 +119,7 @@ export function ExportPreviewModal({
             type="error"
             showIcon
             message="预览生成失败"
-            description={error}
+            description={effectiveError}
             data-testid="preview-error-alert"
           />
         </div>

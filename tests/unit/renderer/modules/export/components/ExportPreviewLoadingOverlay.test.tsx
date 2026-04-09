@@ -14,9 +14,9 @@ describe('ExportPreviewLoadingOverlay', () => {
     )
 
     expect(screen.getByTestId('export-preview-loading-overlay')).toBeInTheDocument()
-    expect(screen.getByTestId('loading-card')).toBeInTheDocument()
     expect(screen.getByText('正在生成预览')).toBeInTheDocument()
     expect(screen.getByTestId('progress-message')).toHaveTextContent('正在生成 docx 预览')
+    expect(screen.getByText('您可以继续编辑')).toBeInTheDocument()
   })
 
   it('calls onCancel when cancel button clicked', () => {

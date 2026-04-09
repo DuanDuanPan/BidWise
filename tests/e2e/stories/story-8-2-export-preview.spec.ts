@@ -146,3 +146,25 @@ test('@story-8-2 @p1 Escape closes error/ready modal', async () => {
     }
   })
 })
+
+test('@story-8-2 @p1 cancel during loading dismisses overlay', async () => {
+  await withIsolatedApp(async (window) => {
+    await createProjectAndNavigate(window)
+
+    await window.getByTestId('preview-btn').click()
+
+    // Wait for loading overlay to appear
+    const overlay = window.getByTestId('export-preview-loading-overlay')
+    const errorAlert = window.getByTestId('preview-error-alert')
+    await expect(overlay.or(errorAlert)).toBeVisible({ timeout: 10_000 })
+
+    // If still in loading state, cancel it
+    if (await overlay.isVisible().catch(() => false)) {
+      await window.getByTestId('cancel-preview-btn').click()
+      await expect(overlay).not.toBeVisible({ timeout: 5_000 })
+    }
+
+    // Workspace should still be functional
+    await expect(window.getByTestId('project-workspace')).toBeVisible()
+  })
+})

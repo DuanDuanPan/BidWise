@@ -140,12 +140,12 @@ export function ProjectWorkspace(): React.JSX.Element {
       // Don't trigger when command palette is open
       if (commandPaletteOpen) return
 
-      // Don't trigger when focus is in editable fields
+      // Don't trigger when focus is in editable fields (including nested elements inside contenteditable)
       const target = e.target as HTMLElement
       if (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.getAttribute('contenteditable') === 'true'
+        target.closest('[contenteditable="true"]') != null
       ) {
         return
       }

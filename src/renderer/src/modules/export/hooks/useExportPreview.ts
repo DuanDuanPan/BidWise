@@ -40,6 +40,17 @@ export function useExportPreview(): UseExportPreviewReturn {
   const [state, setState] = useState<UseExportPreviewState>(INITIAL_STATE)
   const unsubscribeRef = useRef<(() => void) | null>(null)
   const currentTaskIdRef = useRef<string | null>(null)
+  const projectIdRef = useRef<string | null>(null)
+  const previewMetaRef = useRef<PreviewTaskResult | null>(null)
+
+  // Keep refs in sync with state for cleanup access
+  const syncRefs = useCallback(
+    (s: Partial<Pick<UseExportPreviewState, 'projectId' | 'previewMeta'>>) => {
+      if ('projectId' in s) projectIdRef.current = s.projectId ?? null
+      if ('previewMeta' in s) previewMetaRef.current = s.previewMeta ?? null
+    },
+    []
+  )
 
   const cleanupSubscription = useCallback(() => {
     if (unsubscribeRef.current) {
@@ -55,76 +66,94 @@ export function useExportPreview(): UseExportPreviewReturn {
     })
   }, [])
 
-  const handleTaskComplete = useCallback(async (taskId: string, projectId: string) => {
-    try {
-      const statusRes = await window.api.taskGetStatus({ taskId })
-      if (!statusRes.success || !statusRes.data) {
+  const handleTaskComplete = useCallback(
+    async (taskId: string, projectId: string) => {
+      // Guard against stale completions: if the task was cancelled or a new preview started, bail out
+      if (currentTaskIdRef.current !== taskId) return
+
+      try {
+        const statusRes = await window.api.taskGetStatus({ taskId })
+
+        // Re-check after await — user may have cancelled while we were fetching
+        if (currentTaskIdRef.current !== taskId) return
+
+        if (!statusRes.success || !statusRes.data) {
+          setState((prev) => ({
+            ...prev,
+            phase: 'error',
+            error: '无法获取任务状态',
+          }))
+          return
+        }
+
+        const task = statusRes.data
+        if (task.status === 'failed') {
+          setState((prev) => ({
+            ...prev,
+            phase: 'error',
+            error: task.error ?? '预览渲染失败',
+          }))
+          return
+        }
+
+        if (task.status === 'cancelled') {
+          setState(INITIAL_STATE)
+          syncRefs({ projectId: null, previewMeta: null })
+          return
+        }
+
+        if (task.status !== 'completed' || !task.output) {
+          return
+        }
+
+        const meta: PreviewTaskResult =
+          typeof task.output === 'string' ? JSON.parse(task.output) : task.output
+
+        setState((prev) => ({
+          ...prev,
+          previewMeta: meta,
+          progress: 90,
+          progressMessage: '正在加载预览内容',
+        }))
+        syncRefs({ previewMeta: meta })
+
+        const loadRes = await window.api.exportLoadPreview({
+          projectId,
+          tempPath: meta.tempPath,
+        })
+
+        // Re-check after await
+        if (currentTaskIdRef.current !== taskId) return
+
+        if (!loadRes.success) {
+          setState((prev) => ({
+            ...prev,
+            phase: 'error',
+            error: '加载预览内容失败',
+          }))
+          return
+        }
+
+        setState((prev) => ({
+          ...prev,
+          phase: 'ready',
+          progress: 100,
+          progressMessage: null,
+          docxBase64: loadRes.data.docxBase64,
+        }))
+      } catch (err) {
+        // Final staleness check
+        if (currentTaskIdRef.current !== taskId) return
+
         setState((prev) => ({
           ...prev,
           phase: 'error',
-          error: '无法获取任务状态',
+          error: err instanceof Error ? err.message : '预览加载失败',
         }))
-        return
       }
-
-      const task = statusRes.data
-      if (task.status === 'failed') {
-        setState((prev) => ({
-          ...prev,
-          phase: 'error',
-          error: task.error ?? '预览渲染失败',
-        }))
-        return
-      }
-
-      if (task.status === 'cancelled') {
-        setState(INITIAL_STATE)
-        return
-      }
-
-      if (task.status !== 'completed' || !task.output) {
-        return
-      }
-
-      const meta: PreviewTaskResult =
-        typeof task.output === 'string' ? JSON.parse(task.output) : task.output
-
-      setState((prev) => ({
-        ...prev,
-        previewMeta: meta,
-        progress: 90,
-        progressMessage: '正在加载预览内容',
-      }))
-
-      const loadRes = await window.api.exportLoadPreview({
-        projectId,
-        tempPath: meta.tempPath,
-      })
-
-      if (!loadRes.success) {
-        setState((prev) => ({
-          ...prev,
-          phase: 'error',
-          error: '加载预览内容失败',
-        }))
-        return
-      }
-
-      setState((prev) => ({
-        ...prev,
-        phase: 'ready',
-        progress: 100,
-        progressMessage: null,
-        docxBase64: loadRes.data.docxBase64,
-      }))
-    } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        phase: 'error',
-        error: err instanceof Error ? err.message : '预览加载失败',
-      }))
-    }
-  }, [])
+    },
+    [syncRefs]
+  )
 
   const triggerPreview = useCallback(
     async (projectId: string) => {
@@ -137,6 +166,7 @@ export function useExportPreview(): UseExportPreviewReturn {
         progress: 0,
         progressMessage: '正在加载方案',
       })
+      syncRefs({ projectId, previewMeta: null })
 
       try {
         const res = await window.api.exportPreview({ projectId })
@@ -156,6 +186,8 @@ export function useExportPreview(): UseExportPreviewReturn {
 
         const unsubscribe = window.api.onTaskProgress((event) => {
           if (event.taskId !== taskId) return
+          // Guard against events arriving after cancel/close
+          if (currentTaskIdRef.current !== taskId) return
 
           setState((prev) => ({
             ...prev,
@@ -173,10 +205,15 @@ export function useExportPreview(): UseExportPreviewReturn {
             }))
           } else if (event.message === 'cancelled') {
             setState(INITIAL_STATE)
+            syncRefs({ projectId: null, previewMeta: null })
           }
         })
 
         unsubscribeRef.current = unsubscribe
+
+        // Fix race condition: task may have completed before the listener was registered.
+        // Poll current status to catch already-finished tasks.
+        handleTaskComplete(taskId, projectId)
       } catch (err) {
         setState((prev) => ({
           ...prev,
@@ -185,7 +222,7 @@ export function useExportPreview(): UseExportPreviewReturn {
         }))
       }
     },
-    [cleanupSubscription, handleTaskComplete]
+    [cleanupSubscription, handleTaskComplete, syncRefs]
   )
 
   const cancelPreview = useCallback(() => {
@@ -197,7 +234,8 @@ export function useExportPreview(): UseExportPreviewReturn {
     currentTaskIdRef.current = null
     doCleanup(projectId)
     setState(INITIAL_STATE)
-  }, [state, cleanupSubscription, doCleanup])
+    syncRefs({ projectId: null, previewMeta: null })
+  }, [state, cleanupSubscription, doCleanup, syncRefs])
 
   const closePreview = useCallback(() => {
     const { projectId, previewMeta } = state
@@ -205,7 +243,8 @@ export function useExportPreview(): UseExportPreviewReturn {
     currentTaskIdRef.current = null
     doCleanup(projectId, previewMeta?.tempPath)
     setState(INITIAL_STATE)
-  }, [state, cleanupSubscription, doCleanup])
+    syncRefs({ projectId: null, previewMeta: null })
+  }, [state, cleanupSubscription, doCleanup, syncRefs])
 
   const retryPreview = useCallback(() => {
     const { projectId } = state
@@ -237,22 +276,23 @@ export function useExportPreview(): UseExportPreviewReturn {
       cleanupSubscription()
       currentTaskIdRef.current = null
       setState(INITIAL_STATE)
+      syncRefs({ projectId: null, previewMeta: null })
       message.success(`方案已导出到 ${res.data.outputPath}`)
     } catch {
       message.error('导出过程中出现错误')
     }
-  }, [state, cleanupSubscription])
+  }, [state, cleanupSubscription, syncRefs])
 
-  // Cleanup on unmount
+  // Cleanup on unmount — uses refs to access current values
   useEffect(() => {
     return () => {
       cleanupSubscription()
-      if (state.projectId) {
-        doCleanup(state.projectId, state.previewMeta?.tempPath)
+      currentTaskIdRef.current = null
+      if (projectIdRef.current) {
+        doCleanup(projectIdRef.current, previewMetaRef.current?.tempPath)
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [cleanupSubscription, doCleanup])
 
   return {
     ...state,

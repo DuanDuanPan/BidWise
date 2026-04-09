@@ -46,6 +46,13 @@ describe('useExportPreview', () => {
       success: true,
       data: { taskId: 'task-001' },
     })
+    // The hook polls task status immediately to guard against the race condition
+    // where the task completes before the progress listener is registered.
+    // Return "running" so the hook stays in loading phase.
+    mockApi.taskGetStatus.mockResolvedValue({
+      success: true,
+      data: { id: 'task-001', status: 'running', progress: 10 },
+    })
 
     const { result } = renderHook(() => useExportPreview())
 
@@ -58,6 +65,8 @@ describe('useExportPreview', () => {
     expect(result.current.projectId).toBe('proj-1')
     expect(mockApi.exportPreview).toHaveBeenCalledWith({ projectId: 'proj-1' })
     expect(mockApi.onTaskProgress).toHaveBeenCalled()
+    // Verify immediate status poll was made (race condition guard)
+    expect(mockApi.taskGetStatus).toHaveBeenCalledWith({ taskId: 'task-001' })
   })
 
   it('sets error when exportPreview IPC fails', async () => {
@@ -81,6 +90,10 @@ describe('useExportPreview', () => {
       success: true,
       data: { taskId: 'task-cancel' },
     })
+    mockApi.taskGetStatus.mockResolvedValue({
+      success: true,
+      data: { id: 'task-cancel', status: 'running', progress: 10 },
+    })
 
     const { result } = renderHook(() => useExportPreview())
 
@@ -102,6 +115,10 @@ describe('useExportPreview', () => {
       success: true,
       data: { taskId: 'task-close' },
     })
+    mockApi.taskGetStatus.mockResolvedValue({
+      success: true,
+      data: { id: 'task-close', status: 'running', progress: 10 },
+    })
 
     const { result } = renderHook(() => useExportPreview())
 
@@ -122,6 +139,24 @@ describe('useExportPreview', () => {
       success: true,
       data: { taskId: 'task-exp' },
     })
+    // First call: initial poll returns running; second call: task completed
+    mockApi.taskGetStatus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { id: 'task-exp', status: 'running', progress: 10 },
+      })
+      .mockResolvedValue({
+        success: true,
+        data: {
+          id: 'task-exp',
+          status: 'completed',
+          output: JSON.stringify({
+            tempPath: '/tmp/preview.docx',
+            fileName: '.preview-123.docx',
+            renderTimeMs: 100,
+          }),
+        },
+      })
 
     const { result } = renderHook(() => useExportPreview())
 
@@ -132,18 +167,6 @@ describe('useExportPreview', () => {
 
     // Simulate ready state by getting progress callback and completing
     const progressCallback = mockApi.onTaskProgress.mock.calls[0][0]
-    mockApi.taskGetStatus.mockResolvedValue({
-      success: true,
-      data: {
-        id: 'task-exp',
-        status: 'completed',
-        output: JSON.stringify({
-          tempPath: '/tmp/preview.docx',
-          fileName: '.preview-123.docx',
-          renderTimeMs: 100,
-        }),
-      },
-    })
     mockApi.exportLoadPreview.mockResolvedValue({
       success: true,
       data: { docxBase64: 'base64content' },
@@ -175,6 +198,24 @@ describe('useExportPreview', () => {
       success: true,
       data: { taskId: 'task-save-cancel' },
     })
+    // First call: initial poll returns running; second call: task completed
+    mockApi.taskGetStatus
+      .mockResolvedValueOnce({
+        success: true,
+        data: { id: 'task-save-cancel', status: 'running', progress: 10 },
+      })
+      .mockResolvedValue({
+        success: true,
+        data: {
+          id: 'task-save-cancel',
+          status: 'completed',
+          output: JSON.stringify({
+            tempPath: '/tmp/preview.docx',
+            fileName: '.preview-123.docx',
+            renderTimeMs: 100,
+          }),
+        },
+      })
 
     const { result } = renderHook(() => useExportPreview())
 
@@ -184,18 +225,6 @@ describe('useExportPreview', () => {
 
     // Fast-forward to ready state
     const progressCallback = mockApi.onTaskProgress.mock.calls[0][0]
-    mockApi.taskGetStatus.mockResolvedValue({
-      success: true,
-      data: {
-        id: 'task-save-cancel',
-        status: 'completed',
-        output: JSON.stringify({
-          tempPath: '/tmp/preview.docx',
-          fileName: '.preview-123.docx',
-          renderTimeMs: 100,
-        }),
-      },
-    })
     mockApi.exportLoadPreview.mockResolvedValue({
       success: true,
       data: { docxBase64: 'base64content' },
@@ -224,6 +253,10 @@ describe('useExportPreview', () => {
     mockApi.exportPreview.mockResolvedValue({
       success: true,
       data: { taskId: 'task-fail' },
+    })
+    mockApi.taskGetStatus.mockResolvedValue({
+      success: true,
+      data: { id: 'task-fail', status: 'running', progress: 10 },
     })
 
     const { result } = renderHook(() => useExportPreview())

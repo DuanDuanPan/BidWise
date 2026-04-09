@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { ExportPreviewModal } from '@modules/export/components/ExportPreviewModal'
+import { renderAsync } from 'docx-preview'
 
 vi.mock('docx-preview', () => ({
   renderAsync: vi.fn().mockResolvedValue(undefined),
 }))
+
+const mockedRenderAsync = vi.mocked(renderAsync)
 
 describe('ExportPreviewModal', () => {
   afterEach(cleanup)
@@ -71,5 +74,17 @@ describe('ExportPreviewModal', () => {
     render(<ExportPreviewModal {...defaultProps} docxBase64="AAAA" />)
 
     expect(screen.getByTestId('preview-toolbar')).toBeInTheDocument()
+  })
+
+  it('shows error state when docx-preview renderAsync rejects', async () => {
+    mockedRenderAsync.mockRejectedValueOnce(new Error('Render engine failed'))
+
+    render(<ExportPreviewModal {...defaultProps} docxBase64="AAAA" />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-error-alert')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('confirm-export-btn')).not.toBeInTheDocument()
+    expect(screen.getByTestId('retry-btn')).toBeInTheDocument()
   })
 })
