@@ -1,6 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
 import { _electron as electron, type ElectronApplication } from 'playwright'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  statSync,
+  readFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -40,7 +48,10 @@ async function withIsolatedApp(
   }
 }
 
-async function createRichExportProject(window: Page): Promise<string> {
+async function createRichExportProject(
+  window: Page,
+  electronApp?: ElectronApplication
+): Promise<string> {
   const response = await window.evaluate(async () => {
     return window.api.projectCreate({
       name: '导出测试项目',
@@ -86,8 +97,38 @@ async function createRichExportProject(window: Page): Promise<string> {
     { pid: projectId }
   )
 
-  // Note: template-mapping.json is optional — export works with fallback styles.
-  // The E2E test validates the preview→export UI flow, not per-style rendering.
+  // Prepare image asset so the renderer's image path is exercised
+  let assetsDir: string | undefined
+  if (electronApp) {
+    const projectDataDir = await electronApp.evaluate(
+      ({ app }, pid) => {
+        const path = require('path')
+        return path.resolve(app.getPath('userData'), 'data', 'projects', pid)
+      },
+      projectId
+    )
+    assetsDir = join(projectDataDir, 'assets')
+  }
+  if (assetsDir) {
+    mkdirSync(assetsDir, { recursive: true })
+    // Minimal 1x1 white PNG
+    const minimalPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAB' +
+        'Nl7BcQAAAABJRU5ErkJggg==',
+      'base64'
+    )
+    writeFileSync(join(assetsDir, 'diagram.png'), minimalPng)
+
+    // Write template-mapping.json so the style mapping path is exercised
+    const projectDataDir = resolve(assetsDir, '..')
+    writeFileSync(
+      join(projectDataDir, 'template-mapping.json'),
+      JSON.stringify({
+        styleMapping: { heading1: 'Heading 1', bodyText: 'Normal' },
+        pageSetup: { contentWidthMm: 160 },
+      })
+    )
+  }
 
   // Reload so the Zustand store picks up the IPC-created project
   await window.reload()
@@ -162,7 +203,7 @@ test('@story-8-3 @p1 cancel during loading returns to workspace', async () => {
 
 test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', async () => {
   await withIsolatedApp(async (window, electronApp) => {
-    await createRichExportProject(window)
+    await createRichExportProject(window, electronApp)
 
     // Prepare a temp directory for the exported file
     const exportDir = mkdtempSync(join(tmpdir(), 'bidwise-export-'))
@@ -185,8 +226,11 @@ test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', asyn
       const errorAlert = window.getByTestId('preview-error-alert')
       await expect(confirmBtn.or(errorAlert)).toBeVisible({ timeout: 60_000 })
 
-      // If Python bridge is not available, skip gracefully
+      // If Python bridge is not available, verify error UI is functional then skip
       if (await errorAlert.isVisible()) {
+        // Even on skip, validate error UI controls exist
+        await expect(window.getByTestId('retry-btn')).toBeVisible()
+        await expect(window.getByTestId('back-to-edit-btn')).toBeVisible()
         test.skip(true, 'Python bridge not available — cannot complete full export flow')
         return
       }
@@ -204,6 +248,11 @@ test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', asyn
       expect(existsSync(exportPath)).toBe(true)
       const fileStats = statSync(exportPath)
       expect(fileStats.size).toBeGreaterThan(0)
+
+      // Basic structural check: valid ZIP/DOCX (starts with PK magic bytes)
+      const header = readFileSync(exportPath).subarray(0, 2)
+      expect(header[0]).toBe(0x50) // 'P'
+      expect(header[1]).toBe(0x4b) // 'K'
 
       // Workspace should still be functional
       await expect(window.getByTestId('project-workspace')).toBeVisible()

@@ -108,11 +108,33 @@ function startPythonProcess(): Promise<{ port: number; pid: number }> {
 vi.mock('@main/services/docx-bridge/process-manager', () => ({
   processManager: {
     getStatus: vi.fn(() => ({ ready: false, port: undefined, pid: undefined })),
+    startProcess: vi.fn(),
+    stopProcess: vi.fn(),
+    startHealthCheck: vi.fn(),
   },
+}))
+
+// Mocks for docxBridgeService facade layer
+vi.mock('electron', () => ({
+  app: { getPath: () => TMP_DIR },
+}))
+
+vi.mock('@electron-toolkit/utils', () => ({
+  is: { dev: true },
+}))
+
+vi.mock('@main/utils/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
 }))
 
 // Import render-client (uses mocked processManager internally)
 import { renderDocx } from '@main/services/docx-bridge/render-client'
+import { docxBridgeService } from '@main/services/docx-bridge'
 import { processManager } from '@main/services/docx-bridge/process-manager'
 
 describe('rich-export integration (Node.js → Python via render-client)', () => {
@@ -191,6 +213,35 @@ describe('rich-export integration (Node.js → Python via render-client)', () =>
     }
 
     await expect(renderDocx(input)).rejects.toMatchObject({ code: 'TEMPLATE_NOT_FOUND' })
+  })
+
+  it('renders through docxBridgeService facade with path validation', async () => {
+    expect(actualPort).not.toBeNull()
+
+    const result = await docxBridgeService.renderDocx({
+      markdownContent: '# Facade Test\n\n正文内容\n\n- 列表项',
+      outputPath: 'facade-test.docx',
+      projectId: 'facade-proj',
+      styleMapping: { heading1: 'Heading 1' },
+    })
+
+    // Output path should be resolved under the project exports/ directory
+    expect(result.outputPath).toContain('exports')
+    expect(result.outputPath).toContain('facade-test.docx')
+    expect(existsSync(result.outputPath)).toBe(true)
+    expect(result.renderTimeMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('rejects traversal path through docxBridgeService facade', async () => {
+    expect(actualPort).not.toBeNull()
+
+    await expect(
+      docxBridgeService.renderDocx({
+        markdownContent: '# Test',
+        outputPath: '../../etc/passwd',
+        projectId: 'traversal-test',
+      })
+    ).rejects.toThrow()
   })
 
   afterAll(() => {

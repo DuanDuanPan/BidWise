@@ -977,6 +977,90 @@ def test_absolute_image_path_rejected_without_project_path(
 # === Regression: route handler catch-all for unexpected exceptions ===
 
 
+def test_toc_character_style_falls_back(client: TestClient, tmp_output: str, tmp_path):
+    """When toc maps to a CHARACTER style, must fall back to Heading 1 instead of raising ValueError."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "char-toc-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("TocChar", WD_STYLE_TYPE.CHARACTER)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Heading\n\nBody text",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"toc": "TocChar"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    warnings = body["data"]["warnings"]
+    assert any("不是段落样式" in w for w in warnings)
+    doc = Document(tmp_output)
+    assert any(p.text == "目录" for p in doc.paragraphs)
+
+
+def test_table_character_style_falls_back(client: TestClient, tmp_output: str, tmp_path):
+    """When table maps to a CHARACTER style, must fall back instead of raising ValueError."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "char-table-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("TableChar", WD_STYLE_TYPE.CHARACTER)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "| Col1 | Col2 |\n| --- | --- |\n| A | B |",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"table": "TableChar"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    warnings = body["data"]["warnings"]
+    assert any("不是表格样式" in w for w in warnings)
+    doc = Document(tmp_output)
+    assert len(doc.tables) == 1
+
+
+def test_table_paragraph_style_falls_back(client: TestClient, tmp_output: str, tmp_path):
+    """When table maps to a PARAGRAPH style, must fall back instead of raising ValueError."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "para-table-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("TablePara", WD_STYLE_TYPE.PARAGRAPH)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "| Col1 | Col2 |\n| --- | --- |\n| A | B |",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"table": "TablePara"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    warnings = body["data"]["warnings"]
+    assert any("不是表格样式" in w for w in warnings)
+    doc = Document(tmp_output)
+    assert len(doc.tables) == 1
+
+
 def test_unexpected_error_returns_structured_response(client: TestClient, tmp_output: str):
     """Unexpected exceptions must return structured error, not raw 500."""
     # Trigger an error by providing an output path that can't be created

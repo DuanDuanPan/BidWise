@@ -100,6 +100,14 @@ def _resolve_paragraph_style(
     return None
 
 
+def _is_table_style(doc: Document, style_name: str) -> bool:
+    """Check if a style exists and is a TABLE style."""
+    try:
+        return doc.styles[style_name].type == WD_STYLE_TYPE.TABLE
+    except KeyError:
+        return False
+
+
 def _resolve_table_style(
     doc: Document,
     configured_name: Optional[str],
@@ -107,7 +115,12 @@ def _resolve_table_style(
 ) -> Optional[str]:
     """Resolve a table style."""
     if configured_name and _style_exists(doc, configured_name):
-        return configured_name
+        if _is_table_style(doc, configured_name):
+            return configured_name
+        warnings.append(
+            f"表格样式 '{configured_name}' 不是表格样式 (类型不兼容)，使用无样式"
+        )
+        return None
     if configured_name:
         warnings.append(f"表格样式 '{configured_name}' 在模板中不存在")
     return None
@@ -298,11 +311,12 @@ def add_toc(
 
     # Add TOC title paragraph
     if title:
-        style = toc_style
-        if style and not _style_exists(doc, style):
-            if warnings is not None:
-                warnings.append(f"TOC 样式 '{style}' 不存在，fallback 到 'Heading 1'")
-            style = "Heading 1" if _style_exists(doc, "Heading 1") else None
+        style = _resolve_paragraph_style(
+            doc,
+            toc_style,
+            "Heading 1",
+            warnings,
+        ) if toc_style else None
         p = doc.add_paragraph(title, style=style)
     else:
         p = doc.add_paragraph()
