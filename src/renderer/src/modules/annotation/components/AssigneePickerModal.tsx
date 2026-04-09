@@ -26,11 +26,13 @@ export function AssigneePickerModal({
   const [selectedAssignee, setSelectedAssignee] = useState<string | undefined>(undefined)
   const [supplementNote, setSupplementNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [searchValue, setSearchValue] = useState('')
 
   const handleClose = (): void => {
     setSelectedAssignee(undefined)
     setSupplementNote('')
     setSubmitting(false)
+    setSearchValue('')
     onClose()
   }
 
@@ -70,16 +72,11 @@ export function AssigneePickerModal({
     }))
 
   const handleSearch = (value: string): void => {
-    if (!value.trim()) return
-    const exists = knownUsers.some(
-      (u) => u.displayName === value.trim() || u.id === `user:custom:${value.trim().toLowerCase()}`
-    )
-    if (!exists) {
-      // Will be created on select
-    }
+    setSearchValue(value)
   }
 
   const handleSelect = (value: string): void => {
+    setSearchValue('')
     const exists = knownUsers.find((u) => u.id === value)
     if (exists) {
       setSelectedAssignee(value)
@@ -89,6 +86,17 @@ export function AssigneePickerModal({
       setSelectedAssignee(newUser.id)
     }
   }
+
+  // Add a dynamic "custom input" option when search text doesn't match any existing user
+  const displayOptions = (() => {
+    const trimmed = searchValue.trim()
+    if (!trimmed) return userOptions
+    const exactMatch = knownUsers.some(
+      (u) => u.displayName === trimmed || u.id === `user:custom:${trimmed.toLowerCase()}`
+    )
+    if (exactMatch) return userOptions
+    return [...userOptions, { value: trimmed, label: `自定义输入: ${trimmed}` }]
+  })()
 
   return (
     <Modal
@@ -123,10 +131,9 @@ export function AssigneePickerModal({
               placeholder="选择或输入指导人"
               showSearch
               value={selectedAssignee}
-              options={userOptions}
+              options={displayOptions}
               onSearch={handleSearch}
               onSelect={handleSelect}
-              onChange={(value) => setSelectedAssignee(value)}
               filterOption={(input, option) =>
                 (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
               }

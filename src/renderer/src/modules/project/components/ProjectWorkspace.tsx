@@ -5,8 +5,8 @@ import {
   SearchOutlined,
   FileSearchOutlined,
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
-import { useEffect, useMemo, useCallback, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { useCurrentProject } from '../hooks/useCurrentProject'
 import { useContextRestore } from '../hooks/useContextRestore'
 import { useSopNavigation } from '../hooks/useSopNavigation'
@@ -40,8 +40,15 @@ import { NotificationBell } from '@modules/notification/components/NotificationB
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
 
+interface NotificationRouteState {
+  focusAnnotationId?: string
+  expandThreadParentId?: string
+  focusSectionId?: string
+}
+
 export function ProjectWorkspace(): React.JSX.Element {
   const navigate = useNavigate()
+  const location = useLocation()
   const { projectId, currentProject, loading, error } = useCurrentProject()
 
   const { saveContext, restoreContext } = useContextRestore()
@@ -124,6 +131,61 @@ export function ProjectWorkspace(): React.JSX.Element {
       void loadAnnotations(projectId)
     }
   }, [currentStageKey, projectId, loadAnnotations])
+
+  // Notification navigation state
+  const [focusAnnotationId, setFocusAnnotationId] = useState<string | null>(null)
+  const [expandThreadParentId, setExpandThreadParentId] = useState<string | null>(null)
+
+  // Sync route state → local state (render-time derived state, avoids setState-in-effect)
+  const routeState = location.state as NotificationRouteState | null
+  const routeAnnotationId = routeState?.focusAnnotationId ?? null
+  const [prevRouteAnnotation, setPrevRouteAnnotation] = useState<string | null>(null)
+  if (routeAnnotationId && routeAnnotationId !== prevRouteAnnotation) {
+    setPrevRouteAnnotation(routeAnnotationId)
+    setFocusAnnotationId(routeAnnotationId)
+    setExpandThreadParentId(routeState?.expandThreadParentId ?? null)
+  }
+
+  // Side effects for cross-project notification navigation (stage switch + state cleanup)
+  useEffect(() => {
+    const rs = location.state as NotificationRouteState | null
+    if (rs?.focusAnnotationId) {
+      if (currentStageKey !== 'proposal-writing') {
+        navigateToStage('proposal-writing')
+      }
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.state, currentStageKey, navigateToStage, navigate, location.pathname])
+
+  const handleNotificationClick = useCallback(
+    (notification: {
+      projectId: string
+      annotationId: string
+      sectionId: string
+      type: string
+    }) => {
+      if (notification.projectId === projectId) {
+        // Same project: set focus state directly, ensure we're on proposal-writing
+        setFocusAnnotationId(notification.annotationId)
+        setExpandThreadParentId(
+          notification.type === 'reply-received' ? notification.annotationId : null
+        )
+        if (currentStageKey !== 'proposal-writing') {
+          navigateToStage('proposal-writing')
+        }
+      } else {
+        // Different project: navigate with route state
+        navigate(`/project/${notification.projectId}`, {
+          state: {
+            focusAnnotationId: notification.annotationId,
+            expandThreadParentId:
+              notification.type === 'reply-received' ? notification.annotationId : undefined,
+          } satisfies NotificationRouteState,
+        })
+      }
+    },
+    [projectId, currentStageKey, navigateToStage, navigate]
+  )
 
   const currentStageName = SOP_STAGES.find((s) => s.key === currentStageKey)?.label
   const isProposalWriting = currentStageKey === 'proposal-writing' && Boolean(projectId)
@@ -246,7 +308,7 @@ export function ProjectWorkspace(): React.JSX.Element {
                 aria-label="命令面板"
                 data-testid="search-btn"
               />
-              <NotificationBell />
+              <NotificationBell onNotificationClick={handleNotificationClick} />
               <Button
                 type="text"
                 icon={<SettingOutlined />}
@@ -309,6 +371,8 @@ export function ProjectWorkspace(): React.JSX.Element {
                 projectId={isProposalWriting ? projectId : undefined}
                 sopPhase={currentStageKey}
                 currentSection={isProposalWriting ? currentSection : null}
+                focusAnnotationId={focusAnnotationId}
+                expandThreadParentId={expandThreadParentId}
               />
             }
             statusBar={

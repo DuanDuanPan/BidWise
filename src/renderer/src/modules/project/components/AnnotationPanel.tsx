@@ -28,6 +28,7 @@ import {
 } from '@renderer/modules/annotation/lib/annotationSectionScope'
 import { AskSystemDialog } from '@renderer/modules/annotation/components/AskSystemDialog'
 import { AssigneePickerModal } from '@renderer/modules/annotation/components/AssigneePickerModal'
+import { AnnotationThread } from '@renderer/modules/annotation/components/AnnotationThread'
 import { ANNOTATION_TYPE_ACTIONS } from '@renderer/modules/annotation/constants/annotation-colors'
 import type { AnnotationRecord } from '@shared/annotation-types'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
@@ -45,6 +46,8 @@ interface AnnotationPanelProps {
   projectId?: string
   sopPhase?: string
   currentSection?: CurrentSectionProp | null
+  focusAnnotationId?: string | null
+  expandThreadParentId?: string | null
 }
 
 function LoadingContent(): React.JSX.Element {
@@ -134,12 +137,14 @@ function ListContent({
   cardRefs,
   onRequestGuidance,
   onReply,
+  expandedThreadId,
 }: {
   items: AnnotationRecord[]
   focusedIndex: number
   cardRefs: React.MutableRefObject<Map<number, HTMLDivElement>>
   onRequestGuidance?: (annotation: AnnotationRecord) => void
   onReply?: (annotation: AnnotationRecord) => void
+  expandedThreadId?: string | null
 }): React.JSX.Element {
   return (
     <div
@@ -148,20 +153,22 @@ function ListContent({
       data-testid="annotation-list"
     >
       {items.map((item, index) => (
-        <AnnotationCard
-          key={item.id}
-          annotation={item}
-          focused={index === focusedIndex}
-          onRequestGuidance={onRequestGuidance}
-          onReply={onReply}
-          ref={(el) => {
-            if (el) {
-              cardRefs.current.set(index, el)
-            } else {
-              cardRefs.current.delete(index)
-            }
-          }}
-        />
+        <div key={item.id}>
+          <AnnotationCard
+            annotation={item}
+            focused={index === focusedIndex}
+            onRequestGuidance={onRequestGuidance}
+            onReply={!item.parentId ? onReply : undefined}
+            ref={(el) => {
+              if (el) {
+                cardRefs.current.set(index, el)
+              } else {
+                cardRefs.current.delete(index)
+              }
+            }}
+          />
+          {expandedThreadId === item.id && <AnnotationThread rootAnnotation={item} />}
+        </div>
       ))}
     </div>
   )
@@ -305,8 +312,8 @@ function PanelBody({
   active,
   sopPhase,
   currentSection,
-  requestedFocusAnnotationId: _requestedFocusAnnotationId,
-  requestedExpandThreadParentId: _requestedExpandThreadParentId,
+  requestedFocusAnnotationId,
+  requestedExpandThreadParentId,
 }: {
   projectId?: string
   active: boolean
@@ -322,6 +329,7 @@ function PanelBody({
   const filters = useAnnotationFilters()
   const [overloadMode, setOverloadMode] = useState<OverloadMode>('none')
   const [guidanceAnnotation, setGuidanceAnnotation] = useState<AnnotationRecord | null>(null)
+  const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null)
 
   // Reset overload mode when section changes (ref-based to avoid setState in effect)
   const sectionKey = currentSection?.sectionKey ?? null
@@ -375,6 +383,39 @@ function PanelBody({
     setGuidanceAnnotation(annotation)
   }, [])
 
+  const handleReply = useCallback((annotation: AnnotationRecord) => {
+    setExpandedThreadId((prev) => (prev === annotation.id ? null : annotation.id))
+  }, [])
+
+  // Sync requestedExpandThreadParentId → expandedThreadId (render-time derived state)
+  const [prevExpandRequest, setPrevExpandRequest] = useState<string | null>(null)
+  if (requestedExpandThreadParentId && requestedExpandThreadParentId !== prevExpandRequest) {
+    setPrevExpandRequest(requestedExpandThreadParentId)
+    setExpandedThreadId(requestedExpandThreadParentId)
+  }
+
+  // Consume requestedFocusAnnotationId — scroll to and highlight the target card
+  const consumedFocusRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      requestedFocusAnnotationId &&
+      requestedFocusAnnotationId !== consumedFocusRef.current &&
+      loaded
+    ) {
+      consumedFocusRef.current = requestedFocusAnnotationId
+      // Wait a tick for the list to render, then scroll to the card
+      const timer = setTimeout(() => {
+        const el = document.querySelector(
+          `[data-annotation-id="${requestedFocusAnnotationId}"]`
+        ) as HTMLElement | null
+        el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        el?.focus()
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+    return undefined
+  }, [requestedFocusAnnotationId, loaded])
+
   const { focusedIndex, cardRefs } = useKeyboardNavigation({
     items: displayItems,
     active: active && !!projectId,
@@ -412,6 +453,8 @@ function PanelBody({
           focusedIndex={focusedIndex}
           cardRefs={cardRefs}
           onRequestGuidance={handleRequestGuidance}
+          onReply={handleReply}
+          expandedThreadId={expandedThreadId}
         />
       )}
       <AskSystemDialog projectId={projectId} currentSection={currentSection ?? null} />
@@ -458,6 +501,8 @@ export function AnnotationPanel({
   projectId,
   sopPhase,
   currentSection,
+  focusAnnotationId,
+  expandThreadParentId,
 }: AnnotationPanelProps): React.JSX.Element {
   const [flyoutOpen, setFlyoutOpen] = useState(false)
   const flyoutRef = useRef<HTMLDivElement>(null)
@@ -584,6 +629,8 @@ export function AnnotationPanel({
                 active={true}
                 sopPhase={sopPhase}
                 currentSection={currentSection}
+                requestedFocusAnnotationId={focusAnnotationId}
+                requestedExpandThreadParentId={expandThreadParentId}
               />
             </div>
           </div>
@@ -671,6 +718,8 @@ export function AnnotationPanel({
           active={true}
           sopPhase={sopPhase}
           currentSection={currentSection}
+          requestedFocusAnnotationId={focusAnnotationId}
+          requestedExpandThreadParentId={expandThreadParentId}
         />
       </div>
     </aside>
