@@ -15,6 +15,8 @@ export interface AnnotationProjectState {
 
 export interface AnnotationState {
   projects: Record<string, AnnotationProjectState>
+  repliesByParent: Record<string, AnnotationRecord[]>
+  replyLoadingByParent: Record<string, boolean>
 }
 
 interface AnnotationActions {
@@ -22,6 +24,7 @@ interface AnnotationActions {
   createAnnotation: (input: CreateAnnotationInput) => Promise<void>
   updateAnnotation: (input: UpdateAnnotationInput) => Promise<boolean>
   deleteAnnotation: (id: string, projectId: string) => Promise<void>
+  loadReplies: (parentId: string) => Promise<void>
   reset: (projectId?: string) => void
 }
 
@@ -62,9 +65,15 @@ function sortByCreatedAtDesc(items: AnnotationRecord[]): AnnotationRecord[] {
   return [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
+function sortByCreatedAtAsc(items: AnnotationRecord[]): AnnotationRecord[] {
+  return [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
 export const useAnnotationStore = create<AnnotationStore>()(
   subscribeWithSelector((set, get) => ({
     projects: {},
+    repliesByParent: {},
+    replyLoadingByParent: {},
 
     async loadAnnotations(projectId: string): Promise<void> {
       set((state) => updateProject(state, projectId, { loading: true, error: null }))
@@ -101,12 +110,28 @@ export const useAnnotationStore = create<AnnotationStore>()(
       try {
         const response = await window.api.annotationCreate(input)
         if (response.success) {
-          set((state) => {
-            const project = getProjectState(state, input.projectId)
-            return updateProject(state, input.projectId, {
-              items: sortByCreatedAtDesc([...project.items, response.data]),
+          const created = response.data
+          if (input.parentId) {
+            // Reply: append to repliesByParent
+            set((state) => ({
+              ...state,
+              repliesByParent: {
+                ...state.repliesByParent,
+                [input.parentId!]: sortByCreatedAtAsc([
+                  ...(state.repliesByParent[input.parentId!] ?? []),
+                  created,
+                ]),
+              },
+            }))
+          } else {
+            // Root annotation: add to project items
+            set((state) => {
+              const project = getProjectState(state, input.projectId)
+              return updateProject(state, input.projectId, {
+                items: sortByCreatedAtDesc([...project.items, created]),
+              })
             })
-          })
+          }
         } else {
           set((state) => updateProject(state, input.projectId, { error: response.error.message }))
         }
@@ -169,6 +194,37 @@ export const useAnnotationStore = create<AnnotationStore>()(
       }
     },
 
+    async loadReplies(parentId: string): Promise<void> {
+      set((state) => ({
+        ...state,
+        replyLoadingByParent: { ...state.replyLoadingByParent, [parentId]: true },
+      }))
+
+      try {
+        const response = await window.api.annotationListReplies({ parentId })
+        if (response.success) {
+          set((state) => ({
+            ...state,
+            repliesByParent: {
+              ...state.repliesByParent,
+              [parentId]: sortByCreatedAtAsc(response.data),
+            },
+            replyLoadingByParent: { ...state.replyLoadingByParent, [parentId]: false },
+          }))
+        } else {
+          set((state) => ({
+            ...state,
+            replyLoadingByParent: { ...state.replyLoadingByParent, [parentId]: false },
+          }))
+        }
+      } catch {
+        set((state) => ({
+          ...state,
+          replyLoadingByParent: { ...state.replyLoadingByParent, [parentId]: false },
+        }))
+      }
+    },
+
     reset(projectId?: string): void {
       if (projectId) {
         set((state) => ({
@@ -179,7 +235,7 @@ export const useAnnotationStore = create<AnnotationStore>()(
           },
         }))
       } else {
-        set({ projects: {} })
+        set({ projects: {}, repliesByParent: {}, replyLoadingByParent: {} })
       }
     },
   }))

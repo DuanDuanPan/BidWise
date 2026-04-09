@@ -5,6 +5,7 @@ const mockCreate = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockDelete = vi.hoisted(() => vi.fn())
 const mockList = vi.hoisted(() => vi.fn())
+const mockListReplies = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   ipcMain: { handle: mockHandle },
@@ -16,6 +17,7 @@ vi.mock('@main/services/annotation-service', () => ({
     update: mockUpdate,
     delete: mockDelete,
     list: mockList,
+    listReplies: mockListReplies,
   },
 }))
 
@@ -41,7 +43,7 @@ describe('annotation-handlers', () => {
     vi.clearAllMocks()
   })
 
-  it('registers all four annotation channels', () => {
+  it('registers all five annotation channels', () => {
     registerAnnotationHandlers()
 
     const registeredChannels = mockHandle.mock.calls.map((c: unknown[]) => c[0])
@@ -49,7 +51,8 @@ describe('annotation-handlers', () => {
     expect(registeredChannels).toContain('annotation:update')
     expect(registeredChannels).toContain('annotation:delete')
     expect(registeredChannels).toContain('annotation:list')
-    expect(registeredChannels).toHaveLength(4)
+    expect(registeredChannels).toContain('annotation:list-replies')
+    expect(registeredChannels).toHaveLength(5)
   })
 
   it('annotation:create handler wraps response in success envelope', async () => {

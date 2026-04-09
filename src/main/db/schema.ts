@@ -91,6 +91,8 @@ export interface AnnotationTable {
   content: string
   author: string
   status: string
+  parentId: string | null
+  assignee: string | null
   createdAt: string
   updatedAt: string
 }
@@ -122,6 +124,20 @@ export interface TraceabilityLinkTable {
   updatedAt: string
 }
 
+export interface NotificationTable {
+  id: string
+  projectId: string
+  projectName: string
+  sectionId: string
+  annotationId: string
+  targetUser: string
+  type: string
+  title: string
+  summary: string
+  read: number
+  createdAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -132,4 +148,5 @@ export interface DB {
   annotations: AnnotationTable
   requirementCertainties: RequirementCertaintyTable
   traceabilityLinks: TraceabilityLinkTable
+  notifications: NotificationTable
 }

@@ -197,6 +197,12 @@ describe('@story-1-6 ProjectWorkspace', () => {
       annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
       annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
       annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      annotationListReplies: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      notificationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      notificationMarkRead: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      notificationMarkAllRead: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      notificationCountUnread: vi.fn().mockResolvedValue({ success: true, data: 0 }),
+      onNotificationNew: vi.fn().mockReturnValue(() => {}),
     })
     mockNavigate.mockClear()
     mockScrollToHeading.mockReset()
@@ -343,6 +349,12 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
       annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
       annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      annotationListReplies: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      notificationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      notificationMarkRead: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      notificationMarkAllRead: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      notificationCountUnread: vi.fn().mockResolvedValue({ success: true, data: 0 }),
+      onNotificationNew: vi.fn().mockReturnValue(() => {}),
     })
     mockNavigate.mockClear()
   })

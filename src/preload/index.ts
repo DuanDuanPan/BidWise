@@ -9,6 +9,7 @@ import type {
 } from '@shared/ipc-types'
 import { IPC_CHANNELS } from '@shared/ipc-types'
 import type { TaskProgressEvent } from '@shared/ai-types'
+import type { NotificationRecord } from '@shared/notification-types'
 
 // 类型安全的 IPC invoke 包装（内部使用，不暴露给 renderer）
 function typedInvoke<C extends keyof IpcChannelMap>(
@@ -190,6 +191,9 @@ const requestApi = {
   annotationList: (input: IpcChannelMap['annotation:list']['input']) =>
     typedInvoke(IPC_CHANNELS.ANNOTATION_LIST, input),
 
+  annotationListReplies: (input: IpcChannelMap['annotation:list-replies']['input']) =>
+    typedInvoke(IPC_CHANNELS.ANNOTATION_LIST_REPLIES, input),
+
   sourceAttribute: (input: IpcChannelMap['source:attribute']['input']) =>
     typedInvoke(IPC_CHANNELS.SOURCE_ATTRIBUTE, input),
 
@@ -226,6 +230,18 @@ const requestApi = {
 
   mermaidDeleteAsset: (input: IpcChannelMap['mermaid:delete-asset']['input']) =>
     typedInvoke(IPC_CHANNELS.MERMAID_DELETE_ASSET, input),
+
+  notificationList: (input: IpcChannelMap['notification:list']['input']) =>
+    typedInvoke(IPC_CHANNELS.NOTIFICATION_LIST, input),
+
+  notificationMarkRead: (input: IpcChannelMap['notification:mark-read']['input']) =>
+    typedInvoke(IPC_CHANNELS.NOTIFICATION_MARK_READ, input),
+
+  notificationMarkAllRead: (input: IpcChannelMap['notification:mark-all-read']['input']) =>
+    typedInvoke(IPC_CHANNELS.NOTIFICATION_MARK_ALL_READ, input),
+
+  notificationCountUnread: (input: IpcChannelMap['notification:count-unread']['input']) =>
+    typedInvoke(IPC_CHANNELS.NOTIFICATION_COUNT_UNREAD, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer
@@ -237,6 +253,15 @@ const eventApi = {
     ipcRenderer.on(IPC_CHANNELS.TASK_PROGRESS_EVENT, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.TASK_PROGRESS_EVENT, handler)
+    }
+  },
+  onNotificationNew: (callback: (notification: NotificationRecord) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: NotificationRecord): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(IPC_CHANNELS.NOTIFICATION_NEW_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.NOTIFICATION_NEW_EVENT, handler)
     }
   },
 }

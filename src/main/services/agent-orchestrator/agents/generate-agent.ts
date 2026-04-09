@@ -5,6 +5,8 @@ import {
 import type { GenerateChapterContext } from '@main/prompts/generate-chapter.prompt'
 import { askSystemPrompt, ASK_SYSTEM_SYSTEM_PROMPT } from '@main/prompts/ask-system.prompt'
 import type { AskSystemContext } from '@main/prompts/ask-system.prompt'
+import { annotationFeedbackPrompt } from '@main/prompts/annotation-feedback.prompt'
+import type { AnnotationFeedbackContext } from '@main/prompts/annotation-feedback.prompt'
 import { throwIfAborted } from '@main/utils/abort'
 import type { AgentHandler, AiRequestParams } from '../orchestrator'
 
@@ -17,6 +19,11 @@ export const generateAgentHandler: AgentHandler = async (
   // Branch: ask-system mode
   if (context.mode === 'ask-system') {
     return handleAskSystem(context, signal, updateProgress)
+  }
+
+  // Branch: annotation-feedback mode
+  if (context.mode === 'annotation-feedback') {
+    return handleAnnotationFeedback(context, signal, updateProgress)
   }
 
   // Default: chapter generation mode
@@ -47,6 +54,34 @@ async function handleAskSystem(
       { role: 'system', content: ASK_SYSTEM_SYSTEM_PROMPT },
       { role: 'user', content: prompt },
     ],
+    maxTokens: 2048,
+  }
+}
+
+async function handleAnnotationFeedback(
+  context: Record<string, unknown>,
+  signal: AbortSignal,
+  updateProgress: (progress: number, message?: string) => void
+): Promise<AiRequestParams> {
+  updateProgress(0, 'analyzing')
+
+  const promptContext: AnnotationFeedbackContext = {
+    originalAnnotationContent: context.originalAnnotationContent as string,
+    originalAnnotationType: context.originalAnnotationType as
+      | 'ai-suggestion'
+      | 'adversarial'
+      | 'score-warning',
+    userFeedback: context.userFeedback as string,
+    sectionContent: (context.sectionContent as string) ?? '',
+  }
+
+  const prompt = annotationFeedbackPrompt(promptContext)
+  throwIfAborted(signal, 'Annotation-feedback agent cancelled')
+
+  updateProgress(50, 'generating')
+
+  return {
+    messages: [{ role: 'user', content: prompt }],
     maxTokens: 2048,
   }
 }

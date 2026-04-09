@@ -107,8 +107,25 @@ describe('AnnotationRepository', () => {
       expect(result.type).toBe('human')
       expect(result.content).toBe('Test annotation')
       expect(result.author).toBe('user-1')
+      expect(result.parentId).toBeNull()
+      expect(result.assignee).toBeNull()
       expect(result.createdAt).toBeTruthy()
       expect(result.updatedAt).toBeTruthy()
+    })
+
+    it('stores parentId and assignee when provided', async () => {
+      const result = await repo.create({
+        projectId: 'proj-1',
+        sectionId: 'section-1',
+        type: 'human',
+        content: 'Reply',
+        author: 'user-1',
+        parentId: 'parent-ann-1',
+        assignee: 'user:zhang-zong',
+      })
+
+      expect(result.parentId).toBe('parent-ann-1')
+      expect(result.assignee).toBe('user:zhang-zong')
     })
   })
 
@@ -181,10 +198,10 @@ describe('AnnotationRepository', () => {
   })
 
   describe('listByProject', () => {
-    it('returns annotations for a project', async () => {
+    it('returns root-only annotations by default', async () => {
       const records = [
-        { id: 'ann-2', projectId: 'proj-1', createdAt: '2026-04-02T00:00:00Z' },
-        { id: 'ann-1', projectId: 'proj-1', createdAt: '2026-04-01T00:00:00Z' },
+        { id: 'ann-2', projectId: 'proj-1', parentId: null, createdAt: '2026-04-02T00:00:00Z' },
+        { id: 'ann-1', projectId: 'proj-1', parentId: null, createdAt: '2026-04-01T00:00:00Z' },
       ]
       selectResult = records
 
@@ -193,17 +210,58 @@ describe('AnnotationRepository', () => {
       expect(mockSelectFrom).toHaveBeenCalledWith('annotations')
       expect(result).toEqual(records)
     })
+
+    it('returns all annotations when includeReplies is true', async () => {
+      const records = [
+        { id: 'ann-2', projectId: 'proj-1', parentId: null },
+        { id: 'reply-1', projectId: 'proj-1', parentId: 'ann-2' },
+      ]
+      selectResult = records
+
+      const result = await repo.listByProject('proj-1', { includeReplies: true })
+
+      expect(mockSelectFrom).toHaveBeenCalledWith('annotations')
+      expect(result).toEqual(records)
+    })
   })
 
   describe('listBySection', () => {
-    it('returns annotations for a project + section', async () => {
-      const records = [{ id: 'ann-1', projectId: 'proj-1', sectionId: 's1' }]
+    it('returns root-only annotations for a project + section by default', async () => {
+      const records = [{ id: 'ann-1', projectId: 'proj-1', sectionId: 's1', parentId: null }]
       selectResult = records
 
       const result = await repo.listBySection('proj-1', 's1')
 
       expect(mockSelectFrom).toHaveBeenCalledWith('annotations')
       expect(result).toEqual(records)
+    })
+
+    it('returns all annotations when includeReplies is true', async () => {
+      const records = [
+        { id: 'ann-1', projectId: 'proj-1', sectionId: 's1', parentId: null },
+        { id: 'reply-1', projectId: 'proj-1', sectionId: 's1', parentId: 'ann-1' },
+      ]
+      selectResult = records
+
+      const result = await repo.listBySection('proj-1', 's1', { includeReplies: true })
+
+      expect(mockSelectFrom).toHaveBeenCalledWith('annotations')
+      expect(result).toEqual(records)
+    })
+  })
+
+  describe('listReplies', () => {
+    it('returns replies for a parent annotation in ASC order', async () => {
+      const replies = [
+        { id: 'reply-1', parentId: 'ann-1', createdAt: '2026-04-01T00:00:00Z' },
+        { id: 'reply-2', parentId: 'ann-1', createdAt: '2026-04-02T00:00:00Z' },
+      ]
+      selectResult = replies
+
+      const result = await repo.listReplies('ann-1')
+
+      expect(mockSelectFrom).toHaveBeenCalledWith('annotations')
+      expect(result).toEqual(replies)
     })
   })
 })

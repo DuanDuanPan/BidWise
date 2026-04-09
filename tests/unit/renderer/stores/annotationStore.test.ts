@@ -7,6 +7,7 @@ function mockApi(overrides: Partial<typeof window.api> = {}): void {
     annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
     annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
     annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+    annotationListReplies: vi.fn().mockResolvedValue({ success: true, data: [] }),
     ...overrides,
   })
 }
@@ -19,6 +20,8 @@ const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRe
   content: 'Test annotation',
   author: 'user-1',
   status: 'pending',
+  parentId: null,
+  assignee: null,
   createdAt: '2026-04-01T00:00:00Z',
   updatedAt: '2026-04-01T00:00:00Z',
   ...overrides,
@@ -32,7 +35,7 @@ describe('annotationStore', () => {
     mockApi()
     const mod = await import('@renderer/stores/annotationStore')
     useAnnotationStore = mod.useAnnotationStore
-    useAnnotationStore.setState({ projects: {} })
+    useAnnotationStore.setState({ projects: {}, repliesByParent: {}, replyLoadingByParent: {} })
   })
 
   describe('loadAnnotations', () => {

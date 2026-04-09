@@ -130,7 +130,13 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'docxHealth',
       'mermaidSaveAsset',
       'mermaidDeleteAsset',
+      'annotationListReplies',
+      'notificationList',
+      'notificationMarkRead',
+      'notificationMarkAllRead',
+      'notificationCountUnread',
       'onTaskProgress',
+      'onNotificationNew',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)
   })

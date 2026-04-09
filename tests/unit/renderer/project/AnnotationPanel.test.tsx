@@ -8,6 +8,15 @@ function mockApi(): void {
     annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
     annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
     annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+    annotationListReplies: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    notificationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    notificationMarkRead: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    notificationMarkAllRead: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+    notificationCountUnread: vi.fn().mockResolvedValue({ success: true, data: 0 }),
+    onNotificationNew: vi.fn().mockReturnValue(() => {}),
+    agentExecute: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ask-1' } }),
+    agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
+    onTaskProgress: vi.fn().mockReturnValue(() => {}),
   })
 }
 
@@ -19,6 +28,8 @@ const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRe
   content: 'Test annotation content',
   author: 'user-1',
   status: 'pending',
+  parentId: null,
+  assignee: null,
   createdAt: '2026-04-01T00:00:00Z',
   updatedAt: '2026-04-01T00:00:00Z',
   ...overrides,
@@ -33,7 +44,7 @@ describe('AnnotationPanel', () => {
     mockApi()
     const storeModule = await import('@renderer/stores/annotationStore')
     useAnnotationStore = storeModule.useAnnotationStore
-    useAnnotationStore.setState({ projects: {} })
+    useAnnotationStore.setState({ projects: {}, repliesByParent: {}, replyLoadingByParent: {} })
     const panelModule = await import('@modules/project/components/AnnotationPanel')
     AnnotationPanel = panelModule.AnnotationPanel
   })
@@ -515,7 +526,7 @@ describe('AnnotationPanel', () => {
       expect(window.api.annotationUpdate).not.toHaveBeenCalled()
     })
 
-    it('Alt+D marks focused card as needs-decision', async () => {
+    it('Alt+D opens assignee picker modal instead of directly updating', async () => {
       setupWithAnnotations()
       render(
         <AnnotationPanel
@@ -529,10 +540,7 @@ describe('AnnotationPanel', () => {
       fireEvent.keyDown(window, { key: 'd', altKey: true })
 
       await waitFor(() => {
-        expect(window.api.annotationUpdate).toHaveBeenCalledWith({
-          id: 'a1',
-          status: 'needs-decision',
-        })
+        expect(screen.getByText('选择指导人')).toBeInTheDocument()
       })
     })
 

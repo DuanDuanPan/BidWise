@@ -13,6 +13,10 @@ const annotationHandlerMap: { [C in AnnotationChannel]: () => void } = {
     createIpcHandler('annotation:delete', ({ id }) => annotationService.delete(id)),
   'annotation:list': () =>
     createIpcHandler('annotation:list', (input) => annotationService.list(input)),
+  'annotation:list-replies': () =>
+    createIpcHandler('annotation:list-replies', ({ parentId }) =>
+      annotationService.listReplies(parentId)
+    ),
 }
 
 export type RegisteredAnnotationChannels = AnnotationChannel

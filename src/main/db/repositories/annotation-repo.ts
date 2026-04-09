@@ -15,6 +15,8 @@ export class AnnotationRepository {
       content: input.content,
       author: input.author,
       status: 'pending',
+      parentId: input.parentId ?? null,
+      assignee: input.assignee ?? null,
       createdAt: now,
       updatedAt: now,
     }
@@ -32,6 +34,7 @@ export class AnnotationRepository {
       const updates: Record<string, unknown> = { updatedAt: now }
       if (input.content !== undefined) updates.content = input.content
       if (input.status !== undefined) updates.status = input.status
+      if (input.assignee !== undefined) updates.assignee = input.assignee
 
       const result = await getDb()
         .updateTable('annotations')
@@ -74,32 +77,54 @@ export class AnnotationRepository {
     }
   }
 
-  async listByProject(projectId: string): Promise<AnnotationRecord[]> {
+  async listByProject(
+    projectId: string,
+    options?: { includeReplies?: boolean }
+  ): Promise<AnnotationRecord[]> {
     try {
-      const rows = await getDb()
-        .selectFrom('annotations')
-        .selectAll()
-        .where('projectId', '=', projectId)
-        .orderBy('createdAt', 'desc')
-        .execute()
+      let query = getDb().selectFrom('annotations').selectAll().where('projectId', '=', projectId)
+      if (!options?.includeReplies) {
+        query = query.where('parentId', 'is', null)
+      }
+      const rows = await query.orderBy('createdAt', 'desc').execute()
       return rows as AnnotationRecord[]
     } catch (err) {
       throw new DatabaseError(`批注列表查询失败: ${(err as Error).message}`, err)
     }
   }
 
-  async listBySection(projectId: string, sectionId: string): Promise<AnnotationRecord[]> {
+  async listBySection(
+    projectId: string,
+    sectionId: string,
+    options?: { includeReplies?: boolean }
+  ): Promise<AnnotationRecord[]> {
     try {
-      const rows = await getDb()
+      let query = getDb()
         .selectFrom('annotations')
         .selectAll()
         .where('projectId', '=', projectId)
         .where('sectionId', '=', sectionId)
-        .orderBy('createdAt', 'desc')
-        .execute()
+      if (!options?.includeReplies) {
+        query = query.where('parentId', 'is', null)
+      }
+      const rows = await query.orderBy('createdAt', 'desc').execute()
       return rows as AnnotationRecord[]
     } catch (err) {
       throw new DatabaseError(`批注锚点查询失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  async listReplies(parentId: string): Promise<AnnotationRecord[]> {
+    try {
+      const rows = await getDb()
+        .selectFrom('annotations')
+        .selectAll()
+        .where('parentId', '=', parentId)
+        .orderBy('createdAt', 'asc')
+        .execute()
+      return rows as AnnotationRecord[]
+    } catch (err) {
+      throw new DatabaseError(`批注回复查询失败: ${(err as Error).message}`, err)
     }
   }
 }

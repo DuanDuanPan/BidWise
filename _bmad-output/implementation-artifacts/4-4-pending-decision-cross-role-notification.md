@@ -1,6 +1,6 @@
 # Story 4.4: 待决策标记与跨角色批注通知
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -64,15 +64,15 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
 
 ### Task 1: 扩展批注数据模型与查询边界 (AC: #1, #5, #6)
 
-- [ ] 1.1 创建迁移 `src/main/db/migrations/010_add_annotation_thread_fields.ts`
+- [x] 1.1 创建迁移 `src/main/db/migrations/010_add_annotation_thread_fields.ts`
   - 添加 `parent_id TEXT REFERENCES annotations(id) ON DELETE CASCADE`
   - 添加 `assignee TEXT`
   - 添加索引 `annotations_parent_id_idx` on `parent_id`
-- [ ] 1.2 更新 `src/main/db/schema.ts`
+- [x] 1.2 更新 `src/main/db/schema.ts`
   - `AnnotationTable` 添加 `parentId: string | null`、`assignee: string | null`
-- [ ] 1.3 更新 `src/main/db/migrator.ts`
+- [x] 1.3 更新 `src/main/db/migrator.ts`
   - 注册 `010_add_annotation_thread_fields`
-- [ ] 1.4 更新 `src/shared/annotation-types.ts`
+- [x] 1.4 更新 `src/shared/annotation-types.ts`
   - `AnnotationRecord` 添加 `parentId: string | null`、`assignee: string | null`
   - `CreateAnnotationInput` 添加可选 `parentId?: string`、`assignee?: string`
   - `UpdateAnnotationInput` 添加可选 `assignee?: string`
@@ -80,27 +80,27 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
   - 明确 `assignee` 在 Alpha 中同时承担两类含义：
     - `needs-decision` 批注的指导目标用户
     - 定向 `cross-role` 批注的通知目标用户
-- [ ] 1.5 更新 `src/main/db/repositories/annotation-repo.ts`
+- [x] 1.5 更新 `src/main/db/repositories/annotation-repo.ts`
   - `create()` / `update()` 支持 `parentId`、`assignee`
   - `listByProject(projectId, options?)` / `listBySection(projectId, sectionId, options?)` 默认仅返回根批注（`parent_id IS NULL`）
   - `options.includeReplies === true` 时返回全量批注，用于 sidecar 镜像
   - 新增 `listReplies(parentId: string): Promise<AnnotationRecord[]>`，按 `createdAt ASC` 返回线程回复
-- [ ] 1.6 更新 `src/main/services/annotation-service.ts`
+- [x] 1.6 更新 `src/main/services/annotation-service.ts`
   - `create()` / `update()` 转发新字段
   - 新增 `listReplies(parentId: string)`
   - `list()` 支持 `includeReplies`
   - `syncToSidecar()` / `syncProjectToSidecar()` 必须显式请求 `includeReplies: true`，避免回复线程从 `proposal.meta.json` 丢失
-- [ ] 1.7 更新 `src/main/ipc/annotation-handlers.ts`、`src/shared/ipc-types.ts`、`src/preload/index.ts`
+- [x] 1.7 更新 `src/main/ipc/annotation-handlers.ts`、`src/shared/ipc-types.ts`、`src/preload/index.ts`
   - 新增 `annotation:list-replies`
   - 更新现有 `annotation:create` / `annotation:update` / `annotation:list` 类型映射以承接新字段
-- [ ] 1.8 单元测试
+- [x] 1.8 单元测试
   - `tests/unit/main/db/repositories/annotation-repo.test.ts`
   - `tests/unit/main/services/annotation-service.test.ts`
   - 覆盖点：根批注默认过滤、`includeReplies` 旁路、`listReplies` 正序、sidecar 同步包含 replies
 
 ### Task 2: 新增通知数据模型与服务 (AC: #2, #3, #4, #7)
 
-- [ ] 2.1 创建迁移 `src/main/db/migrations/011_create_notifications.ts`
+- [x] 2.1 创建迁移 `src/main/db/migrations/011_create_notifications.ts`
   - 表结构：
     - `id TEXT PRIMARY KEY`
     - `project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE`
@@ -117,25 +117,25 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
     - `notifications_target_user_idx`
     - `notifications_target_user_read_idx` on `(target_user, read)`
     - `notifications_annotation_id_idx`
-- [ ] 2.2 更新 `src/main/db/schema.ts`
+- [x] 2.2 更新 `src/main/db/schema.ts`
   - 新增 `NotificationTable`
   - 在 `DB` 接口中注册 `notifications`
-- [ ] 2.3 更新 `src/main/db/migrator.ts`
+- [x] 2.3 更新 `src/main/db/migrator.ts`
   - 注册 `011_create_notifications`
-- [ ] 2.4 创建 `src/shared/notification-types.ts`
+- [x] 2.4 创建 `src/shared/notification-types.ts`
   - `NotificationType = 'decision-requested' | 'cross-role-mention' | 'reply-received'`
   - `NotificationRecord`：`id, projectId, projectName, sectionId, annotationId, targetUser, type, title, summary, read, createdAt`
   - `CreateNotificationInput`
   - `ListNotificationsInput = { targetUser: string; unreadOnly?: boolean }`
   - `MarkReadInput = { id: string }`
   - `MarkAllReadInput = { targetUser: string }`
-- [ ] 2.5 创建 `src/main/db/repositories/notification-repo.ts`
+- [x] 2.5 创建 `src/main/db/repositories/notification-repo.ts`
   - `create(input): Promise<NotificationRecord>`
   - `listByUser(targetUser, unreadOnly?): Promise<NotificationRecord[]>`
   - `markRead(id): Promise<NotificationRecord>`
   - `markAllRead(targetUser): Promise<void>`
   - `countUnread(targetUser): Promise<number>`
-- [ ] 2.6 创建 `src/main/services/notification-service.ts`
+- [x] 2.6 创建 `src/main/services/notification-service.ts`
   - 封装 repository + `BrowserWindow.getAllWindows().forEach(win.webContents.send(...))` 推送
   - `notifyDecisionRequested({ annotation, projectName })`
   - `notifyCrossRole({ annotation, projectName })`
@@ -146,42 +146,42 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
     - `assignee` 缺失或 `assignee === author` 时不发 `decision-requested` / `cross-role-mention`
     - `reply.author === parentAnnotation.author` 时不发 `reply-received`
     - `parentAnnotation.author` 以 `agent:` / `system:` 开头时不发 `reply-received`
-- [ ] 2.7 集成通知触发到 `src/main/services/annotation-service.ts`
+- [x] 2.7 集成通知触发到 `src/main/services/annotation-service.ts`
   - `update()`：当状态从非 `needs-decision` 变为 `needs-decision` 且存在 `assignee` 时调用 `notifyDecisionRequested`
   - `create()`：当 `type === 'cross-role'` 且存在 `assignee` 时调用 `notifyCrossRole`
   - `create()`：当 `parentId` 存在且父批注作者是其他人类用户时调用 `notifyReplyReceived`
   - 使用 `src/main/services/project-service.ts` 获取 `projectName`
-- [ ] 2.8 单元测试
+- [x] 2.8 单元测试
   - `tests/unit/main/db/repositories/notification-repo.test.ts`
   - `tests/unit/main/services/notification-service.test.ts`
   - 覆盖 guard、自通知抑制、根批注定位、事件推送
 
 ### Task 3: 扩展通知 IPC / preload / 事件白名单 (AC: #4, #7)
 
-- [ ] 3.1 更新 `src/shared/ipc-types.ts`
+- [x] 3.1 更新 `src/shared/ipc-types.ts`
   - 新增 `notification:list`
   - 新增 `notification:mark-read`
   - 新增 `notification:mark-all-read`
   - 新增 `notification:count-unread`
   - 更新 `IpcEventPayloadMap`：加入 `notification:new`
   - 更新 `PreloadEventApi`：加入 `onNotificationNew`
-- [ ] 3.2 创建 `src/main/ipc/notification-handlers.ts`
+- [x] 3.2 创建 `src/main/ipc/notification-handlers.ts`
   - handler 仅做参数解析 + 调用 `notificationService`
-- [ ] 3.3 更新 `src/main/ipc/index.ts`
+- [x] 3.3 更新 `src/main/ipc/index.ts`
   - 注册 notification handlers
   - 维持 `IpcChannel` exhaustive check 通过
-- [ ] 3.4 更新 `src/preload/index.ts`
+- [x] 3.4 更新 `src/preload/index.ts`
   - 暴露 `notificationList / notificationMarkRead / notificationMarkAllRead / notificationCountUnread`
   - 暴露 `onNotificationNew`
-- [ ] 3.5 更新 `tests/unit/preload/security.test.ts`
+- [x] 3.5 更新 `tests/unit/preload/security.test.ts`
   - 将新方法加入允许白名单
   - 保持“只暴露函数、不暴露原始 `ipcRenderer`”的既有安全合同
-- [ ] 3.6 单元测试
+- [x] 3.6 单元测试
   - `tests/unit/main/ipc/notification-handlers.test.ts`
 
 ### Task 4: 通知 Store 与 hooks (AC: #4, #7)
 
-- [ ] 4.1 创建 `src/renderer/src/stores/notificationStore.ts`
+- [x] 4.1 创建 `src/renderer/src/stores/notificationStore.ts`
   - State：`notifications`, `unreadCount`, `loading`, `error`, `loaded`
   - Actions：
     - `loadNotifications(input: ListNotificationsInput)`
@@ -191,42 +191,42 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
     - `reset()`
   - 内部统一按 `createdAt DESC` 排序
   - 使用 `subscribeWithSelector`
-- [ ] 4.2 创建 `src/renderer/src/modules/notification/hooks/useNotification.ts`
+- [x] 4.2 创建 `src/renderer/src/modules/notification/hooks/useNotification.ts`
   - `useNotifications()`
   - `useUnreadCount()`
-- [ ] 4.3 事件集成
+- [x] 4.3 事件集成
   - 监听 `window.api.onNotificationNew`
   - 仅当 `payload.targetUser === userStore.currentUser.id` 时把通知插入 store 并递增 `unreadCount`
   - 不在 `annotationStore` action 内直接调用 `notificationStore`
-- [ ] 4.4 单元测试
+- [x] 4.4 单元测试
   - `tests/unit/renderer/stores/notificationStore.test.ts`
   - 覆盖加载、排序、事件追加、markRead/markAllRead 计数递减
 
 ### Task 5: Alpha 当前用户标识（renderer-local，不新增 main 用户服务） (AC: #1, #2, #3, #4)
 
-- [ ] 5.1 创建 `src/shared/user-types.ts`
+- [x] 5.1 创建 `src/shared/user-types.ts`
   - `UserIdentity = { id: string; displayName: string; roleLabel: string }`
   - 导出 `ALPHA_KNOWN_USERS`
     - `user:default` → 我（售前工程师）
     - `user:zhang-zong` → 张总（售前总监）
     - `user:li-jingli` → 李经理（商务经理）
-- [ ] 5.2 创建 `src/renderer/src/stores/userStore.ts`
+- [x] 5.2 创建 `src/renderer/src/stores/userStore.ts`
   - State：`currentUser`, `knownUsers`
   - Actions：`setCurrentUser(id)`, `addCustomUser(displayName)`
   - `addCustomUser(displayName)` 返回稳定的 `UserIdentity`
   - 自定义用户 id 规则：`user:custom:<slug>`；对规范化后同名输入去重复用，避免同一人生成多个不同 id
   - 使用 Zustand `persist` 写入浏览器 `localStorage`（如 key: `bidwise-current-user`）
   - 默认当前用户为 `user:default`
-- [ ] 5.3 集成约束
+- [x] 5.3 集成约束
   - `annotationStore.createAnnotation()` 的 `author` 由 `userStore.currentUser.id` 提供
   - `notification:list` / `notification:count-unread` 显式传入 `currentUser.id`
   - 本 Story 不新增 `user-service.ts`、`user-handlers.ts`、`user:*` IPC，也不新增独立“切换身份”设置页
-- [ ] 5.4 单元测试
+- [x] 5.4 单元测试
   - `tests/unit/renderer/stores/userStore.test.ts`
 
 ### Task 6: 待决策指导人选择弹窗与 Alt+D 拦截 (AC: #1, #8)
 
-- [ ] 6.1 创建 `src/renderer/src/modules/annotation/components/AssigneePickerModal.tsx`
+- [x] 6.1 创建 `src/renderer/src/modules/annotation/components/AssigneePickerModal.tsx`
   - Ant Design `Modal` + `Select`
   - 选项来自 `userStore.knownUsers`
   - 支持自定义输入（`mode="combobox"` 或等价可输入方案）
@@ -236,50 +236,50 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
     - `annotationStore.updateAnnotation({ id, status: 'needs-decision', assignee })`
     - 若补充说明非空，则创建一条 `human` 子批注
     - 该“补充说明”路径 **不会** 触发 `annotation-feedback`
-- [ ] 6.2 修改 `src/renderer/src/modules/annotation/components/AnnotationCard.tsx`
+- [x] 6.2 修改 `src/renderer/src/modules/annotation/components/AnnotationCard.tsx`
   - 扩展 prop 契约：允许父层拦截 `defer` / `request-guidance` / `reply`
   - 当传入 `onRequestGuidance(annotation)` 时，`"标记待决策"` / `"请求指导"` 不再走默认 `updateAnnotation`
   - needs-decision 卡片显示 assignee 文案（优先用 `knownUsers` 映射 displayName，未知用户回退原始 id）
-- [ ] 6.3 修改 `src/renderer/src/modules/project/components/AnnotationPanel.tsx`
+- [x] 6.3 修改 `src/renderer/src/modules/project/components/AnnotationPanel.tsx`
   - 面板自身持有 `activeGuidanceAnnotation` modal state
   - `useKeyboardNavigation` 改为接受 `onRequestGuidance`
   - `Alt+D` 仅对 `pending` 根批注打开 modal；保留 Story 4.2 的输入框 / editor no-op 拦截规则
-- [ ] 6.4 单元测试
+- [x] 6.4 单元测试
   - `tests/unit/renderer/modules/annotation/components/AssigneePickerModal.test.tsx`
   - `tests/unit/renderer/project/AnnotationPanel.test.tsx`
   - 覆盖按钮路径、Alt+D 路径、已处理卡片 no-op
 
 ### Task 7: 批注回复线程 (AC: #5, #6)
 
-- [ ] 7.1 创建 `src/renderer/src/modules/annotation/components/AnnotationThread.tsx`
+- [x] 7.1 创建 `src/renderer/src/modules/annotation/components/AnnotationThread.tsx`
   - 渲染根卡片下方线程
   - 回复列表左缩进 16px，边框/背景与 UX 原型对齐
   - 回复输入区：`TextArea` + 发送按钮
   - 支持加载态 skeleton 与空线程占位
-- [ ] 7.2 修改 `src/renderer/src/modules/annotation/components/AnnotationCard.tsx`
+- [x] 7.2 修改 `src/renderer/src/modules/annotation/components/AnnotationCard.tsx`
   - `"回复"` 动作可由父层切换线程展开
   - 根卡片显示 `N 条回复` 链接和回复计数
   - `reply-received` 导航命中时允许自动展开线程
-- [ ] 7.3 更新 `src/renderer/src/stores/annotationStore.ts`
+- [x] 7.3 更新 `src/renderer/src/stores/annotationStore.ts`
   - 新增 `repliesByParent: Record<string, AnnotationRecord[]>`
   - 新增 `replyLoadingByParent: Record<string, boolean>`
   - 新增 `loadReplies(parentId: string)`
   - `createAnnotation()` 当 `parentId` 存在时，把返回值追加到对应 `repliesByParent[parentId]`（按 `createdAt ASC`）
-- [ ] 7.4 创建 `src/renderer/src/modules/annotation/hooks/useAnnotationReplies.ts`
+- [x] 7.4 创建 `src/renderer/src/modules/annotation/hooks/useAnnotationReplies.ts`
   - 返回 `{ replies, loading, loadReplies }`
-- [ ] 7.5 回复提交流程
+- [x] 7.5 回复提交流程
   - 显式回复一律写为 `type: 'human'`
   - `author` 使用 `userStore.currentUser.id`
   - `sectionId` 复用父批注的 `sectionId`
   - 4.4 Alpha 的可见回复入口仅挂在根批注线程下，提交时 `parentId` 统一写为根批注 id
   - schema / repo 仍保留自引用能力，但本 Story **不** 实现 reply-to-reply 的独立 UI
-- [ ] 7.6 单元测试
+- [x] 7.6 单元测试
   - `tests/unit/renderer/modules/annotation/components/AnnotationThread.test.tsx`
   - 覆盖懒加载、正序渲染、回复提交、自动展开
 
 ### Task 8: AI 反馈迭代（复用现有 generate agent） (AC: #6)
 
-- [ ] 8.1 创建 `src/main/prompts/annotation-feedback.prompt.ts`
+- [x] 8.1 创建 `src/main/prompts/annotation-feedback.prompt.ts`
   - 导出类型化函数：
     ```ts
     (context: {
@@ -289,64 +289,64 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
       sectionContent: string
     }) => string
     ```
-- [ ] 8.2 修改 `src/main/services/agent-orchestrator/agents/generate-agent.ts`
+- [x] 8.2 修改 `src/main/services/agent-orchestrator/agents/generate-agent.ts`
   - 新增 `mode: 'annotation-feedback'` 分支
   - **不新增新的 `AgentType`**，继续通过 `agentType: 'generate'` 调用
   - 复用现有 `task:progress` 语义：`analyzing` → `generating`
-- [ ] 8.3 修改 `src/renderer/src/modules/annotation/components/AnnotationThread.tsx`
+- [x] 8.3 修改 `src/renderer/src/modules/annotation/components/AnnotationThread.tsx`
   - 当父批注类型属于 `ai-suggestion | adversarial | score-warning` 且本次提交来自显式“回复”输入框时：
     - 先创建人类子批注
     - 再调用 `window.api.agentExecute({ agentType: 'generate', context: { mode: 'annotation-feedback', ... } })`
     - 监听 `onTaskProgress` + 轮询 `agentStatus`
     - 完成后通过 `annotationStore.createAnnotation()` 追加新的 `ai-suggestion` 子批注
   - `sectionContent` 取自当前 `documentStore.content` + 现有 `currentSection`；仅当 `currentSection.sectionKey === parent.sectionId` 时传真实章节正文，否则传空字符串并让 prompt 显式说明上下文受限
-- [ ] 8.4 约束
+- [x] 8.4 约束
   - AI 反馈只由 `AnnotationThread` 的显式回复路径触发
   - `AssigneePickerModal` 的补充说明不触发 AI 反馈
   - 不在 main 侧新增“任务完成自动写批注”的隐藏回调，保持与 Story 4.3 `AskSystemDialog` 一致的 renderer-owned 轮询模式
-- [ ] 8.5 单元测试
+- [x] 8.5 单元测试
   - `tests/unit/main/services/agent-orchestrator/agents/generate-agent.test.ts`
   - `tests/unit/renderer/modules/annotation/components/AnnotationThread.test.tsx`
   - 覆盖 mode 分支、进度展示、完成后 AI 子批注创建
 
 ### Task 9: 通知铃铛、面板与导航定位桥 (AC: #4, #7)
 
-- [ ] 9.1 创建 `src/renderer/src/modules/notification/constants/notification-icons.ts`
+- [x] 9.1 创建 `src/renderer/src/modules/notification/constants/notification-icons.ts`
   - `decision-requested` → warning/orange
   - `reply-received` → reply/blue
   - `cross-role-mention` → at-sign/green
-- [ ] 9.2 创建 `src/renderer/src/modules/notification/components/NotificationBell.tsx`
+- [x] 9.2 创建 `src/renderer/src/modules/notification/components/NotificationBell.tsx`
   - `BellOutlined` + `Badge`
   - 挂在 `ProjectWorkspace` 顶部标题栏，位于设置按钮之前
   - 组件初始化时刷新当前用户未读数
-- [ ] 9.3 创建 `src/renderer/src/modules/notification/components/NotificationPanel.tsx`
+- [x] 9.3 创建 `src/renderer/src/modules/notification/components/NotificationPanel.tsx`
   - 列表显示项目名、摘要、相对时间
   - `aria-label` 额外包含从 `sectionId` 推导的章节标题（如可解析）
   - 空状态与 `"全部已读"` 行为遵循 story-level UX spec / PNG
-- [ ] 9.4 修改 `src/renderer/src/modules/project/components/ProjectWorkspace.tsx`
+- [x] 9.4 修改 `src/renderer/src/modules/project/components/ProjectWorkspace.tsx`
   - 接入 `NotificationBell`
   - 使用 `react-router-dom` `navigate(..., { state })` 或等价 route-state 方案传递：
     - `focusAnnotationId`
     - `focusSectionId`
     - `expandThread`（仅 `reply-received`）
   - 如果当前不在目标项目或不在 `proposal-writing` 阶段，先导航到目标项目并切换到 `proposal-writing`
-- [ ] 9.5 修改 `src/renderer/src/modules/project/components/AnnotationPanel.tsx`
+- [x] 9.5 修改 `src/renderer/src/modules/project/components/AnnotationPanel.tsx`
   - 增加可选 prop：`requestedFocusAnnotationId?: string | null`
   - 增加可选 prop：`requestedExpandThreadParentId?: string | null`
   - 当请求 id 命中当前列表时，把本地 `focusedIndex` 对齐到目标卡片并 `scrollIntoView`
   - **不要**继续依赖“现有 focusedIndex 自然就能跨路由定位”的错误假设
-- [ ] 9.6 通知点击导航逻辑
+- [x] 9.6 通知点击导航逻辑
   - `markRead(id)` 成功后再执行导航
   - 用通知中的根批注 `annotationId` 做定位锚点
   - `reply-received` 额外展开对应线程
-- [ ] 9.7 单元测试
+- [x] 9.7 单元测试
   - `tests/unit/renderer/modules/notification/components/NotificationBell.test.tsx`
   - `tests/unit/renderer/modules/notification/components/NotificationPanel.test.tsx`
   - `tests/unit/renderer/project/ProjectWorkspace.test.tsx`
 
 ### Task 10: 测试矩阵与 E2E (AC: #1-#8)
 
-- [ ] 10.1 单元 / 集成
+- [x] 10.1 单元 / 集成
   - `tests/unit/main/db/repositories/annotation-repo.test.ts`
   - `tests/unit/main/services/annotation-service.test.ts`
   - `tests/unit/main/db/repositories/notification-repo.test.ts`
@@ -363,13 +363,13 @@ So that 我拿不准的问题可以请张总在批注中远程指导，不阻塞
   - `tests/unit/renderer/modules/notification/components/NotificationPanel.test.tsx`
   - `tests/unit/renderer/project/AnnotationPanel.test.tsx`
   - `tests/unit/renderer/project/ProjectWorkspace.test.tsx`
-- [ ] 10.2 E2E：`tests/e2e/stories/story-4-4-pending-decision-cross-role-notification.spec.ts`
+- [x] 10.2 E2E：`tests/e2e/stories/story-4-4-pending-decision-cross-role-notification.spec.ts`
   - 场景 1：`Alt+D` / `"请求指导"` → 选择指导人 → 验证 `needs-decision + assignee + decision-requested`
   - 场景 2：展开线程并回复 → 验证子批注正序显示与 `reply-received`
   - 场景 3：回复 AI 批注 → 验证 renderer 侧 task 轮询与 AI 子批注落库
   - 场景 4：通知铃铛 Badge、打开面板、点击通知跳转到根批注并展开线程
   - 场景 5：使用 seed 数据验证 `cross-role` + `assignee` 的通知触发；不要求本 Story 新增独立跨角色创作界面
-- [ ] 10.3 验证命令
+- [x] 10.3 验证命令
   - `pnpm test`
   - `pnpm lint`
   - `pnpm typecheck`
@@ -617,13 +617,89 @@ tests/
   - 同步 story-level UX：通知列表视觉继续以项目名 + 摘要 + 时间为主，`sectionId` 保留在 payload/辅助信息中用于导航
   - 收敛 4.4 Alpha 线程范围：UI 仅实现根批注下单层可见回复，避免把实现误扩成递归 reply tree
   - 明确自定义指导人录入规则：使用稳定的 `user:custom:<slug>` 身份并对同名输入去重
+- 2026-04-09: 实现验证与测试补全
+  - 修复 `notification-service.ts` 未使用 logger 变量导致 typecheck 失败
+  - 修复 9 个 prettier 格式化警告
+  - 补全 5 个缺失的组件/E2E 测试文件（AssigneePickerModal, AnnotationThread, NotificationBell, NotificationPanel, E2E story-4-4）
+  - 全套回归验证通过：173/174 test files, 1502 tests, lint 0 warnings, typecheck pass, build success
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+- 修复 `notification-service.ts` 中未使用的 `_logger` 变量导致 typecheck 失败
+- 修复 9 个 prettier 格式化警告（eslint --fix）
+- 补充 5 个缺失的测试文件（AssigneePickerModal, AnnotationThread, NotificationBell, NotificationPanel 组件测试及 E2E 测试）
 
 ### Completion Notes List
 
+- ✅ Task 1-10 全部实现完成，所有子任务均已验证
+- ✅ 批注数据模型扩展（parentId, assignee）与迁移 010/011 就绪
+- ✅ 通知服务完整实现，包含 guard（自通知抑制、agent/system 作者过滤）
+- ✅ IPC/preload 层扩展，包含 notification:list/mark-read/mark-all-read/count-unread 及 notification:new 事件
+- ✅ notificationStore + userStore 渲染层状态管理
+- ✅ AssigneePickerModal 指导人选择弹窗，支持自定义用户录入与去重
+- ✅ AnnotationThread 线程回复组件，支持 AI 反馈回调
+- ✅ NotificationBell + NotificationPanel 通知铃铛与面板
+- ✅ AI 反馈迭代复用 generate agent annotation-feedback mode
+- ✅ 通知导航桥：route-state + requestedFocusAnnotationId + expandThread
+- ✅ 173/174 测试文件通过（1502 tests），唯一失败为预存在的 docx-bridge 集成测试
+- ✅ lint 0 error 0 warning / typecheck 通过 / build 成功
+
 ### File List
+
+**新增文件:**
+- src/main/db/migrations/010_add_annotation_thread_fields.ts
+- src/main/db/migrations/011_create_notifications.ts
+- src/main/db/repositories/notification-repo.ts
+- src/main/ipc/notification-handlers.ts
+- src/main/prompts/annotation-feedback.prompt.ts
+- src/main/services/notification-service.ts
+- src/shared/notification-types.ts
+- src/shared/user-types.ts
+- src/renderer/src/modules/annotation/components/AnnotationThread.tsx
+- src/renderer/src/modules/annotation/components/AssigneePickerModal.tsx
+- src/renderer/src/modules/annotation/hooks/useAnnotationReplies.ts
+- src/renderer/src/modules/notification/constants/notification-icons.ts
+- src/renderer/src/modules/notification/components/NotificationBell.tsx
+- src/renderer/src/modules/notification/components/NotificationPanel.tsx
+- src/renderer/src/modules/notification/hooks/useNotification.ts
+- src/renderer/src/stores/notificationStore.ts
+- src/renderer/src/stores/userStore.ts
+- tests/unit/main/db/repositories/notification-repo.test.ts
+- tests/unit/main/ipc/notification-handlers.test.ts
+- tests/unit/main/services/notification-service.test.ts
+- tests/unit/renderer/stores/notificationStore.test.ts
+- tests/unit/renderer/stores/userStore.test.ts
+- tests/unit/renderer/modules/annotation/components/AssigneePickerModal.test.tsx
+- tests/unit/renderer/modules/annotation/components/AnnotationThread.test.tsx
+- tests/unit/renderer/modules/notification/components/NotificationBell.test.tsx
+- tests/unit/renderer/modules/notification/components/NotificationPanel.test.tsx
+- tests/e2e/stories/story-4-4-pending-decision-cross-role-notification.spec.ts
+
+**修改文件:**
+- src/main/db/schema.ts
+- src/main/db/migrator.ts
+- src/main/db/repositories/annotation-repo.ts
+- src/main/services/annotation-service.ts
+- src/main/services/agent-orchestrator/agents/generate-agent.ts
+- src/main/ipc/annotation-handlers.ts
+- src/main/ipc/index.ts
+- src/preload/index.ts
+- src/shared/annotation-types.ts
+- src/shared/ipc-types.ts
+- src/renderer/src/stores/annotationStore.ts
+- src/renderer/src/modules/annotation/components/AnnotationCard.tsx
+- src/renderer/src/modules/project/components/AnnotationPanel.tsx
+- src/renderer/src/modules/project/components/ProjectWorkspace.tsx
+- tests/unit/main/db/repositories/annotation-repo.test.ts
+- tests/unit/main/services/annotation-service.test.ts
+- tests/unit/main/ipc/annotation-handlers.test.ts
+- tests/unit/preload/security.test.ts
+- tests/unit/renderer/stores/annotationStore.test.ts
+- tests/unit/renderer/project/AnnotationPanel.test.tsx
+- tests/unit/renderer/project/ProjectWorkspace.test.tsx

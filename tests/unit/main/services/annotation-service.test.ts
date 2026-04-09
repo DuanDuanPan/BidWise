@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   repoFindById: vi.fn(),
   repoListByProject: vi.fn(),
   repoListBySection: vi.fn(),
+  repoListReplies: vi.fn(),
   updateMetadata: vi.fn(),
 }))
 
@@ -19,6 +20,7 @@ vi.mock('@main/db/repositories/annotation-repo', () => ({
     findById = mocks.repoFindById
     listByProject = mocks.repoListByProject
     listBySection = mocks.repoListBySection
+    listReplies = mocks.repoListReplies
   },
 }))
 
@@ -46,6 +48,8 @@ const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRe
   content: 'Test annotation',
   author: 'user-1',
   status: 'pending',
+  parentId: null,
+  assignee: null,
   createdAt: '2026-04-01T00:00:00Z',
   updatedAt: '2026-04-01T00:00:00Z',
   ...overrides,
@@ -110,7 +114,7 @@ describe('annotationService', () => {
       const result = await annotationService.list({ projectId: 'proj-1' })
 
       expect(result).toEqual(records)
-      expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1')
+      expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1', { includeReplies: undefined })
     })
 
     it('lists by section when sectionId is provided', async () => {
@@ -120,7 +124,9 @@ describe('annotationService', () => {
       const result = await annotationService.list({ projectId: 'proj-1', sectionId: 's1' })
 
       expect(result).toEqual(records)
-      expect(mocks.repoListBySection).toHaveBeenCalledWith('proj-1', 's1')
+      expect(mocks.repoListBySection).toHaveBeenCalledWith('proj-1', 's1', {
+        includeReplies: undefined,
+      })
     })
 
     it('returns by createdAt DESC (delegates to repo)', async () => {
@@ -151,7 +157,9 @@ describe('annotationService', () => {
         const result = await resultPromise
 
         expect(result).toHaveLength(1)
-        expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1')
+        expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1', {
+          includeReplies: undefined,
+        })
       } finally {
         if (originalDelay === undefined) {
           delete process.env.BIDWISE_E2E_ANNOTATION_LIST_DELAY_MS
@@ -178,6 +186,21 @@ describe('annotationService', () => {
           process.env.BIDWISE_E2E_ANNOTATION_LIST_FAIL_MESSAGE = originalError
         }
       }
+    })
+  })
+
+  describe('listReplies', () => {
+    it('delegates to repo.listReplies', async () => {
+      const replies = [
+        makeAnnotation({ id: 'reply-1', parentId: 'ann-1' }),
+        makeAnnotation({ id: 'reply-2', parentId: 'ann-1' }),
+      ]
+      mocks.repoListReplies.mockResolvedValue(replies)
+
+      const result = await annotationService.listReplies('ann-1')
+
+      expect(result).toEqual(replies)
+      expect(mocks.repoListReplies).toHaveBeenCalledWith('ann-1')
     })
   })
 
@@ -217,7 +240,7 @@ describe('annotationService', () => {
 
       await annotationService.syncProjectToSidecar('proj-1')
 
-      expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1')
+      expect(mocks.repoListByProject).toHaveBeenCalledWith('proj-1', { includeReplies: true })
       expect(mocks.updateMetadata).toHaveBeenCalled()
     })
   })

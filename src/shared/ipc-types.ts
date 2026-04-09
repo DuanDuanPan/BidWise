@@ -82,6 +82,12 @@ import type {
   ListAnnotationsInput,
 } from './annotation-types'
 import type {
+  NotificationRecord,
+  ListNotificationsInput,
+  MarkReadInput,
+  MarkAllReadInput,
+} from './notification-types'
+import type {
   AttributeSourcesInput,
   ValidateBaselineInput,
   GetSourceAttributionsInput,
@@ -236,6 +242,7 @@ export const IPC_CHANNELS = {
   ANNOTATION_UPDATE: 'annotation:update',
   ANNOTATION_DELETE: 'annotation:delete',
   ANNOTATION_LIST: 'annotation:list',
+  ANNOTATION_LIST_REPLIES: 'annotation:list-replies',
   SOURCE_ATTRIBUTE: 'source:attribute',
   SOURCE_VALIDATE_BASELINE: 'source:validate-baseline',
   SOURCE_GET_ATTRIBUTIONS: 'source:get-attributions',
@@ -249,6 +256,11 @@ export const IPC_CHANNELS = {
   DOCX_HEALTH: 'docx:health',
   MERMAID_SAVE_ASSET: 'mermaid:save-asset',
   MERMAID_DELETE_ASSET: 'mermaid:delete-asset',
+  NOTIFICATION_LIST: 'notification:list',
+  NOTIFICATION_MARK_READ: 'notification:mark-read',
+  NOTIFICATION_MARK_ALL_READ: 'notification:mark-all-read',
+  NOTIFICATION_COUNT_UNREAD: 'notification:count-unread',
+  NOTIFICATION_NEW_EVENT: 'notification:new',
 } as const
 
 /** Filter for task:list queries */
@@ -323,6 +335,7 @@ export type IpcChannelMap = {
   'annotation:update': { input: UpdateAnnotationInput; output: AnnotationRecord }
   'annotation:delete': { input: DeleteAnnotationInput; output: void }
   'annotation:list': { input: ListAnnotationsInput; output: AnnotationRecord[] }
+  'annotation:list-replies': { input: { parentId: string }; output: AnnotationRecord[] }
   'source:attribute': { input: AttributeSourcesInput; output: SourceTaskOutput }
   'source:validate-baseline': { input: ValidateBaselineInput; output: SourceTaskOutput }
   'source:get-attributions': {
@@ -342,6 +355,10 @@ export type IpcChannelMap = {
   'docx:health': { input: void; output: DocxHealthData }
   'mermaid:save-asset': { input: SaveMermaidAssetInput; output: SaveMermaidAssetOutput }
   'mermaid:delete-asset': { input: DeleteMermaidAssetInput; output: void }
+  'notification:list': { input: ListNotificationsInput; output: NotificationRecord[] }
+  'notification:mark-read': { input: MarkReadInput; output: NotificationRecord }
+  'notification:mark-all-read': { input: MarkAllReadInput; output: void }
+  'notification:count-unread': { input: { targetUser: string }; output: number }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
@@ -349,6 +366,7 @@ export type IpcChannelMap = {
 
 export type IpcEventPayloadMap = {
   'task:progress': TaskProgressEvent
+  'notification:new': NotificationRecord
 }
 
 export type IpcChannel = keyof IpcChannelMap
@@ -382,6 +400,7 @@ export type IpcHandler<C extends IpcChannel> = (
 
 export type PreloadEventApi = {
   onTaskProgress: (callback: (event: TaskProgressEvent) => void) => () => void
+  onNotificationNew: (callback: (notification: NotificationRecord) => void) => () => void
 }
 
 export type PreloadSyncApi = {

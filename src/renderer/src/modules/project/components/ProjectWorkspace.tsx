@@ -36,6 +36,7 @@ import { commandRegistry, useCommandPalette } from '@renderer/shared/command-pal
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { useDocumentStore } from '@renderer/stores'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
+import { NotificationBell } from '@modules/notification/components/NotificationBell'
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
 
@@ -245,6 +246,7 @@ export function ProjectWorkspace(): React.JSX.Element {
                 aria-label="命令面板"
                 data-testid="search-btn"
               />
+              <NotificationBell />
               <Button
                 type="text"
                 icon={<SettingOutlined />}

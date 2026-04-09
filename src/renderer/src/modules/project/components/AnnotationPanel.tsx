@@ -27,6 +27,7 @@ import {
   OVERLOAD_THRESHOLD,
 } from '@renderer/modules/annotation/lib/annotationSectionScope'
 import { AskSystemDialog } from '@renderer/modules/annotation/components/AskSystemDialog'
+import { AssigneePickerModal } from '@renderer/modules/annotation/components/AssigneePickerModal'
 import { ANNOTATION_TYPE_ACTIONS } from '@renderer/modules/annotation/constants/annotation-colors'
 import type { AnnotationRecord } from '@shared/annotation-types'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
@@ -131,10 +132,14 @@ function ListContent({
   items,
   focusedIndex,
   cardRefs,
+  onRequestGuidance,
+  onReply,
 }: {
   items: AnnotationRecord[]
   focusedIndex: number
   cardRefs: React.MutableRefObject<Map<number, HTMLDivElement>>
+  onRequestGuidance?: (annotation: AnnotationRecord) => void
+  onReply?: (annotation: AnnotationRecord) => void
 }): React.JSX.Element {
   return (
     <div
@@ -147,6 +152,8 @@ function ListContent({
           key={item.id}
           annotation={item}
           focused={index === focusedIndex}
+          onRequestGuidance={onRequestGuidance}
+          onReply={onReply}
           ref={(el) => {
             if (el) {
               cardRefs.current.set(index, el)
@@ -167,7 +174,15 @@ function clampIndex(index: number, length: number): number {
   return index
 }
 
-function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; active: boolean }): {
+function useKeyboardNavigation({
+  items,
+  active,
+  onRequestGuidance,
+}: {
+  items: AnnotationRecord[]
+  active: boolean
+  onRequestGuidance?: (annotation: AnnotationRecord) => void
+}): {
   focusedIndex: number
   cardRefs: React.MutableRefObject<Map<number, HTMLDivElement>>
 } {
@@ -249,17 +264,21 @@ function useKeyboardNavigation({ items, active }: { items: AnnotationRecord[]; a
             void message.info('该类型批注没有驳回操作')
           }
         } else {
-          // Alt+D
-          void updateAnnotation({ id: focused.id, status: 'needs-decision' }).then((ok) => {
-            if (!ok) showUpdateError()
-          })
+          // Alt+D — open assignee picker modal
+          if (onRequestGuidance) {
+            onRequestGuidance(focused)
+          } else {
+            void updateAnnotation({ id: focused.id, status: 'needs-decision' }).then((ok) => {
+              if (!ok) showUpdateError()
+            })
+          }
         }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [active, items, focusedIndex, updateAnnotation])
+  }, [active, items, focusedIndex, updateAnnotation, onRequestGuidance])
 
   return { focusedIndex, cardRefs }
 }
@@ -286,11 +305,15 @@ function PanelBody({
   active,
   sopPhase,
   currentSection,
+  requestedFocusAnnotationId: _requestedFocusAnnotationId,
+  requestedExpandThreadParentId: _requestedExpandThreadParentId,
 }: {
   projectId?: string
   active: boolean
   sopPhase?: string
   currentSection?: CurrentSectionProp | null
+  requestedFocusAnnotationId?: string | null
+  requestedExpandThreadParentId?: string | null
 }): React.JSX.Element {
   const project = useProjectAnnotations(projectId ?? '')
   const loadAnnotations = useAnnotationStore((state) => state.loadAnnotations)
@@ -298,6 +321,7 @@ function PanelBody({
 
   const filters = useAnnotationFilters()
   const [overloadMode, setOverloadMode] = useState<OverloadMode>('none')
+  const [guidanceAnnotation, setGuidanceAnnotation] = useState<AnnotationRecord | null>(null)
 
   // Reset overload mode when section changes (ref-based to avoid setState in effect)
   const sectionKey = currentSection?.sectionKey ?? null
@@ -347,9 +371,14 @@ function PanelBody({
     [scopedItems, filters.typeFilter]
   )
 
+  const handleRequestGuidance = useCallback((annotation: AnnotationRecord) => {
+    setGuidanceAnnotation(annotation)
+  }, [])
+
   const { focusedIndex, cardRefs } = useKeyboardNavigation({
     items: displayItems,
     active: active && !!projectId,
+    onRequestGuidance: handleRequestGuidance,
   })
 
   if (!projectId) {
@@ -378,9 +407,19 @@ function PanelBody({
       {displayItems.length === 0 ? (
         <EmptyContent currentSection={currentSection} />
       ) : (
-        <ListContent items={displayItems} focusedIndex={focusedIndex} cardRefs={cardRefs} />
+        <ListContent
+          items={displayItems}
+          focusedIndex={focusedIndex}
+          cardRefs={cardRefs}
+          onRequestGuidance={handleRequestGuidance}
+        />
       )}
       <AskSystemDialog projectId={projectId} currentSection={currentSection ?? null} />
+      <AssigneePickerModal
+        annotation={guidanceAnnotation}
+        open={guidanceAnnotation !== null}
+        onClose={() => setGuidanceAnnotation(null)}
+      />
     </>
   )
 }

@@ -16,6 +16,8 @@ export interface AnnotationRecord {
   content: string
   author: string
   status: AnnotationStatus
+  parentId: string | null
+  assignee: string | null
   createdAt: string
   updatedAt: string
 }
@@ -26,12 +28,15 @@ export interface CreateAnnotationInput {
   type: AnnotationType
   content: string
   author: string
+  parentId?: string
+  assignee?: string
 }
 
 export interface UpdateAnnotationInput {
   id: string
   content?: string
   status?: AnnotationStatus
+  assignee?: string
 }
 
 export interface DeleteAnnotationInput {
@@ -41,4 +46,5 @@ export interface DeleteAnnotationInput {
 export interface ListAnnotationsInput {
   projectId: string
   sectionId?: string
+  includeReplies?: boolean
 }
