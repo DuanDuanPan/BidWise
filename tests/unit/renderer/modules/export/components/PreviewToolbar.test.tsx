@@ -5,7 +5,14 @@ import { PreviewToolbar } from '@modules/export/components/PreviewToolbar'
 describe('PreviewToolbar', () => {
   afterEach(cleanup)
   it('renders toolbar with file name and title', () => {
-    render(<PreviewToolbar fileName=".preview-123.docx" onZoomChange={vi.fn()} />)
+    render(
+      <PreviewToolbar
+        fileName=".preview-123.docx"
+        zoom={1}
+        onZoomChange={vi.fn()}
+        onFitPage={vi.fn()}
+      />
+    )
 
     expect(screen.getByTestId('preview-toolbar')).toBeInTheDocument()
     expect(screen.getByText('方案预览')).toBeInTheDocument()
@@ -13,20 +20,37 @@ describe('PreviewToolbar', () => {
   })
 
   it('shows page count when provided', () => {
-    render(<PreviewToolbar fileName="test.docx" pageCount={10} onZoomChange={vi.fn()} />)
+    render(
+      <PreviewToolbar
+        fileName="test.docx"
+        pageCount={10}
+        zoom={1}
+        onZoomChange={vi.fn()}
+        onFitPage={vi.fn()}
+      />
+    )
 
     expect(screen.getByTestId('page-count')).toHaveTextContent('共 10 页')
   })
 
   it('hides page count when not provided', () => {
-    render(<PreviewToolbar fileName="test.docx" onZoomChange={vi.fn()} />)
+    render(
+      <PreviewToolbar fileName="test.docx" zoom={1} onZoomChange={vi.fn()} onFitPage={vi.fn()} />
+    )
 
     expect(screen.queryByTestId('page-count')).not.toBeInTheDocument()
   })
 
   it('zoom in increases zoom level', () => {
     const onZoomChange = vi.fn()
-    render(<PreviewToolbar fileName="test.docx" onZoomChange={onZoomChange} />)
+    render(
+      <PreviewToolbar
+        fileName="test.docx"
+        zoom={1}
+        onZoomChange={onZoomChange}
+        onFitPage={vi.fn()}
+      />
+    )
 
     // Initial zoom is 100%
     expect(screen.getByTestId('zoom-level')).toHaveTextContent('100%')
@@ -37,22 +61,65 @@ describe('PreviewToolbar', () => {
 
   it('zoom out decreases zoom level', () => {
     const onZoomChange = vi.fn()
-    render(<PreviewToolbar fileName="test.docx" onZoomChange={onZoomChange} />)
+    render(
+      <PreviewToolbar
+        fileName="test.docx"
+        zoom={1}
+        onZoomChange={onZoomChange}
+        onFitPage={vi.fn()}
+      />
+    )
 
     fireEvent.click(screen.getByTestId('zoom-out-btn'))
     expect(onZoomChange).toHaveBeenCalledWith(0.75)
   })
 
-  it('fit page resets zoom to 100%', () => {
-    const onZoomChange = vi.fn()
-    render(<PreviewToolbar fileName="test.docx" onZoomChange={onZoomChange} />)
+  it('fit page calls onFitPage callback', () => {
+    const onFitPage = vi.fn()
+    render(
+      <PreviewToolbar
+        fileName="test.docx"
+        zoom={1.25}
+        onZoomChange={vi.fn()}
+        onFitPage={onFitPage}
+      />
+    )
 
-    // Zoom in first
-    fireEvent.click(screen.getByTestId('zoom-in-btn'))
-    onZoomChange.mockClear()
-
-    // Fit page
     fireEvent.click(screen.getByTestId('fit-page-btn'))
-    expect(onZoomChange).toHaveBeenCalledWith(1)
+    expect(onFitPage).toHaveBeenCalledOnce()
+  })
+
+  it('displays arbitrary zoom percentage from prop', () => {
+    render(
+      <PreviewToolbar
+        fileName="test.docx"
+        zoom={0.82}
+        onZoomChange={vi.fn()}
+        onFitPage={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('zoom-level')).toHaveTextContent('82%')
+  })
+
+  it('disables zoom in at max level', () => {
+    render(
+      <PreviewToolbar fileName="test.docx" zoom={2} onZoomChange={vi.fn()} onFitPage={vi.fn()} />
+    )
+
+    expect(screen.getByTestId('zoom-in-btn')).toBeDisabled()
+  })
+
+  it('disables zoom out at min level', () => {
+    render(
+      <PreviewToolbar
+        fileName="test.docx"
+        zoom={0.5}
+        onZoomChange={vi.fn()}
+        onFitPage={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('zoom-out-btn')).toBeDisabled()
   })
 })

@@ -4,7 +4,7 @@ import { ExportPreviewLoadingOverlay } from '@modules/export/components/ExportPr
 
 describe('ExportPreviewLoadingOverlay', () => {
   afterEach(cleanup)
-  it('renders loading overlay with progress', () => {
+  it('renders masked overlay with centered loading card', () => {
     render(
       <ExportPreviewLoadingOverlay
         progress={50}
@@ -13,7 +13,13 @@ describe('ExportPreviewLoadingOverlay', () => {
       />
     )
 
-    expect(screen.getByTestId('export-preview-loading-overlay')).toBeInTheDocument()
+    const overlay = screen.getByTestId('export-preview-loading-overlay')
+    expect(overlay).toBeInTheDocument()
+    // Verify mask: full-area overlay with centered content
+    expect(overlay.className).toContain('inset-0')
+    expect(overlay.className).toContain('items-center')
+    expect(overlay.className).toContain('justify-center')
+
     expect(screen.getByText('正在生成预览')).toBeInTheDocument()
     expect(screen.getByTestId('progress-message')).toHaveTextContent('正在生成 docx 预览')
     expect(screen.getByText('您可以继续编辑')).toBeInTheDocument()

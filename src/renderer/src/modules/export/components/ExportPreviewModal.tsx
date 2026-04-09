@@ -61,6 +61,21 @@ export function ExportPreviewModal({
     setRenderError(null)
   }, [])
 
+  const handleFitPage = useCallback(() => {
+    const container = bodyRef.current
+    if (!container) {
+      setZoom(1)
+      return
+    }
+    const content = container.firstElementChild as HTMLElement | null
+    if (!content || content.offsetWidth <= 0) {
+      setZoom(1)
+      return
+    }
+    const fitZoom = container.clientWidth / content.offsetWidth
+    setZoom(Math.max(0.5, Math.min(2, fitZoom)))
+  }, [])
+
   const effectiveError = error ?? renderError
   const hasError = effectiveError != null
   const hasContent = docxBase64 != null && !hasError
@@ -99,7 +114,9 @@ export function ExportPreviewModal({
           <PreviewToolbar
             fileName={fileName}
             pageCount={renderedPageCount}
+            zoom={zoom}
             onZoomChange={setZoom}
+            onFitPage={handleFitPage}
           />
           <div
             ref={bodyRef}

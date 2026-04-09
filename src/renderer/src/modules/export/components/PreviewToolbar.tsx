@@ -1,45 +1,36 @@
 import { Button, Tag } from 'antd'
 import { ZoomInOutlined, ZoomOutOutlined, ExpandOutlined } from '@ant-design/icons'
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
+
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 interface PreviewToolbarProps {
   fileName: string
   pageCount?: number
+  zoom: number
   onZoomChange: (zoom: number) => void
+  onFitPage: () => void
 }
-
-const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2]
-const DEFAULT_ZOOM_INDEX = 2 // 100%
 
 export function PreviewToolbar({
   fileName,
   pageCount,
+  zoom,
   onZoomChange,
+  onFitPage,
 }: PreviewToolbarProps): React.JSX.Element {
-  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX)
-
   const handleZoomIn = useCallback(() => {
-    setZoomIndex((prev) => {
-      const next = Math.min(prev + 1, ZOOM_LEVELS.length - 1)
-      onZoomChange(ZOOM_LEVELS[next])
-      return next
-    })
-  }, [onZoomChange])
+    const next = ZOOM_LEVELS.find((z) => z > zoom + 0.001)
+    if (next != null) onZoomChange(next)
+  }, [zoom, onZoomChange])
 
   const handleZoomOut = useCallback(() => {
-    setZoomIndex((prev) => {
-      const next = Math.max(prev - 1, 0)
-      onZoomChange(ZOOM_LEVELS[next])
-      return next
-    })
-  }, [onZoomChange])
+    const next = [...ZOOM_LEVELS].reverse().find((z) => z < zoom - 0.001)
+    if (next != null) onZoomChange(next)
+  }, [zoom, onZoomChange])
 
-  const handleFitPage = useCallback(() => {
-    setZoomIndex(DEFAULT_ZOOM_INDEX)
-    onZoomChange(1)
-  }, [onZoomChange])
-
-  const currentZoom = ZOOM_LEVELS[zoomIndex]
+  const canZoomIn = ZOOM_LEVELS.some((z) => z > zoom + 0.001)
+  const canZoomOut = ZOOM_LEVELS.some((z) => z < zoom - 0.001)
 
   return (
     <div
@@ -61,24 +52,24 @@ export function PreviewToolbar({
         <Button
           icon={<ZoomOutOutlined />}
           size="small"
-          disabled={zoomIndex <= 0}
+          disabled={!canZoomOut}
           onClick={handleZoomOut}
           data-testid="zoom-out-btn"
         />
         <span className="min-w-[3rem] text-center text-sm" data-testid="zoom-level">
-          {Math.round(currentZoom * 100)}%
+          {Math.round(zoom * 100)}%
         </span>
         <Button
           icon={<ZoomInOutlined />}
           size="small"
-          disabled={zoomIndex >= ZOOM_LEVELS.length - 1}
+          disabled={!canZoomIn}
           onClick={handleZoomIn}
           data-testid="zoom-in-btn"
         />
         <Button
           icon={<ExpandOutlined />}
           size="small"
-          onClick={handleFitPage}
+          onClick={onFitPage}
           data-testid="fit-page-btn"
           title="适合页面"
         />

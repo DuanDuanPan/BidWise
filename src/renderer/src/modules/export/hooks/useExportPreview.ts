@@ -42,6 +42,9 @@ export function useExportPreview(): UseExportPreviewReturn {
   const currentTaskIdRef = useRef<string | null>(null)
   const projectIdRef = useRef<string | null>(null)
   const previewMetaRef = useRef<PreviewTaskResult | null>(null)
+  // Generation counter: guards the async window between exportPreview IPC call
+  // and taskId assignment. Incremented on each triggerPreview, cancel, close, and unmount.
+  const requestIdRef = useRef(0)
 
   // Keep refs in sync with state for cleanup access
   const syncRefs = useCallback(
@@ -158,6 +161,7 @@ export function useExportPreview(): UseExportPreviewReturn {
   const triggerPreview = useCallback(
     async (projectId: string) => {
       cleanupSubscription()
+      const requestId = ++requestIdRef.current
 
       setState({
         ...INITIAL_STATE,
@@ -170,6 +174,10 @@ export function useExportPreview(): UseExportPreviewReturn {
 
       try {
         const res = await window.api.exportPreview({ projectId })
+
+        // Guard: if cancelled, closed, unmounted, or a new request started during the await, bail
+        if (requestIdRef.current !== requestId) return
+
         if (!res.success) {
           const errMsg = !res.success && 'error' in res ? res.error.message : '启动预览失败'
           setState((prev) => ({
@@ -231,6 +239,7 @@ export function useExportPreview(): UseExportPreviewReturn {
       window.api.taskCancel(taskId).catch(() => {})
     }
     cleanupSubscription()
+    requestIdRef.current++
     currentTaskIdRef.current = null
     doCleanup(projectId)
     setState(INITIAL_STATE)
@@ -240,6 +249,7 @@ export function useExportPreview(): UseExportPreviewReturn {
   const closePreview = useCallback(() => {
     const { projectId, previewMeta } = state
     cleanupSubscription()
+    requestIdRef.current++
     currentTaskIdRef.current = null
     doCleanup(projectId, previewMeta?.tempPath)
     setState(INITIAL_STATE)
@@ -283,10 +293,12 @@ export function useExportPreview(): UseExportPreviewReturn {
     }
   }, [state, cleanupSubscription, syncRefs])
 
-  // Cleanup on unmount — uses refs to access current values
+  // Cleanup on unmount — uses refs to access current values.
+  // Writing to requestIdRef.current is intentional (invalidates in-flight requests).
   useEffect(() => {
     return () => {
       cleanupSubscription()
+      requestIdRef.current++ // eslint-disable-line react-hooks/exhaustive-deps
       currentTaskIdRef.current = null
       if (projectIdRef.current) {
         doCleanup(projectIdRef.current, previewMetaRef.current?.tempPath)
