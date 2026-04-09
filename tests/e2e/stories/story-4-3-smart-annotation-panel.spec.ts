@@ -32,6 +32,7 @@ async function launchApp(): Promise<LaunchContext> {
       HOME: sandboxHome,
       APPDATA: sandboxHome,
       XDG_CONFIG_HOME: sandboxHome,
+      BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
     },
   })
 

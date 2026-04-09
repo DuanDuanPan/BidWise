@@ -135,6 +135,10 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'notificationMarkRead',
       'notificationMarkAllRead',
       'notificationCountUnread',
+      'exportPreview',
+      'exportLoadPreview',
+      'exportConfirm',
+      'exportCleanupPreview',
       'onTaskProgress',
       'onNotificationNew',
     ])

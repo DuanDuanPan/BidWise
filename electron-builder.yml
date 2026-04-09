@@ -10,6 +10,21 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  # Ship the Python venv as python/ so bin/python3 lands at Resources/python/bin/python3
+  - from: python/.venv/
+    to: python/
+    filter:
+      - '**/*'
+      - '!**/__pycache__'
+      - '!**/*.pyc'
+  # Ship the Python source code into Resources/python/src/
+  - from: python/src/
+    to: python/src/
+    filter:
+      - '**/*'
+      - '!**/__pycache__'
+      - '!**/*.pyc'
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**/*

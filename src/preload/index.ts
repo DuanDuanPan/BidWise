@@ -242,6 +242,18 @@ const requestApi = {
 
   notificationCountUnread: (input: IpcChannelMap['notification:count-unread']['input']) =>
     typedInvoke(IPC_CHANNELS.NOTIFICATION_COUNT_UNREAD, input),
+
+  exportPreview: (input: IpcChannelMap['export:preview']['input']) =>
+    typedInvoke(IPC_CHANNELS.EXPORT_PREVIEW, input),
+
+  exportLoadPreview: (input: IpcChannelMap['export:load-preview']['input']) =>
+    typedInvoke(IPC_CHANNELS.EXPORT_LOAD_PREVIEW, input),
+
+  exportConfirm: (input: IpcChannelMap['export:confirm']['input']) =>
+    typedInvoke(IPC_CHANNELS.EXPORT_CONFIRM, input),
+
+  exportCleanupPreview: (input: IpcChannelMap['export:cleanup-preview']['input']) =>
+    typedInvoke(IPC_CHANNELS.EXPORT_CLEANUP_PREVIEW, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

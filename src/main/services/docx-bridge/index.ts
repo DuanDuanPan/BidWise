@@ -16,6 +16,10 @@ import { renderDocx as renderDocxHttp, checkHealth as checkHealthHttp } from './
 
 const logger = createLogger('docx-bridge')
 
+type RenderDocxOptions = {
+  signal?: AbortSignal
+}
+
 async function start(): Promise<void> {
   try {
     await processManager.startProcess()
@@ -48,7 +52,10 @@ function validateOutputPath(projectId: string, outputPath: string): string {
   return resolvedOutput
 }
 
-async function renderDocx(input: RenderDocxInput): Promise<RenderDocxOutput> {
+async function renderDocx(
+  input: RenderDocxInput,
+  options?: RenderDocxOptions
+): Promise<RenderDocxOutput> {
   const status = processManager.getStatus()
   if (!status.ready) {
     throw new DocxBridgeError(ErrorCode.DOCX_BRIDGE_UNAVAILABLE, '渲染引擎未就绪')
@@ -57,10 +64,13 @@ async function renderDocx(input: RenderDocxInput): Promise<RenderDocxOutput> {
   const resolvedOutput = validateOutputPath(input.projectId, input.outputPath)
   await mkdir(join(resolveProjectDataPath(input.projectId), 'exports'), { recursive: true })
 
-  return renderDocxHttp({
-    ...input,
-    outputPath: resolvedOutput,
-  })
+  return renderDocxHttp(
+    {
+      ...input,
+      outputPath: resolvedOutput,
+    },
+    options
+  )
 }
 
 async function getHealth(): Promise<DocxHealthData> {

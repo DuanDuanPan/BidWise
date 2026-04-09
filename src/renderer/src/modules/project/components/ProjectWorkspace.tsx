@@ -4,6 +4,7 @@ import {
   SettingOutlined,
   SearchOutlined,
   FileSearchOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
@@ -32,8 +33,12 @@ import { ChapterGenerationProvider } from '@modules/editor/context/ChapterGenera
 import { SourceAttributionProvider } from '@modules/editor/context/SourceAttributionContext'
 import { useCurrentSection } from '@modules/annotation/hooks/useCurrentSection'
 import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
+import { useExportPreview } from '@modules/export/hooks/useExportPreview'
+import { ExportPreviewLoadingOverlay } from '@modules/export/components/ExportPreviewLoadingOverlay'
+import { ExportPreviewModal } from '@modules/export/components/ExportPreviewModal'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
+import { isMac } from '@renderer/shared/lib/platform'
 import { useDocumentStore } from '@renderer/stores'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { NotificationBell } from '@modules/notification/components/NotificationBell'
@@ -116,6 +121,77 @@ export function ProjectWorkspace(): React.JSX.Element {
       }
     }
   }, [navigateToStage, registerCommand, unregisterCommand])
+
+  // Eagerly hydrate document store at workspace mount so that preview availability
+  // does not depend on EditorView being rendered (user may land on another tab).
+  const loadDocument = useDocumentStore((s) => s.loadDocument)
+  const loadedProjectId = useDocumentStore((s) => s.loadedProjectId)
+
+  useEffect(() => {
+    if (projectId && loadedProjectId !== projectId) {
+      void loadDocument(projectId)
+    }
+  }, [projectId, loadedProjectId, loadDocument])
+
+  // Export preview integration (Story 8.2)
+  const exportPreview = useExportPreview()
+  const hasDocumentContent = useDocumentStore((s) => s.content.trim().length > 0)
+
+  const handleTriggerPreview = useCallback(() => {
+    if (!projectId || !hasDocumentContent) return
+    exportPreview.triggerPreview(projectId)
+  }, [projectId, hasDocumentContent, exportPreview])
+
+  // Cmd/Ctrl+E capture-phase handler for export preview
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      const mod = isMac ? e.metaKey : e.ctrlKey
+      if (!mod || e.key !== 'e') return
+
+      // Don't trigger when command palette is open
+      if (commandPaletteOpen) return
+
+      // Don't trigger when focus is in editable fields (including nested elements inside contenteditable)
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.closest('[contenteditable="true"]') != null
+      ) {
+        return
+      }
+
+      e.preventDefault()
+      handleTriggerPreview()
+    }
+
+    window.addEventListener('keydown', handler, true) // capture phase
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [commandPaletteOpen, handleTriggerPreview])
+
+  // Override export command in command palette while workspace is mounted
+  useEffect(() => {
+    const id = 'command-palette:export-document'
+    const previous = commandRegistry.getCommand(id)
+
+    registerCommand({
+      id,
+      label: '导出预览',
+      category: 'action',
+      keywords: ['导出', '预览', '文档', 'export', 'preview', 'docx'],
+      shortcut: formatShortcut('Ctrl+E'),
+      action: handleTriggerPreview,
+      when: () => hasDocumentContent,
+    })
+
+    return () => {
+      if (previous) {
+        registerCommand(previous)
+      } else {
+        unregisterCommand(id)
+      }
+    }
+  }, [handleTriggerPreview, hasDocumentContent, registerCommand, unregisterCommand])
 
   const { outlineCollapsed, sidebarCollapsed, isCompact, toggleOutline, toggleSidebar } =
     useWorkspaceLayout()
@@ -301,6 +377,16 @@ export function ProjectWorkspace(): React.JSX.Element {
             <div className="flex items-center gap-3">
               <Button
                 type="text"
+                icon={<EyeOutlined />}
+                className="text-text-tertiary"
+                disabled={!hasDocumentContent}
+                onClick={handleTriggerPreview}
+                title={formatShortcut('Ctrl+E')}
+                aria-label="预览"
+                data-testid="preview-btn"
+              />
+              <Button
+                type="text"
                 icon={<SearchOutlined />}
                 className="text-text-tertiary"
                 onClick={() => setCommandPaletteOpen(true)}
@@ -391,6 +477,24 @@ export function ProjectWorkspace(): React.JSX.Element {
                 }
               />
             }
+          />
+          {/* Export preview overlay and modal (Story 8.2) */}
+          {exportPreview.phase === 'loading' && (
+            <ExportPreviewLoadingOverlay
+              progress={exportPreview.progress}
+              progressMessage={exportPreview.progressMessage}
+              onCancel={exportPreview.cancelPreview}
+            />
+          )}
+          <ExportPreviewModal
+            open={exportPreview.phase === 'ready' || exportPreview.phase === 'error'}
+            docxBase64={exportPreview.docxBase64}
+            fileName={exportPreview.previewMeta?.fileName ?? ''}
+            pageCount={exportPreview.previewMeta?.pageCount}
+            error={exportPreview.error}
+            onClose={exportPreview.closePreview}
+            onConfirmExport={exportPreview.confirmExport}
+            onRetry={exportPreview.retryPreview}
           />
         </div>
       </SourceAttributionProvider>

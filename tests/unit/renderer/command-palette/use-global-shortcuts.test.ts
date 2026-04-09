@@ -52,10 +52,19 @@ describe('@story-1-9 use-global-shortcuts', () => {
     expect(messageApi.info).toHaveBeenCalledWith('已自动保存', 2)
   })
 
-  it('@p0 Cmd+E shows export placeholder toast', () => {
+  it('@story-8-2 @p0 Cmd+E does not trigger any global shortcut action (handled by workspace)', () => {
     renderHook(() => useGlobalShortcuts(setOpen, false, messageApi as never))
     fireEvent.keyDown(window, { key: 'e', metaKey: true })
-    expect(messageApi.info).toHaveBeenCalledWith('导出功能即将推出', 2)
+    // Cmd+E is now handled by ProjectWorkspace capture-phase listener, not global shortcuts
+    expect(messageApi.info).not.toHaveBeenCalled()
+  })
+
+  it('@story-8-2 @p0 Cmd+E skips when already defaultPrevented', () => {
+    renderHook(() => useGlobalShortcuts(setOpen, false, messageApi as never))
+    const event = new KeyboardEvent('keydown', { key: 'e', metaKey: true, cancelable: true })
+    event.preventDefault() // Simulate capture-phase handler already handled it
+    window.dispatchEvent(event)
+    expect(messageApi.info).not.toHaveBeenCalled()
   })
 
   it('@p1 ignores key without modifier', () => {

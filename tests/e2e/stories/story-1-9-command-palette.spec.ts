@@ -159,21 +159,15 @@ test('@story-1-9 @p0 intercepts Cmd/Ctrl+S and shows the auto-save toast', async
   })
 })
 
-test('@story-1-9 @p1 intercepts Cmd/Ctrl+E and exposes the export placeholder in the command palette', async () => {
+test('@story-8-2 @p1 export preview command is available in command palette and prompts workspace entry', async () => {
   await withIsolatedApp(async (window) => {
-    await triggerShortcut(window, 'e')
-
-    const exportToast = window.getByText('导出功能即将推出')
-    await expect(exportToast).toBeVisible()
-    await expect(exportToast).toBeHidden({ timeout: 5_000 })
-
     await openCommandPalette(window)
     await searchCommand(window, '导出')
 
     const exportCommand = window.getByTestId('command-item-command-palette:export-document')
-    await expect(exportCommand).toContainText('即将推出')
+    await expect(exportCommand).toContainText('导出预览')
     await exportCommand.click({ force: true })
 
-    await expect(window.getByText('导出功能即将推出')).toBeVisible()
+    await expect(window.getByText('请先进入项目工作空间再使用导出预览')).toBeVisible()
   })
 })

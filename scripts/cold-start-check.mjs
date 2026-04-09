@@ -7,8 +7,9 @@
  * 4. Asserts the value is < 5000 ms.
  */
 import { execSync, spawn } from 'child_process'
-import { existsSync, readFileSync, readdirSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync } from 'fs'
 import { join, resolve } from 'path'
+import { tmpdir } from 'os'
 
 const THRESHOLD_MS = 5000
 const LAUNCH_TIMEOUT_MS = 30000
@@ -143,6 +144,30 @@ function validateBuildIntegrity() {
         console.error('  Native modules may fail to load at runtime.')
       }
     }
+
+    // Verify Python runtime is shipped for docx-bridge (packaged_export_preview_runtime)
+    const pythonBin = join(
+      resourcesDir,
+      'python',
+      'bin',
+      process.platform === 'win32' ? 'python.exe' : 'python3'
+    )
+    const pythonSrc = join(resourcesDir, 'python', 'src', 'docx_renderer')
+    if (existsSync(pythonBin)) {
+      console.log('  Python runtime binary found in Resources/python/bin/.')
+    } else {
+      console.error('FAIL: Python runtime missing at ' + pythonBin)
+      console.error('  docxBridgeService will fail in packaged builds.')
+      console.error('  Ensure extraResources in electron-builder.yml ships python/.venv/ → python/')
+      process.exit(2)
+    }
+    if (existsSync(pythonSrc)) {
+      console.log('  Python source (docx_renderer) found in Resources/python/src/.')
+    } else {
+      console.error('FAIL: Python source missing at ' + pythonSrc)
+      console.error('  docxBridgeService will fail in packaged builds.')
+      process.exit(2)
+    }
   }
 }
 
@@ -174,11 +199,17 @@ if (process.platform === 'darwin') {
 }
 
 // ── Step 3: Launch and capture cold-start time ──────────────────────────
+// Create an isolated temp home so the app starts with a fresh DB/profile,
+// avoiding stale migration errors from the user's ambient data directory.
+const sandboxHome = mkdtempSync(join(tmpdir(), 'bidwise-cold-start-'))
+
 const coldStartMs = await new Promise((resolve, reject) => {
   const child = spawn(binaryPath, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
+      HOME: sandboxHome,
+      BIDWISE_USER_DATA_DIR: join(sandboxHome, 'bidwise-data'),
       ELECTRON_ENABLE_LOGGING: '1',
       // macOS unpacked builds are ad-hoc re-signed in this smoke test. Disable
       // the renderer sandbox so the helper app can launch under that signature.
@@ -222,7 +253,13 @@ const coldStartMs = await new Promise((resolve, reject) => {
   })
 })
 
-// ── Step 4: Assert threshold ────────────────────────────────────────────
+// ── Step 4: Clean up sandbox and assert threshold ─────────────────────
+try {
+  rmSync(sandboxHome, { recursive: true, force: true })
+} catch {
+  // best-effort cleanup
+}
+
 console.log(`\nCold-start time: ${coldStartMs.toFixed(1)} ms (threshold: ${THRESHOLD_MS} ms)`)
 
 if (coldStartMs >= THRESHOLD_MS) {
