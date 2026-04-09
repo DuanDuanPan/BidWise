@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, vi, type Mock } from 'vitest'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { join, resolve } from 'path'
 import { existsSync, mkdirSync, rmSync } from 'fs'
@@ -7,7 +7,6 @@ import type { RenderDocxInput, RenderDocxOutput } from '@shared/docx-types'
 const PYTHON_CWD = resolve(__dirname, '../../../python')
 const PYTHON_SRC = join(PYTHON_CWD, 'src')
 const STARTUP_TIMEOUT = 30_000
-const RENDER_TIMEOUT_MS = 60_000
 const TMP_DIR = resolve(__dirname, '../../../test-results/integration-rich-export')
 
 function resolvePythonExe(): string {
@@ -105,52 +104,35 @@ function startPythonProcess(): Promise<{ port: number; pid: number }> {
   })
 }
 
-/**
- * Mirrors the contract of src/main/services/docx-bridge/render-client.ts renderDocx():
- * same JSON body format, same timeout, same response parsing and error discrimination.
- * This allows the integration test to validate the wire protocol that docx-bridge uses
- * without importing the module (which depends on Electron processManager).
- */
-async function renderDocxViaHttp(
-  port: number,
-  input: RenderDocxInput
-): Promise<RenderDocxOutput> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error('DOCX_RENDER_TIMEOUT')), RENDER_TIMEOUT_MS)
+// Mock processManager so render-client resolves the base URL from our test port
+vi.mock('@main/services/docx-bridge/process-manager', () => ({
+  processManager: {
+    getStatus: vi.fn(() => ({ ready: false, port: undefined, pid: undefined })),
+  },
+}))
 
-  try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/render-documents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-      signal: controller.signal,
-    })
+// Import render-client (uses mocked processManager internally)
+import { renderDocx } from '@main/services/docx-bridge/render-client'
+import { processManager } from '@main/services/docx-bridge/process-manager'
 
-    const json = (await response.json()) as
-      | { success: true; data: RenderDocxOutput }
-      | { success: false; error: { code: string; message: string } }
-
-    if (!json.success) {
-      throw new Error(`Render failed [${json.error.code}]: ${json.error.message}`)
-    }
-
-    return json.data
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-describe('rich-export integration (Node.js → Python via docx-bridge protocol)', () => {
+describe('rich-export integration (Node.js → Python via render-client)', () => {
   it(
     'starts Python process',
     async () => {
       const result = await startPythonProcess()
       expect(result.port).toBeGreaterThan(0)
+
+      // Configure mock to return actual port from now on
+      ;(processManager.getStatus as Mock).mockReturnValue({
+        ready: true,
+        port: actualPort,
+        pid: result.pid,
+      })
     },
     STARTUP_TIMEOUT
   )
 
-  it('renders with styleMapping/pageSetup/projectPath via docx-bridge protocol', async () => {
+  it('renders with styleMapping/pageSetup/projectPath via render-client', async () => {
     expect(actualPort).not.toBeNull()
 
     mkdirSync(TMP_DIR, { recursive: true })
@@ -169,7 +151,7 @@ describe('rich-export integration (Node.js → Python via docx-bridge protocol)'
       projectPath: TMP_DIR,
     }
 
-    const data = await renderDocxViaHttp(actualPort!, input)
+    const data = await renderDocx(input)
 
     expect(data.outputPath).toBe(outputPath)
     expect(existsSync(outputPath)).toBe(true)
@@ -180,7 +162,7 @@ describe('rich-export integration (Node.js → Python via docx-bridge protocol)'
     expect(data.warnings!.some((w: string) => w.includes('NonExistentH1'))).toBe(true)
   })
 
-  it('renders with camelCase fields via docx-bridge protocol', async () => {
+  it('renders with camelCase fields via render-client', async () => {
     expect(actualPort).not.toBeNull()
     const outputPath = join(TMP_DIR, 'camel-case-test.docx')
 
@@ -192,12 +174,12 @@ describe('rich-export integration (Node.js → Python via docx-bridge protocol)'
       pageSetup: { contentWidthMm: 160 },
     }
 
-    const data = await renderDocxViaHttp(actualPort!, input)
+    const data = await renderDocx(input)
 
     expect(Array.isArray(data.warnings)).toBe(true)
   })
 
-  it('returns structured error for invalid template via docx-bridge protocol', async () => {
+  it('returns structured error for invalid template via render-client', async () => {
     expect(actualPort).not.toBeNull()
     const outputPath = join(TMP_DIR, 'error-test.docx')
 
@@ -208,7 +190,7 @@ describe('rich-export integration (Node.js → Python via docx-bridge protocol)'
       templatePath: '/nonexistent/template.docx',
     }
 
-    await expect(renderDocxViaHttp(actualPort!, input)).rejects.toThrow('TEMPLATE_NOT_FOUND')
+    await expect(renderDocx(input)).rejects.toMatchObject({ code: 'TEMPLATE_NOT_FOUND' })
   })
 
   afterAll(() => {

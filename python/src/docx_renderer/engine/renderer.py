@@ -68,6 +68,14 @@ def _style_exists(doc: Document, style_name: str) -> bool:
         return False
 
 
+def _is_paragraph_style(doc: Document, style_name: str) -> bool:
+    """Check if a style exists and is a PARAGRAPH style (not CHARACTER/TABLE/LIST)."""
+    try:
+        return doc.styles[style_name].type == WD_STYLE_TYPE.PARAGRAPH
+    except KeyError:
+        return False
+
+
 def _resolve_paragraph_style(
     doc: Document,
     configured_name: Optional[str],
@@ -76,11 +84,18 @@ def _resolve_paragraph_style(
 ) -> Optional[str]:
     """Resolve a paragraph style: configured > fallback > None (with warning)."""
     if configured_name and _style_exists(doc, configured_name):
-        return configured_name
-    if configured_name and not _style_exists(doc, configured_name):
+        if _is_paragraph_style(doc, configured_name):
+            return configured_name
+        warnings.append(
+            f"样式 '{configured_name}' 不是段落样式 (类型不兼容)，使用 fallback '{fallback_name}'"
+        )
+    elif configured_name:
         warnings.append(f"样式 '{configured_name}' 在模板中不存在，使用 fallback '{fallback_name}'")
-    if _style_exists(doc, fallback_name):
+    if _is_paragraph_style(doc, fallback_name):
         return fallback_name
+    if _style_exists(doc, fallback_name):
+        warnings.append(f"Fallback 样式 '{fallback_name}' 不是段落样式，使用无样式直写")
+        return None
     warnings.append(f"Fallback 样式 '{fallback_name}' 也不可用，使用无样式直写")
     return None
 
@@ -226,13 +241,16 @@ def _handle_image(
             doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
             return
     elif os.path.isabs(image_path_raw):
+        if not project_path:
+            warnings.append(f"缺少 projectPath，无法校验绝对路径图片: {image_path_raw}")
+            doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
+            return
         resolved = os.path.realpath(image_path_raw)
-        if project_path:
-            assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
-            if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
-                warnings.append(f"绝对路径图片不在 assets/ 目录下: {image_path_raw}")
-                doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-                return
+        assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
+        if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
+            warnings.append(f"绝对路径图片不在 assets/ 目录下: {image_path_raw}")
+            doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
+            return
     else:
         # No project_path provided
         warnings.append(f"无法解析图片路径 (缺少 projectPath): {image_path_raw}")

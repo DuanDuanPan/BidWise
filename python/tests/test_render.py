@@ -875,3 +875,122 @@ def test_image_width_scaled_to_content_width(client: TestClient, tmp_output: str
     expected_width = Mm(content_width)
     # Allow 1% tolerance for rounding
     assert abs(shape.width - expected_width) / expected_width < 0.01
+
+
+# === Regression: CHARACTER style mapped to paragraph-level key ===
+
+
+def test_character_style_mapped_to_heading_falls_back(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """When heading1 maps to a CHARACTER style, must fall back instead of raising ValueError."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "char-heading-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("CharStyle", WD_STYLE_TYPE.CHARACTER)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Heading with char style\n\nBody text here.",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"heading1": "CharStyle", "bodyText": "CharStyle"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    # Should have warnings about incompatible style type
+    warnings = body["data"]["warnings"]
+    assert any("不是段落样式" in w for w in warnings)
+    # Document should still be generated with fallback styles
+    assert os.path.exists(tmp_output)
+    doc = Document(tmp_output)
+    heading_texts = [p.text for p in doc.paragraphs if p.text == "Heading with char style"]
+    assert len(heading_texts) == 1
+
+
+def test_character_style_mapped_to_list_falls_back(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """When listBullet maps to a CHARACTER style, must fall back."""
+    from docx.enum.style import WD_STYLE_TYPE
+
+    template_path = str(tmp_path / "char-list-template.docx")
+    template_doc = Document()
+    template_doc.styles.add_style("ListChar", WD_STYLE_TYPE.CHARACTER)
+    template_doc.save(template_path)
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "- bullet one\n- bullet two",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "templatePath": template_path,
+            "styleMapping": {"listBullet": "ListChar"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    warnings = body["data"]["warnings"]
+    assert any("不是段落样式" in w for w in warnings)
+
+
+# === Regression: absolute image path bypass when project_path is None ===
+
+
+def test_absolute_image_path_rejected_without_project_path(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """Absolute image path must be rejected when projectPath is omitted."""
+    # Create a real PNG file at an absolute path
+    secret_image = str(tmp_path / "secret.png")
+    with open(secret_image, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": f"![stolen]({secret_image})",
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            # projectPath deliberately omitted
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    # Should have a warning about missing projectPath
+    warnings = body["data"]["warnings"]
+    assert any("projectPath" in w or "缺少" in w for w in warnings)
+    # Should NOT have embedded the image — placeholder only
+    doc = Document(tmp_output)
+    assert any("图片未导出" in p.text for p in doc.paragraphs)
+
+
+# === Regression: route handler catch-all for unexpected exceptions ===
+
+
+def test_unexpected_error_returns_structured_response(client: TestClient, tmp_output: str):
+    """Unexpected exceptions must return structured error, not raw 500."""
+    # Trigger an error by providing an output path that can't be created
+    # (on most systems, /dev/null/foo is invalid)
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": "# Test",
+            "outputPath": "/dev/null/impossible/path/out.docx",
+            "projectId": "test-project",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["error"]["code"] in ("RENDER_UNEXPECTED",)
+    assert len(body["error"]["message"]) > 0

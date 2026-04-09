@@ -1,7 +1,11 @@
+import logging
+
 from fastapi import APIRouter
 
 from docx_renderer.engine.renderer import RendererError, render_markdown_to_docx
 from docx_renderer.models.schemas import ErrorDetail, ErrorResponse, RenderRequest, RenderResult, SuccessResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -22,3 +26,6 @@ async def render_documents(
         return SuccessResponse(data=result)
     except RendererError as e:
         return ErrorResponse(error=ErrorDetail(code=e.code, message=str(e)))
+    except Exception as e:
+        logger.exception("Unexpected error during render")
+        return ErrorResponse(error=ErrorDetail(code="RENDER_UNEXPECTED", message=str(e)))

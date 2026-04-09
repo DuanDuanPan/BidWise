@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { _electron as electron } from 'playwright'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { _electron as electron, type ElectronApplication } from 'playwright'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -9,7 +9,7 @@ const APP_ENTRY = resolve(__dirname, '../../../out/main/index.js')
 test.setTimeout(120_000)
 
 async function withIsolatedApp(
-  run: (window: Page) => Promise<void>,
+  run: (window: Page, electronApp: ElectronApplication) => Promise<void>,
   extraEnv?: Record<string, string>
 ): Promise<void> {
   const testHome = mkdtempSync(join(tmpdir(), 'bidwise-story-8-3-'))
@@ -33,7 +33,7 @@ async function withIsolatedApp(
     await window.waitForLoadState('domcontentloaded')
     await expect(window).toHaveTitle('BidWise')
     await expect(window.getByTestId('project-kanban')).toBeVisible()
-    await run(window)
+    await run(window, electronApp)
   } finally {
     await electronApp.close()
     rmSync(testHome, { recursive: true, force: true })
@@ -158,4 +158,57 @@ test('@story-8-3 @p1 cancel during loading returns to workspace', async () => {
     },
     { BIDWISE_E2E_EXPORT_PREVIEW_DELAY_MS: '5000' }
   )
+})
+
+test('@story-8-3 @p0 full export flow: preview → confirm → save .docx', async () => {
+  await withIsolatedApp(async (window, electronApp) => {
+    await createRichExportProject(window)
+
+    // Prepare a temp directory for the exported file
+    const exportDir = mkdtempSync(join(tmpdir(), 'bidwise-export-'))
+    const exportPath = join(exportDir, 'exported.docx')
+
+    try {
+      // Mock dialog.showSaveDialog to return a known path (no native dialog prompt)
+      await electronApp.evaluate(
+        ({ dialog }, filePath) => {
+          dialog.showSaveDialog = async () => ({ canceled: false, filePath })
+        },
+        exportPath
+      )
+
+      // Trigger preview
+      await window.getByTestId('preview-btn').click()
+
+      // Wait for preview to fully load (confirm button visible) or error
+      const confirmBtn = window.getByTestId('confirm-export-btn')
+      const errorAlert = window.getByTestId('preview-error-alert')
+      await expect(confirmBtn.or(errorAlert)).toBeVisible({ timeout: 60_000 })
+
+      // If Python bridge is not available, skip gracefully
+      if (await errorAlert.isVisible()) {
+        test.skip(true, 'Python bridge not available — cannot complete full export flow')
+        return
+      }
+
+      // Preview loaded successfully — verify preview container has content
+      await expect(window.getByTestId('docx-preview-container')).toBeVisible()
+
+      // Confirm export (triggers mocked save dialog)
+      await confirmBtn.click()
+
+      // Wait for modal to close (export completed)
+      await expect(window.getByTestId('export-preview-modal')).not.toBeVisible({ timeout: 30_000 })
+
+      // Verify .docx file was saved to the mocked path
+      expect(existsSync(exportPath)).toBe(true)
+      const fileStats = statSync(exportPath)
+      expect(fileStats.size).toBeGreaterThan(0)
+
+      // Workspace should still be functional
+      await expect(window.getByTestId('project-workspace')).toBeVisible()
+    } finally {
+      rmSync(exportDir, { recursive: true, force: true })
+    }
+  })
 })
