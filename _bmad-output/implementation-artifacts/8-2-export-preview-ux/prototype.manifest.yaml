@@ -1,0 +1,26 @@
+story_id: 8-2-export-preview
+story_file: _bmad-output/implementation-artifacts/8-2-export-preview.md
+ux_spec: ux-spec.md
+pen_file: prototype.pen
+snapshot_file: prototype.snapshot.json
+save_report_file: prototype.save-report.json
+reference_exports:
+- exports/J0E4K.png
+- exports/Pp4dI.png
+- exports/YJeXc.png
+- exports/hixHg.png
+primary_frames:
+- Story 1.4 — 色彩系统
+- Story 1.4 — 字体系统与排版层级
+- Story 1.4 — 间距系统
+- Story 1.4 — 自定义图标集
+- Screen 1 — 预览加载态 (Preview Loading)
+- Screen 2 — 预览完成态 (Preview Ready)
+- Screen 3 — 渲染错误态 (Render Error)
+- Screen 4 — 导出成功 (Export Confirmed)
+dev_lookup_order:
+- Read story file design notes
+- Read this manifest
+- Open reference PNG for visual fidelity
+- Open .pen for structure and interaction detail
+notes: PNG 用于视觉对齐参考，.pen 用于结构与交互细节查阅。
