@@ -53,6 +53,12 @@ if [[ -f "$VENV_DIR/pyvenv.cfg" ]] && [[ -L "$VENV_PYTHON_BIN" || -L "$VENV_PYTH
   rm -rf "$VENV_DIR"
 fi
 
+# --- recreate venv whose interpreter is broken (e.g. missing dylib) --------
+if [[ -f "$VENV_DIR/pyvenv.cfg" ]] && ! "$VENV_PYTHON_BIN" -c 'import sys' &>/dev/null; then
+  echo "Existing venv interpreter is broken — recreating ..."
+  rm -rf "$VENV_DIR"
+fi
+
 # --- create venv if missing ------------------------------------------------
 if [[ ! -f "$VENV_DIR/pyvenv.cfg" ]]; then
   echo "Creating python venv at $VENV_DIR ..."
