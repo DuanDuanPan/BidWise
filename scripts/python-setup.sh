@@ -23,15 +23,27 @@ REQ_FILE="$PYTHON_DIR/requirements.txt"
 STAMP_FILE="$VENV_DIR/.requirements-stamp"
 VENV_PYTHON_BIN="$VENV_DIR/bin/python3"
 
-# --- locate Python 3.11+ --------------------------------------------------
+# --- locate Python 3.11+ (base interpreter only, never a venv python) -----
 find_python3() {
   for candidate in python3.12 python3.11 python3; do
     if command -v "$candidate" &>/dev/null; then
+      local resolved
+      resolved="$(command -v "$candidate")"
+
+      # Fast path: skip interpreters living under a .venv / venv directory
+      if [[ "$resolved" == */.venv/* || "$resolved" == */venv/* ]]; then
+        continue
+      fi
+
       local ver
       ver="$("$candidate" --version 2>&1)"
       if [[ "$ver" == *"3.12"* || "$ver" == *"3.11"* || "$ver" == *"3.13"* ]]; then
-        echo "$candidate"
-        return
+        # Authoritative check: reject virtualenv interpreters where
+        # sys.prefix diverges from sys.base_prefix
+        if "$candidate" -c 'import sys; exit(0 if sys.prefix == sys.base_prefix else 1)' 2>/dev/null; then
+          echo "$candidate"
+          return
+        fi
       fi
     fi
   done
@@ -40,7 +52,9 @@ find_python3() {
 
 PYTHON_BIN="$(find_python3)"
 if [[ -z "$PYTHON_BIN" ]]; then
-  echo "ERROR: Python 3.11+ not found on PATH. Install it (brew install python@3.12) and retry." >&2
+  echo "ERROR: No base (non-virtualenv) Python 3.11+ found on PATH." >&2
+  echo "  Interpreters inside a virtualenv are rejected because they break venv creation." >&2
+  echo "  Deactivate any active virtualenv, or install a system Python (brew install python@3.12)." >&2
   exit 1
 fi
 
