@@ -25,6 +25,25 @@ VENV_PYTHON_BIN="$VENV_DIR/bin/python3"
 
 # --- locate Python 3.11+ (base interpreter only, never a venv python) -----
 find_python3() {
+  # Allow explicit override for environments where no base python is on PATH
+  # (e.g. CI/QA machines that only expose a virtualenv interpreter).
+  if [[ -n "${BIDWISE_PYTHON_BIN:-}" ]]; then
+    if [[ ! -x "$BIDWISE_PYTHON_BIN" ]]; then
+      echo "ERROR: BIDWISE_PYTHON_BIN=$BIDWISE_PYTHON_BIN is not executable" >&2
+      echo ""
+      return
+    fi
+    local ver
+    ver="$("$BIDWISE_PYTHON_BIN" --version 2>&1)"
+    if [[ "$ver" == *"3.11"* || "$ver" == *"3.12"* || "$ver" == *"3.13"* ]]; then
+      echo "$BIDWISE_PYTHON_BIN"
+      return
+    fi
+    echo "ERROR: BIDWISE_PYTHON_BIN=$BIDWISE_PYTHON_BIN is not Python 3.11+ (got: $ver)" >&2
+    echo ""
+    return
+  fi
+
   for candidate in python3.12 python3.11 python3; do
     if command -v "$candidate" &>/dev/null; then
       local resolved
@@ -54,7 +73,8 @@ PYTHON_BIN="$(find_python3)"
 if [[ -z "$PYTHON_BIN" ]]; then
   echo "ERROR: No base (non-virtualenv) Python 3.11+ found on PATH." >&2
   echo "  Interpreters inside a virtualenv are rejected because they break venv creation." >&2
-  echo "  Deactivate any active virtualenv, or install a system Python (brew install python@3.12)." >&2
+  echo "  Deactivate any active virtualenv, install a system Python (brew install python@3.12)," >&2
+  echo "  or set BIDWISE_PYTHON_BIN=/path/to/base/python3 to override." >&2
   exit 1
 fi
 
