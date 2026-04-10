@@ -13,8 +13,20 @@ export default defineConfig({
             'tests/unit/main/**/*.test.ts',
             'tests/unit/shared/**/*.test.ts',
             'tests/unit/preload/**/*.test.ts',
-            'tests/integration/**/*.test.ts',
           ],
+        },
+        resolve: {
+          alias: {
+            '@main': resolve('src/main'),
+            '@shared': resolve('src/shared'),
+          },
+        },
+      },
+      {
+        test: {
+          name: 'integration',
+          environment: 'node',
+          include: ['tests/integration/**/*.test.ts'],
         },
         resolve: {
           alias: {
