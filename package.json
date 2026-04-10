@@ -6,7 +6,7 @@
   "author": "BidWise Team",
   "scripts": {
     "dev": "pnpm native:rebuild:electron && electron-vite dev",
-    "build": "pnpm native:rebuild:electron && pnpm python:setup && electron-vite build",
+    "build": "pnpm native:rebuild:electron && electron-vite build",
     "start": "electron-vite preview",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
@@ -18,7 +18,7 @@
     "python:setup": "bash scripts/python-setup.sh",
     "test:unit": "pnpm native:rebuild:node && vitest run --project main --project renderer",
     "test:integration": "pnpm native:rebuild:node && pnpm python:setup && vitest run --project integration",
-    "test:e2e:prepare": "pnpm build",
+    "test:e2e:prepare": "pnpm build && pnpm python:setup",
     "test:e2e:smoke": "pnpm test:e2e:prepare && playwright test -g @smoke",
     "test:e2e": "pnpm test:e2e:prepare && playwright test",
     "test:e2e:headed": "pnpm test:e2e:prepare && playwright test --headed",
@@ -30,10 +30,10 @@
     "test:cold-start": "node scripts/cold-start-check.mjs",
     "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
     "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "pnpm build && electron-builder --dir",
-    "build:win": "pnpm build && electron-builder --win",
-    "build:mac": "pnpm build && electron-builder --mac",
-    "build:linux": "pnpm build && electron-builder --linux",
+    "build:unpack": "pnpm build && pnpm python:setup && electron-builder --dir",
+    "build:win": "pnpm build && pnpm python:setup && electron-builder --win",
+    "build:mac": "pnpm build && pnpm python:setup && electron-builder --mac",
+    "build:linux": "pnpm build && pnpm python:setup && electron-builder --linux",
     "prepare": "husky"
   },
   "dependencies": {
