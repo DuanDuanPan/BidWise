@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Idempotent bootstrap for python/.venv used by docx-bridge integration tests
 # and packaged export preview runtime.
-# Creates the venv (Python 3.12) and installs python/requirements.txt when
+# Creates the venv (Python 3.11+) and installs python/requirements.txt when
 # the venv is missing or stale (requirements changed since last install).
 #
 # We intentionally create the venv with copied interpreter binaries instead of
@@ -22,15 +22,14 @@ VENV_DIR="$PYTHON_DIR/.venv"
 REQ_FILE="$PYTHON_DIR/requirements.txt"
 STAMP_FILE="$VENV_DIR/.requirements-stamp"
 VENV_PYTHON_BIN="$VENV_DIR/bin/python3"
-VENV_PYTHON_VERSIONED_BIN="$VENV_DIR/bin/python3.12"
 
-# --- locate Python 3.12 ---------------------------------------------------
-find_python312() {
-  for candidate in python3.12 python3; do
+# --- locate Python 3.11+ --------------------------------------------------
+find_python3() {
+  for candidate in python3.12 python3.11 python3; do
     if command -v "$candidate" &>/dev/null; then
       local ver
       ver="$("$candidate" --version 2>&1)"
-      if [[ "$ver" == *"3.12"* ]]; then
+      if [[ "$ver" == *"3.12"* || "$ver" == *"3.11"* || "$ver" == *"3.13"* ]]; then
         echo "$candidate"
         return
       fi
@@ -39,11 +38,14 @@ find_python312() {
   echo ""
 }
 
-PYTHON_BIN="$(find_python312)"
+PYTHON_BIN="$(find_python3)"
 if [[ -z "$PYTHON_BIN" ]]; then
-  echo "ERROR: Python 3.12 not found on PATH. Install it (brew install python@3.12) and retry." >&2
+  echo "ERROR: Python 3.11+ not found on PATH. Install it (brew install python@3.12) and retry." >&2
   exit 1
 fi
+
+PYTHON_MINOR="$("$PYTHON_BIN" -c 'import sys;print(f"python{sys.version_info.major}.{sys.version_info.minor}")')"
+VENV_PYTHON_VERSIONED_BIN="$VENV_DIR/bin/$PYTHON_MINOR"
 
 # --- recreate symlinked venvs that break packaged macOS builds -------------
 if [[ -f "$VENV_DIR/pyvenv.cfg" ]] && [[ -L "$VENV_PYTHON_BIN" || -L "$VENV_PYTHON_VERSIONED_BIN" ]]; then

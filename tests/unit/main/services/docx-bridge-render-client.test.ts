@@ -148,9 +148,7 @@ describe('render-client', () => {
       }
       const result = await renderDocx(input)
 
-      const sentBody = JSON.parse(
-        (mockFetch.mock.calls[0][1] as RequestInit).body as string
-      )
+      const sentBody = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string)
       expect(sentBody.styleMapping).toEqual({ heading1: '标题 1', bodyText: '正文' })
       expect(sentBody.pageSetup).toEqual({ contentWidthMm: 150 })
       expect(sentBody.projectPath).toBe('/tmp/project/data')

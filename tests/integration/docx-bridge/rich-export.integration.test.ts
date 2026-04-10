@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll, vi, type Mock } from 'vitest'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 import { join, resolve } from 'path'
 import { existsSync, mkdirSync, rmSync } from 'fs'
-import type { RenderDocxInput, RenderDocxOutput } from '@shared/docx-types'
+import type { RenderDocxInput } from '@shared/docx-types'
 
 const PYTHON_CWD = resolve(__dirname, '../../../python')
 const PYTHON_SRC = join(PYTHON_CWD, 'src')

@@ -440,9 +440,7 @@ describe('exportService', () => {
         JSON.stringify({ templatePath: 'company-data/templates/standard.docx' })
       )
       // First candidate (appPath) fails, second candidate (userData) succeeds
-      mockAccess
-        .mockRejectedValueOnce(new Error('ENOENT'))
-        .mockResolvedValueOnce(undefined)
+      mockAccess.mockRejectedValueOnce(new Error('ENOENT')).mockResolvedValueOnce(undefined)
       mockDocxBridgeService.renderDocx.mockResolvedValue({
         outputPath: '/tmp/out.docx',
         renderTimeMs: 20,
@@ -478,9 +476,7 @@ describe('exportService', () => {
         lastSavedAt: '2026-04-09T00:00:00Z',
         version: 1,
       })
-      mockReadFile.mockResolvedValue(
-        JSON.stringify({ templatePath: 'company-data/missing.docx' })
-      )
+      mockReadFile.mockResolvedValue(JSON.stringify({ templatePath: 'company-data/missing.docx' }))
       // All candidates fail
       mockAccess
         .mockRejectedValueOnce(new Error('ENOENT'))
