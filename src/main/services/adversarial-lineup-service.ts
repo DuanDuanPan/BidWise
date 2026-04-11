@@ -317,6 +317,7 @@ class AdversarialLineupService {
         } catch (err) {
           // Re-throw abort/cancellation errors so task-queue handles them directly
           if (isAbortError(err)) throw err
+          if (err instanceof BidWiseError && err.code === ErrorCode.TASK_CANCELLED) throw err
 
           // LLM / timeout / parse / empty-result failures → fallback (AC4)
           logger.warn(
