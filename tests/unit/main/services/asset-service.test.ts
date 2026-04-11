@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Asset, Tag } from '@shared/asset-types'
 
 const mockSearch = vi.hoisted(() => vi.fn())
 const mockList = vi.hoisted(() => vi.fn())
@@ -44,7 +45,7 @@ vi.mock('@main/utils/errors', async (importOriginal) => {
 
 const { assetService } = await import('@main/services/asset-service')
 
-function makeAsset(overrides: Record<string, unknown> = {}) {
+function makeAsset(overrides: Record<string, unknown> = {}): Asset {
   return {
     id: 'a1',
     projectId: null,
@@ -57,17 +58,17 @@ function makeAsset(overrides: Record<string, unknown> = {}) {
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
-  }
+  } as Asset
 }
 
-function makeTag(overrides: Record<string, unknown> = {}) {
+function makeTag(overrides: Record<string, unknown> = {}): Tag {
   return {
     id: 't1',
     name: '标签',
     normalizedName: '标签',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
-  }
+  } as Tag
 }
 
 describe('assetService', () => {
@@ -122,7 +123,12 @@ describe('assetService', () => {
         total: 2,
         rawRanks: { a1: -10, a2: -5 },
       })
-      mockFindByAssetIds.mockResolvedValue(new Map([['a1', []], ['a2', []]]))
+      mockFindByAssetIds.mockResolvedValue(
+        new Map([
+          ['a1', []],
+          ['a2', []],
+        ])
+      )
 
       const result = await assetService.search({ rawQuery: 'keyword', assetTypes: [] })
 

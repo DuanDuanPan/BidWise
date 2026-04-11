@@ -53,7 +53,6 @@ vi.mock('@ant-design/icons', () => ({
 
 // Mock the store
 const mockLoadInitialAssets = vi.fn()
-const mockSearch = vi.fn()
 const mockToggleAssetType = vi.fn()
 const mockResetAssetTypes = vi.fn()
 const mockSelectAsset = vi.fn()
@@ -90,9 +89,7 @@ vi.mock('@modules/asset/hooks/useAssetSearch', () => ({
   useAssetSearch: () => storeState,
 }))
 
-const { AssetSearchPage } = await import(
-  '@modules/asset/components/AssetSearchPage'
-)
+const { AssetSearchPage } = await import('@modules/asset/components/AssetSearchPage')
 
 describe('AssetSearchPage', () => {
   beforeEach(() => {

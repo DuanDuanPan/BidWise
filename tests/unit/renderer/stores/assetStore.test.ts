@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { AssetSearchResult, AssetDetail } from '@shared/asset-types'
 
 const mockAssetSearch = vi.fn()
 const mockAssetList = vi.fn()
@@ -23,7 +24,7 @@ Object.defineProperty(window, 'api', {
   writable: true,
 })
 
-function makeSearchResult(overrides: Record<string, unknown> = {}) {
+function makeSearchResult(overrides: Record<string, unknown> = {}): AssetSearchResult {
   return {
     id: 'a1',
     title: '测试资产',
@@ -33,10 +34,10 @@ function makeSearchResult(overrides: Record<string, unknown> = {}) {
     tags: [],
     matchScore: 100,
     ...overrides,
-  }
+  } as AssetSearchResult
 }
 
-function makeDetail(overrides: Record<string, unknown> = {}) {
+function makeDetail(overrides: Record<string, unknown> = {}): AssetDetail {
   return {
     id: 'a1',
     projectId: null,
@@ -50,7 +51,7 @@ function makeDetail(overrides: Record<string, unknown> = {}) {
     updatedAt: '2026-01-01T00:00:00.000Z',
     tags: [],
     ...overrides,
-  }
+  } as AssetDetail
 }
 
 describe('assetStore', () => {

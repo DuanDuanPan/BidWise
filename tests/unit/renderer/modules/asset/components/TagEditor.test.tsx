@@ -57,9 +57,10 @@ vi.mock('@ant-design/icons', () => ({
   PlusOutlined: () => <span data-testid="plus-icon" />,
 }))
 
+import type { Tag } from '@shared/asset-types'
 import { TagEditor } from '@modules/asset/components/TagEditor'
 
-function makeTag(name: string) {
+function makeTag(name: string): Tag {
   return {
     id: `t-${name}`,
     name,

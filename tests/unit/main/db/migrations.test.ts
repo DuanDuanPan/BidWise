@@ -314,7 +314,9 @@ describe('Database migrations', () => {
       // Verify triggers exist
       const triggers = await sql<{
         name: string
-      }>`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'assets_a%'`.execute(rawDb)
+      }>`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'assets_a%'`.execute(
+        rawDb
+      )
       const triggerNames = triggers.rows.map((t) => t.name)
       expect(triggerNames).toContain('assets_ai')
       expect(triggerNames).toContain('assets_ad')

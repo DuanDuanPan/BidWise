@@ -84,9 +84,9 @@ describe('asset-handlers', () => {
     mockGetById.mockResolvedValue({ id: 'a1' })
     registerAssetHandlers()
 
-    const getHandler = mockHandle.mock.calls.find(
-      (c: unknown[]) => c[0] === 'asset:get'
-    )?.[1] as (...args: unknown[]) => Promise<unknown>
+    const getHandler = mockHandle.mock.calls.find((c: unknown[]) => c[0] === 'asset:get')?.[1] as (
+      ...args: unknown[]
+    ) => Promise<unknown>
 
     await getHandler({}, { id: 'a1' })
     expect(mockGetById).toHaveBeenCalledWith('a1')

@@ -47,7 +47,6 @@ vi.mock('@main/utils/errors', async (importOriginal) => {
 })
 
 const { AssetRepository } = await import('@main/db/repositories/asset-repo')
-const { TagRepository } = await import('@main/db/repositories/tag-repo')
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -85,10 +84,7 @@ async function seedAsset(
     .execute()
 }
 
-async function seedTag(
-  db: Kysely<DB>,
-  data: { id: string; name: string }
-): Promise<void> {
+async function seedTag(db: Kysely<DB>, data: { id: string; name: string }): Promise<void> {
   await db
     .insertInto('tags')
     .values({
@@ -100,11 +96,7 @@ async function seedTag(
     .execute()
 }
 
-async function linkAssetTag(
-  db: Kysely<DB>,
-  assetId: string,
-  tagId: string
-): Promise<void> {
+async function linkAssetTag(db: Kysely<DB>, assetId: string, tagId: string): Promise<void> {
   await db.insertInto('assetTags').values({ assetId, tagId }).execute()
 }
 
@@ -146,7 +138,12 @@ describe('AssetRepository', () => {
   })
 
   it('search with tag AND filtering', async () => {
-    await seedAsset(testDb, { id: 'a1', title: '架构图示例', content: '这是架构图', assetType: 'diagram' })
+    await seedAsset(testDb, {
+      id: 'a1',
+      title: '架构图示例',
+      content: '这是架构图',
+      assetType: 'diagram',
+    })
     await seedAsset(testDb, { id: 'a2', title: '案例分析', content: '这是案例', assetType: 'case' })
     await seedTag(testDb, { id: 't1', name: '架构图' })
     await seedTag(testDb, { id: 't2', name: '案例' })

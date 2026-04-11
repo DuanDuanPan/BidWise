@@ -15,37 +15,70 @@ function seedTestData(dbPath: string): void {
   const now = new Date().toISOString()
 
   // Insert assets
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO assets (id, project_id, title, summary, content, asset_type, source_project, source_section, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'asset-1', null, '微服务架构设计方案', '基于微服务的分布式系统架构设计',
+  `
+  ).run(
+    'asset-1',
+    null,
+    '微服务架构设计方案',
+    '基于微服务的分布式系统架构设计',
     '本文档详细介绍了微服务架构的设计方案，包括服务拆分、通信协议、数据管理等核心内容。',
-    'text', '项目A', null, now, now
+    'text',
+    '项目A',
+    null,
+    now,
+    now
   )
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO assets (id, project_id, title, summary, content, asset_type, source_project, source_section, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'asset-2', null, '系统架构图', '整体架构拓扑图',
+  `
+  ).run(
+    'asset-2',
+    null,
+    '系统架构图',
+    '整体架构拓扑图',
     '系统架构拓扑图展示了各模块之间的依赖关系。',
-    'diagram', '项目B', null, now, now
+    'diagram',
+    '项目B',
+    null,
+    now,
+    now
   )
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO assets (id, project_id, title, summary, content, asset_type, source_project, source_section, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'asset-3', null, '成功案例分析', '某银行系统迁移案例',
+  `
+  ).run(
+    'asset-3',
+    null,
+    '成功案例分析',
+    '某银行系统迁移案例',
     '本案例描述了某银行核心系统从单体到微服务的迁移过程。',
-    'case', '项目C', null, now, now
+    'case',
+    '项目C',
+    null,
+    now,
+    now
   )
 
   // Insert tags
   db.prepare(`INSERT INTO tags (id, name, normalized_name, created_at) VALUES (?, ?, ?, ?)`).run(
-    'tag-1', '架构图', '架构图', now
+    'tag-1',
+    '架构图',
+    '架构图',
+    now
   )
   db.prepare(`INSERT INTO tags (id, name, normalized_name, created_at) VALUES (?, ?, ?, ?)`).run(
-    'tag-2', '微服务', '微服务', now
+    'tag-2',
+    '微服务',
+    '微服务',
+    now
   )
 
   // Link tags to assets
