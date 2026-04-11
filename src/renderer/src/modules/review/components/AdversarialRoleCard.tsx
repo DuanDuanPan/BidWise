@@ -23,11 +23,15 @@ export function AdversarialRoleCard({
   onUpdate,
   onDelete,
 }: AdversarialRoleCardProps): React.JSX.Element {
-  const [editing, setEditing] = useState(false)
+  const [editingRaw, setEditing] = useState(false)
   const [editFocus, setEditFocus] = useState(role.attackFocus.join('、'))
   const [editIntensity, setEditIntensity] = useState(role.intensity)
 
+  // Clamp editing by editable — when lineup is confirmed, editing is forced off
+  const editing = editingRaw && editable
+
   const handleSave = (): void => {
+    if (!editable) return
     const newFocus = editFocus
       .split(/[、,，]/)
       .map((s) => s.trim())

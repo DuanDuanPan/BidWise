@@ -131,6 +131,8 @@ export const useReviewStore = create<ReviewStore>()(
     async startLineupGeneration(projectId: string): Promise<void> {
       set((state) =>
         updateProject(state, projectId, {
+          lineup: null,
+          lineupLoaded: false,
           lineupLoading: true,
           lineupError: null,
           lineupProgress: 0,
@@ -167,7 +169,7 @@ export const useReviewStore = create<ReviewStore>()(
     async loadLineup(projectId: string): Promise<boolean> {
       try {
         const response = await window.api.reviewGetLineup({ projectId })
-        if (response.success) {
+        if (response.success && response.data != null) {
           set((state) =>
             updateProject(state, projectId, {
               lineup: response.data,
@@ -231,6 +233,8 @@ export const useReviewStore = create<ReviewStore>()(
     setLineupTaskError(projectId: string, error: string): void {
       set((state) =>
         updateProject(state, projectId, {
+          lineup: null,
+          lineupLoaded: false,
           lineupLoading: false,
           lineupError: error,
           lineupTaskId: null,

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError, ValidationError } from '@main/utils/errors'
+import { isAbortError } from '@main/utils/abort'
 import { ErrorCode } from '@shared/constants'
 import { ProjectRepository } from '@main/db/repositories/project-repo'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
@@ -239,81 +240,85 @@ class AdversarialLineupService {
       .execute(taskId, async (ctx: TaskExecutorContext) => {
         ctx.updateProgress(5, '正在准备对抗角色生成...')
 
-        ctx.updateProgress(10, '正在调用 AI 生成对抗角色阵容...')
-        const agentResponse = await agentOrchestrator.execute({
-          agentType: 'adversarial',
-          context: {
-            requirements: requirementsSummary,
-            scoringCriteria,
-            strategySeeds: seedsText,
-            proposalType: project.proposalType ?? undefined,
-            mandatoryItems: mandatoryText,
-          },
-        })
+        try {
+          ctx.updateProgress(10, '正在调用 AI 生成对抗角色阵容...')
+          const agentResponse = await agentOrchestrator.execute({
+            agentType: 'adversarial',
+            context: {
+              requirements: requirementsSummary,
+              scoringCriteria,
+              strategySeeds: seedsText,
+              proposalType: project.proposalType ?? undefined,
+              mandatoryItems: mandatoryText,
+            },
+          })
 
-        const innerTaskId = agentResponse.taskId
-        let agentResult: string | undefined
-        const pollingStartedAt = Date.now()
+          const innerTaskId = agentResponse.taskId
+          let agentResult: string | undefined
+          const pollingStartedAt = Date.now()
 
-        while (true) {
-          if (Date.now() - pollingStartedAt >= GENERATION_TIMEOUT_MS) {
-            throw new BidWiseError(
-              ErrorCode.ADVERSARIAL_GENERATION_FAILED,
-              'AI 对抗角色生成超时（超过 5 分钟），请重试'
-            )
+          while (true) {
+            if (Date.now() - pollingStartedAt >= GENERATION_TIMEOUT_MS) {
+              throw new BidWiseError(
+                ErrorCode.ADVERSARIAL_GENERATION_FAILED,
+                'AI 对抗角色生成超时（超过 5 分钟），请重试'
+              )
+            }
+
+            const status = await agentOrchestrator.getAgentStatus(innerTaskId)
+
+            if (status.status === 'completed') {
+              agentResult = status.result?.content
+              break
+            }
+
+            if (status.status === 'failed') {
+              throw new BidWiseError(
+                ErrorCode.ADVERSARIAL_GENERATION_FAILED,
+                `AI 对抗角色生成失败: ${status.error?.message ?? '未知错误'}`
+              )
+            }
+
+            if (status.status === 'cancelled') {
+              throw new BidWiseError(ErrorCode.TASK_CANCELLED, 'AI 对抗角色生成任务已取消')
+            }
+
+            const progressPct = Math.min(20 + status.progress * 0.6, 80)
+            ctx.updateProgress(progressPct, '正在调用 AI 生成对抗角色阵容...')
+
+            await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
           }
 
-          const status = await agentOrchestrator.getAgentStatus(innerTaskId)
-
-          if (status.status === 'completed') {
-            agentResult = status.result?.content
-            break
+          if (!agentResult) {
+            throw new BidWiseError(ErrorCode.ADVERSARIAL_GENERATION_FAILED, 'AI 返回结果为空')
           }
 
-          if (status.status === 'failed') {
-            throw new BidWiseError(
-              ErrorCode.ADVERSARIAL_GENERATION_FAILED,
-              `AI 对抗角色生成失败: ${status.error?.message ?? '未知错误'}`
-            )
-          }
+          ctx.updateProgress(85, 'AI 返回结果，正在解析和归一化...')
+          const drafts = parseRolesResponse(agentResult)
+          const roles = normalizeDrafts(drafts)
 
-          if (status.status === 'cancelled') {
-            throw new BidWiseError(ErrorCode.TASK_CANCELLED, 'AI 对抗角色生成任务已取消')
-          }
+          await lineupRepo.save({
+            projectId,
+            roles,
+            status: 'generated',
+            generationSource: 'llm',
+            warningMessage: null,
+          })
 
-          const progressPct = Math.min(20 + status.progress * 0.6, 80)
-          ctx.updateProgress(progressPct, '正在调用 AI 生成对抗角色阵容...')
+          ctx.updateProgress(100, '对抗角色阵容生成完成')
+          logger.info(
+            `Adversarial lineup generation complete for project ${projectId}: ${roles.length} roles`
+          )
+          return roles
+        } catch (err) {
+          // Re-throw abort/cancellation errors so task-queue handles them directly
+          if (isAbortError(err)) throw err
 
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-        }
-
-        if (!agentResult) {
-          throw new BidWiseError(ErrorCode.ADVERSARIAL_GENERATION_FAILED, 'AI 返回结果为空')
-        }
-
-        ctx.updateProgress(85, 'AI 返回结果，正在解析和归一化...')
-        const drafts = parseRolesResponse(agentResult)
-        const roles = normalizeDrafts(drafts)
-
-        await lineupRepo.save({
-          projectId,
-          roles,
-          status: 'generated',
-          generationSource: 'llm',
-          warningMessage: null,
-        })
-
-        ctx.updateProgress(100, '对抗角色阵容生成完成')
-        logger.info(
-          `Adversarial lineup generation complete for project ${projectId}: ${roles.length} roles`
-        )
-        return roles
-      })
-      .then(async (result) => {
-        // Task queue resolves even for failures — check status for fallback
-        if (result.status === 'failed') {
+          // LLM / parse failures: save fallback lineup and return successfully
+          // so the outer task completes as 'completed' (AC4)
           logger.warn(
-            `Adversarial lineup LLM generation failed for project ${projectId} (task status: ${result.status}), falling back to defaults`
+            `Adversarial lineup LLM generation failed for project ${projectId}, falling back to defaults`,
+            err
           )
           try {
             const fallbackRoles = buildDefaultRoles()
@@ -324,11 +329,17 @@ class AdversarialLineupService {
               generationSource: 'fallback',
               warningMessage: 'AI 生成失败，已加载默认阵容，您可手动调整',
             })
+            ctx.updateProgress(100, '已加载默认阵容')
             logger.info(`Fallback lineup saved for project ${projectId}`)
+            return fallbackRoles
           } catch (fallbackErr) {
             logger.error(`Fallback lineup save also failed for project ${projectId}`, fallbackErr)
+            throw fallbackErr
           }
         }
+      })
+      .catch((err) => {
+        logger.error(`Adversarial lineup task failed for project ${projectId}:`, err)
       })
 
     return { taskId }
@@ -374,10 +385,11 @@ class AdversarialLineupService {
       throw new ValidationError('阵容必须包含且仅包含一个受保护的合规审查角色')
     }
 
-    // Re-sort
-    const reindexed = input.roles.map((role, i) => ({
+    // Re-sort: protected role always gets 0, others get sequential 1..N
+    let nextSort = 1
+    const reindexed = input.roles.map((role) => ({
       ...role,
-      sortOrder: role.isProtected ? 0 : i,
+      sortOrder: role.isProtected ? 0 : nextSort++,
     }))
 
     return this.lineupRepo.update(input.lineupId, { roles: reindexed })
