@@ -192,7 +192,7 @@ timeout:
 #     never / after_required_commands / after_required_failure / always
 
 test_catalog:
-  deps:
+  bootstrap:
     commands:
       - 'pnpm install --frozen-lockfile'
   lint:
@@ -217,7 +217,7 @@ test_catalog:
 phase_test_policy:
   qa_testing:
     required_layers:
-      - deps
+      - bootstrap
       - lint
       - typecheck
       - unit
@@ -231,7 +231,7 @@ phase_test_policy:
 
   regression:
     required_layers:
-      - deps
+      - bootstrap
       - unit
       - lint
       - typecheck
