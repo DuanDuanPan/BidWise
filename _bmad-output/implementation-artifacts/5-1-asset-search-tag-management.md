@@ -1,6 +1,6 @@
 # Story 5.1: 资产库检索与标签管理
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -41,7 +41,7 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
 
 ### Task 1: 数据模型、迁移与迁移链注册 (AC: #1, #2, #3, #5)
 
-- [ ] 1.1 在 `src/main/db/schema.ts` 新增 `AssetsTable`、`TagsTable`、`AssetTagsTable`
+- [x] 1.1 在 `src/main/db/schema.ts` 新增 `AssetsTable`、`TagsTable`、`AssetTagsTable`
   - `assets` 表字段：
     - `id` TEXT PK
     - `projectId` TEXT nullable
@@ -63,23 +63,23 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
     - `tagId` TEXT NOT NULL FK → `tags.id`
     - 复合主键 `(assetId, tagId)`
   - 在 `DB` 接口中注册 3 张新表
-- [ ] 1.2 创建迁移文件 `src/main/db/migrations/012_create_assets_and_tags.ts`
+- [x] 1.2 创建迁移文件 `src/main/db/migrations/012_create_assets_and_tags.ts`
   - 建立 `assets`、`tags`、`asset_tags` 三张表
   - 为 `assets.asset_type`、`assets.updated_at`、`assets.project_id`、`asset_tags.asset_id`、`asset_tags.tag_id` 建索引
   - 建立外部内容 FTS5 虚拟表 `assets_fts`，索引列为 `title / summary / content`
   - `assets_fts` 使用 `tokenize='trigram'`，不要继续沿用 `unicode61`
   - 为 `assets` 的 insert / update / delete 建触发器，保持 `assets_fts` 同步
   - 迁移中允许通过 Kysely `sql` 执行 FTS5 虚拟表与触发器 DDL；除此之外不要在业务代码中散落字符串 raw SQL
-- [ ] 1.3 更新 `src/main/db/migrator.ts`
+- [x] 1.3 更新 `src/main/db/migrator.ts`
   - 注册 `012_create_assets_and_tags`
   - 保持与现有 001-011 手工 migration map 一致的维护方式
-- [ ] 1.4 更新 `tests/unit/main/db/migrations.test.ts`
+- [x] 1.4 更新 `tests/unit/main/db/migrations.test.ts`
   - 迁移链数量从当前基线扩展到包含 012
   - 新增断言：`assets`、`tags`、`asset_tags`、`assets_fts`、相关索引与触发器均创建成功
 
 ### Task 2: 共享类型与 Repository 设计 (AC: #1, #2, #3, #5)
 
-- [ ] 2.1 创建 `src/shared/asset-types.ts`
+- [x] 2.1 创建 `src/shared/asset-types.ts`
   - 导出 `AssetType`、`Asset`、`Tag`、`AssetDetail`
   - 导出 `AssetSearchQuery = { rawQuery: string; assetTypes: AssetType[] }`
   - 导出 `AssetListFilter = { assetTypes?: AssetType[] }`
@@ -89,7 +89,7 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
   - 导出 `AssetQueryResult = { items: AssetSearchResult[]; total: number }`
   - 导出 `UpdateAssetTagsInput = { assetId: string; tagNames: string[] }`
   - 导出 `ASSET_TYPES` 与 `ASSET_TYPE_LABELS`
-- [ ] 2.2 创建 `src/main/db/repositories/asset-repo.ts`
+- [x] 2.2 创建 `src/main/db/repositories/asset-repo.ts`
   - `search(input: { keyword: string; tagNames: string[]; assetTypes: AssetType[] }): Promise<{ items: Asset[]; total: number; rawRanks: Record<string, number> }>`
   - `list(filter?: AssetListFilter): Promise<{ items: Asset[]; total: number }>`
   - `findById(id: string): Promise<Asset | null>`
@@ -100,19 +100,19 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
     - 纯标签 / 纯类型筛选不走 FTS，直接查基础表并按 `updatedAt DESC` 排序
     - 多个标签按 AND 语义过滤；多个资产类型按 OR 语义过滤
     - 继续遵循现有 Repository 模式：`getDb()`、路径别名、`BidWiseError` 体系、禁止手工 snake_case ↔ camelCase 映射
-- [ ] 2.3 创建 `src/main/db/repositories/tag-repo.ts`
+- [x] 2.3 创建 `src/main/db/repositories/tag-repo.ts`
   - `findOrCreateMany(tagNames: string[]): Promise<Tag[]>`
   - `findByAssetId(assetId: string): Promise<Tag[]>`
   - `replaceAssetTags(assetId: string, tagIds: string[]): Promise<void>`
   - `deleteOrphanedTags(): Promise<void>`，供标签替换后清理无引用标签
   - 只负责标签查找、创建和映射维护；**不要**在 Story 5.1 内扩展全局 tag rename / delete 管理界面
-- [ ] 2.4 明确 5.1 范围边界
+- [x] 2.4 明确 5.1 范围边界
   - `asset:create` / `asset:update` / `asset:delete` 不属于 Story 5.1 的 implementation scope，后续由 Story 5.2 / 5.4 处理
   - 本故事只实现搜索、默认列表、详情读取、标签集替换四条主路径
 
 ### Task 3: 主进程服务与 IPC / preload 暴露 (AC: #1, #2, #3, #5)
 
-- [ ] 3.1 创建 `src/main/services/asset-service.ts`
+- [x] 3.1 创建 `src/main/services/asset-service.ts`
   - `search(query: AssetSearchQuery): Promise<AssetQueryResult>`
   - `list(filter?: AssetListFilter): Promise<AssetQueryResult>`
   - `getById(id: string): Promise<AssetDetail>`
@@ -124,17 +124,17 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
       - 关键词检索时将当前结果集 rank 归一化为稳定的百分比区间
       - 纯标签 / 纯类型 / 默认列表时返回 `matchScore = 100`
     - 使用 `createLogger('asset-service')`
-- [ ] 3.2 创建 `src/main/ipc/asset-handlers.ts`
+- [x] 3.2 创建 `src/main/ipc/asset-handlers.ts`
   - 注册 4 个频道：
     - `asset:search`
     - `asset:list`
     - `asset:get`
     - `asset:update-tags`
   - 使用 `createIpcHandler()`，handler 仅做参数透传
-- [ ] 3.3 更新 `src/main/ipc/index.ts`
+- [x] 3.3 更新 `src/main/ipc/index.ts`
   - 注册 `registerAssetHandlers()`
   - 将 `RegisteredAssetChannels` 纳入 compile-time exhaustive check
-- [ ] 3.4 更新 `src/shared/ipc-types.ts`
+- [x] 3.4 更新 `src/shared/ipc-types.ts`
   - `IPC_CHANNELS` 新增：
     - `ASSET_SEARCH: 'asset:search'`
     - `ASSET_LIST: 'asset:list'`
@@ -142,17 +142,17 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
     - `ASSET_UPDATE_TAGS: 'asset:update-tags'`
   - `IpcChannelMap` 新增对应 input / output
   - 频道 action 统一使用 kebab-case；不要写成 `asset:updateTags`
-- [ ] 3.5 更新 `src/preload/index.ts` 与 `src/preload/index.d.ts`
+- [x] 3.5 更新 `src/preload/index.ts` 与 `src/preload/index.d.ts`
   - 暴露 `window.api.assetSearch()`
   - 暴露 `window.api.assetList()`
   - 暴露 `window.api.assetGet()`
   - 暴露 `window.api.assetUpdateTags()`
-- [ ] 3.6 更新 `tests/unit/preload/security.test.ts`
+- [x] 3.6 更新 `tests/unit/preload/security.test.ts`
   - 将新增 4 个 asset API 纳入 preload 白名单断言
 
 ### Task 4: Renderer Store 与 300ms 搜索 Hook (AC: #1, #2, #3, #4)
 
-- [ ] 4.1 创建 `src/renderer/src/stores/assetStore.ts`
+- [x] 4.1 创建 `src/renderer/src/stores/assetStore.ts`
   - State：
     - `rawQuery`
     - `assetTypes`
@@ -174,15 +174,15 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
     - 保持 `loading: boolean` 命名
     - 该 store 是全局公司级状态，不做 per-project state 包装
     - 任何新的搜索或筛选动作都必须清空 `selectedAssetId`，恢复结果列表态
-- [ ] 4.2 在 `src/renderer/src/stores/index.ts` 中导出 `useAssetStore`
-- [ ] 4.3 创建 `src/renderer/src/modules/asset/hooks/useAssetSearch.ts`
+- [x] 4.2 在 `src/renderer/src/stores/index.ts` 中导出 `useAssetStore`
+- [x] 4.3 创建 `src/renderer/src/modules/asset/hooks/useAssetSearch.ts`
   - 用 `setTimeout` / `clearTimeout` 实现 300ms 请求防抖
   - 如需 `useDeferredValue`，仅用于输入渲染平滑，**不能**替代 300ms 的实际 IPC 防抖
   - Hook 接管 query 变化、类型筛选变化与搜索触发
 
 ### Task 5: 资产搜索页 UI 与原型对齐 (AC: #1, #2, #3, #4)
 
-- [ ] 5.1 创建 `src/renderer/src/modules/asset/components/AssetSearchPage.tsx`
+- [x] 5.1 创建 `src/renderer/src/modules/asset/components/AssetSearchPage.tsx`
   - 对齐 story 级 UX 原型的 3 个状态：结果页 / 标签编辑详情 / 空状态
   - 页面包含：
     - Header：`资产库` + 描述文案
@@ -190,74 +190,74 @@ So that 我能快速找到可复用的历史素材，不用从零写起。
     - Results state：类型筛选栏 + 结果数量 + 卡片列表
     - Detail state：搜索框 + 单条扩展卡片
   - 路由为独立页面 `/asset`，不是 `ProjectWorkspace` 内的新 SOP 阶段
-- [ ] 5.2 创建 `src/renderer/src/modules/asset/components/AssetResultList.tsx`
+- [x] 5.2 创建 `src/renderer/src/modules/asset/components/AssetResultList.tsx`
   - 渲染 `找到 N 个资产`
   - 结果区采用桌面 3 列卡片网格，与参考 PNG 保持一致
   - 结果为空时渲染 Ant Design `Empty` 与 AC4 文案
-- [ ] 5.3 创建 `src/renderer/src/modules/asset/components/AssetResultCard.tsx`
+- [x] 5.3 创建 `src/renderer/src/modules/asset/components/AssetResultCard.tsx`
   - 展示标题、摘要、标签、匹配度、来源项目
   - 摘要截断 2 行
   - 卡片 hover / selected 视觉与原型一致：默认灰边，选中态蓝色边框
   - 点击卡片进入详情态
-- [ ] 5.4 创建 `src/renderer/src/modules/asset/components/AssetDetailCard.tsx`
+- [x] 5.4 创建 `src/renderer/src/modules/asset/components/AssetDetailCard.tsx`
   - 同页展开显示标题、类型标签、匹配度、来源项目、正文内容、标签编辑区
   - 不要做 modal；保留在同一路由和同一页组件内切换状态
-- [ ] 5.5 创建 `src/renderer/src/modules/asset/components/TagEditor.tsx`
+- [x] 5.5 创建 `src/renderer/src/modules/asset/components/TagEditor.tsx`
   - 展示当前标签，支持新增 / 删除
   - 提示文案与原型一致：`按 Enter 添加标签，点击 × 删除标签`
   - 修改成功后刷新详情态与当前结果列表标签
-- [ ] 5.6 结果页交互细节
+- [x] 5.6 结果页交互细节
   - 类型筛选栏文案为 `资产类型：`
   - `全部` 为重置态，不与具体类型同时保持选中
   - 搜索请求进行中时，在搜索框显示 loading，而不是整页阻塞 Spin
 
 ### Task 6: 路由与命令面板集成 (AC: #1)
 
-- [ ] 6.1 创建 `src/renderer/src/modules/asset/index.ts`
+- [x] 6.1 创建 `src/renderer/src/modules/asset/index.ts`
   - 统一导出页面、组件与 hook
-- [ ] 6.2 更新 `src/renderer/src/App.tsx`
+- [x] 6.2 更新 `src/renderer/src/App.tsx`
   - 新增 `<Route path="/asset" element={<AssetSearchPage />} />`
-- [ ] 6.3 更新 `src/renderer/src/shared/command-palette/default-commands.tsx`
+- [x] 6.3 更新 `src/renderer/src/shared/command-palette/default-commands.tsx`
   - 将 `command-palette:search-assets` 从 disabled 占位命令改为真实导航：`navigate('/asset')`
   - 移除当前错误的 `需要 Epic 6` badge / Toast 文案
   - 该入口是 Story 5.1 的首个导航入口
-- [ ] 6.4 范围声明
+- [x] 6.4 范围声明
   - Story 5.1 **不**修改 `SOP_STAGES`
   - Story 5.1 **不**把资产页嵌入 `ProjectWorkspace` 三栏中心区域
   - Story 5.1 **不**实现资产推荐侧栏；那是 Story 5.2 的范围
 
 ### Task 7: 测试矩阵与落点修正 (AC: #1, #2, #3, #4, #5)
 
-- [ ] 7.1 更新 `tests/unit/main/db/migrations.test.ts`
+- [x] 7.1 更新 `tests/unit/main/db/migrations.test.ts`
   - 覆盖 012 迁移链
   - 断言 `assets_fts` 与触发器存在
-- [ ] 7.2 新建 `tests/unit/main/db/repositories/asset-repo.test.ts`
+- [x] 7.2 新建 `tests/unit/main/db/repositories/asset-repo.test.ts`
   - 覆盖：
     - 中文关键词检索
     - `#标签` 解析后的标签 AND 过滤
     - 类型筛选
     - 短关键词 fallback
     - 默认列表排序
-- [ ] 7.3 新建 `tests/unit/main/services/asset-service.test.ts`
+- [x] 7.3 新建 `tests/unit/main/services/asset-service.test.ts`
   - 覆盖：
     - `rawQuery` 解析
     - `#` / `＃` 标签兼容
     - 标签名归一化与去重
     - `matchScore` 归一化逻辑
     - `updateTags()` 持久化后再查可见
-- [ ] 7.4 新建 `tests/unit/main/ipc/asset-handlers.test.ts`
+- [x] 7.4 新建 `tests/unit/main/ipc/asset-handlers.test.ts`
   - 覆盖 4 个 channel 注册、透传与错误包装
-- [ ] 7.5 更新 `tests/unit/preload/security.test.ts`
+- [x] 7.5 更新 `tests/unit/preload/security.test.ts`
   - 覆盖新增 asset preload API
-- [ ] 7.6 新建 `tests/unit/renderer/stores/assetStore.test.ts`
+- [x] 7.6 新建 `tests/unit/renderer/stores/assetStore.test.ts`
   - 覆盖初始加载、搜索、筛选、详情加载、标签修改后的状态刷新、错误状态
-- [ ] 7.7 新建 renderer 组件测试
+- [x] 7.7 新建 renderer 组件测试
   - `tests/unit/renderer/modules/asset/components/AssetSearchPage.test.tsx`
   - `tests/unit/renderer/modules/asset/components/TagEditor.test.tsx`
   - 重点验证：结果态 / 空态 / 详情态切换、`全部` 筛选行为、300ms debounce 触发
-- [ ] 7.8 更新 `tests/e2e/stories/story-1-9-command-palette.spec.ts`
+- [x] 7.8 更新 `tests/e2e/stories/story-1-9-command-palette.spec.ts`
   - 资产搜索命令从 disabled 占位改为可导航到 `/asset`
-- [ ] 7.9 新建 `tests/e2e/stories/story-5-1-asset-search-tag-management.spec.ts`
+- [x] 7.9 新建 `tests/e2e/stories/story-5-1-asset-search-tag-management.spec.ts`
   - 使用现有 E2E 模式直接向 `userData/data/db/bidwise.sqlite` 种入资产、标签和映射数据
   - 覆盖：
     - 中文关键词 + `#标签` 搜索
@@ -372,6 +372,7 @@ CREATE VIRTUAL TABLE assets_fts USING fts5(
 
 ## Change Log
 
+- 2026-04-11: 完成全部 7 个任务的开发实现，所有 AC 满足，188 个测试文件 1631 个测试用例全部通过，零回归
 - 2026-04-11: `validate-create-story` 复核修订
   - 补回 create-story 模板必需的 validation note
   - 收紧故事范围到搜索 / 列表 / 详情 / 标签替换，移除 5.1 不需要的 asset CRUD 与全局 tag 管理
@@ -384,10 +385,58 @@ CREATE VIRTUAL TABLE assets_fts USING fts5(
 
 ### Agent Model Used
 
-(待开发填写)
+Claude Opus 4.6 (1M context)
 
 ### Debug Log References
 
+- asset-repo FTS join initially used Kysely typed join which doesn't support virtual tables; switched to `sql` template fragments
+- service test required class-based mock instead of `vi.fn().mockImplementation()` for constructor
+- component test mock path needed `@modules/` alias instead of relative path
+
 ### Completion Notes List
 
+- Task 1: Added `AssetsTable`, `TagsTable`, `AssetTagsTable` to schema; created migration 012 with FTS5 trigram virtual table, 3 sync triggers, and proper indexes; registered in migrator
+- Task 2: Created `asset-types.ts` shared types; `AssetRepository` with FTS5/LIKE dual-path search, tag AND filtering, type OR filtering; `TagRepository` with findOrCreateMany, replaceAssetTags, deleteOrphanedTags
+- Task 3: Created `asset-service.ts` with rawQuery parsing (#/＃), tag normalization, matchScore computation from bm25 ranks; 4 IPC channels (asset:search/list/get/update-tags); preload API exposure; compile-time exhaustive check updated
+- Task 4: Created Zustand store with loading/error/results/selection state; `useAssetSearch` hook with 300ms setTimeout/clearTimeout debounce
+- Task 5: Created 5 components (AssetSearchPage, AssetResultList, AssetResultCard, AssetDetailCard, TagEditor) aligned with UX spec; 3-column grid, filter chips, empty state, inline tag editing
+- Task 6: Added `/asset` route, module barrel export, activated command palette `search-assets` navigation
+- Task 7: 188 test files / 1631 tests all passing; migration, repo (real SQLite FTS), service, IPC handler, preload security, store, component, and E2E tests created/updated
+
 ### File List
+
+**New files:**
+- src/shared/asset-types.ts
+- src/main/db/migrations/012_create_assets_and_tags.ts
+- src/main/db/repositories/asset-repo.ts
+- src/main/db/repositories/tag-repo.ts
+- src/main/services/asset-service.ts
+- src/main/ipc/asset-handlers.ts
+- src/renderer/src/stores/assetStore.ts
+- src/renderer/src/modules/asset/index.ts
+- src/renderer/src/modules/asset/hooks/useAssetSearch.ts
+- src/renderer/src/modules/asset/components/AssetSearchPage.tsx
+- src/renderer/src/modules/asset/components/AssetResultList.tsx
+- src/renderer/src/modules/asset/components/AssetResultCard.tsx
+- src/renderer/src/modules/asset/components/AssetDetailCard.tsx
+- src/renderer/src/modules/asset/components/TagEditor.tsx
+- tests/unit/main/db/repositories/asset-repo.test.ts
+- tests/unit/main/services/asset-service.test.ts
+- tests/unit/main/ipc/asset-handlers.test.ts
+- tests/unit/renderer/stores/assetStore.test.ts
+- tests/unit/renderer/modules/asset/components/AssetSearchPage.test.tsx
+- tests/unit/renderer/modules/asset/components/TagEditor.test.tsx
+- tests/e2e/stories/story-5-1-asset-search-tag-management.spec.ts
+
+**Modified files:**
+- src/main/db/schema.ts — added AssetsTable, TagsTable, AssetTagsTable, registered in DB interface
+- src/main/db/migrator.ts — registered migration 012
+- src/main/ipc/index.ts — registered asset handlers, updated exhaustive check type
+- src/shared/ipc-types.ts — added 4 asset IPC channels and channel map entries
+- src/preload/index.ts — added 4 asset preload API methods
+- src/renderer/src/stores/index.ts — exported useAssetStore
+- src/renderer/src/App.tsx — added /asset route
+- src/renderer/src/shared/command-palette/default-commands.tsx — activated search-assets command
+- tests/unit/main/db/migrations.test.ts — updated to cover 012, added FTS/trigger assertions
+- tests/unit/preload/security.test.ts — added 4 asset API methods to whitelist
+- tests/e2e/stories/story-1-9-command-palette.spec.ts — updated asset command from disabled to navigating

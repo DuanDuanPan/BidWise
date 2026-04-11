@@ -138,6 +138,31 @@ export interface NotificationTable {
   createdAt: string
 }
 
+export interface AssetsTable {
+  id: string
+  projectId: string | null
+  title: string
+  summary: string
+  content: string
+  assetType: string // 'text' | 'diagram' | 'table' | 'case'
+  sourceProject: string | null
+  sourceSection: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TagsTable {
+  id: string
+  name: string
+  normalizedName: string
+  createdAt: string
+}
+
+export interface AssetTagsTable {
+  assetId: string
+  tagId: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -149,4 +174,7 @@ export interface DB {
   requirementCertainties: RequirementCertaintyTable
   traceabilityLinks: TraceabilityLinkTable
   notifications: NotificationTable
+  assets: AssetsTable
+  tags: TagsTable
+  assetTags: AssetTagsTable
 }

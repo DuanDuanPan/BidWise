@@ -10,6 +10,10 @@ import * as migration005 from '@main/db/migrations/005_create_mandatory_items'
 import * as migration006 from '@main/db/migrations/006_create_strategy_seeds'
 import * as migration007 from '@main/db/migrations/007_create_annotations'
 import * as migration008 from '@main/db/migrations/008_create_requirement_certainties'
+import * as migration009 from '@main/db/migrations/009_create_traceability_links'
+import * as migration010 from '@main/db/migrations/010_add_annotation_thread_fields'
+import * as migration011 from '@main/db/migrations/011_create_notifications'
+import * as migration012 from '@main/db/migrations/012_create_assets_and_tags'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -27,6 +31,10 @@ const migrations: Record<string, Migration> = {
   '006_create_strategy_seeds': migration006,
   '007_create_annotations': migration007,
   '008_create_requirement_certainties': migration008,
+  '009_create_traceability_links': migration009,
+  '010_add_annotation_thread_fields': migration010,
+  '011_create_notifications': migration011,
+  '012_create_assets_and_tags': migration012,
 }
 
 describe('Database migrations', () => {
@@ -48,7 +56,7 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(8)
+    expect(results).toHaveLength(12)
     for (const result of results!) {
       expect(result.status).toBe('Success')
     }
@@ -61,6 +69,10 @@ describe('Database migrations', () => {
       '006_create_strategy_seeds',
       '007_create_annotations',
       '008_create_requirement_certainties',
+      '009_create_traceability_links',
+      '010_add_annotation_thread_fields',
+      '011_create_notifications',
+      '012_create_assets_and_tags',
     ])
   })
 
@@ -126,7 +138,8 @@ describe('Database migrations', () => {
     expect(names).toContain('006_create_strategy_seeds')
     expect(names).toContain('007_create_annotations')
     expect(names).toContain('008_create_requirement_certainties')
-    expect(names).toHaveLength(8)
+    expect(names).toContain('012_create_assets_and_tags')
+    expect(names).toHaveLength(12)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {
@@ -222,6 +235,90 @@ describe('Database migrations', () => {
       const indexNames = indexes.rows.map((i) => i.name)
       expect(indexNames).toContain('annotations_project_id_idx')
       expect(indexNames).toContain('annotations_project_section_id_idx')
+    } finally {
+      await rawDb.destroy()
+    }
+  })
+
+  it('should create assets, tags, asset_tags tables and assets_fts with triggers (migration 012)', async () => {
+    const rawDb = new Kysely<DB>({
+      dialect: new SqliteDialect({ database: new Database(':memory:') }),
+    })
+
+    try {
+      const rawMigrator = new Migrator({
+        db: rawDb,
+        provider: { getMigrations: async () => migrations },
+      })
+      await rawMigrator.migrateToLatest()
+
+      // Verify assets table columns
+      const assetCols = await sql<{
+        name: string
+        type: string
+        notnull: number
+        pk: number
+        dflt_value: string | null
+      }>`PRAGMA table_info(assets)`.execute(rawDb)
+      const assetColMap = new Map(assetCols.rows.map((c) => [c.name, c]))
+      expect(assetColMap.get('id')!.pk).toBe(1)
+      expect(assetColMap.get('title')!.notnull).toBe(1)
+      expect(assetColMap.get('content')!.notnull).toBe(1)
+      expect(assetColMap.get('asset_type')!.notnull).toBe(1)
+      expect(assetColMap.get('summary')!.dflt_value).toBe("''")
+      expect(assetColMap.get('project_id')!.notnull).toBe(0)
+
+      // Verify tags table
+      const tagCols = await sql<{
+        name: string
+        notnull: number
+      }>`PRAGMA table_info(tags)`.execute(rawDb)
+      const tagColMap = new Map(tagCols.rows.map((c) => [c.name, c]))
+      expect(tagColMap.get('name')!.notnull).toBe(1)
+      expect(tagColMap.get('normalized_name')!.notnull).toBe(1)
+
+      // Verify asset_tags table
+      const junctionCols = await sql<{
+        name: string
+        notnull: number
+      }>`PRAGMA table_info(asset_tags)`.execute(rawDb)
+      const junctionColMap = new Map(junctionCols.rows.map((c) => [c.name, c]))
+      expect(junctionColMap.get('asset_id')!.notnull).toBe(1)
+      expect(junctionColMap.get('tag_id')!.notnull).toBe(1)
+
+      // Verify assets indexes
+      const assetIndexes = await sql<{
+        name: string
+      }>`PRAGMA index_list(assets)`.execute(rawDb)
+      const indexNames = assetIndexes.rows.map((i) => i.name)
+      expect(indexNames).toContain('assets_asset_type_idx')
+      expect(indexNames).toContain('assets_updated_at_idx')
+      expect(indexNames).toContain('assets_project_id_idx')
+
+      // Verify asset_tags indexes
+      const atIndexes = await sql<{
+        name: string
+      }>`PRAGMA index_list(asset_tags)`.execute(rawDb)
+      const atIndexNames = atIndexes.rows.map((i) => i.name)
+      expect(atIndexNames).toContain('asset_tags_pk')
+      expect(atIndexNames).toContain('asset_tags_asset_id_idx')
+      expect(atIndexNames).toContain('asset_tags_tag_id_idx')
+
+      // Verify assets_fts virtual table exists
+      const tables = await sql<{
+        name: string
+        type: string
+      }>`SELECT name, type FROM sqlite_master WHERE name = 'assets_fts'`.execute(rawDb)
+      expect(tables.rows).toHaveLength(1)
+
+      // Verify triggers exist
+      const triggers = await sql<{
+        name: string
+      }>`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'assets_a%'`.execute(rawDb)
+      const triggerNames = triggers.rows.map((t) => t.name)
+      expect(triggerNames).toContain('assets_ai')
+      expect(triggerNames).toContain('assets_ad')
+      expect(triggerNames).toContain('assets_au')
     } finally {
       await rawDb.destroy()
     }

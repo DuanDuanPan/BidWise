@@ -143,9 +143,10 @@ test('@story-1-9 @p0 opens the command palette and supports stage jumps, project
     await openCommandPalette(window)
     await searchCommand(window, '资产')
     const assetCommand = window.getByTestId('command-item-command-palette:search-assets')
-    await expect(assetCommand).toContainText('需要 Epic 6')
+    await expect(assetCommand).toBeVisible()
     await window.getByTestId('command-palette-input').press('Enter')
-    await expect(window.getByText('资产库搜索需要 Epic 6 模块就绪')).toBeVisible()
+    // Should navigate to /asset page
+    await expect(window.getByText('资产库')).toBeVisible()
   })
 })
 

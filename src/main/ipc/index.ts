@@ -13,6 +13,7 @@ import { registerDocxBridgeHandlers } from './docx-bridge-handlers'
 import { registerMermaidHandlers } from './mermaid-handlers'
 import { registerNotificationHandlers } from './notification-handlers'
 import { registerExportHandlers } from './export-handlers'
+import { registerAssetHandlers } from './asset-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
 import type { RegisteredTaskChannels } from './task-handlers'
@@ -28,6 +29,7 @@ import type { RegisteredDocxBridgeChannels } from './docx-bridge-handlers'
 import type { RegisteredMermaidChannels } from './mermaid-handlers'
 import type { RegisteredNotificationChannels } from './notification-handlers'
 import type { RegisteredExportChannels } from './export-handlers'
+import type { RegisteredAssetChannels } from './asset-handlers'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Compile-time exhaustive check: every IpcChannel must be covered by a handler module.
@@ -49,6 +51,7 @@ type _AllRegistered =
   | RegisteredMermaidChannels
   | RegisteredNotificationChannels
   | RegisteredExportChannels
+  | RegisteredAssetChannels
 type _Unregistered = Exclude<IpcChannel, _AllRegistered>
 void (true satisfies [_Unregistered] extends [never] ? true : never)
 
@@ -68,4 +71,5 @@ export function registerIpcHandlers(): void {
   registerMermaidHandlers()
   registerNotificationHandlers()
   registerExportHandlers()
+  registerAssetHandlers()
 }

@@ -254,6 +254,18 @@ const requestApi = {
 
   exportCleanupPreview: (input: IpcChannelMap['export:cleanup-preview']['input']) =>
     typedInvoke(IPC_CHANNELS.EXPORT_CLEANUP_PREVIEW, input),
+
+  assetSearch: (input: IpcChannelMap['asset:search']['input']) =>
+    typedInvoke(IPC_CHANNELS.ASSET_SEARCH, input),
+
+  assetList: (input?: IpcChannelMap['asset:list']['input']) =>
+    typedInvoke(IPC_CHANNELS.ASSET_LIST, input),
+
+  assetGet: (input: IpcChannelMap['asset:get']['input']) =>
+    typedInvoke(IPC_CHANNELS.ASSET_GET, input),
+
+  assetUpdateTags: (input: IpcChannelMap['asset:update-tags']['input']) =>
+    typedInvoke(IPC_CHANNELS.ASSET_UPDATE_TAGS, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

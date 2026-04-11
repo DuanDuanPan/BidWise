@@ -91,16 +91,14 @@ export function createDefaultCommands(
     badge: '需要 Epic 5',
   })
 
-  // 资产库搜索（Epic 6 未实现，disabled）
+  // 资产库搜索
   commands.push({
     id: 'command-palette:search-assets',
     label: '搜索资产库',
     category: 'action',
     keywords: ['资产', '搜索', '素材', 'asset', 'search'],
     icon: <DatabaseOutlined />,
-    action: () => messageApi.info('资产库搜索需要 Epic 6 模块就绪', 2),
-    disabled: true,
-    badge: '需要 Epic 6',
+    action: () => navigate('/asset'),
   })
 
   // 导航类：SOP 阶段跳转命令（供全局搜索用，不含快捷键 — 快捷键由 useSopKeyboardNav 独占）

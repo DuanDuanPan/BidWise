@@ -123,6 +123,14 @@ import type {
   SaveMermaidAssetOutput,
   DeleteMermaidAssetInput,
 } from './mermaid-types'
+import type {
+  AssetSearchQuery,
+  AssetQueryResult,
+  AssetListFilter,
+  AssetDetail,
+  UpdateAssetTagsInput,
+  Tag,
+} from './asset-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -274,6 +282,10 @@ export const IPC_CHANNELS = {
   EXPORT_LOAD_PREVIEW: 'export:load-preview',
   EXPORT_CONFIRM: 'export:confirm',
   EXPORT_CLEANUP_PREVIEW: 'export:cleanup-preview',
+  ASSET_SEARCH: 'asset:search',
+  ASSET_LIST: 'asset:list',
+  ASSET_GET: 'asset:get',
+  ASSET_UPDATE_TAGS: 'asset:update-tags',
 } as const
 
 /** Filter for task:list queries */
@@ -376,6 +388,10 @@ export type IpcChannelMap = {
   'export:load-preview': { input: LoadPreviewContentInput; output: LoadPreviewContentOutput }
   'export:confirm': { input: ConfirmExportInput; output: ConfirmExportOutput }
   'export:cleanup-preview': { input: CleanupPreviewInput; output: void }
+  'asset:search': { input: AssetSearchQuery; output: AssetQueryResult }
+  'asset:list': { input: AssetListFilter | void; output: AssetQueryResult }
+  'asset:get': { input: { id: string }; output: AssetDetail }
+  'asset:update-tags': { input: UpdateAssetTagsInput; output: Tag[] }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
