@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError, ValidationError } from '@main/utils/errors'
-import { isAbortError } from '@main/utils/abort'
+import { isAbortError, throwIfAborted } from '@main/utils/abort'
 import { ErrorCode } from '@shared/constants'
 import { ProjectRepository } from '@main/db/repositories/project-repo'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
@@ -240,6 +240,7 @@ class AdversarialLineupService {
     const lineupRepo = this.lineupRepo
     taskQueue
       .execute(taskId, async (ctx: TaskExecutorContext) => {
+        throwIfAborted(ctx.signal, 'Adversarial lineup generation task cancelled')
         ctx.updateProgress(5, '正在准备对抗角色生成...')
 
         // --- LLM call + parse (errors here trigger fallback) ---
@@ -247,6 +248,7 @@ class AdversarialLineupService {
         let usedFallback = false
 
         try {
+          throwIfAborted(ctx.signal, 'Adversarial lineup generation task cancelled')
           ctx.updateProgress(10, '正在调用 AI 生成对抗角色阵容...')
           const agentResponse = await agentOrchestrator.execute({
             agentType: 'adversarial',
@@ -264,6 +266,8 @@ class AdversarialLineupService {
           const pollingStartedAt = Date.now()
 
           while (true) {
+            throwIfAborted(ctx.signal, 'Adversarial lineup generation task cancelled')
+
             if (Date.now() - pollingStartedAt >= GENERATION_TIMEOUT_MS) {
               throw new BidWiseError(
                 ErrorCode.ADVERSARIAL_GENERATION_FAILED,
@@ -271,6 +275,7 @@ class AdversarialLineupService {
               )
             }
 
+            throwIfAborted(ctx.signal, 'Adversarial lineup generation task cancelled')
             const status = await agentOrchestrator.getAgentStatus(innerTaskId)
 
             if (status.status === 'completed') {
@@ -295,6 +300,7 @@ class AdversarialLineupService {
             await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
           }
 
+          throwIfAborted(ctx.signal, 'Adversarial lineup generation task cancelled')
           if (!agentResult) {
             throw new BidWiseError(ErrorCode.ADVERSARIAL_GENERATION_FAILED, 'AI 返回结果为空')
           }
@@ -303,9 +309,7 @@ class AdversarialLineupService {
           const drafts = parseRolesResponse(agentResult)
 
           // Empty/invalid drafts = LLM returned nothing usable → treat as failure → fallback (AC4)
-          const validDrafts = drafts.filter(
-            (d) => d.name?.trim() && d.perspective?.trim()
-          )
+          const validDrafts = drafts.filter((d) => d.name?.trim() && d.perspective?.trim())
           if (validDrafts.length === 0) {
             throw new BidWiseError(
               ErrorCode.ADVERSARIAL_GENERATION_FAILED,
@@ -329,6 +333,7 @@ class AdversarialLineupService {
         }
 
         // --- Persist (outside LLM try-catch — DB errors are real failures, not LLM issues) ---
+        throwIfAborted(ctx.signal, 'Adversarial lineup generation task cancelled')
         await lineupRepo.save({
           projectId,
           roles,

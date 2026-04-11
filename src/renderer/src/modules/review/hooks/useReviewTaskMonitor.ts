@@ -122,14 +122,12 @@ export function useReviewTaskMonitor(): void {
       if (!projectId) return
 
       lastProgressTimeRef.current[event.taskId] = Date.now()
-      const progressMessage =
-        event.message && event.message !== 'failed' && event.message !== 'cancelled'
-          ? event.message
-          : undefined
+      const hasTerminalMessage = event.message === 'failed' || event.message === 'cancelled'
+      const progressMessage = event.message && !hasTerminalMessage ? event.message : undefined
 
       setLineupProgress(projectId, event.progress, progressMessage)
 
-      if (event.progress >= 100) {
+      if (event.progress >= 100 || hasTerminalMessage) {
         void checkTaskStatus(projectId, event.taskId)
       }
     })
