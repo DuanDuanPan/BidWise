@@ -1,6 +1,6 @@
 # Story 8.2: 导出前预览
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
