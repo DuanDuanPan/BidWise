@@ -176,6 +176,19 @@ describe('assetStore', () => {
     expect(mockAssetList).toHaveBeenCalled()
   })
 
+  it('updateAssetTags clears stale error on entry', async () => {
+    const newTags = [{ id: 't1', name: '新标签', normalizedName: '新标签', createdAt: '' }]
+    mockAssetUpdateTags.mockResolvedValue({ success: true, data: newTags })
+    mockAssetList.mockResolvedValue({ success: true, data: { items: [], total: 0 } })
+
+    // Simulate a stale error from a previous failure
+    useAssetStore.setState({ error: '旧的错误信息' })
+
+    await useAssetStore.getState().updateAssetTags({ assetId: 'a1', tagNames: ['新标签'] })
+
+    expect(useAssetStore.getState().error).toBeNull()
+  })
+
   it('clearError resets error to null', () => {
     useAssetStore.setState({ error: 'some error' })
 

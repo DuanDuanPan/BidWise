@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Input } from 'antd'
+import { Input, message } from 'antd'
 import { ASSET_TYPES, ASSET_TYPE_LABELS } from '@shared/asset-types'
 import { useAssetSearch } from '../hooks/useAssetSearch'
 import { AssetResultList } from './AssetResultList'
@@ -12,6 +12,7 @@ export function AssetSearchPage(): React.JSX.Element {
     results,
     total,
     loading,
+    error,
     selectedAssetId,
     selectedAsset,
     selectedMatchScore,
@@ -21,11 +22,19 @@ export function AssetSearchPage(): React.JSX.Element {
     resetAssetTypes,
     selectAsset,
     updateAssetTags,
+    clearError,
   } = useAssetSearch()
 
   useEffect(() => {
     loadInitialAssets()
   }, [loadInitialAssets])
+
+  useEffect(() => {
+    if (error) {
+      message.error(error)
+      clearError()
+    }
+  }, [error, clearError])
 
   const isAllActive = assetTypes.length === 0
 

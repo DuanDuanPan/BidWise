@@ -153,6 +153,7 @@ export const useAssetStore = create<AssetStore>()(
     },
 
     async updateAssetTags(input: UpdateAssetTagsInput): Promise<void> {
+      set({ error: null })
       try {
         const response = await window.api.assetUpdateTags(input)
         if (response.success) {
