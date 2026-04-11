@@ -267,6 +267,12 @@ const requestApi = {
   assetUpdateTags: (input: IpcChannelMap['asset:update-tags']['input']) =>
     typedInvoke(IPC_CHANNELS.ASSET_UPDATE_TAGS, input),
 
+  assetCreate: (input: IpcChannelMap['asset:create']['input']) =>
+    typedInvoke(IPC_CHANNELS.ASSET_CREATE, input),
+
+  assetRecommend: (input: IpcChannelMap['asset:recommend']['input']) =>
+    typedInvoke(IPC_CHANNELS.ASSET_RECOMMEND, input),
+
   complianceCheck: (input: IpcChannelMap['compliance:check']['input']) =>
     typedInvoke(IPC_CHANNELS.COMPLIANCE_CHECK, input),
 

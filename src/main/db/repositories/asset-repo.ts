@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid'
 import { sql } from 'kysely'
 import { getDb } from '../client'
 import { DatabaseError, NotFoundError } from '@main/utils/errors'
@@ -30,6 +31,48 @@ function shouldUseFts(keyword: string): boolean {
 }
 
 export class AssetRepository {
+  async create(input: {
+    title: string
+    content: string
+    assetType: AssetType
+    summary?: string
+    sourceProject?: string | null
+    sourceSection?: string | null
+  }): Promise<Asset> {
+    try {
+      const db = getDb()
+      const now = new Date().toISOString()
+      const id = uuidv4()
+      const summary = input.summary?.trim() || input.content.slice(0, 200)
+
+      await db
+        .insertInto('assets')
+        .values({
+          id,
+          projectId: null,
+          title: input.title,
+          summary,
+          content: input.content,
+          assetType: input.assetType,
+          sourceProject: input.sourceProject ?? null,
+          sourceSection: input.sourceSection ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .execute()
+
+      const row = await db
+        .selectFrom('assets')
+        .selectAll()
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow()
+
+      return row as unknown as Asset
+    } catch (err) {
+      throw new DatabaseError(`资产创建失败: ${(err as Error).message}`, err)
+    }
+  }
+
   async search(input: AssetSearchInput): Promise<AssetSearchOutput> {
     try {
       const db = getDb()

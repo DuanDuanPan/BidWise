@@ -4,7 +4,11 @@ import type { Value } from 'platejs'
 import { editorPlugins } from '@modules/editor/plugins/editorPlugins'
 import { deserializeFromMarkdown, serializeToMarkdown } from '@modules/editor/serializer'
 import { useDocumentStore } from '@renderer/stores'
-import { replaceMarkdownSection } from '@shared/chapter-markdown'
+import {
+  replaceMarkdownSection,
+  extractMarkdownHeadings,
+  findMarkdownHeading,
+} from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
 import { MERMAID_ELEMENT_TYPE } from '@modules/editor/plugins/mermaidPlugin'
@@ -13,6 +17,10 @@ import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
 export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => boolean
 export type InsertDrawioFn = () => void
 export type InsertMermaidFn = () => void
+export type InsertAssetFn = (
+  content: string,
+  options?: { targetSection?: ChapterHeadingLocator | null }
+) => boolean
 
 interface PlateEditorProps {
   initialContent: string
@@ -21,6 +29,7 @@ interface PlateEditorProps {
   onReplaceSectionReady?: (fn: ReplaceSectionFn | null) => void
   onInsertDrawioReady?: (fn: InsertDrawioFn | null) => void
   onInsertMermaidReady?: (fn: InsertMermaidFn | null) => void
+  onInsertAssetReady?: (fn: InsertAssetFn | null) => void
 }
 
 function generateShortId(): string {
@@ -34,6 +43,7 @@ export function PlateEditor({
   onReplaceSectionReady,
   onInsertDrawioReady,
   onInsertMermaidReady,
+  onInsertAssetReady,
 }: PlateEditorProps): React.JSX.Element {
   const updateContent = useDocumentStore((s) => s.updateContent)
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -201,6 +211,61 @@ export function PlateEditor({
     )
   }, [editor])
 
+  const insertAsset: InsertAssetFn = useCallback(
+    (assetContent: string, options?: { targetSection?: ChapterHeadingLocator | null }) => {
+      // Build paragraph nodes from content (split on double newlines)
+      const paragraphs = assetContent
+        .split(/\n\n+/)
+        .filter((p) => p.trim())
+        .map((p) => ({ type: 'p' as const, children: [{ text: p.trim() }] }))
+
+      if (paragraphs.length === 0) return false
+
+      // Priority 1: current editor selection
+      if (editor.selection) {
+        editor.tf.insertNodes(paragraphs, { at: editor.selection })
+        return true
+      }
+
+      // Priority 2: last known selection
+      if (lastSelectionRef.current) {
+        editor.tf.insertNodes(paragraphs, { at: lastSelectionRef.current })
+        return true
+      }
+
+      // Priority 3: end of target section
+      if (options?.targetSection) {
+        const currentMarkdown = serializeToMarkdown(editor)
+        const headings = extractMarkdownHeadings(currentMarkdown)
+        const heading = findMarkdownHeading(headings, options.targetSection)
+        if (heading) {
+          // Find the node index in editor.children corresponding to the section end
+          const lines = currentMarkdown.split('\n')
+          let endLineIndex = lines.length
+          for (const candidate of headings) {
+            if (candidate.lineIndex > heading.lineIndex && candidate.level <= heading.level) {
+              endLineIndex = candidate.lineIndex
+              break
+            }
+          }
+          // Approximate: insert at the proportional editor node position
+          const ratio = endLineIndex / Math.max(lines.length, 1)
+          const insertIndex = Math.min(
+            Math.floor(ratio * editor.children.length),
+            editor.children.length
+          )
+          editor.tf.insertNodes(paragraphs, { at: [insertIndex] })
+          return true
+        }
+      }
+
+      // Priority 4: end of document
+      editor.tf.insertNodes(paragraphs, { at: [editor.children.length] })
+      return true
+    },
+    [editor]
+  )
+
   useEffect(() => {
     onReplaceSectionReady?.(replaceSectionContent)
     return () => onReplaceSectionReady?.(null)
@@ -220,6 +285,11 @@ export function PlateEditor({
     onInsertMermaidReady?.(insertMermaid)
     return () => onInsertMermaidReady?.(null)
   }, [insertMermaid, onInsertMermaidReady])
+
+  useEffect(() => {
+    onInsertAssetReady?.(insertAsset)
+    return () => onInsertAssetReady?.(null)
+  }, [insertAsset, onInsertAssetReady])
 
   useEffect(() => {
     return () => {

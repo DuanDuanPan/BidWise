@@ -25,10 +25,13 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+let latestEditorViewProps: Record<string, unknown> = {}
+
 vi.mock('@modules/editor/components/EditorView', () => ({
-  EditorView: ({ projectId }: { projectId: string }) => (
-    <div data-testid="editor-view">editor:{projectId}</div>
-  ),
+  EditorView: (props: Record<string, unknown>) => {
+    latestEditorViewProps = props
+    return <div data-testid="editor-view">editor:{props.projectId as string}</div>
+  },
 }))
 
 vi.mock('@modules/editor/components/SolutionDesignView', () => ({
@@ -89,8 +92,45 @@ vi.mock('@modules/editor/lib/scrollToHeading', () => ({
   scrollToHeading: (...args: unknown[]) => mockScrollToHeading(...args),
 }))
 
+let mockCurrentSectionValue: Record<string, unknown> | null = null
+
 vi.mock('@modules/annotation/hooks/useCurrentSection', () => ({
-  useCurrentSection: vi.fn(() => null),
+  useCurrentSection: vi.fn(() => mockCurrentSectionValue),
+}))
+
+let latestAnnotationPanelProps: Record<string, unknown> = {}
+
+vi.mock('@modules/project/components/AnnotationPanel', async () => {
+  const actual = await vi.importActual<
+    typeof import('@modules/project/components/AnnotationPanel')
+  >('@modules/project/components/AnnotationPanel')
+  return {
+    ...actual,
+    AnnotationPanel: (props: Record<string, unknown>) => {
+      latestAnnotationPanelProps = props
+      return actual.AnnotationPanel(props as never)
+    },
+  }
+})
+
+const mockRecommendation = {
+  currentSection: null as Record<string, unknown> | null,
+  recommendations: [] as Array<Record<string, unknown>>,
+  loading: false,
+  acceptedAssetIds: new Set<string>(),
+  ignore: vi.fn(),
+  accept: vi.fn(),
+  clearError: vi.fn(),
+}
+
+vi.mock('@modules/asset/hooks/useAssetRecommendation', () => ({
+  useAssetRecommendation: vi.fn(() => mockRecommendation),
+}))
+
+vi.mock('@modules/asset/components/RecommendationDetailDrawer', () => ({
+  RecommendationDetailDrawer: (props: Record<string, unknown>) => (
+    <div data-testid="recommendation-detail-drawer" data-open={String(props.open)} />
+  ),
 }))
 
 vi.mock('docx-preview', () => ({
@@ -165,6 +205,13 @@ describe('@story-1-6 ProjectWorkspace', () => {
     latestChapterPhases = undefined
     mockChapterStatuses = new Map()
     mockSourceSections = new Map()
+    latestEditorViewProps = {}
+    latestAnnotationPanelProps = {}
+    mockCurrentSectionValue = null
+    mockRecommendation.currentSection = null
+    mockRecommendation.recommendations = []
+    mockRecommendation.loading = false
+    mockRecommendation.acceptedAssetIds = new Set()
     // Reset Zustand store to prevent cross-test leakage
     useProjectStore.setState({
       currentProject: null,
@@ -211,6 +258,10 @@ describe('@story-1-6 ProjectWorkspace', () => {
       exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
       exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
       exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      assetGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { id: 'a1', content: 'asset content', title: 'Asset', assetType: 'text', tags: [] },
+      }),
     })
     mockNavigate.mockClear()
     mockScrollToHeading.mockReset()
@@ -316,6 +367,13 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
     latestChapterPhases = undefined
     mockChapterStatuses = new Map()
     mockSourceSections = new Map()
+    latestEditorViewProps = {}
+    latestAnnotationPanelProps = {}
+    mockCurrentSectionValue = null
+    mockRecommendation.currentSection = null
+    mockRecommendation.recommendations = []
+    mockRecommendation.loading = false
+    mockRecommendation.acceptedAssetIds = new Set()
     // Set standard mode width so three-column layout renders fully
     Object.defineProperty(window, 'innerWidth', {
       writable: true,
@@ -367,6 +425,10 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
       exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
       exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      assetGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { id: 'a1', content: 'asset content', title: 'Asset', assetType: 'text', tags: [] },
+      }),
     })
     mockNavigate.mockClear()
   })
@@ -596,6 +658,13 @@ describe('@story-8-2 ProjectWorkspace export preview', () => {
     latestChapterPhases = undefined
     mockChapterStatuses = new Map()
     mockSourceSections = new Map()
+    latestEditorViewProps = {}
+    latestAnnotationPanelProps = {}
+    mockCurrentSectionValue = null
+    mockRecommendation.currentSection = null
+    mockRecommendation.recommendations = []
+    mockRecommendation.loading = false
+    mockRecommendation.acceptedAssetIds = new Set()
     useProjectStore.setState({
       currentProject: null,
       loading: false,
@@ -641,6 +710,10 @@ describe('@story-8-2 ProjectWorkspace export preview', () => {
       exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
       exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
       exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      assetGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { id: 'a1', content: 'asset content', title: 'Asset', assetType: 'text', tags: [] },
+      }),
     })
     mockNavigate.mockClear()
   })
@@ -664,5 +737,118 @@ describe('@story-8-2 ProjectWorkspace export preview', () => {
     renderWorkspace()
     await screen.findByTestId('project-workspace')
     expect(screen.getByTestId('preview-btn')).not.toBeDisabled()
+  })
+})
+
+describe('@story-5-2 ProjectWorkspace asset recommendation integration', () => {
+  beforeEach(() => {
+    latestChapterPhases = undefined
+    mockChapterStatuses = new Map()
+    mockSourceSections = new Map()
+    latestEditorViewProps = {}
+    latestAnnotationPanelProps = {}
+    mockCurrentSectionValue = null
+    mockRecommendation.currentSection = null
+    mockRecommendation.recommendations = []
+    mockRecommendation.loading = false
+    mockRecommendation.acceptedAssetIds = new Set()
+    useProjectStore.setState({
+      currentProject: null,
+      loading: false,
+      error: null,
+      projects: [],
+    })
+    useDocumentStore.setState({
+      content: '',
+      loading: false,
+      error: null,
+      autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+    })
+    useAnnotationStore.setState({ projects: {} })
+    vi.stubGlobal('api', {
+      projectGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ...mockProject, sopStage: 'proposal-writing' },
+      }),
+      projectUpdate: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
+      projectList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      projectCreate: vi.fn(),
+      projectDelete: vi.fn(),
+      projectArchive: vi.fn(),
+      analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
+      analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskGetStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
+      taskCancel: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      chapterGenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-1' } }),
+      chapterRegenerate: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ch-2' } }),
+      agentExecute: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'ask-1' } }),
+      agentStatus: vi.fn().mockResolvedValue({ success: true, data: { status: 'pending' } }),
+      documentLoad: vi.fn().mockResolvedValue({ success: true, data: { content: '' } }),
+      annotationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      annotationCreate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationUpdate: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      annotationDelete: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      annotationListReplies: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      notificationList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      notificationMarkRead: vi.fn().mockResolvedValue({ success: true, data: {} }),
+      notificationMarkAllRead: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      notificationCountUnread: vi.fn().mockResolvedValue({ success: true, data: 0 }),
+      onNotificationNew: vi.fn().mockReturnValue(() => {}),
+      exportPreview: vi.fn().mockResolvedValue({ success: true, data: { taskId: 'exp-1' } }),
+      exportLoadPreview: vi.fn().mockResolvedValue({ success: true, data: { docxBase64: '' } }),
+      exportConfirm: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
+      exportCleanupPreview: vi.fn().mockResolvedValue({ success: true, data: undefined }),
+      assetGet: vi.fn().mockResolvedValue({
+        success: true,
+        data: { id: 'a1', content: 'asset content', title: 'Asset', assetType: 'text', tags: [] },
+      }),
+    })
+    mockNavigate.mockClear()
+  })
+  afterEach(cleanup)
+
+  it('@p1 passes currentSection from recommendation hook to EditorView', async () => {
+    const sectionInfo = {
+      locator: { title: '公司简介', level: 2, occurrenceIndex: 0 },
+      sectionKey: '2:公司简介:0',
+      label: '公司简介',
+    }
+    mockRecommendation.currentSection = sectionInfo
+    useDocumentStore.setState({ content: '## 公司简介\n\n内容' })
+
+    renderWorkspace()
+    await screen.findByTestId('editor-view')
+
+    expect(latestEditorViewProps.currentSection).toEqual(sectionInfo)
+  })
+
+  it('@p1 passes recommendationProps to AnnotationPanel in proposal-writing stage', async () => {
+    mockRecommendation.recommendations = [
+      {
+        assetId: 'asset-1',
+        assetTitle: 'Test',
+        matchScore: 80,
+        matchReason: 'match',
+        assetType: 'text',
+      },
+    ]
+    useDocumentStore.setState({ content: '# 方案' })
+
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+
+    expect(latestAnnotationPanelProps.recommendationProps).toBeDefined()
+    const recProps = latestAnnotationPanelProps.recommendationProps as Record<string, unknown>
+    expect(recProps.recommendations).toEqual(mockRecommendation.recommendations)
+    expect(recProps.recommendationLoading).toBe(false)
+  })
+
+  it('@p1 renders RecommendationDetailDrawer', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+
+    expect(screen.getByTestId('recommendation-detail-drawer')).toBeInTheDocument()
   })
 })

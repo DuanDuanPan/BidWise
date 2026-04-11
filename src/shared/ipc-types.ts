@@ -131,8 +131,10 @@ import type {
   AssetListFilter,
   AssetDetail,
   UpdateAssetTagsInput,
+  CreateAssetInput,
   Tag,
 } from './asset-types'
+import type { RecommendationContext, RecommendationResult } from './recommendation-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -288,6 +290,8 @@ export const IPC_CHANNELS = {
   ASSET_LIST: 'asset:list',
   ASSET_GET: 'asset:get',
   ASSET_UPDATE_TAGS: 'asset:update-tags',
+  ASSET_CREATE: 'asset:create',
+  ASSET_RECOMMEND: 'asset:recommend',
   COMPLIANCE_CHECK: 'compliance:check',
   COMPLIANCE_EXPORT_GATE: 'compliance:export-gate',
 } as const
@@ -396,6 +400,8 @@ export type IpcChannelMap = {
   'asset:list': { input: AssetListFilter | void; output: AssetQueryResult }
   'asset:get': { input: { id: string }; output: AssetDetail }
   'asset:update-tags': { input: UpdateAssetTagsInput; output: Tag[] }
+  'asset:create': { input: CreateAssetInput; output: AssetDetail }
+  'asset:recommend': { input: RecommendationContext; output: RecommendationResult }
   'compliance:check': { input: { projectId: string }; output: MandatoryComplianceResult | null }
   'compliance:export-gate': { input: { projectId: string }; output: ExportComplianceGate }
 }

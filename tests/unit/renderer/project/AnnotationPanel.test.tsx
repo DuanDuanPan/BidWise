@@ -861,4 +861,93 @@ describe('AnnotationPanel', () => {
       expect(screen.getByTestId('annotation-icon-bar')).toBeInTheDocument()
     })
   })
+
+  // ── Story 5.2: 资产推荐面板 ──
+
+  describe('Story 5.2: recommendation section', () => {
+    const mockRecommendationProps = {
+      recommendations: [
+        {
+          assetId: 'asset-1',
+          title: '测试资产',
+          summary: '这是一个测试资产的摘要',
+          matchScore: 85,
+          assetType: 'text' as const,
+          tags: [] as Array<{
+            id: string
+            name: string
+            normalizedName: string
+            createdAt: string
+          }>,
+          sourceProject: null,
+        },
+      ],
+      recommendationLoading: false,
+      acceptedAssetIds: new Set<string>(),
+      onInsertRecommendation: vi.fn(),
+      onIgnoreRecommendation: vi.fn(),
+      onViewRecommendationDetail: vi.fn(),
+    }
+
+    it('renders RecommendationPanel in expanded view when recommendationProps provided', () => {
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          recommendationProps={mockRecommendationProps}
+        />
+      )
+
+      expect(screen.getByTestId('recommendation-panel')).toBeInTheDocument()
+    })
+
+    it('does not render RecommendationPanel when recommendationProps is null', () => {
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          recommendationProps={null}
+        />
+      )
+
+      expect(screen.queryByTestId('recommendation-panel')).not.toBeInTheDocument()
+    })
+
+    it('does not render RecommendationPanel when recommendationProps is undefined', () => {
+      render(
+        <AnnotationPanel
+          collapsed={false}
+          isCompact={false}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+        />
+      )
+
+      expect(screen.queryByTestId('recommendation-panel')).not.toBeInTheDocument()
+    })
+
+    it('renders RecommendationPanel in compact flyout when recommendationProps provided', () => {
+      render(
+        <AnnotationPanel
+          collapsed={true}
+          isCompact={true}
+          onToggle={vi.fn()}
+          projectId="proj-1"
+          sopPhase="proposal-writing"
+          recommendationProps={mockRecommendationProps}
+        />
+      )
+
+      // Open the flyout first
+      fireEvent.click(screen.getByTestId('annotation-icon-button'))
+      expect(screen.getByTestId('recommendation-panel')).toBeInTheDocument()
+    })
+  })
 })

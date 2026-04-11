@@ -9,6 +9,7 @@ import type {
   AssetDetail,
   AssetSearchResult,
   UpdateAssetTagsInput,
+  CreateAssetInput,
   Tag,
   Asset,
 } from '@shared/asset-types'
@@ -54,7 +55,10 @@ function normalizeTagNames(tagNames: string[]): string[] {
 }
 
 /** Normalize raw FTS ranks into 0-100 matchScore */
-function computeMatchScores(items: Asset[], rawRanks: Record<string, number>): AssetSearchResult[] {
+export function computeMatchScores(
+  items: Asset[],
+  rawRanks: Record<string, number>
+): AssetSearchResult[] {
   // bm25() returns negative values where more negative = better match
   const rankValues = Object.values(rawRanks)
   if (rankValues.length === 0) {
@@ -91,6 +95,31 @@ function toSearchResult(asset: Asset, tags: Tag[], matchScore: number): AssetSea
 }
 
 export const assetService = {
+  async create(input: CreateAssetInput): Promise<AssetDetail> {
+    logger.info(`创建资产: title="${input.title}", type=${input.assetType}`)
+
+    const asset = await assetRepo.create({
+      title: input.title,
+      content: input.content,
+      assetType: input.assetType,
+      summary: input.summary,
+      sourceProject: input.sourceProject,
+      sourceSection: input.sourceSection,
+    })
+
+    const normalizedNames = normalizeTagNames(input.tagNames)
+    const tags = await tagRepo.findOrCreateMany(normalizedNames)
+    const tagIds = tags.map((t) => t.id)
+
+    if (tagIds.length > 0) {
+      await tagRepo.replaceAssetTags(asset.id, tagIds)
+    }
+
+    const finalTags = await tagRepo.findByAssetId(asset.id)
+
+    return { ...asset, tags: finalTags }
+  },
+
   async search(query: AssetSearchQuery): Promise<AssetQueryResult> {
     logger.info(`搜索资产: rawQuery="${query.rawQuery}", types=${JSON.stringify(query.assetTypes)}`)
 

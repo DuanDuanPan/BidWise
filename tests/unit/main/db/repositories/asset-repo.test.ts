@@ -222,4 +222,60 @@ describe('AssetRepository', () => {
     expect(result.items).toHaveLength(1)
     expect(result.items[0].id).toBe('a1')
   })
+
+  describe('create', () => {
+    it('inserts asset and returns it with generated id and timestamps', async () => {
+      const asset = await repo.create({
+        title: '新建资产',
+        content: '这是一段测试内容',
+        assetType: 'text',
+      })
+
+      expect(asset.id).toBeDefined()
+      expect(asset.id).toHaveLength(36) // UUID v4 format
+      expect(asset.title).toBe('新建资产')
+      expect(asset.content).toBe('这是一段测试内容')
+      expect(asset.assetType).toBe('text')
+      expect(asset.createdAt).toBeDefined()
+      expect(asset.updatedAt).toBeDefined()
+      // Timestamps should be valid ISO-8601
+      expect(new Date(asset.createdAt).toISOString()).toBe(asset.createdAt)
+      expect(new Date(asset.updatedAt).toISOString()).toBe(asset.updatedAt)
+    })
+
+    it('auto-truncates summary from content when summary is empty', async () => {
+      const longContent = '这是一段非常长的内容'.repeat(50) // > 200 chars
+      const asset = await repo.create({
+        title: '长内容资产',
+        content: longContent,
+        assetType: 'text',
+        summary: '',
+      })
+
+      expect(asset.summary).toBe(longContent.slice(0, 200))
+      expect(asset.summary.length).toBe(200)
+    })
+
+    it('writes projectId as null', async () => {
+      const asset = await repo.create({
+        title: '无项目资产',
+        content: '内容',
+        assetType: 'case',
+      })
+
+      expect(asset.projectId).toBeNull()
+    })
+
+    it('created asset is searchable via FTS (triggers work)', async () => {
+      await repo.create({
+        title: '分布式系统架构',
+        content: '基于微服务的分布式系统设计方案',
+        assetType: 'text',
+      })
+
+      const result = await repo.search({ keyword: '分布式系统', tagNames: [], assetTypes: [] })
+      expect(result.items).toHaveLength(1)
+      expect(result.items[0].title).toBe('分布式系统架构')
+    })
+  })
 })

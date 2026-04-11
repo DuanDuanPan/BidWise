@@ -32,6 +32,9 @@ import { useSourceAttribution } from '@modules/editor/hooks/useSourceAttribution
 import { ChapterGenerationProvider } from '@modules/editor/context/ChapterGenerationContext'
 import { SourceAttributionProvider } from '@modules/editor/context/SourceAttributionContext'
 import { useCurrentSection } from '@modules/annotation/hooks/useCurrentSection'
+import { useAssetRecommendation } from '@modules/asset/hooks/useAssetRecommendation'
+import { RecommendationDetailDrawer } from '@modules/asset/components/RecommendationDetailDrawer'
+import type { InsertAssetFn } from '@modules/editor/components/PlateEditor'
 import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { useExportPreview } from '@modules/export/hooks/useExportPreview'
 import { ExportPreviewLoadingOverlay } from '@modules/export/components/ExportPreviewLoadingOverlay'
@@ -286,6 +289,46 @@ export function ProjectWorkspace(): React.JSX.Element {
   const sourceAttribution = useSourceAttribution(projectId ?? '', documentContent)
   const currentSection = useCurrentSection()
 
+  // Asset recommendation integration (Story 5.2)
+  const insertAssetRef = useRef<InsertAssetFn | null>(null)
+  const recommendation = useAssetRecommendation(projectId ?? '')
+  const [detailDrawerAssetId, setDetailDrawerAssetId] = useState<string | null>(null)
+
+  const handleInsertRecommendation = useCallback(
+    async (assetId: string) => {
+      try {
+        const resp = await window.api.assetGet({ id: assetId })
+        if (!resp.success) return
+        const ok = insertAssetRef.current?.(resp.data.content, {
+          targetSection: recommendation.currentSection?.locator ?? null,
+        })
+        if (ok) {
+          recommendation.accept(assetId)
+        }
+      } catch {
+        // silent
+      }
+    },
+    [recommendation]
+  )
+
+  const handleDetailDrawerInsert = useCallback(
+    (assetId: string, content: string) => {
+      const ok = insertAssetRef.current?.(content, {
+        targetSection: recommendation.currentSection?.locator ?? null,
+      })
+      if (ok) {
+        recommendation.accept(assetId)
+        setDetailDrawerAssetId(null)
+      }
+    },
+    [recommendation]
+  )
+
+  const registerInsertAsset = useCallback((fn: InsertAssetFn | null) => {
+    insertAssetRef.current = fn
+  }, [])
+
   // Build chapter phase map for outline tree status icons
   const chapterPhases = useMemo(() => {
     const map = new Map<string, ChapterGenerationPhase>()
@@ -455,7 +498,11 @@ export function ProjectWorkspace(): React.JSX.Element {
                   onEnterProposalWriting={() => navigateToStage('proposal-writing')}
                 />
               ) : isProposalWriting && projectId ? (
-                <EditorView projectId={projectId} />
+                <EditorView
+                  projectId={projectId}
+                  currentSection={recommendation.currentSection}
+                  onInsertAssetReady={registerInsertAsset}
+                />
               ) : (
                 <StageGuidePlaceholder stageKey={currentStageKey} />
               )
@@ -470,6 +517,18 @@ export function ProjectWorkspace(): React.JSX.Element {
                 currentSection={isProposalWriting ? currentSection : null}
                 focusAnnotationId={focusAnnotationId}
                 expandThreadParentId={expandThreadParentId}
+                recommendationProps={
+                  isProposalWriting
+                    ? {
+                        recommendations: recommendation.recommendations,
+                        recommendationLoading: recommendation.loading,
+                        acceptedAssetIds: recommendation.acceptedAssetIds,
+                        onInsertRecommendation: handleInsertRecommendation,
+                        onIgnoreRecommendation: recommendation.ignore,
+                        onViewRecommendationDetail: setDetailDrawerAssetId,
+                      }
+                    : null
+                }
               />
             }
             statusBar={
@@ -515,6 +574,19 @@ export function ProjectWorkspace(): React.JSX.Element {
             gateData={exportPreview.complianceGateData}
             onClose={exportPreview.closeComplianceGate}
             onForceExport={exportPreview.forceExport}
+          />
+          <RecommendationDetailDrawer
+            assetId={detailDrawerAssetId}
+            matchScore={
+              recommendation.recommendations.find((r) => r.assetId === detailDrawerAssetId)
+                ?.matchScore
+            }
+            accepted={
+              detailDrawerAssetId ? recommendation.acceptedAssetIds.has(detailDrawerAssetId) : false
+            }
+            open={detailDrawerAssetId !== null}
+            onClose={() => setDetailDrawerAssetId(null)}
+            onInsert={handleDetailDrawerInsert}
           />
         </div>
       </SourceAttributionProvider>

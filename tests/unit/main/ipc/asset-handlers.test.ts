@@ -5,6 +5,8 @@ const mockSearch = vi.hoisted(() => vi.fn())
 const mockList = vi.hoisted(() => vi.fn())
 const mockGetById = vi.hoisted(() => vi.fn())
 const mockUpdateTags = vi.hoisted(() => vi.fn())
+const mockCreate = vi.hoisted(() => vi.fn())
+const mockRecommend = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   ipcMain: { handle: mockHandle },
@@ -16,6 +18,13 @@ vi.mock('@main/services/asset-service', () => ({
     list: mockList,
     getById: mockGetById,
     updateTags: mockUpdateTags,
+    create: mockCreate,
+  },
+}))
+
+vi.mock('@main/services/recommendation-service', () => ({
+  recommendationService: {
+    recommend: mockRecommend,
   },
 }))
 
@@ -41,7 +50,7 @@ describe('asset-handlers', () => {
     vi.clearAllMocks()
   })
 
-  it('registers all four asset channels', () => {
+  it('registers all six asset channels', () => {
     registerAssetHandlers()
 
     const registeredChannels = mockHandle.mock.calls.map((c: unknown[]) => c[0])
@@ -49,7 +58,9 @@ describe('asset-handlers', () => {
     expect(registeredChannels).toContain('asset:list')
     expect(registeredChannels).toContain('asset:get')
     expect(registeredChannels).toContain('asset:update-tags')
-    expect(registeredChannels).toHaveLength(4)
+    expect(registeredChannels).toContain('asset:create')
+    expect(registeredChannels).toContain('asset:recommend')
+    expect(registeredChannels).toHaveLength(6)
   })
 
   it('asset:search handler wraps response in success envelope', async () => {
@@ -103,5 +114,41 @@ describe('asset-handlers', () => {
 
     const result = await handler({}, { assetId: 'a1', tagNames: ['tag'] })
     expect(result).toEqual({ success: true, data: tags })
+  })
+
+  it('asset:create channel is registered and dispatches to assetService.create', async () => {
+    const createdAsset = { id: 'new-1', title: '新资产', tags: [] }
+    mockCreate.mockResolvedValue(createdAsset)
+    registerAssetHandlers()
+
+    const handler = mockHandle.mock.calls.find((c: unknown[]) => c[0] === 'asset:create')?.[1] as (
+      ...args: unknown[]
+    ) => Promise<unknown>
+
+    expect(handler).toBeDefined()
+    const result = await handler(
+      {},
+      { title: '新资产', content: '内容', assetType: 'text', tagNames: [] }
+    )
+    expect(result).toEqual({ success: true, data: createdAsset })
+    expect(mockCreate).toHaveBeenCalled()
+  })
+
+  it('asset:recommend channel is registered and dispatches to recommendationService.recommend', async () => {
+    const recommendations = { sectionKey: 'sec-1', recommendations: [] }
+    mockRecommend.mockResolvedValue(recommendations)
+    registerAssetHandlers()
+
+    const handler = mockHandle.mock.calls.find(
+      (c: unknown[]) => c[0] === 'asset:recommend'
+    )?.[1] as (...args: unknown[]) => Promise<unknown>
+
+    expect(handler).toBeDefined()
+    const result = await handler(
+      {},
+      { sectionKey: 'sec-1', sectionTitle: '标题', sectionContent: '内容', projectId: 'p1' }
+    )
+    expect(result).toEqual({ success: true, data: recommendations })
+    expect(mockRecommend).toHaveBeenCalled()
   })
 })

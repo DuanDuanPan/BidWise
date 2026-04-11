@@ -188,7 +188,7 @@ describe('@story-4-3 ChapterAwareHeading data attributes', () => {
     expect(wrapper.getAttribute('data-heading-locator-key')).toBe('2:系统架构设计:0')
   })
 
-  it('@p0 data-heading-locator-key is undefined when locator is null (H1 heading)', () => {
+  it('@p0 H1 heading now renders data-heading-locator-key (story-5-2 expanded H1 support)', () => {
     mockContent = '# 项目标题\n\n正文段落\n'
 
     const headingElement = {
@@ -205,6 +205,78 @@ describe('@story-4-3 ChapterAwareHeading data attributes', () => {
     )
 
     const wrapper = container.firstElementChild as HTMLElement
-    expect(wrapper.hasAttribute('data-heading-locator-key')).toBe(false)
+    expect(wrapper.getAttribute('data-heading-locator-key')).toBe('1:项目标题:0')
+  })
+})
+
+describe('@story-5-2 H1 locator data attributes', () => {
+  beforeEach(() => {
+    mockContent = '# 项目标题\n\n正文段落\n'
+    mockEditorChildren = []
+    mockChapterGen = {
+      statuses: new Map(),
+      currentProjectId: 'proj-1',
+    }
+    mockSourceAttr = {
+      sections: new Map(),
+    }
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('@p0 H1 heading renders data-heading-level=1', () => {
+    const headingElement = {
+      type: 'h1',
+      children: [{ text: '项目标题' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>项目标题</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.getAttribute('data-heading-level')).toBe('1')
+  })
+
+  it('@p0 H1 heading renders data-heading-occurrence=0 for first occurrence', () => {
+    const headingElement = {
+      type: 'h1',
+      children: [{ text: '项目标题' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>项目标题</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.getAttribute('data-heading-occurrence')).toBe('0')
+  })
+
+  it('@p0 H1 heading renders data-heading-text with heading text', () => {
+    const headingElement = {
+      type: 'h1',
+      children: [{ text: '项目标题' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>项目标题</span>
+      </ChapterHeadingElement>
+    )
+
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.getAttribute('data-heading-text')).toBe('项目标题')
   })
 })

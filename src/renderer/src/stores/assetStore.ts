@@ -5,6 +5,7 @@ import type {
   AssetSearchResult,
   AssetDetail,
   UpdateAssetTagsInput,
+  CreateAssetInput,
 } from '@shared/asset-types'
 
 export interface AssetState {
@@ -26,6 +27,7 @@ export interface AssetActions {
   resetAssetTypes: () => void
   selectAsset: (id: string | null) => Promise<void>
   updateAssetTags: (input: UpdateAssetTagsInput) => Promise<void>
+  createAsset: (input: CreateAssetInput) => Promise<void>
   clearError: () => void
 }
 
@@ -188,6 +190,37 @@ export const useAssetStore = create<AssetStore>()(
           }
         } else {
           set({ error: response.error.message })
+        }
+      } catch (err) {
+        set({ error: (err as Error).message })
+      }
+    },
+
+    async createAsset(input: CreateAssetInput): Promise<void> {
+      set({ error: null })
+      try {
+        const response = await window.api.assetCreate(input)
+        if (!response.success) {
+          set({ error: response.error.message })
+          return
+        }
+        // Re-run the current query so the list reflects the new asset
+        const { rawQuery, assetTypes } = get()
+        const trimmed = rawQuery.trim()
+        if (!trimmed && assetTypes.length === 0) {
+          const listResp = await window.api.assetList()
+          if (listResp.success) {
+            set({ results: listResp.data.items, total: listResp.data.total })
+          } else {
+            set({ error: listResp.error.message })
+          }
+        } else {
+          const searchResp = await window.api.assetSearch({ rawQuery, assetTypes })
+          if (searchResp.success) {
+            set({ results: searchResp.data.items, total: searchResp.data.total })
+          } else {
+            set({ error: searchResp.error.message })
+          }
         }
       } catch (err) {
         set({ error: (err as Error).message })

@@ -1,5 +1,5 @@
 import { Button, Tooltip } from 'antd'
-import { DeploymentUnitOutlined, FunctionOutlined } from '@ant-design/icons'
+import { DeploymentUnitOutlined, FunctionOutlined, SaveOutlined } from '@ant-design/icons'
 import { WritingStyleSelector } from './WritingStyleSelector'
 
 interface EditorToolbarProps {
@@ -8,6 +8,8 @@ interface EditorToolbarProps {
   insertDrawioDisabled?: boolean
   onInsertMermaid?: () => void
   insertMermaidDisabled?: boolean
+  onImportAsset?: () => void
+  importAssetDisabled?: boolean
 }
 
 export function EditorToolbar({
@@ -16,6 +18,8 @@ export function EditorToolbar({
   insertDrawioDisabled,
   onInsertMermaid,
   insertMermaidDisabled,
+  onImportAsset,
+  importAssetDisabled,
 }: EditorToolbarProps): React.JSX.Element {
   return (
     <div
@@ -50,6 +54,21 @@ export function EditorToolbar({
               data-testid="insert-mermaid-btn"
             >
               插入 Mermaid 图表
+            </Button>
+          </Tooltip>
+        )}
+        {onImportAsset && (
+          <Tooltip title="将选中片段保存到资产库">
+            <Button
+              type="text"
+              size="small"
+              icon={<SaveOutlined />}
+              disabled={importAssetDisabled}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onImportAsset}
+              data-testid="import-asset-btn"
+            >
+              一键入库
             </Button>
           </Tooltip>
         )}

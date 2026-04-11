@@ -8,13 +8,20 @@ export interface CurrentSectionInfo {
   label: string
 }
 
+export interface UseCurrentSectionOptions {
+  minLevel?: 1 | 2 | 3 | 4
+  maxLevel?: 1 | 2 | 3 | 4
+}
+
 /**
  * Tracks which chapter section the user is currently viewing/editing.
  * Uses heading marker data attributes placed by OutlineHeadingElement
  * and scroll/selection DOM events to derive the current section.
- * Returns null when no H2-H4 chapter can be determined.
+ * Default range is H2-H4 (annotation scope); pass { minLevel: 1 } for H1-H4 (recommendation scope).
  */
-export function useCurrentSection(): CurrentSectionInfo | null {
+export function useCurrentSection(options?: UseCurrentSectionOptions): CurrentSectionInfo | null {
+  const minLevel = options?.minLevel ?? 2
+  const maxLevel = options?.maxLevel ?? 4
   const [section, setSection] = useState<CurrentSectionInfo | null>(null)
   const lastKeyRef = useRef<string | null>(null)
 
@@ -69,7 +76,7 @@ export function useCurrentSection(): CurrentSectionInfo | null {
     if (!levelStr || !occStr || !text) return
 
     const level = parseInt(levelStr, 10) as 1 | 2 | 3 | 4
-    if (level < 2 || level > 4) return
+    if (level < minLevel || level > maxLevel) return
 
     const occurrenceIndex = parseInt(occStr, 10)
     const locator: ChapterHeadingLocator = { title: text, level, occurrenceIndex }
@@ -77,7 +84,7 @@ export function useCurrentSection(): CurrentSectionInfo | null {
 
     lastKeyRef.current = sectionKey
     setSection({ locator, sectionKey, label: text })
-  }, [])
+  }, [minLevel, maxLevel])
 
   useEffect(() => {
     const container = document.querySelector(

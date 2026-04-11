@@ -61,3 +61,13 @@ export interface UpdateAssetTagsInput {
   assetId: string
   tagNames: string[]
 }
+
+export interface CreateAssetInput {
+  title: string
+  content: string
+  assetType: AssetType
+  summary?: string
+  sourceProject?: string | null
+  sourceSection?: string | null
+  tagNames: string[]
+}

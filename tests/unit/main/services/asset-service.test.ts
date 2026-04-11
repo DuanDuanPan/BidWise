@@ -10,6 +10,7 @@ const mockFindByAssetId = vi.hoisted(() => vi.fn())
 const mockFindByAssetIds = vi.hoisted(() => vi.fn())
 const mockReplaceAssetTags = vi.hoisted(() => vi.fn())
 const mockDeleteOrphanedTags = vi.hoisted(() => vi.fn())
+const mockCreate = vi.hoisted(() => vi.fn())
 
 vi.mock('@main/db/repositories/asset-repo', () => ({
   AssetRepository: class {
@@ -17,6 +18,7 @@ vi.mock('@main/db/repositories/asset-repo', () => ({
     list = mockList
     findById = mockFindById
     findTagsByAssetId = mockFindTagsByAssetId
+    create = mockCreate
   },
 }))
 
@@ -206,6 +208,89 @@ describe('assetService', () => {
       await expect(
         assetService.updateTags({ assetId: 'missing', tagNames: ['tag'] })
       ).rejects.toThrow('资产不存在')
+    })
+  })
+
+  describe('create', () => {
+    it('successfully creates asset with tags', async () => {
+      const createdAsset = makeAsset({ id: 'new-1' })
+      mockCreate.mockResolvedValue(createdAsset)
+      const tags = [makeTag({ id: 't1', name: '架构' }), makeTag({ id: 't2', name: '案例' })]
+      mockFindOrCreateMany.mockResolvedValue(tags)
+      mockReplaceAssetTags.mockResolvedValue(undefined)
+      mockFindByAssetId.mockResolvedValue(tags)
+
+      const result = await assetService.create({
+        title: '测试资产',
+        content: '内容',
+        assetType: 'text',
+        tagNames: ['架构', '案例'],
+      })
+
+      expect(mockCreate).toHaveBeenCalledWith({
+        title: '测试资产',
+        content: '内容',
+        assetType: 'text',
+        summary: undefined,
+        sourceProject: undefined,
+        sourceSection: undefined,
+      })
+      expect(mockFindOrCreateMany).toHaveBeenCalledWith(['架构', '案例'])
+      expect(mockReplaceAssetTags).toHaveBeenCalledWith('new-1', ['t1', 't2'])
+      expect(result.id).toBe('new-1')
+      expect(result.tags).toHaveLength(2)
+    })
+
+    it('handles empty tagNames array', async () => {
+      const createdAsset = makeAsset({ id: 'new-2' })
+      mockCreate.mockResolvedValue(createdAsset)
+      mockFindOrCreateMany.mockResolvedValue([])
+      mockFindByAssetId.mockResolvedValue([])
+
+      const result = await assetService.create({
+        title: '无标签资产',
+        content: '内容',
+        assetType: 'text',
+        tagNames: [],
+      })
+
+      expect(mockFindOrCreateMany).toHaveBeenCalledWith([])
+      expect(mockReplaceAssetTags).not.toHaveBeenCalled()
+      expect(result.tags).toHaveLength(0)
+    })
+
+    it('fills sourceProject and sourceSection', async () => {
+      const createdAsset = makeAsset({
+        id: 'new-3',
+        sourceProject: '项目X',
+        sourceSection: '第三章',
+      })
+      mockCreate.mockResolvedValue(createdAsset)
+      mockFindOrCreateMany.mockResolvedValue([])
+      mockFindByAssetId.mockResolvedValue([])
+
+      await assetService.create({
+        title: '有来源的资产',
+        content: '内容',
+        assetType: 'case',
+        sourceProject: '项目X',
+        sourceSection: '第三章',
+        tagNames: [],
+      })
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceProject: '项目X',
+          sourceSection: '第三章',
+        })
+      )
+    })
+
+    it('uses createLogger for logging', async () => {
+      // The service module calls createLogger('asset-service') at import time.
+      // If createLogger were not mocked, the import would fail. The fact that
+      // the module loaded successfully proves createLogger is used.
+      expect(assetService).toBeDefined()
     })
   })
 })

@@ -1,18 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Skeleton, Alert, Button, Modal } from 'antd'
-import { useDocumentStore } from '@renderer/stores'
+import { useDocumentStore, useProjectStore } from '@renderer/stores'
 import { useDocument } from '@modules/editor/hooks/useDocument'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
 import { useSourceAttributionContext } from '@modules/editor/context/useSourceAttributionContext'
+import { useAssetImport } from '@modules/asset/hooks/useAssetImport'
+import { AssetImportDialog } from '@modules/asset/components/AssetImportDialog'
 import { PlateEditor } from './PlateEditor'
-import type { ReplaceSectionFn, InsertDrawioFn, InsertMermaidFn } from './PlateEditor'
+import type {
+  ReplaceSectionFn,
+  InsertDrawioFn,
+  InsertMermaidFn,
+  InsertAssetFn,
+} from './PlateEditor'
 import { EditorToolbar } from './EditorToolbar'
+import type { CurrentSectionInfo } from '@modules/annotation/hooks/useCurrentSection'
 
 interface EditorViewProps {
   projectId: string
+  currentSection?: CurrentSectionInfo | null
+  onInsertAssetReady?: (fn: InsertAssetFn | null) => void
 }
 
-export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
+export function EditorView({
+  projectId,
+  currentSection,
+  onInsertAssetReady,
+}: EditorViewProps): React.JSX.Element {
   const loading = useDocumentStore((s) => s.loading)
   const error = useDocumentStore((s) => s.error)
   const content = useDocumentStore((s) => s.content)
@@ -22,10 +36,12 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
   const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
   const insertDrawioRef = useRef<InsertDrawioFn | null>(null)
   const insertMermaidRef = useRef<InsertMermaidFn | null>(null)
+  const insertAssetRef = useRef<InsertAssetFn | null>(null)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const [insertDrawioAvailable, setInsertDrawioAvailable] = useState(false)
   const [insertMermaidAvailable, setInsertMermaidAvailable] = useState(false)
+  const [hasEditorSelection, setHasEditorSelection] = useState(false)
   const chapterGen = useChapterGenerationContext()
   const chapterStatuses = chapterGen?.statuses
   const sourceAttr = useSourceAttributionContext()
@@ -55,6 +71,69 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
 
   const handleInsertMermaid = useCallback(() => {
     insertMermaidRef.current?.()
+  }, [])
+
+  const registerInsertAsset = useCallback(
+    (fn: InsertAssetFn | null): void => {
+      insertAssetRef.current = fn
+      onInsertAssetReady?.(fn)
+    },
+    [onInsertAssetReady]
+  )
+
+  const currentProjectName = useProjectStore(
+    (s) => s.projects.find((p) => p.id === projectId)?.name ?? null
+  )
+  const { isOpen: importOpen, importContext, openImport, closeImport } = useAssetImport()
+
+  const handleImportAsset = useCallback(() => {
+    // Only trigger if selection is inside the Plate editor content area
+    const sel = window.getSelection()
+    const text = sel?.toString().trim() ?? ''
+    if (!text) return
+
+    const editorContent = document.querySelector('[data-testid="plate-editor-content"]')
+    if (!editorContent) return
+
+    const anchorInEditor = sel?.anchorNode && editorContent.contains(sel.anchorNode)
+    const focusInEditor = sel?.focusNode && editorContent.contains(sel.focusNode)
+    if (!anchorInEditor || !focusInEditor) return
+
+    openImport({
+      selectedText: text,
+      sectionTitle: currentSection?.label ?? '',
+      sourceProject: currentProjectName,
+      sourceSection: currentSection?.label ?? null,
+    })
+  }, [currentSection, currentProjectName, openImport])
+
+  // Track whether there's a valid selection inside the editor
+  useEffect(() => {
+    const checkSelection = (): void => {
+      const sel = window.getSelection()
+      const text = sel?.toString().trim() ?? ''
+      if (!text) {
+        setHasEditorSelection(false)
+        return
+      }
+      const editorContent = document.querySelector('[data-testid="plate-editor-content"]')
+      if (!editorContent) {
+        setHasEditorSelection(false)
+        return
+      }
+      const inEditor =
+        sel?.anchorNode &&
+        editorContent.contains(sel.anchorNode) &&
+        sel?.focusNode &&
+        editorContent.contains(sel.focusNode)
+      setHasEditorSelection(Boolean(inEditor))
+    }
+    document.addEventListener('selectionchange', checkSelection)
+    document.addEventListener('mouseup', checkSelection)
+    return () => {
+      document.removeEventListener('selectionchange', checkSelection)
+      document.removeEventListener('mouseup', checkSelection)
+    }
   }, [])
 
   const flushEditorContent = useCallback((): string | null => syncFlushRef.current?.() ?? null, [])
@@ -195,6 +274,8 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
         insertDrawioDisabled={!insertDrawioAvailable}
         onInsertMermaid={handleInsertMermaid}
         insertMermaidDisabled={!insertMermaidAvailable}
+        onImportAsset={handleImportAsset}
+        importAssetDisabled={!hasEditorSelection}
       />
       <div className="flex-1 overflow-y-auto" data-editor-scroll-container="true">
         <PlateEditor
@@ -204,8 +285,10 @@ export function EditorView({ projectId }: EditorViewProps): React.JSX.Element {
           onReplaceSectionReady={registerReplaceSection}
           onInsertDrawioReady={registerInsertDrawio}
           onInsertMermaidReady={registerInsertMermaid}
+          onInsertAssetReady={registerInsertAsset}
         />
       </div>
+      <AssetImportDialog open={importOpen} context={importContext} onClose={closeImport} />
     </div>
   )
 }

@@ -32,3 +32,10 @@ export type {
 
 export { useReviewStore, getReviewProjectState } from './reviewStore'
 export type { ReviewStore, ReviewState, ReviewProjectState } from './reviewStore'
+
+export { useRecommendationStore } from './recommendationStore'
+export type {
+  RecommendationStore,
+  RecommendationState,
+  RecommendationActions,
+} from './recommendationStore'

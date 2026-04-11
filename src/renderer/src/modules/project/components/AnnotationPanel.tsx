@@ -32,11 +32,22 @@ import { AnnotationThread } from '@renderer/modules/annotation/components/Annota
 import { ANNOTATION_TYPE_ACTIONS } from '@renderer/modules/annotation/constants/annotation-colors'
 import type { AnnotationRecord } from '@shared/annotation-types'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
+import type { AssetRecommendation } from '@shared/recommendation-types'
+import { RecommendationPanel } from '@modules/asset/components/RecommendationPanel'
 
 export interface CurrentSectionProp {
   locator: ChapterHeadingLocator
   sectionKey: string
   label: string
+}
+
+interface RecommendationSectionProps {
+  recommendations: AssetRecommendation[]
+  recommendationLoading: boolean
+  acceptedAssetIds: Set<string>
+  onInsertRecommendation: (assetId: string) => void
+  onIgnoreRecommendation: (assetId: string) => void
+  onViewRecommendationDetail: (assetId: string) => void
 }
 
 interface AnnotationPanelProps {
@@ -48,6 +59,7 @@ interface AnnotationPanelProps {
   currentSection?: CurrentSectionProp | null
   focusAnnotationId?: string | null
   expandThreadParentId?: string | null
+  recommendationProps?: RecommendationSectionProps | null
 }
 
 function LoadingContent(): React.JSX.Element {
@@ -503,6 +515,7 @@ export function AnnotationPanel({
   currentSection,
   focusAnnotationId,
   expandThreadParentId,
+  recommendationProps,
 }: AnnotationPanelProps): React.JSX.Element {
   const [flyoutOpen, setFlyoutOpen] = useState(false)
   const flyoutRef = useRef<HTMLDivElement>(null)
@@ -613,7 +626,7 @@ export function AnnotationPanel({
             }}
             data-testid="annotation-flyout"
           >
-            <div className="flex h-full flex-col">
+            <div className="flex h-full flex-col overflow-y-auto">
               <div
                 className="flex shrink-0 items-center justify-between px-4"
                 style={{ height: 48, borderBottom: '1px solid var(--color-border)' }}
@@ -632,6 +645,18 @@ export function AnnotationPanel({
                 requestedFocusAnnotationId={focusAnnotationId}
                 requestedExpandThreadParentId={expandThreadParentId}
               />
+              {recommendationProps && (
+                <div style={{ borderTop: '1px solid var(--color-border)' }}>
+                  <RecommendationPanel
+                    recommendations={recommendationProps.recommendations}
+                    loading={recommendationProps.recommendationLoading}
+                    acceptedAssetIds={recommendationProps.acceptedAssetIds}
+                    onInsert={recommendationProps.onInsertRecommendation}
+                    onIgnore={recommendationProps.onIgnoreRecommendation}
+                    onViewDetail={recommendationProps.onViewRecommendationDetail}
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -688,7 +713,7 @@ export function AnnotationPanel({
       }}
       data-testid="annotation-panel"
     >
-      <div className="flex h-full flex-col" style={{ width: 320 }}>
+      <div className="flex h-full flex-col overflow-y-auto" style={{ width: 320 }}>
         {/* Title bar */}
         <div
           className="flex shrink-0 items-center justify-between px-4"
@@ -721,6 +746,20 @@ export function AnnotationPanel({
           requestedFocusAnnotationId={focusAnnotationId}
           requestedExpandThreadParentId={expandThreadParentId}
         />
+
+        {/* Recommendation section */}
+        {recommendationProps && (
+          <div style={{ borderTop: '1px solid var(--color-border)' }}>
+            <RecommendationPanel
+              recommendations={recommendationProps.recommendations}
+              loading={recommendationProps.recommendationLoading}
+              acceptedAssetIds={recommendationProps.acceptedAssetIds}
+              onInsert={recommendationProps.onInsertRecommendation}
+              onIgnore={recommendationProps.onIgnoreRecommendation}
+              onViewDetail={recommendationProps.onViewRecommendationDetail}
+            />
+          </div>
+        )}
       </div>
     </aside>
   )

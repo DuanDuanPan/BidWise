@@ -37,6 +37,14 @@ vi.mock('@renderer/stores', () => ({
       resetDocument: vi.fn(),
     })
   ),
+  useProjectStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
+    selector({
+      projects: [],
+      currentProject: null,
+      loading: false,
+      error: null,
+    })
+  ),
 }))
 
 vi.mock('@modules/editor/hooks/useDocument', () => ({
@@ -57,19 +65,43 @@ vi.mock('@modules/editor/components/EditorToolbar', () => ({
   ),
 }))
 
+let latestInsertAssetReady:
+  | ((fn: ((content: string, options?: Record<string, unknown>) => boolean) | null) => void)
+  | null = null
+
 vi.mock('@modules/editor/components/PlateEditor', () => ({
   PlateEditor: ({
     projectId,
     onReplaceSectionReady,
+    onInsertAssetReady,
   }: {
     projectId: string
     onReplaceSectionReady?:
       | ((fn: ((target: unknown, markdownContent: string) => boolean) | null) => void)
       | null
+    onInsertAssetReady?:
+      | ((fn: ((content: string, options?: Record<string, unknown>) => boolean) | null) => void)
+      | null
   }) => {
     latestReplaceSectionReady = onReplaceSectionReady ?? null
+    latestInsertAssetReady = onInsertAssetReady ?? null
     return <div data-testid="mock-plate-editor">{projectId}</div>
   },
+}))
+
+vi.mock('@modules/asset/hooks/useAssetImport', () => ({
+  useAssetImport: vi.fn(() => ({
+    isOpen: false,
+    importContext: null,
+    openImport: vi.fn(),
+    closeImport: vi.fn(),
+  })),
+}))
+
+vi.mock('@modules/asset/components/AssetImportDialog', () => ({
+  AssetImportDialog: ({ open }: { open: boolean }) => (
+    <div data-testid="mock-asset-import-dialog">{open ? 'open' : 'closed'}</div>
+  ),
 }))
 
 describe('@story-3-1 EditorView', () => {
@@ -82,6 +114,7 @@ describe('@story-3-1 EditorView', () => {
     mockChapterGen = null
     mockSourceAttr = null
     latestReplaceSectionReady = null
+    latestInsertAssetReady = null
     mockReplaceSection.mockReset()
     mockReplaceSection.mockReturnValue(true)
     mockTriggerAttribution.mockReset()
@@ -293,5 +326,30 @@ describe('@story-3-1 EditorView', () => {
     await waitFor(() => {
       expect(confirmSpy).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('@story-5-2 accepts currentSection prop', () => {
+    mockContent = '# Hello'
+    const section = {
+      locator: { title: '公司简介', level: 2, occurrenceIndex: 0 },
+      sectionKey: '2:公司简介:0',
+      label: '公司简介',
+    }
+    render(<EditorView projectId="proj-1" currentSection={section} />)
+    expect(screen.getByTestId('mock-plate-editor')).toBeDefined()
+  })
+
+  it('@story-5-2 passes onInsertAssetReady to PlateEditor', () => {
+    mockContent = '# Hello'
+    render(<EditorView projectId="proj-1" />)
+    expect(screen.getByTestId('mock-plate-editor')).toBeDefined()
+    // The mock captures onInsertAssetReady — verify it was provided
+    expect(latestInsertAssetReady).not.toBeNull()
+  })
+
+  it('@story-5-2 renders AssetImportDialog', () => {
+    mockContent = '# Hello'
+    render(<EditorView projectId="proj-1" />)
+    expect(screen.getByTestId('mock-asset-import-dialog')).toBeDefined()
   })
 })

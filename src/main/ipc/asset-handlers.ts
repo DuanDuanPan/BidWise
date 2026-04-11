@@ -1,5 +1,6 @@
 import { createIpcHandler } from './create-handler'
 import { assetService } from '@main/services/asset-service'
+import { recommendationService } from '@main/services/recommendation-service'
 import type { IpcChannel } from '@shared/ipc-types'
 
 type AssetChannel = Extract<IpcChannel, `asset:${string}`>
@@ -11,6 +12,9 @@ const assetHandlerMap: { [C in AssetChannel]: () => void } = {
   'asset:get': () => createIpcHandler('asset:get', ({ id }) => assetService.getById(id)),
   'asset:update-tags': () =>
     createIpcHandler('asset:update-tags', (input) => assetService.updateTags(input)),
+  'asset:create': () => createIpcHandler('asset:create', (input) => assetService.create(input)),
+  'asset:recommend': () =>
+    createIpcHandler('asset:recommend', (input) => recommendationService.recommend(input)),
 }
 
 export type RegisteredAssetChannels = AssetChannel

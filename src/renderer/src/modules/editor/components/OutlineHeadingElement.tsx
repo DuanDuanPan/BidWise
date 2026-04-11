@@ -77,9 +77,9 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
     return 0
   }, [editor.children, element, text])
 
-  // Compute locator — validate against markdown, include H2-H4
+  // Compute locator — validate against markdown, include H1-H4
   const locator = useMemo(() => {
-    if (!text || level < 2 || level > 4) return null
+    if (!text || level < 1 || level > 4) return null
     return computeLocator(content, text, level, occurrenceIndex)
   }, [content, text, level, occurrenceIndex])
 
@@ -224,9 +224,34 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
 export function OutlineHeadingElement(props: PlateElementProps): React.JSX.Element {
   const { children, element } = props
   const text = extractText(element).trim()
+  const level = getHeadingLevel(element.type as string)
+  const content = useDocumentStore((s) => s.content)
+  const editor = useEditorRef()
+
+  const occurrenceIndex = useMemo(() => {
+    let count = 0
+    for (const node of editor.children) {
+      if (node === element) return count
+      const nodeType = (node as Record<string, unknown>).type
+      if (nodeType === element.type && extractText(node).trim() === text) {
+        count++
+      }
+    }
+    return 0
+  }, [editor.children, element, text])
+
+  const locator = useMemo(() => {
+    if (!text || level < 1 || level > 4) return null
+    return computeLocator(content, text, level, occurrenceIndex)
+  }, [content, text, level, occurrenceIndex])
 
   return (
-    <div data-heading-text={text}>
+    <div
+      data-heading-text={text}
+      data-heading-level={level}
+      data-heading-occurrence={occurrenceIndex}
+      data-heading-locator-key={locator ? createChapterLocatorKey(locator) : undefined}
+    >
       <PlateElement {...props}>{children}</PlateElement>
     </div>
   )

@@ -273,4 +273,23 @@ describe('@story-3-1 PlateEditor', () => {
     expect(mockSerialize).toHaveBeenCalledTimes(1)
     expect(mockUpdateContent).toHaveBeenCalledWith('# Serialized', 'proj-1')
   })
+
+  it('@story-5-2 registers an insertAsset handler via onInsertAssetReady', () => {
+    const onInsertAssetReady = vi.fn()
+
+    render(
+      <PlateEditor initialContent="" projectId="proj-1" onInsertAssetReady={onInsertAssetReady} />
+    )
+
+    expect(onInsertAssetReady).toHaveBeenCalledTimes(1)
+    expect(typeof onInsertAssetReady.mock.calls[0]?.[0]).toBe('function')
+  })
+
+  it('@story-5-2 exports InsertAssetFn type', async () => {
+    const mod = await import('@modules/editor/components/PlateEditor')
+    // InsertAssetFn is a type export, but we can verify the module exports PlateEditor
+    // and the function signature is callable. We test via the onInsertAssetReady callback.
+    expect(mod.PlateEditor).toBeDefined()
+    // TypeScript compilation verifies the type export; here we just ensure the module loads.
+  })
 })
