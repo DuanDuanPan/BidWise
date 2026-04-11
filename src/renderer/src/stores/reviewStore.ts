@@ -169,10 +169,10 @@ export const useReviewStore = create<ReviewStore>()(
     async loadLineup(projectId: string): Promise<boolean> {
       try {
         const response = await window.api.reviewGetLineup({ projectId })
-        if (response.success && response.data != null) {
+        if (response.success) {
           set((state) =>
             updateProject(state, projectId, {
-              lineup: response.data,
+              lineup: response.data ?? null,
               lineupLoaded: true,
               lineupLoading: false,
               lineupTaskId: null,
@@ -180,7 +180,7 @@ export const useReviewStore = create<ReviewStore>()(
               lineupMessage: null,
             })
           )
-          return true
+          return response.data != null
         }
         return false
       } catch {

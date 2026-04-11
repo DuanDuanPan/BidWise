@@ -91,18 +91,12 @@ export function useReviewTaskMonitor(): void {
 
         if (task.status === 'failed') {
           terminalHandledRef.current.add(taskId)
-          // Even on task failure, try to load lineup (fallback may have been saved)
-          const loadedFallback = await loadLineup(projectId)
-          if (loadedFallback) {
-            const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
-            if (freshState.lineup?.warningMessage) {
-              message.warning(freshState.lineup.warningMessage)
-            }
-          } else {
-            const errMsg = task.error ?? '对抗角色生成失败'
-            setLineupTaskError(projectId, errMsg)
-            message.error({ content: `对抗角色生成失败：${errMsg}`, duration: 0 })
-          }
+          // Task failed means fallback persistence itself failed — no valid lineup
+          // exists. Do NOT loadLineup() here: it would retrieve stale pre-regen
+          // data and silently swallow the real error.
+          const errMsg = task.error ?? '对抗角色生成失败'
+          setLineupTaskError(projectId, errMsg)
+          message.error({ content: `对抗角色生成失败：${errMsg}`, duration: 0 })
           clearTaskTracking(taskId)
           return
         }
