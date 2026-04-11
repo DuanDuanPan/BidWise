@@ -338,8 +338,8 @@ export function useExportPreview(): UseExportPreviewReturn {
       setComplianceGateChecking(false)
 
       if (!gateRes.success) {
-        // Gate check failed — proceed with export (best-effort)
-        await doExportConfirm(projectId, previewMeta)
+        // Gate check failed — block export (fail-closed)
+        message.error('合规检查失败，无法导出。请稍后重试。')
         return
       }
 
@@ -353,8 +353,8 @@ export function useExportPreview(): UseExportPreviewReturn {
       setComplianceGateOpen(true)
     } catch {
       setComplianceGateChecking(false)
-      // On error, fallback to export
-      await doExportConfirm(projectId, previewMeta)
+      // On error, block export (fail-closed)
+      message.error('合规检查异常，无法导出。请稍后重试。')
     }
   }, [state, doExportConfirm])
 

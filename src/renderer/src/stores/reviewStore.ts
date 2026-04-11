@@ -71,7 +71,9 @@ export const useReviewStore = create<ReviewStore>()(
         } else {
           set((state) =>
             updateProject(state, projectId, {
+              compliance: null,
               loading: false,
+              loaded: false,
               error: response.error.message,
             })
           )
@@ -79,7 +81,9 @@ export const useReviewStore = create<ReviewStore>()(
       } catch (err) {
         set((state) =>
           updateProject(state, projectId, {
+            compliance: null,
             loading: false,
+            loaded: false,
             error: (err as Error).message,
           })
         )

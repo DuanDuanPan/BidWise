@@ -94,7 +94,7 @@ export function TraceabilityMatrixView({
       uncoveredCount: complianceResult.uncoveredCount + complianceResult.unlinkedCount,
       coverageRate:
         complianceResult.totalConfirmed === 0
-          ? 1
+          ? 0
           : complianceResult.coveredCount / complianceResult.totalConfirmed,
     }
 

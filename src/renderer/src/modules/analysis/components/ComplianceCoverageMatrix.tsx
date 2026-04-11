@@ -125,7 +125,9 @@ export function ComplianceCoverageMatrix({
   const prevAllCoveredRef = useRef(false)
 
   // Check if all requirements are covered (all green)
-  const isAllCovered = matrix.stats.coveredCount === matrix.stats.totalRequirements
+  const isAllCovered =
+    matrix.stats.totalRequirements > 0 &&
+    matrix.stats.coveredCount === matrix.stats.totalRequirements
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null

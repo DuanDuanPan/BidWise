@@ -8,6 +8,7 @@ const mockApi = {
   exportLoadPreview: vi.fn(),
   exportConfirm: vi.fn(),
   exportCleanupPreview: vi.fn(),
+  complianceExportGate: vi.fn(),
   taskCancel: vi.fn(),
   taskGetStatus: vi.fn(),
   onTaskProgress: vi.fn(),
@@ -26,6 +27,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'api', { value: mockApi, writable: true })
   mockApi.exportCleanupPreview.mockResolvedValue({ success: true, data: undefined })
   mockApi.taskCancel.mockResolvedValue({ success: true, data: undefined })
+  mockApi.complianceExportGate.mockResolvedValue({ success: true, data: { status: 'pass' } })
   mockApi.onTaskProgress.mockReturnValue(vi.fn()) // return unsubscribe function
 })
 
