@@ -16,6 +16,7 @@ export interface AssetState {
   error: string | null
   selectedAssetId: string | null
   selectedAsset: AssetDetail | null
+  selectedMatchScore: number | null
 }
 
 export interface AssetActions {
@@ -40,6 +41,7 @@ export const useAssetStore = create<AssetStore>()(
     error: null,
     selectedAssetId: null,
     selectedAsset: null,
+    selectedMatchScore: null,
 
     async loadInitialAssets(): Promise<void> {
       set({ loading: true, error: null })
@@ -69,6 +71,7 @@ export const useAssetStore = create<AssetStore>()(
         error: null,
         selectedAssetId: null,
         selectedAsset: null,
+        selectedMatchScore: null,
       })
 
       try {
@@ -112,6 +115,7 @@ export const useAssetStore = create<AssetStore>()(
         assetTypes: next,
         selectedAssetId: null,
         selectedAsset: null,
+        selectedMatchScore: null,
       })
     },
 
@@ -120,16 +124,22 @@ export const useAssetStore = create<AssetStore>()(
         assetTypes: [],
         selectedAssetId: null,
         selectedAsset: null,
+        selectedMatchScore: null,
       })
     },
 
     async selectAsset(id: string | null): Promise<void> {
       if (!id) {
-        set({ selectedAssetId: null, selectedAsset: null })
+        set({ selectedAssetId: null, selectedAsset: null, selectedMatchScore: null })
         return
       }
 
-      set({ selectedAssetId: id, error: null })
+      const matchResult = get().results.find((r) => r.id === id)
+      set({
+        selectedAssetId: id,
+        selectedMatchScore: matchResult?.matchScore ?? null,
+        error: null,
+      })
       try {
         const response = await window.api.assetGet({ id })
         if (response.success) {
@@ -146,19 +156,29 @@ export const useAssetStore = create<AssetStore>()(
       try {
         const response = await window.api.assetUpdateTags(input)
         if (response.success) {
-          const state = get()
           // Refresh selected asset detail
+          const state = get()
           if (state.selectedAssetId === input.assetId) {
             const detailResp = await window.api.assetGet({ id: input.assetId })
             if (detailResp.success) {
               set({ selectedAsset: detailResp.data })
             }
           }
-          // Refresh result list tags
-          const newTags = response.data
-          set((s) => ({
-            results: s.results.map((r) => (r.id === input.assetId ? { ...r, tags: newTags } : r)),
-          }))
+          // Re-run the current query so tag-based filters reflect the change,
+          // but preserve selection so the detail panel stays open.
+          const { rawQuery, assetTypes } = get()
+          const trimmed = rawQuery.trim()
+          if (!trimmed && assetTypes.length === 0) {
+            const listResp = await window.api.assetList()
+            if (listResp.success) {
+              set({ results: listResp.data.items, total: listResp.data.total })
+            }
+          } else {
+            const searchResp = await window.api.assetSearch({ rawQuery, assetTypes })
+            if (searchResp.success) {
+              set({ results: searchResp.data.items, total: searchResp.data.total })
+            }
+          }
         } else {
           set({ error: response.error.message })
         }

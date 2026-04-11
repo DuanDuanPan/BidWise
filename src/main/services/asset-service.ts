@@ -112,9 +112,10 @@ export const assetService = {
       results = items.map((item) => toSearchResult(item, [], 100))
     }
 
-    // Attach tags to each result
+    // Batch-fetch tags for all results in a single query
+    const tagMap = await tagRepo.findByAssetIds(results.map((r) => r.id))
     for (const result of results) {
-      result.tags = await tagRepo.findByAssetId(result.id)
+      result.tags = tagMap.get(result.id) ?? []
     }
 
     return { items: results, total }
@@ -125,11 +126,11 @@ export const assetService = {
 
     const { items, total } = await assetRepo.list(filter)
 
-    const results: AssetSearchResult[] = []
-    for (const item of items) {
-      const tags = await tagRepo.findByAssetId(item.id)
-      results.push(toSearchResult(item, tags, 100))
-    }
+    // Batch-fetch tags for all items in a single query
+    const tagMap = await tagRepo.findByAssetIds(items.map((i) => i.id))
+    const results: AssetSearchResult[] = items.map((item) =>
+      toSearchResult(item, tagMap.get(item.id) ?? [], 100)
+    )
 
     return { items: results, total }
   },

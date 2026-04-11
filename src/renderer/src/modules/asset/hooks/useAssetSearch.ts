@@ -16,6 +16,7 @@ interface UseAssetSearchReturn {
   error: string | null
   selectedAssetId: string | null
   selectedAsset: AssetDetail | null
+  selectedMatchScore: number | null
   debouncedSearch: (query: string) => void
   loadInitialAssets: () => Promise<void>
   toggleAssetType: (type: AssetType) => void
@@ -35,6 +36,7 @@ export function useAssetSearch(): UseAssetSearchReturn {
     error,
     selectedAssetId,
     selectedAsset,
+    selectedMatchScore,
     search,
     loadInitialAssets,
     toggleAssetType,
@@ -89,6 +91,7 @@ export function useAssetSearch(): UseAssetSearchReturn {
     error,
     selectedAssetId,
     selectedAsset,
+    selectedMatchScore,
     debouncedSearch,
     loadInitialAssets,
     toggleAssetType,

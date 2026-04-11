@@ -57,6 +57,48 @@ export class TagRepository {
     }
   }
 
+  /** Batch-fetch tags for multiple assets in a single query. */
+  async findByAssetIds(assetIds: string[]): Promise<Map<string, Tag[]>> {
+    const result = new Map<string, Tag[]>()
+    if (assetIds.length === 0) return result
+
+    try {
+      const rows = await getDb()
+        .selectFrom('tags')
+        .innerJoin('assetTags', 'assetTags.tagId', 'tags.id')
+        .where('assetTags.assetId', 'in', assetIds)
+        .select([
+          'tags.id',
+          'tags.name',
+          'tags.normalizedName',
+          'tags.createdAt',
+          'assetTags.assetId',
+        ])
+        .orderBy('tags.name', 'asc')
+        .execute()
+
+      // Initialize empty arrays for all requested IDs
+      for (const id of assetIds) {
+        result.set(id, [])
+      }
+
+      for (const row of rows) {
+        const assetId = (row as unknown as { assetId: string }).assetId
+        const tag: Tag = {
+          id: row.id,
+          name: row.name,
+          normalizedName: row.normalizedName,
+          createdAt: row.createdAt,
+        }
+        result.get(assetId)!.push(tag)
+      }
+
+      return result
+    } catch (err) {
+      throw new DatabaseError(`批量资产标签查询失败: ${(err as Error).message}`, err)
+    }
+  }
+
   async replaceAssetTags(assetId: string, tagIds: string[]): Promise<void> {
     try {
       const db = getDb()

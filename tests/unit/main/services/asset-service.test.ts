@@ -6,6 +6,7 @@ const mockFindById = vi.hoisted(() => vi.fn())
 const mockFindTagsByAssetId = vi.hoisted(() => vi.fn())
 const mockFindOrCreateMany = vi.hoisted(() => vi.fn())
 const mockFindByAssetId = vi.hoisted(() => vi.fn())
+const mockFindByAssetIds = vi.hoisted(() => vi.fn())
 const mockReplaceAssetTags = vi.hoisted(() => vi.fn())
 const mockDeleteOrphanedTags = vi.hoisted(() => vi.fn())
 
@@ -22,6 +23,7 @@ vi.mock('@main/db/repositories/tag-repo', () => ({
   TagRepository: class {
     findOrCreateMany = mockFindOrCreateMany
     findByAssetId = mockFindByAssetId
+    findByAssetIds = mockFindByAssetIds
     replaceAssetTags = mockReplaceAssetTags
     deleteOrphanedTags = mockDeleteOrphanedTags
   },
@@ -72,6 +74,7 @@ describe('assetService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockFindByAssetId.mockResolvedValue([])
+    mockFindByAssetIds.mockResolvedValue(new Map())
   })
 
   describe('search', () => {
@@ -119,7 +122,7 @@ describe('assetService', () => {
         total: 2,
         rawRanks: { a1: -10, a2: -5 },
       })
-      mockFindByAssetId.mockResolvedValue([])
+      mockFindByAssetIds.mockResolvedValue(new Map([['a1', []], ['a2', []]]))
 
       const result = await assetService.search({ rawQuery: 'keyword', assetTypes: [] })
 
@@ -134,7 +137,7 @@ describe('assetService', () => {
         total: 1,
         rawRanks: {},
       })
-      mockFindByAssetId.mockResolvedValue([])
+      mockFindByAssetIds.mockResolvedValue(new Map([['a1', []]]))
 
       const result = await assetService.search({ rawQuery: '#标签', assetTypes: [] })
 
@@ -144,8 +147,9 @@ describe('assetService', () => {
 
   describe('list', () => {
     it('returns assets with matchScore 100', async () => {
+      const tag = makeTag()
       mockList.mockResolvedValue({ items: [makeAsset()], total: 1 })
-      mockFindByAssetId.mockResolvedValue([makeTag()])
+      mockFindByAssetIds.mockResolvedValue(new Map([['a1', [tag]]]))
 
       const result = await assetService.list()
 

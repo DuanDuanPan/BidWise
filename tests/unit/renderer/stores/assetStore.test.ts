@@ -157,9 +157,13 @@ describe('assetStore', () => {
     expect(useAssetStore.getState().selectedAsset).toBeNull()
   })
 
-  it('updateAssetTags refreshes tags in results', async () => {
+  it('updateAssetTags refreshes tags in results by re-running query', async () => {
     const newTags = [{ id: 't1', name: '新标签', normalizedName: '新标签', createdAt: '' }]
     mockAssetUpdateTags.mockResolvedValue({ success: true, data: newTags })
+    // After tag update, the store re-runs the current query to refresh results.
+    // With empty rawQuery and no assetTypes, it calls assetList.
+    const refreshedResults = [makeSearchResult({ id: 'a1', tags: newTags })]
+    mockAssetList.mockResolvedValue({ success: true, data: { items: refreshedResults, total: 1 } })
 
     useAssetStore.setState({
       results: [makeSearchResult({ id: 'a1' })],
@@ -169,6 +173,7 @@ describe('assetStore', () => {
     await useAssetStore.getState().updateAssetTags({ assetId: 'a1', tagNames: ['新标签'] })
 
     expect(useAssetStore.getState().results[0].tags).toEqual(newTags)
+    expect(mockAssetList).toHaveBeenCalled()
   })
 
   it('clearError resets error to null', () => {

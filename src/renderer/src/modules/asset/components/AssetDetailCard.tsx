@@ -6,12 +6,14 @@ import { TagEditor } from './TagEditor'
 
 interface AssetDetailCardProps {
   asset: AssetDetail
+  matchScore: number | null
   onBack: () => void
   onUpdateTags: (input: UpdateAssetTagsInput) => Promise<void>
 }
 
 export function AssetDetailCard({
   asset,
+  matchScore,
   onBack,
   onUpdateTags,
 }: AssetDetailCardProps): React.JSX.Element {
@@ -51,7 +53,9 @@ export function AssetDetailCard({
       </div>
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 16, fontSize: 12 }}>
-        <span style={{ fontWeight: 600, color: '#52C41A' }}>匹配度 100%</span>
+        {matchScore !== null && (
+          <span style={{ fontWeight: 600, color: '#52C41A' }}>匹配度 {matchScore}%</span>
+        )}
         {asset.sourceProject && (
           <span style={{ color: '#8C8C8C' }}>来源：{asset.sourceProject}</span>
         )}

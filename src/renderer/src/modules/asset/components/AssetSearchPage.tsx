@@ -14,6 +14,7 @@ export function AssetSearchPage(): React.JSX.Element {
     loading,
     selectedAssetId,
     selectedAsset,
+    selectedMatchScore,
     debouncedSearch,
     loadInitialAssets,
     toggleAssetType,
@@ -76,6 +77,7 @@ export function AssetSearchPage(): React.JSX.Element {
       {selectedAsset ? (
         <AssetDetailCard
           asset={selectedAsset}
+          matchScore={selectedMatchScore}
           onBack={() => selectAsset(null)}
           onUpdateTags={updateAssetTags}
         />

@@ -21,11 +21,11 @@ export interface AssetListOutput {
 }
 
 // Trigram FTS requires keyword length >= 3 characters.
-// Shorter keywords or those with special FTS characters fall back to LIKE.
+// Only use FTS when the keyword is purely word characters (letters/digits/CJK)
+// and whitespace. Any punctuation or operator (+ / : - ^ ~ " etc.) falls back to LIKE.
 function shouldUseFts(keyword: string): boolean {
   if (keyword.length < 3) return false
-  // Reject if keyword contains FTS5 special operators that would break MATCH
-  if (/[*"()]/.test(keyword)) return false
+  if (/[^\p{L}\p{N}\s_]/u.test(keyword)) return false
   return true
 }
 
