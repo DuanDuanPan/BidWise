@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-11  # stories 5-1, 7-1 created
+last_updated: 2026-04-11  # stories 5-1, 5-2, 7-1, 7-2 created
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -93,7 +93,7 @@ development_status:
   # ── Epic 5: 资产与知识管理 (6 stories) ──
   epic-5: in-progress
   5-1-asset-search-tag-management: ready-for-dev
-  5-2-asset-recommendation-one-click-import: backlog
+  5-2-asset-recommendation-one-click-import: ready-for-dev
   5-3-terminology-library: backlog
   5-4-batch-import-cold-start: backlog
   5-5-capability-baseline-import: backlog
@@ -111,7 +111,7 @@ development_status:
   # ── Epic 7: 质量保障、对抗评审与合规 (9 stories) ──
   epic-7: in-progress
   7-1-mandatory-item-compliance-engine: ready-for-dev
-  7-2-dynamic-adversarial-role-generation: backlog
+  7-2-dynamic-adversarial-role-generation: ready-for-dev
   7-3-adversarial-review-execution: backlog
   7-4-crossfire-conflict-detection-decision: backlog
   7-5-pre-review-attack-checklist: backlog
