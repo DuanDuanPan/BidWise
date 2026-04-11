@@ -1,0 +1,24 @@
+story_id: 5-1-asset-search-tag-management
+story_file: _bmad-output/implementation-artifacts/5-1-asset-search-tag-management.md
+ux_spec: ux-spec.md
+pen_file: prototype.pen
+snapshot_file: prototype.snapshot.json
+save_report_file: prototype.save-report.json
+reference_exports:
+- exports/JqlJ9.png
+- exports/j4wNb.png
+- exports/vG8ud.png
+primary_frames:
+- Story 1.4 — 色彩系统
+- Story 1.4 — 字体系统与排版层级
+- Story 1.4 — 间距系统
+- Story 1.4 — 自定义图标集
+- Screen 1 — 资产搜索结果页
+- Screen 2 — 标签编辑详情
+- Screen 3 — 空状态
+dev_lookup_order:
+- Read story file design notes
+- Read this manifest
+- Open reference PNG for visual fidelity
+- Open .pen for structure and interaction detail
+notes: PNG 用于视觉对齐参考，.pen 用于结构与交互细节查阅。
