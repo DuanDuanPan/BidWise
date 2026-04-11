@@ -38,6 +38,15 @@ vi.mock('@main/utils/logger', () => ({
   }),
 }))
 
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn(() => '/tmp/bidwise-test'),
+  },
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => []),
+  },
+}))
+
 import { annotationService } from '@main/services/annotation-service'
 
 const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRecord => ({

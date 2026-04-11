@@ -142,7 +142,7 @@ describe('Database migrations', () => {
     expect(names).toContain('007_create_annotations')
     expect(names).toContain('008_create_requirement_certainties')
     expect(names).toContain('012_create_assets_and_tags')
-    expect(names).toHaveLength(12)
+    expect(names).toHaveLength(13)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {
@@ -376,7 +376,6 @@ describe('Database migrations', () => {
   it('should create adversarial_lineups table with correct columns and unique index @story-7-2', async () => {
     const rawDb = new Kysely<DB>({
       dialect: new SqliteDialect({ database: new Database(':memory:') }),
-      plugins: [new CamelCasePlugin()],
     })
     try {
       const migrator = new Migrator({
