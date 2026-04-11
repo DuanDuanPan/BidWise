@@ -46,6 +46,8 @@ import { isMac } from '@renderer/shared/lib/platform'
 import { useDocumentStore, useReviewStore, getReviewProjectState } from '@renderer/stores'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { useComplianceAutoRefresh } from '@modules/review/hooks/useComplianceAutoRefresh'
+import { useAdversarialLineup } from '@modules/review/hooks/useAdversarialLineup'
+import { AdversarialLineupDrawer } from '@modules/review/components/AdversarialLineupDrawer'
 import { NotificationBell } from '@modules/notification/components/NotificationBell'
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
@@ -198,6 +200,37 @@ export function ProjectWorkspace(): React.JSX.Element {
     }
   }, [handleTriggerPreview, hasDocumentContent, registerCommand, unregisterCommand])
 
+  // Override adversarial review command in command palette while workspace is mounted
+  useEffect(() => {
+    const id = 'command-palette:start-adversarial-review'
+    const previous = commandRegistry.getCommand(id)
+
+    registerCommand({
+      id,
+      label: '启动对抗评审',
+      category: 'action',
+      keywords: ['对抗', '评审', '审查', 'review', 'adversarial'],
+      action: () => {
+        if (adversarialLineup.drawerOpen) return
+        const state = useReviewStore.getState()
+        const ps = projectId ? getReviewProjectState(state, projectId) : null
+        if (ps?.lineup) {
+          adversarialLineup.openDrawer()
+        } else {
+          adversarialLineup.triggerGenerate()
+        }
+      },
+    })
+
+    return () => {
+      if (previous) {
+        registerCommand(previous)
+      } else {
+        unregisterCommand(id)
+      }
+    }
+  }, [projectId, adversarialLineup, registerCommand, unregisterCommand])
+
   const { outlineCollapsed, sidebarCollapsed, isCompact, toggleOutline, toggleSidebar } =
     useWorkspaceLayout()
   const documentContent = useDocumentStore((s) => s.content)
@@ -215,6 +248,9 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   // Compliance auto-refresh (Story 7.1)
   useComplianceAutoRefresh(projectId ?? '')
+
+  // Adversarial lineup (Story 7.2)
+  const adversarialLineup = useAdversarialLineup(projectId, currentStageKey)
   const reviewProjectState = useReviewStore((s) =>
     projectId ? getReviewProjectState(s, projectId) : null
   )
@@ -503,6 +539,26 @@ export function ProjectWorkspace(): React.JSX.Element {
                   currentSection={recommendation.currentSection}
                   onInsertAssetReady={registerInsertAsset}
                 />
+              ) : currentStageKey === 'compliance-review' && projectId ? (
+                <StageGuidePlaceholder
+                  stageKey={currentStageKey}
+                  ctaLabel={
+                    getReviewProjectState(useReviewStore.getState(), projectId).lineup
+                      ? '打开对抗阵容'
+                      : '生成对抗阵容'
+                  }
+                  onPrimaryAction={() => {
+                    const ps = getReviewProjectState(useReviewStore.getState(), projectId)
+                    if (ps.lineup) {
+                      adversarialLineup.openDrawer()
+                    } else {
+                      adversarialLineup.triggerGenerate()
+                    }
+                  }}
+                  primaryActionLoading={
+                    getReviewProjectState(useReviewStore.getState(), projectId).lineupLoading
+                  }
+                />
               ) : (
                 <StageGuidePlaceholder stageKey={currentStageKey} />
               )
@@ -588,6 +644,27 @@ export function ProjectWorkspace(): React.JSX.Element {
             onClose={() => setDetailDrawerAssetId(null)}
             onInsert={handleDetailDrawerInsert}
           />
+          {/* Adversarial lineup Drawer (Story 7.2) */}
+          {projectId && (
+            <AdversarialLineupDrawer
+              open={adversarialLineup.drawerOpen}
+              projectId={projectId}
+              onClose={adversarialLineup.closeDrawer}
+              onGenerate={adversarialLineup.triggerGenerate}
+              onUpdateRoles={(roles) => {
+                const ps = getReviewProjectState(useReviewStore.getState(), projectId)
+                if (ps.lineup) {
+                  void adversarialLineup.updateRoles({ lineupId: ps.lineup.id, roles })
+                }
+              }}
+              onConfirm={() => {
+                const ps = getReviewProjectState(useReviewStore.getState(), projectId)
+                if (ps.lineup) {
+                  void adversarialLineup.confirmLineup({ lineupId: ps.lineup.id })
+                }
+              }}
+            />
+          )}
         </div>
       </SourceAttributionProvider>
     </ChapterGenerationProvider>

@@ -9,6 +9,7 @@ import { attributeSourcesAgentHandler } from './agents/attribute-sources-agent'
 import { validateBaselineAgentHandler } from './agents/validate-baseline-agent'
 import { fogMapAgentHandler } from './agents/fog-map-agent'
 import { traceabilityAgentHandler } from './agents/traceability-agent'
+import { adversarialAgentHandler } from './agents/adversarial-agent'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
@@ -21,3 +22,4 @@ agentOrchestrator.registerAgent('attribute-sources', attributeSourcesAgentHandle
 agentOrchestrator.registerAgent('validate-baseline', validateBaselineAgentHandler)
 agentOrchestrator.registerAgent('fog-map', fogMapAgentHandler)
 agentOrchestrator.registerAgent('traceability', traceabilityAgentHandler)
+agentOrchestrator.registerAgent('adversarial', adversarialAgentHandler)

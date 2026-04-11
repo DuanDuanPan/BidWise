@@ -5,10 +5,12 @@ import { antdTheme } from './theme/antdTheme'
 import { ProjectKanban, ProjectWorkspace } from '@modules/project'
 import { AssetSearchPage } from '@modules/asset'
 import { useAnalysisTaskMonitor } from '@modules/analysis/hooks/useAnalysis'
+import { useReviewTaskMonitor } from '@modules/review/hooks/useReviewTaskMonitor'
 import { CommandPaletteProvider } from '@renderer/shared/command-palette'
 
 function App(): React.JSX.Element {
   useAnalysisTaskMonitor()
+  useReviewTaskMonitor()
 
   return (
     <StyleProvider layer>

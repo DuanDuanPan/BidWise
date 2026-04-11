@@ -62,6 +62,14 @@ import type {
   MandatoryComplianceResult,
   ExportComplianceGate,
 } from './analysis-types'
+import type {
+  GenerateRolesInput,
+  GenerateRolesTaskResult,
+  GetLineupInput,
+  AdversarialLineup,
+  UpdateLineupInput,
+  ConfirmLineupInput,
+} from './adversarial-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 import type {
   TemplateSummary,
@@ -294,6 +302,10 @@ export const IPC_CHANNELS = {
   ASSET_RECOMMEND: 'asset:recommend',
   COMPLIANCE_CHECK: 'compliance:check',
   COMPLIANCE_EXPORT_GATE: 'compliance:export-gate',
+  REVIEW_GENERATE_ROLES: 'review:generate-roles',
+  REVIEW_GET_LINEUP: 'review:get-lineup',
+  REVIEW_UPDATE_ROLES: 'review:update-roles',
+  REVIEW_CONFIRM_LINEUP: 'review:confirm-lineup',
 } as const
 
 /** Filter for task:list queries */
@@ -404,6 +416,10 @@ export type IpcChannelMap = {
   'asset:recommend': { input: RecommendationContext; output: RecommendationResult }
   'compliance:check': { input: { projectId: string }; output: MandatoryComplianceResult | null }
   'compliance:export-gate': { input: { projectId: string }; output: ExportComplianceGate }
+  'review:generate-roles': { input: GenerateRolesInput; output: GenerateRolesTaskResult }
+  'review:get-lineup': { input: GetLineupInput; output: AdversarialLineup | null }
+  'review:update-roles': { input: UpdateLineupInput; output: AdversarialLineup }
+  'review:confirm-lineup': { input: ConfirmLineupInput; output: AdversarialLineup }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

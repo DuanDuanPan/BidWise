@@ -79,16 +79,14 @@ export function createDefaultCommands(
     badge: '1.7 合并后可用',
   })
 
-  // 对抗评审（Epic 5 未实现，disabled）
+  // 对抗评审（需在项目工作空间内使用，workspace 挂载时会用真实命令覆盖）
   commands.push({
     id: 'command-palette:start-adversarial-review',
     label: '启动对抗评审',
     category: 'action',
     keywords: ['对抗', '评审', '审查', 'review', 'adversarial'],
     icon: <SafetyCertificateOutlined />,
-    action: () => messageApi.info('对抗评审需要 Epic 5 模块就绪', 2),
-    disabled: true,
-    badge: '需要 Epic 5',
+    action: () => messageApi.info('请先进入项目工作空间再使用对抗评审', 2),
   })
 
   // 资产库搜索

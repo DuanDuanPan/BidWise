@@ -12,6 +12,7 @@ import * as migration009 from './migrations/009_create_traceability_links'
 import * as migration010 from './migrations/010_add_annotation_thread_fields'
 import * as migration011 from './migrations/011_create_notifications'
 import * as migration012 from './migrations/012_create_assets_and_tags'
+import * as migration013 from './migrations/013_create_adversarial_lineups'
 import { createLogger } from '@main/utils/logger'
 
 const logger = createLogger('db:migrator')
@@ -30,6 +31,7 @@ const migrations: Record<string, Migration> = {
   '010_add_annotation_thread_fields': migration010,
   '011_create_notifications': migration011,
   '012_create_assets_and_tags': migration012,
+  '013_create_adversarial_lineups': migration013,
 }
 
 export async function runMigrations(): Promise<void> {

@@ -147,6 +147,10 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'assetRecommend',
       'complianceCheck',
       'complianceExportGate',
+      'reviewGenerateRoles',
+      'reviewGetLineup',
+      'reviewUpdateRoles',
+      'reviewConfirmLineup',
       'onTaskProgress',
       'onNotificationNew',
     ])

@@ -30,7 +30,7 @@ export type {
   AnalysisProjectState,
 } from './analysisStore'
 
-export { useReviewStore, getReviewProjectState } from './reviewStore'
+export { useReviewStore, getReviewProjectState, findReviewProjectIdByTaskId } from './reviewStore'
 export type { ReviewStore, ReviewState, ReviewProjectState } from './reviewStore'
 
 export { useRecommendationStore } from './recommendationStore'

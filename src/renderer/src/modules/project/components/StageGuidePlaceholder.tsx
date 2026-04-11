@@ -6,9 +6,19 @@ type ActiveStageKey = Exclude<SopStageKey, 'not-started'>
 
 interface StageGuidePlaceholderProps {
   stageKey: ActiveStageKey
+  ctaLabel?: string
+  onPrimaryAction?: () => void
+  primaryActionLoading?: boolean
+  primaryActionDisabled?: boolean
 }
 
-export function StageGuidePlaceholder({ stageKey }: StageGuidePlaceholderProps): React.JSX.Element {
+export function StageGuidePlaceholder({
+  stageKey,
+  ctaLabel,
+  onPrimaryAction,
+  primaryActionLoading,
+  primaryActionDisabled,
+}: StageGuidePlaceholderProps): React.JSX.Element {
   const stage = SOP_STAGES.find((s) => s.key === stageKey)!
   const Icon = stage.icon
 
@@ -47,8 +57,16 @@ export function StageGuidePlaceholder({ stageKey }: StageGuidePlaceholderProps):
         </p>
 
         {/* CTA button */}
-        <Button type="primary" size="large" className="mt-8" data-testid="stage-guide-cta">
-          {stage.ctaLabel}
+        <Button
+          type="primary"
+          size="large"
+          className="mt-8"
+          data-testid="stage-guide-cta"
+          onClick={onPrimaryAction}
+          loading={primaryActionLoading}
+          disabled={primaryActionDisabled}
+        >
+          {ctaLabel ?? stage.ctaLabel}
         </Button>
 
         {/* Shortcut hint */}

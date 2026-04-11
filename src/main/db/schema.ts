@@ -163,6 +163,19 @@ export interface AssetTagsTable {
   tagId: string
 }
 
+export interface AdversarialLineupsTable {
+  id: string
+  projectId: string
+  roles: string // JSON array of AdversarialRole[]
+  status: string // 'generated' | 'confirmed'
+  generationSource: string // 'llm' | 'fallback'
+  warningMessage: string | null
+  generatedAt: string
+  confirmedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -177,4 +190,5 @@ export interface DB {
   assets: AssetsTable
   tags: TagsTable
   assetTags: AssetTagsTable
+  adversarialLineups: AdversarialLineupsTable
 }

@@ -278,6 +278,18 @@ const requestApi = {
 
   complianceExportGate: (input: IpcChannelMap['compliance:export-gate']['input']) =>
     typedInvoke(IPC_CHANNELS.COMPLIANCE_EXPORT_GATE, input),
+
+  reviewGenerateRoles: (input: IpcChannelMap['review:generate-roles']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_GENERATE_ROLES, input),
+
+  reviewGetLineup: (input: IpcChannelMap['review:get-lineup']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_GET_LINEUP, input),
+
+  reviewUpdateRoles: (input: IpcChannelMap['review:update-roles']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_UPDATE_ROLES, input),
+
+  reviewConfirmLineup: (input: IpcChannelMap['review:confirm-lineup']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_CONFIRM_LINEUP, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

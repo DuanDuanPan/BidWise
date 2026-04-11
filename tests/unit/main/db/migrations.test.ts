@@ -14,6 +14,7 @@ import * as migration009 from '@main/db/migrations/009_create_traceability_links
 import * as migration010 from '@main/db/migrations/010_add_annotation_thread_fields'
 import * as migration011 from '@main/db/migrations/011_create_notifications'
 import * as migration012 from '@main/db/migrations/012_create_assets_and_tags'
+import * as migration013 from '@main/db/migrations/013_create_adversarial_lineups'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -35,6 +36,7 @@ const migrations: Record<string, Migration> = {
   '010_add_annotation_thread_fields': migration010,
   '011_create_notifications': migration011,
   '012_create_assets_and_tags': migration012,
+  '013_create_adversarial_lineups': migration013,
 }
 
 describe('Database migrations', () => {
@@ -56,7 +58,7 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(12)
+    expect(results).toHaveLength(13)
     for (const result of results!) {
       expect(result.status).toBe('Success')
     }
@@ -73,6 +75,7 @@ describe('Database migrations', () => {
       '010_add_annotation_thread_fields',
       '011_create_notifications',
       '012_create_assets_and_tags',
+      '013_create_adversarial_lineups',
     ])
   })
 
@@ -365,6 +368,50 @@ describe('Database migrations', () => {
       expect(
         indexes.rows.some((index) => index.name === 'requirement_certainties_project_id_idx')
       ).toBe(true)
+    } finally {
+      await rawDb.destroy()
+    }
+  })
+
+  it('should create adversarial_lineups table with correct columns and unique index @story-7-2', async () => {
+    const rawDb = new Kysely<DB>({
+      dialect: new SqliteDialect({ database: new Database(':memory:') }),
+      plugins: [new CamelCasePlugin()],
+    })
+    try {
+      const migrator = new Migrator({
+        db: rawDb,
+        provider: { getMigrations: async () => migrations },
+      })
+      await migrator.migrateToLatest()
+
+      const cols = await sql<{
+        name: string
+        notnull: number
+        dflt_value: string | null
+      }>`PRAGMA table_info(adversarial_lineups)`.execute(rawDb)
+      const colMap = new Map(cols.rows.map((c) => [c.name, c]))
+
+      expect(colMap.has('id')).toBe(true)
+      expect(colMap.get('project_id')!.notnull).toBe(1)
+      expect(colMap.get('roles')!.notnull).toBe(1)
+      expect(colMap.get('status')!.notnull).toBe(1)
+      expect(colMap.get('status')!.dflt_value).toBe("'generated'")
+      expect(colMap.get('generation_source')!.notnull).toBe(1)
+      expect(colMap.get('generation_source')!.dflt_value).toBe("'llm'")
+      expect(colMap.has('warning_message')).toBe(true)
+      expect(colMap.get('generated_at')!.notnull).toBe(1)
+      expect(colMap.has('confirmed_at')).toBe(true)
+      expect(colMap.get('created_at')!.notnull).toBe(1)
+      expect(colMap.get('updated_at')!.notnull).toBe(1)
+
+      // Verify unique index on project_id
+      const indexes = await sql<{
+        name: string
+        unique: number
+      }>`PRAGMA index_list(adversarial_lineups)`.execute(rawDb)
+      const uniqueIndexes = indexes.rows.filter((i) => i.unique === 1)
+      expect(uniqueIndexes.length).toBeGreaterThanOrEqual(1)
     } finally {
       await rawDb.destroy()
     }
