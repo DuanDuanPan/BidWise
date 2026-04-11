@@ -95,7 +95,7 @@ export function AdversarialLineupDrawer({
         data-testid="adversarial-lineup-drawer"
         footer={
           <div className="flex justify-end gap-2">
-            {isGenerated && (
+            {isGenerated && !lineupLoading && (
               <>
                 <Button icon={<ReloadOutlined />} onClick={onGenerate} data-testid="regenerate-btn">
                   重新生成
@@ -112,7 +112,7 @@ export function AdversarialLineupDrawer({
                 </Button>
               </>
             )}
-            {isConfirmed && (
+            {isConfirmed && !lineupLoading && (
               <Button icon={<ReloadOutlined />} onClick={onGenerate} data-testid="regenerate-btn">
                 重新生成
               </Button>
@@ -165,7 +165,7 @@ export function AdversarialLineupDrawer({
         )}
 
         {/* Role list */}
-        {lineup && !lineupLoading && (
+        {lineup && !lineupLoading && !lineupError && (
           <Space direction="vertical" style={{ width: '100%' }}>
             {lineup.roles
               .slice()

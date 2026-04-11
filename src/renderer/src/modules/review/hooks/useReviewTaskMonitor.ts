@@ -68,17 +68,22 @@ export function useReviewTaskMonitor(): void {
 
         if (task.status === 'completed') {
           terminalHandledRef.current.add(taskId)
-          await loadLineup(projectId)
+          const loaded = await loadLineup(projectId)
 
-          // Check if fallback lineup
-          const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
-          if (
-            freshState.lineup?.generationSource === 'fallback' &&
-            freshState.lineup.warningMessage
-          ) {
-            message.warning(freshState.lineup.warningMessage)
+          if (!loaded) {
+            setLineupTaskError(projectId, '阵容加载失败，请重试')
+            message.error('对抗角色阵容加载失败')
           } else {
-            message.success('对抗角色阵容生成完成')
+            // Check if fallback lineup
+            const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
+            if (
+              freshState.lineup?.generationSource === 'fallback' &&
+              freshState.lineup.warningMessage
+            ) {
+              message.warning(freshState.lineup.warningMessage)
+            } else {
+              message.success('对抗角色阵容生成完成')
+            }
           }
           clearTaskTracking(taskId)
           return
@@ -87,11 +92,10 @@ export function useReviewTaskMonitor(): void {
         if (task.status === 'failed') {
           terminalHandledRef.current.add(taskId)
           // Even on task failure, try to load lineup (fallback may have been saved)
-          await loadLineup(projectId)
-          const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
-          if (freshState.lineup) {
-            // Fallback was saved successfully
-            if (freshState.lineup.warningMessage) {
+          const loadedFallback = await loadLineup(projectId)
+          if (loadedFallback) {
+            const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
+            if (freshState.lineup?.warningMessage) {
               message.warning(freshState.lineup.warningMessage)
             }
           } else {

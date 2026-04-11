@@ -200,6 +200,9 @@ export function ProjectWorkspace(): React.JSX.Element {
     }
   }, [handleTriggerPreview, hasDocumentContent, registerCommand, unregisterCommand])
 
+  // Adversarial lineup (Story 7.2) — declared before useEffect that references it
+  const adversarialLineup = useAdversarialLineup(projectId, currentStageKey)
+
   // Override adversarial review command in command palette while workspace is mounted
   useEffect(() => {
     const id = 'command-palette:start-adversarial-review'
@@ -249,8 +252,6 @@ export function ProjectWorkspace(): React.JSX.Element {
   // Compliance auto-refresh (Story 7.1)
   useComplianceAutoRefresh(projectId ?? '')
 
-  // Adversarial lineup (Story 7.2)
-  const adversarialLineup = useAdversarialLineup(projectId, currentStageKey)
   const reviewProjectState = useReviewStore((s) =>
     projectId ? getReviewProjectState(s, projectId) : null
   )

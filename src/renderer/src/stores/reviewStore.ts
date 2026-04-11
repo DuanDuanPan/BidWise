@@ -31,7 +31,7 @@ interface ReviewActions {
   reset: (projectId?: string) => void
   // Adversarial lineup actions (Story 7.2)
   startLineupGeneration: (projectId: string) => Promise<void>
-  loadLineup: (projectId: string) => Promise<void>
+  loadLineup: (projectId: string) => Promise<boolean>
   updateRoles: (input: UpdateLineupInput) => Promise<void>
   confirmLineup: (input: ConfirmLineupInput) => Promise<void>
   setLineupProgress: (projectId: string, progress: number, message?: string) => void
@@ -164,7 +164,7 @@ export const useReviewStore = create<ReviewStore>()(
       }
     },
 
-    async loadLineup(projectId: string): Promise<void> {
+    async loadLineup(projectId: string): Promise<boolean> {
       try {
         const response = await window.api.reviewGetLineup({ projectId })
         if (response.success) {
@@ -178,9 +178,12 @@ export const useReviewStore = create<ReviewStore>()(
               lineupMessage: null,
             })
           )
+          return true
         }
+        return false
       } catch {
         // Non-fatal: lineup will be loaded when available
+        return false
       }
     },
 

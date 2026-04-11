@@ -29,6 +29,8 @@ const POLL_INTERVAL_MS = 1_000
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1_000
 const COMPLIANCE_NAME_PATTERNS = ['合规审查官', '合规审查角色', '合规审查']
 const VALID_INTENSITIES: AdversarialIntensity[] = ['low', 'medium', 'high']
+const MIN_TOTAL_ROLES = 3
+const MAX_TOTAL_ROLES = 6
 
 /** Extract JSON from a string that may be wrapped in markdown code fences or contain prose */
 function extractJsonFromResponse(text: string): string {
@@ -151,6 +153,20 @@ function normalizeDrafts(drafts: GeneratedAdversarialRoleDraft[]): AdversarialRo
       description: validDrafts[i].description ?? '',
       sortOrder: sortOrder++,
     })
+  }
+
+  // Enforce role count invariants: [MIN_TOTAL_ROLES, MAX_TOTAL_ROLES]
+  if (roles.length > MAX_TOTAL_ROLES) {
+    roles.length = MAX_TOTAL_ROLES
+  }
+  if (roles.length < MIN_TOTAL_ROLES) {
+    const padCandidates = DEFAULT_FALLBACK_ROLES.filter(
+      (fr) => !fr.isProtected && !roles.some((r) => r.name === fr.name)
+    )
+    for (const pad of padCandidates) {
+      if (roles.length >= MIN_TOTAL_ROLES) break
+      roles.push({ id: uuidv4(), ...pad, sortOrder: roles.length })
+    }
   }
 
   return roles
@@ -293,24 +309,25 @@ class AdversarialLineupService {
         )
         return roles
       })
-      .catch(async (err) => {
-        // Fallback: persist default roles so user still gets a usable lineup
-        logger.warn(
-          `Adversarial lineup LLM generation failed for project ${projectId}, falling back to defaults`,
-          err
-        )
-        try {
-          const fallbackRoles = buildDefaultRoles()
-          await lineupRepo.save({
-            projectId,
-            roles: fallbackRoles,
-            status: 'generated',
-            generationSource: 'fallback',
-            warningMessage: 'AI 生成失败，已加载默认阵容，您可手动调整',
-          })
-          logger.info(`Fallback lineup saved for project ${projectId}`)
-        } catch (fallbackErr) {
-          logger.error(`Fallback lineup save also failed for project ${projectId}`, fallbackErr)
+      .then(async (result) => {
+        // Task queue resolves even for failures — check status for fallback
+        if (result.status === 'failed') {
+          logger.warn(
+            `Adversarial lineup LLM generation failed for project ${projectId} (task status: ${result.status}), falling back to defaults`
+          )
+          try {
+            const fallbackRoles = buildDefaultRoles()
+            await lineupRepo.save({
+              projectId,
+              roles: fallbackRoles,
+              status: 'generated',
+              generationSource: 'fallback',
+              warningMessage: 'AI 生成失败，已加载默认阵容，您可手动调整',
+            })
+            logger.info(`Fallback lineup saved for project ${projectId}`)
+          } catch (fallbackErr) {
+            logger.error(`Fallback lineup save also failed for project ${projectId}`, fallbackErr)
+          }
         }
       })
 
@@ -343,9 +360,18 @@ class AdversarialLineupService {
       }
     }
 
-    // Must have at least 1 role (the compliance role)
-    if (input.roles.length === 0) {
-      throw new ValidationError('阵容至少需要保留一个角色')
+    // Enforce role count bounds
+    if (input.roles.length < MIN_TOTAL_ROLES) {
+      throw new ValidationError(`阵容至少需要 ${MIN_TOTAL_ROLES} 个角色`)
+    }
+    if (input.roles.length > MAX_TOTAL_ROLES) {
+      throw new ValidationError(`阵容最多允许 ${MAX_TOTAL_ROLES} 个角色`)
+    }
+
+    // Validate exactly one protected compliance role
+    const protectedCount = input.roles.filter((r) => r.isProtected).length
+    if (protectedCount !== 1) {
+      throw new ValidationError('阵容必须包含且仅包含一个受保护的合规审查角色')
     }
 
     // Re-sort
