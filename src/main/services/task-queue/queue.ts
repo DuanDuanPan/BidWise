@@ -1,5 +1,5 @@
 import { createLogger } from '@main/utils/logger'
-import { TaskQueueError } from '@main/utils/errors'
+import { BidWiseError, TaskQueueError } from '@main/utils/errors'
 import { isAbortError, throwIfAborted } from '@main/utils/abort'
 import { ErrorCode } from '@shared/constants'
 import { TaskRepository } from '@main/db/repositories/task-repo'
@@ -242,6 +242,20 @@ export class TaskQueueService {
         progressEmitter.clear(taskId)
         progressEmitter.emit({ taskId, progress: updated.progress, message: 'cancelled' })
         logger.info(`Task cancelled: ${taskId}`)
+        return tableToRecord(updated)
+      }
+
+      // Executor signalled cancellation via TASK_CANCELLED (e.g. inner agent cancelled)
+      if (err instanceof BidWiseError && err.code === ErrorCode.TASK_CANCELLED) {
+        const now = new Date().toISOString()
+        const updated = await this.repo.update(taskId, {
+          status: 'cancelled',
+          error: err.message,
+          completedAt: now,
+        })
+        progressEmitter.clear(taskId)
+        progressEmitter.emit({ taskId, progress: updated.progress, message: 'cancelled' })
+        logger.info(`Task cancelled (executor): ${taskId}`)
         return tableToRecord(updated)
       }
 
