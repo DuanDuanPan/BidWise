@@ -61,4 +61,31 @@ describe('@story-1-7 StatusBar', () => {
     expect(rightSection).toHaveTextContent(/合规分/)
     expect(rightSection).toHaveTextContent(/质量分/)
   })
+
+  // ─── Story 7.1: Compliance Score ───
+
+  it('@story-7-1 shows "合规分 --" when complianceReady is false', () => {
+    render(<StatusBar complianceReady={false} />)
+    expect(screen.getByTestId('status-compliance')).toHaveTextContent('合规分 --')
+  })
+
+  it('@story-7-1 shows "合规分 --" when complianceRate is null and ready', () => {
+    render(<StatusBar complianceReady={true} complianceRate={null} />)
+    expect(screen.getByTestId('status-compliance')).toHaveTextContent('合规分 --')
+  })
+
+  it('@story-7-1 shows spinner when complianceLoading is true', () => {
+    render(<StatusBar complianceLoading={true} complianceReady={true} complianceRate={80} />)
+    expect(screen.getByTestId('status-compliance')).toHaveTextContent('合规分 --')
+  })
+
+  it('@story-7-1 shows numeric compliance rate when ready and loaded', () => {
+    render(<StatusBar complianceReady={true} complianceRate={85} />)
+    expect(screen.getByTestId('status-compliance')).toHaveTextContent('合规分 85')
+  })
+
+  it('@story-7-1 shows compliance rate 0', () => {
+    render(<StatusBar complianceReady={true} complianceRate={0} />)
+    expect(screen.getByTestId('status-compliance')).toHaveTextContent('合规分 0')
+  })
 })

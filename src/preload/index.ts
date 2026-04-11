@@ -266,6 +266,12 @@ const requestApi = {
 
   assetUpdateTags: (input: IpcChannelMap['asset:update-tags']['input']) =>
     typedInvoke(IPC_CHANNELS.ASSET_UPDATE_TAGS, input),
+
+  complianceCheck: (input: IpcChannelMap['compliance:check']['input']) =>
+    typedInvoke(IPC_CHANNELS.COMPLIANCE_CHECK, input),
+
+  complianceExportGate: (input: IpcChannelMap['compliance:export-gate']['input']) =>
+    typedInvoke(IPC_CHANNELS.COMPLIANCE_EXPORT_GATE, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

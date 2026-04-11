@@ -447,3 +447,34 @@ export interface ImportAddendumInput {
 export interface ImportAddendumResult {
   taskId: string
 }
+
+// ─── Story 7.1: Mandatory Item Compliance Engine ───
+
+export type MandatoryComplianceStatus = CoverageStatus | 'unlinked'
+
+export interface MandatoryComplianceItem {
+  mandatoryItemId: string
+  content: string
+  linkedRequirementId: string | null
+  coverageStatus: MandatoryComplianceStatus
+}
+
+export interface MandatoryComplianceResult {
+  items: MandatoryComplianceItem[]
+  totalConfirmed: number
+  coveredCount: number
+  partialCount: number
+  uncoveredCount: number
+  unlinkedCount: number
+  complianceRate: number
+}
+
+export type ComplianceGateStatus = 'pass' | 'blocked' | 'not-ready'
+
+export interface ExportComplianceGate {
+  status: ComplianceGateStatus
+  canExport: boolean
+  blockingItems: MandatoryComplianceItem[]
+  complianceRate: number
+  message?: string
+}

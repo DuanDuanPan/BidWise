@@ -1,18 +1,86 @@
-import { CheckCircleOutlined, DashboardOutlined, FileTextOutlined } from '@ant-design/icons'
+import { DashboardOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 
 const zhNumberFormat = new Intl.NumberFormat('zh-CN')
+
+function getComplianceColor(rate: number): string {
+  if (rate >= 80) return 'var(--color-success, #52c41a)'
+  if (rate >= 60) return 'var(--color-warning, #faad14)'
+  return 'var(--color-error, #ff4d4f)'
+}
 
 interface StatusBarProps {
   currentStageName?: string
   leftExtra?: React.ReactNode
   wordCount?: number
+  complianceRate?: number | null
+  complianceLoading?: boolean
+  complianceReady?: boolean
 }
 
 export function StatusBar({
   currentStageName,
   leftExtra,
   wordCount,
+  complianceRate,
+  complianceLoading,
+  complianceReady,
 }: StatusBarProps): React.JSX.Element {
+  const renderComplianceIndicator = (): React.JSX.Element => {
+    if (complianceLoading) {
+      return (
+        <span
+          className="text-caption flex items-center gap-1"
+          style={{ color: 'var(--color-text-tertiary)' }}
+          data-testid="status-compliance"
+        >
+          <LoadingOutlined style={{ fontSize: 12 }} />
+          合规分 --
+        </span>
+      )
+    }
+
+    if (!complianceReady || complianceRate == null) {
+      return (
+        <span
+          className="text-caption flex items-center gap-1"
+          style={{ color: 'var(--color-text-tertiary)' }}
+          data-testid="status-compliance"
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: 'var(--color-text-quaternary, #d9d9d9)',
+            }}
+          />
+          合规分 --
+        </span>
+      )
+    }
+
+    const color = getComplianceColor(complianceRate)
+    return (
+      <span
+        className="text-caption flex items-center gap-1"
+        style={{ color }}
+        data-testid="status-compliance"
+      >
+        <span
+          style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            backgroundColor: color,
+          }}
+        />
+        合规分 {complianceRate}
+      </span>
+    )
+  }
+
   return (
     <div
       role="status"
@@ -49,14 +117,7 @@ export function StatusBar({
           <FileTextOutlined style={{ fontSize: 12 }} />
           字数 {wordCount != null ? zhNumberFormat.format(wordCount) : '--'}
         </span>
-        <span
-          className="text-caption flex items-center gap-1"
-          style={{ color: 'var(--color-text-tertiary)' }}
-          data-testid="status-compliance"
-        >
-          <CheckCircleOutlined style={{ fontSize: 12 }} />
-          合规分 --
-        </span>
+        {renderComplianceIndicator()}
         <span
           className="text-caption flex items-center gap-1"
           style={{ color: 'var(--color-text-tertiary)' }}

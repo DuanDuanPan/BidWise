@@ -59,6 +59,8 @@ import type {
   DeleteLinkInput,
   ImportAddendumInput,
   ImportAddendumResult,
+  MandatoryComplianceResult,
+  ExportComplianceGate,
 } from './analysis-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 import type {
@@ -286,6 +288,8 @@ export const IPC_CHANNELS = {
   ASSET_LIST: 'asset:list',
   ASSET_GET: 'asset:get',
   ASSET_UPDATE_TAGS: 'asset:update-tags',
+  COMPLIANCE_CHECK: 'compliance:check',
+  COMPLIANCE_EXPORT_GATE: 'compliance:export-gate',
 } as const
 
 /** Filter for task:list queries */
@@ -392,6 +396,8 @@ export type IpcChannelMap = {
   'asset:list': { input: AssetListFilter | void; output: AssetQueryResult }
   'asset:get': { input: { id: string }; output: AssetDetail }
   'asset:update-tags': { input: UpdateAssetTagsInput; output: Tag[] }
+  'compliance:check': { input: { projectId: string }; output: MandatoryComplianceResult | null }
+  'compliance:export-gate': { input: { projectId: string }; output: ExportComplianceGate }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

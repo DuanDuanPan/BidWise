@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { message } from 'antd'
 import type { PreviewTaskResult } from '@shared/export-types'
+import type { ExportComplianceGate } from '@shared/analysis-types'
 
 export type PreviewPhase = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -21,9 +22,19 @@ export interface UseExportPreviewActions {
   retryPreview: () => void
   closePreview: () => void
   confirmExport: () => void
+  closeComplianceGate: () => void
+  forceExport: () => void
 }
 
-export type UseExportPreviewReturn = UseExportPreviewState & UseExportPreviewActions
+export interface ComplianceGateState {
+  complianceGateOpen: boolean
+  complianceGateData: ExportComplianceGate | null
+  complianceGateChecking: boolean
+}
+
+export type UseExportPreviewReturn = UseExportPreviewState &
+  UseExportPreviewActions &
+  ComplianceGateState
 
 const INITIAL_STATE: UseExportPreviewState = {
   phase: 'idle',
@@ -277,36 +288,89 @@ export function useExportPreview(): UseExportPreviewReturn {
     triggerPreview(projectId)
   }, [state, triggerPreview])
 
+  // Compliance gate state
+  const [complianceGateOpen, setComplianceGateOpen] = useState(false)
+  const [complianceGateData, setComplianceGateData] = useState<ExportComplianceGate | null>(null)
+  const [complianceGateChecking, setComplianceGateChecking] = useState(false)
+
+  /** Shared helper: actually run the export confirm flow */
+  const doExportConfirm = useCallback(
+    async (projectId: string, previewMeta: PreviewTaskResult) => {
+      try {
+        const res = await window.api.exportConfirm({
+          projectId,
+          tempPath: previewMeta.tempPath,
+        })
+
+        if (!res.success) {
+          message.error('导出失败')
+          return
+        }
+
+        if (res.data.cancelled) {
+          // User cancelled save dialog — keep modal open
+          return
+        }
+
+        // Export successful
+        cleanupSubscription()
+        currentTaskIdRef.current = null
+        setState(INITIAL_STATE)
+        syncRefs({ projectId: null, previewMeta: null })
+        setComplianceGateOpen(false)
+        setComplianceGateData(null)
+        message.success(`方案已导出到 ${res.data.outputPath}`)
+      } catch {
+        message.error('导出过程中出现错误')
+      }
+    },
+    [cleanupSubscription, syncRefs]
+  )
+
   const confirmExport = useCallback(async () => {
     const { projectId, previewMeta } = state
     if (!projectId || !previewMeta) return
 
+    // Run compliance gate check first
+    setComplianceGateChecking(true)
     try {
-      const res = await window.api.exportConfirm({
-        projectId,
-        tempPath: previewMeta.tempPath,
-      })
+      const gateRes = await window.api.complianceExportGate({ projectId })
+      setComplianceGateChecking(false)
 
-      if (!res.success) {
-        message.error('导出失败')
+      if (!gateRes.success) {
+        // Gate check failed — proceed with export (best-effort)
+        await doExportConfirm(projectId, previewMeta)
         return
       }
 
-      if (res.data.cancelled) {
-        // User cancelled save dialog — keep modal open
+      if (gateRes.data.status === 'pass') {
+        await doExportConfirm(projectId, previewMeta)
         return
       }
 
-      // Export successful
-      cleanupSubscription()
-      currentTaskIdRef.current = null
-      setState(INITIAL_STATE)
-      syncRefs({ projectId: null, previewMeta: null })
-      message.success(`方案已导出到 ${res.data.outputPath}`)
+      // blocked or not-ready — open compliance gate modal
+      setComplianceGateData(gateRes.data)
+      setComplianceGateOpen(true)
     } catch {
-      message.error('导出过程中出现错误')
+      setComplianceGateChecking(false)
+      // On error, fallback to export
+      await doExportConfirm(projectId, previewMeta)
     }
-  }, [state, cleanupSubscription, syncRefs])
+  }, [state, doExportConfirm])
+
+  const closeComplianceGate = useCallback(() => {
+    setComplianceGateOpen(false)
+    setComplianceGateData(null)
+  }, [])
+
+  const forceExport = useCallback(async () => {
+    const { projectId, previewMeta } = state
+    if (!projectId || !previewMeta) return
+
+    setComplianceGateOpen(false)
+    setComplianceGateData(null)
+    await doExportConfirm(projectId, previewMeta)
+  }, [state, doExportConfirm])
 
   // Cleanup on unmount — uses refs to access current values.
   // Writing to requestIdRef.current is intentional (invalidates in-flight requests).
@@ -328,5 +392,10 @@ export function useExportPreview(): UseExportPreviewReturn {
     retryPreview,
     closePreview,
     confirmExport,
+    complianceGateOpen,
+    complianceGateData,
+    complianceGateChecking,
+    closeComplianceGate,
+    forceExport,
   }
 }

@@ -143,6 +143,8 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'assetList',
       'assetGet',
       'assetUpdateTags',
+      'complianceCheck',
+      'complianceExportGate',
       'onTaskProgress',
       'onNotificationNew',
     ])

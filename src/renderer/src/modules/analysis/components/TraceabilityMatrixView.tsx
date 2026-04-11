@@ -1,16 +1,22 @@
-import { useState, useCallback } from 'react'
-import { Button, Alert, Progress, Tag, message } from 'antd'
+import { useState, useCallback, useMemo } from 'react'
+import { Button, Alert, Progress, Tag, Switch, message } from 'antd'
 import {
   ThunderboltOutlined,
   ImportOutlined,
   LoadingOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
-import { getAnalysisProjectState, useAnalysisStore } from '@renderer/stores'
+import {
+  getAnalysisProjectState,
+  useAnalysisStore,
+  useReviewStore,
+  getReviewProjectState,
+} from '@renderer/stores'
 import { ComplianceCoverageMatrix } from './ComplianceCoverageMatrix'
 import { AddendumImportModal } from './AddendumImportModal'
-import type { CoverageStatus } from '@shared/analysis-types'
+import type { CoverageStatus, TraceabilityMatrix, TraceabilityStats } from '@shared/analysis-types'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
 interface TraceabilityMatrixViewProps {
@@ -31,7 +37,11 @@ export function TraceabilityMatrixView({
   const deleteLink = useAnalysisStore((s) => s.deleteLink)
   const importAddendum = useAnalysisStore((s) => s.importAddendum)
 
+  const reviewProjectState = useReviewStore((s) => getReviewProjectState(s, projectId))
+  const complianceResult = reviewProjectState.compliance
+
   const [addendumModalOpen, setAddendumModalOpen] = useState(false)
+  const [mandatoryOnly, setMandatoryOnly] = useState(false)
 
   const {
     requirements,
@@ -53,6 +63,49 @@ export function TraceabilityMatrixView({
   const isImportingAddendum = addendumImportTaskId !== null || addendumImportLoading
   const hasRequirements = requirements !== null && requirements.length > 0
   const hasMatrix = traceabilityMatrix !== null
+
+  // Derive filtered matrix and overridden stats for mandatory-only mode
+  const { displayMatrix, displayStats } = useMemo((): {
+    displayMatrix: TraceabilityMatrix | null
+    displayStats: TraceabilityStats | null
+  } => {
+    if (!mandatoryOnly || !hasMatrix || !complianceResult) {
+      return { displayMatrix: traceabilityMatrix, displayStats: traceabilityStats }
+    }
+
+    // Build set of linked requirement IDs from confirmed mandatory items
+    const mandatoryLinkedReqIds = new Set(
+      complianceResult.items
+        .filter((item) => item.linkedRequirementId !== null)
+        .map((item) => item.linkedRequirementId!)
+    )
+
+    // Filter matrix rows to only include mandatory-linked requirements
+    const filteredRows = traceabilityMatrix.rows.filter((row) =>
+      mandatoryLinkedReqIds.has(row.requirementId)
+    )
+
+    // Rebuild stats from compliance result, not from original matrix stats
+    // unlinkedCount counts as equivalent blocking — adds to uncoveredCount for stats
+    const overriddenStats: TraceabilityStats = {
+      totalRequirements: complianceResult.totalConfirmed,
+      coveredCount: complianceResult.coveredCount,
+      partialCount: complianceResult.partialCount,
+      uncoveredCount: complianceResult.uncoveredCount + complianceResult.unlinkedCount,
+      coverageRate:
+        complianceResult.totalConfirmed === 0
+          ? 1
+          : complianceResult.coveredCount / complianceResult.totalConfirmed,
+    }
+
+    const filteredMatrix: TraceabilityMatrix = {
+      ...traceabilityMatrix,
+      rows: filteredRows,
+      stats: overriddenStats,
+    }
+
+    return { displayMatrix: filteredMatrix, displayStats: overriddenStats }
+  }, [mandatoryOnly, hasMatrix, complianceResult, traceabilityMatrix, traceabilityStats])
 
   const handleGenerate = useCallback(async () => {
     await generateMatrix(projectId)
@@ -139,20 +192,68 @@ export function TraceabilityMatrixView({
           >
             导入补遗
           </Button>
+          {hasMatrix && (
+            <span className="ml-4 flex items-center gap-2">
+              <Switch
+                size="small"
+                checked={mandatoryOnly}
+                onChange={setMandatoryOnly}
+                data-testid="mandatory-only-toggle"
+              />
+              <span className="text-text-secondary text-sm">仅显示必做项</span>
+            </span>
+          )}
         </div>
 
         {/* Stats badges */}
-        {traceabilityStats && (
+        {displayStats && !mandatoryOnly && (
           <div className="flex items-center gap-2">
             <Tag color="green">
-              <CheckCircleOutlined /> 已覆盖 {traceabilityStats.coveredCount}
+              <CheckCircleOutlined /> 已覆盖 {displayStats.coveredCount}
             </Tag>
-            <Tag color="orange">部分 {traceabilityStats.partialCount}</Tag>
-            <Tag color="red">未覆盖 {traceabilityStats.uncoveredCount}</Tag>
-            <Tag>覆盖率 {Math.round(traceabilityStats.coverageRate * 100)}%</Tag>
+            <Tag color="orange">部分 {displayStats.partialCount}</Tag>
+            <Tag color="red">未覆盖 {displayStats.uncoveredCount}</Tag>
+            <Tag>覆盖率 {Math.round(displayStats.coverageRate * 100)}%</Tag>
           </div>
         )}
       </div>
+
+      {/* Mandatory compliance summary bar */}
+      {mandatoryOnly && complianceResult && (
+        <div
+          className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+          data-testid="mandatory-compliance-summary"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium">
+              必做项覆盖 {complianceResult.coveredCount} / {complianceResult.totalConfirmed}
+            </span>
+            <div className="flex items-center gap-2">
+              <Tag color="green">已覆盖 {complianceResult.coveredCount}</Tag>
+              <Tag color="orange">部分 {complianceResult.partialCount}</Tag>
+              <Tag color="red">未覆盖 {complianceResult.uncoveredCount}</Tag>
+              <Tag color="red">未关联 {complianceResult.unlinkedCount}</Tag>
+            </div>
+          </div>
+          <Progress
+            percent={complianceResult.complianceRate}
+            status={
+              complianceResult.complianceRate === 100
+                ? 'success'
+                : complianceResult.complianceRate >= 60
+                  ? 'active'
+                  : 'exception'
+            }
+            data-testid="mandatory-compliance-progress"
+          />
+          {complianceResult.unlinkedCount > 0 && (
+            <div className="text-text-tertiary mt-2 flex items-center gap-1 text-xs">
+              <WarningOutlined />
+              {complianceResult.unlinkedCount} 个必做项尚未关联 requirement，因此不会出现在矩阵行中
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Generation error */}
       {matrixGenerationError && (
@@ -241,9 +342,9 @@ export function TraceabilityMatrixView({
       )}
 
       {/* Matrix result */}
-      {hasMatrix && (
+      {displayMatrix && (
         <ComplianceCoverageMatrix
-          matrix={traceabilityMatrix}
+          matrix={displayMatrix}
           onCreateLink={handleCreateLink}
           onUpdateLink={handleUpdateLink}
           onDeleteLink={handleDeleteLink}

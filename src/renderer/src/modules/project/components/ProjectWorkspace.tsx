@@ -36,11 +36,13 @@ import { scrollToHeading } from '@modules/editor/lib/scrollToHeading'
 import { useExportPreview } from '@modules/export/hooks/useExportPreview'
 import { ExportPreviewLoadingOverlay } from '@modules/export/components/ExportPreviewLoadingOverlay'
 import { ExportPreviewModal } from '@modules/export/components/ExportPreviewModal'
+import { ComplianceGateModal } from '@modules/export/components/ComplianceGateModal'
 import { commandRegistry, useCommandPalette } from '@renderer/shared/command-palette'
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { isMac } from '@renderer/shared/lib/platform'
-import { useDocumentStore } from '@renderer/stores'
+import { useDocumentStore, useReviewStore, getReviewProjectState } from '@renderer/stores'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
+import { useComplianceAutoRefresh } from '@modules/review/hooks/useComplianceAutoRefresh'
 import { NotificationBell } from '@modules/notification/components/NotificationBell'
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
@@ -207,6 +209,15 @@ export function ProjectWorkspace(): React.JSX.Element {
       void loadAnnotations(projectId)
     }
   }, [currentStageKey, projectId, loadAnnotations])
+
+  // Compliance auto-refresh (Story 7.1)
+  useComplianceAutoRefresh(projectId ?? '')
+  const reviewProjectState = useReviewStore((s) =>
+    projectId ? getReviewProjectState(s, projectId) : null
+  )
+  const complianceRate = reviewProjectState?.compliance?.complianceRate ?? null
+  const complianceLoading = reviewProjectState?.loading ?? false
+  const complianceReady = reviewProjectState?.loaded ?? false
 
   // Notification navigation state
   const [focusAnnotationId, setFocusAnnotationId] = useState<string | null>(null)
@@ -465,6 +476,9 @@ export function ProjectWorkspace(): React.JSX.Element {
               <StatusBar
                 currentStageName={currentStageName}
                 wordCount={showWordCount ? wordCount : undefined}
+                complianceRate={complianceRate}
+                complianceLoading={complianceLoading}
+                complianceReady={complianceReady}
                 leftExtra={
                   showAutoSaveIndicator && projectId ? (
                     <AutoSaveIndicator
@@ -495,6 +509,12 @@ export function ProjectWorkspace(): React.JSX.Element {
             onClose={exportPreview.closePreview}
             onConfirmExport={exportPreview.confirmExport}
             onRetry={exportPreview.retryPreview}
+          />
+          <ComplianceGateModal
+            open={exportPreview.complianceGateOpen}
+            gateData={exportPreview.complianceGateData}
+            onClose={exportPreview.closeComplianceGate}
+            onForceExport={exportPreview.forceExport}
           />
         </div>
       </SourceAttributionProvider>
