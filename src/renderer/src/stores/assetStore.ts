@@ -162,6 +162,8 @@ export const useAssetStore = create<AssetStore>()(
             const detailResp = await window.api.assetGet({ id: input.assetId })
             if (detailResp.success) {
               set({ selectedAsset: detailResp.data })
+            } else {
+              set({ error: detailResp.error.message })
             }
           }
           // Re-run the current query so tag-based filters reflect the change,
@@ -172,11 +174,15 @@ export const useAssetStore = create<AssetStore>()(
             const listResp = await window.api.assetList()
             if (listResp.success) {
               set({ results: listResp.data.items, total: listResp.data.total })
+            } else {
+              set({ error: listResp.error.message })
             }
           } else {
             const searchResp = await window.api.assetSearch({ rawQuery, assetTypes })
             if (searchResp.success) {
               set({ results: searchResp.data.items, total: searchResp.data.total })
+            } else {
+              set({ error: searchResp.error.message })
             }
           }
         } else {
