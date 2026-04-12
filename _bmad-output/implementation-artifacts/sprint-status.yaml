@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-12  # stories 5-3, 7-5 ready-for-dev
+last_updated: 2026-04-12
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -114,7 +114,7 @@ development_status:
   7-2-dynamic-adversarial-role-generation: done
   7-3-adversarial-review-execution: review
   7-4-crossfire-conflict-detection-decision: backlog
-  7-5-pre-review-attack-checklist: ready-for-dev
+  7-5-pre-review-attack-checklist: in-progress
   7-6-similarity-detection-anti-collusion: backlog
   7-7-template-compliance-check: backlog
   7-8-realtime-scoring-dashboard: backlog
