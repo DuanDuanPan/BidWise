@@ -94,7 +94,7 @@ development_status:
   epic-5: in-progress
   5-1-asset-search-tag-management: done
   5-2-asset-recommendation-one-click-import: done
-  5-3-terminology-library: ready-for-dev
+  5-3-terminology-library: review
   5-4-batch-import-cold-start: backlog
   5-5-capability-baseline-import: backlog
   5-6-template-registration-wizard: backlog
@@ -114,7 +114,7 @@ development_status:
   7-2-dynamic-adversarial-role-generation: done
   7-3-adversarial-review-execution: review
   7-4-crossfire-conflict-detection-decision: backlog
-  7-5-pre-review-attack-checklist: in-progress
+  7-5-pre-review-attack-checklist: done
   7-6-similarity-detection-anti-collusion: backlog
   7-7-template-compliance-check: backlog
   7-8-realtime-scoring-dashboard: backlog
