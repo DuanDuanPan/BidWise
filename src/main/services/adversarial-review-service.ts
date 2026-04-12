@@ -173,11 +173,12 @@ class AdversarialReviewService {
 
         const roles = currentLineup.roles
 
-        // Initialize roleResults
+        // Initialize roleResults — mark all roles as 'running' immediately so
+        // the UI sees real-time status as soon as the first progress event fires
         const roleResults: RoleReviewResult[] = roles.map((r) => ({
           roleId: r.id,
           roleName: r.name,
-          status: 'pending' as const,
+          status: 'running' as const,
           findingCount: 0,
         }))
 
@@ -198,10 +199,6 @@ class AdversarialReviewService {
 
         // Build AI requests for all roles
         const rolePromises = roles.map(async (role, index) => {
-          // Mark role as running
-          roleResults[index].status = 'running'
-          await reviewRepo.updateSessionStatus(sessionId, 'running', roleResults)
-
           const startTime = Date.now()
           try {
             const { prompt, temperature, maxTokens } = buildAdversarialReviewPrompt({
@@ -596,7 +593,9 @@ class AdversarialReviewService {
 
           ctx.updateProgress(70, '整理重试结果…')
 
-          // Build new findings for this role
+          // Build new findings for this role — assign sequential sortOrder so
+          // the AI response order is preserved through the DB round-trip
+          let retrySortOrder = 0
           const newFindings: Omit<AdversarialFinding, 'createdAt' | 'updatedAt'>[] = []
           for (const raw of rawFindings) {
             if (!raw.content || raw.content.trim().length === 0) continue
@@ -621,7 +620,7 @@ class AdversarialReviewService {
               status: 'pending',
               rebuttalReason: null,
               contradictionGroupId: null,
-              sortOrder: 0,
+              sortOrder: retrySortOrder++,
             })
           }
 
