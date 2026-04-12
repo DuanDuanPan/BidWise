@@ -239,7 +239,7 @@ def _handle_image(
     project_path: Optional[str],
     page_setup: Optional[PageSetup],
     warnings: list[str],
-) -> None:
+) -> bool:
     """Handle Markdown image syntax and insert into document."""
     ext = Path(image_path_raw).suffix.lower()
 
@@ -247,7 +247,7 @@ def _handle_image(
     if ext not in _IMAGE_EXTENSIONS:
         warnings.append(f"不支持的图片格式 '{ext}': {image_path_raw}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-        return
+        return False
 
     # Resolve image path — use realpath to follow symlinks for security
     if project_path and not os.path.isabs(image_path_raw):
@@ -257,29 +257,29 @@ def _handle_image(
         if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
             warnings.append(f"图片路径不在 assets/ 目录下: {image_path_raw}")
             doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-            return
+            return False
     elif os.path.isabs(image_path_raw):
         if not project_path:
             warnings.append(f"缺少 projectPath，无法校验绝对路径图片: {image_path_raw}")
             doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-            return
+            return False
         resolved = os.path.realpath(image_path_raw)
         assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
         if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
             warnings.append(f"绝对路径图片不在 assets/ 目录下: {image_path_raw}")
             doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-            return
+            return False
     else:
         # No project_path provided
         warnings.append(f"无法解析图片路径 (缺少 projectPath): {image_path_raw}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-        return
+        return False
 
     # Check file exists (resolved is already a realpath)
     if not os.path.exists(resolved):
         warnings.append(f"图片文件不存在: {resolved}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-        return
+        return False
 
     # Insert image
     try:
@@ -301,6 +301,9 @@ def _handle_image(
     except Exception as e:
         warnings.append(f"图片插入失败: {image_path_raw}: {e}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
+        return False
+
+    return True
 
 
 def add_toc(
@@ -485,7 +488,8 @@ def _parse_markdown(
             i += 1
             while i < len(lines):
                 end_match = re.match(
-                    rf"^{re.escape(fence_char)}{{{fence_len},}}\s*$", lines[i]
+                    rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}\s*$",
+                    lines[i],
                 )
                 if end_match:
                     i += 1
@@ -498,7 +502,7 @@ def _parse_markdown(
         # Image
         img_match = _IMAGE_PATTERN.match(line)
         if img_match:
-            _handle_image(
+            image_ok = _handle_image(
                 doc,
                 img_match.group(1),
                 img_match.group(2),
@@ -506,9 +510,9 @@ def _parse_markdown(
                 page_setup,
                 warnings,
             )
-            # Add figure caption if this image is in the registry
+            # Add figure caption only when the image was actually inserted
             figure_entry = figure_by_line.get(i)
-            if figure_entry:
+            if figure_entry and image_ok:
                 _add_figure_caption(
                     doc,
                     figure_entry,

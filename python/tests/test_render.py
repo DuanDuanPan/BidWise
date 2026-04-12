@@ -1228,3 +1228,63 @@ def test_unexpected_error_returns_structured_response(client: TestClient, tmp_ou
     assert body["success"] is False
     assert body["error"]["code"] in ("RENDER_UNEXPECTED",)
     assert len(body["error"]["message"]) > 0
+
+
+def test_missing_image_suppresses_caption(client: TestClient, tmp_output: str, tmp_path):
+    """When an image file doesn't exist, the figure caption must NOT be emitted."""
+    project_path = str(tmp_path / "project")
+    os.makedirs(os.path.join(project_path, "assets"), exist_ok=True)
+
+    md = "# Ch1\n\n![Missing](assets/missing.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # Placeholder must exist
+    assert any("图片未导出" in t for t in texts), f"Expected placeholder in: {texts}"
+    # Caption must NOT exist
+    assert not any("图 1-1" in t for t in texts), f"Unexpected caption in: {texts}"
+
+
+def test_indented_closing_fence_3_spaces_renderer(client: TestClient, tmp_output: str, tmp_path):
+    """Renderer must treat a 3-space-indented closing fence as valid (CommonMark)."""
+    import shutil
+
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "real.png"))
+
+    # 3-space-indented closing fence should close the code block;
+    # the image after it must be rendered and captioned.
+    md = "# Ch1\n\n```\n   ```\n![Real](assets/real.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # The image should be captioned (not swallowed into the code block)
+    assert any("图 1-1: Real" in t for t in texts), f"Expected caption in: {texts}"
