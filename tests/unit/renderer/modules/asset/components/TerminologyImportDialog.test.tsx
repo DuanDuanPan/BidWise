@@ -1,9 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
+import type { ReactNode } from 'react'
 
 // Mock antd components
 vi.mock('antd', () => ({
-  Modal: ({ open, title, children, footer }: any) =>
+  Modal: ({
+    open,
+    title,
+    children,
+    footer,
+  }: {
+    open: boolean
+    title: ReactNode
+    children: ReactNode
+    footer: ReactNode
+  }) =>
     open ? (
       <div data-testid="import-modal">
         <h2>{title}</h2>
@@ -12,7 +23,13 @@ vi.mock('antd', () => ({
       </div>
     ) : null,
   Upload: {
-    Dragger: ({ children, beforeUpload }: any) => (
+    Dragger: ({
+      children,
+      beforeUpload,
+    }: {
+      children: ReactNode
+      beforeUpload: (file: File) => boolean | void
+    }) => (
       <div
         data-testid="upload-dragger"
         onClick={() => {
@@ -26,10 +43,10 @@ vi.mock('antd', () => ({
       </div>
     ),
   },
-  Table: ({ dataSource }: any) => (
+  Table: ({ dataSource }: { dataSource?: Array<{ sourceTerm: string; targetTerm: string }> }) => (
     <table data-testid="preview-table">
       <tbody>
-        {dataSource?.map((r: any, i: number) => (
+        {dataSource?.map((r, i) => (
           <tr key={i}>
             <td>{r.sourceTerm}</td>
             <td>{r.targetTerm}</td>
@@ -38,14 +55,12 @@ vi.mock('antd', () => ({
       </tbody>
     </table>
   ),
-  Button: ({ children, onClick, ...props }: any) => (
-    <button onClick={onClick} {...props}>
-      {children}
-    </button>
+  Button: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
+    <button onClick={onClick}>{children}</button>
   ),
-  Space: ({ children }: any) => <div>{children}</div>,
+  Space: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Typography: {
-    Text: ({ children }: any) => <span>{children}</span>,
+    Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   },
   App: {
     useApp: () => ({
@@ -63,15 +78,14 @@ vi.mock('@ant-design/icons', () => ({
 const mockBatchCreate = vi.fn()
 
 vi.mock('@renderer/stores', () => ({
-  useTerminologyStore: (selector?: any) => {
+  useTerminologyStore: (selector?: (state: Record<string, unknown>) => unknown) => {
     const state = { batchCreate: mockBatchCreate }
     return selector ? selector(state) : state
   },
 }))
 
-const { TerminologyImportDialog } = await import(
-  '@modules/asset/components/TerminologyImportDialog'
-)
+const { TerminologyImportDialog } =
+  await import('@modules/asset/components/TerminologyImportDialog')
 
 describe('TerminologyImportDialog', () => {
   const mockOnClose = vi.fn()

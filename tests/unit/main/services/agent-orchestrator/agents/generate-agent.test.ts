@@ -15,9 +15,8 @@ vi.mock('@main/services/terminology-replacement-service', () => ({
   },
 }))
 
-const { generateAgentHandler } = await import(
-  '@main/services/agent-orchestrator/agents/generate-agent'
-)
+const { generateAgentHandler } =
+  await import('@main/services/agent-orchestrator/agents/generate-agent')
 
 describe('generateAgentHandler @story-2-2', () => {
   beforeEach(() => {

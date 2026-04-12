@@ -89,10 +89,7 @@ describe('terminologyReplacementService', () => {
         makeEntry({ id: '1', sourceTerm: '甲方', targetTerm: '采购方' }),
         makeEntry({ id: '2', sourceTerm: '采购方', targetTerm: '业主单位' }),
       ]
-      const result = terminologyReplacementService.applyReplacements(
-        '甲方提出需求',
-        entries
-      )
+      const result = terminologyReplacementService.applyReplacements('甲方提出需求', entries)
 
       // "甲方" should become "采购方", NOT "业主单位"
       expect(result.content).toBe('采购方提出需求')
@@ -100,10 +97,7 @@ describe('terminologyReplacementService', () => {
     })
 
     it('returns original text with empty replacements when entries are empty', () => {
-      const result = terminologyReplacementService.applyReplacements(
-        '保持原文不变',
-        []
-      )
+      const result = terminologyReplacementService.applyReplacements('保持原文不变', [])
 
       expect(result.content).toBe('保持原文不变')
       expect(result.replacements).toEqual([])

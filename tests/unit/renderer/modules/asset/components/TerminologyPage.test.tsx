@@ -1,58 +1,92 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import type { ChangeEvent, ReactNode } from 'react'
+
+interface MockColumn {
+  dataIndex: string
+  render?: (value: ReactNode, record: Record<string, ReactNode>) => ReactNode
+}
 
 // Mock antd components with simple HTML
 vi.mock('antd', () => ({
-  Button: ({ children, onClick, icon, ...props }: any) => (
-    <button onClick={onClick} {...props}>
+  Button: ({
+    children,
+    onClick,
+    icon,
+  }: {
+    children?: ReactNode
+    onClick?: () => void
+    icon?: ReactNode
+  }) => (
+    <button onClick={onClick}>
       {icon}
       {children}
     </button>
   ),
   Input: {
-    Search: ({ value, onChange, placeholder, ...props }: any) => (
+    Search: ({
+      value,
+      onChange,
+      placeholder,
+    }: {
+      value?: string
+      onChange?: (e: ChangeEvent<HTMLInputElement>) => void
+      placeholder?: string
+    }) => (
       <input
         data-testid="search-input"
         placeholder={placeholder}
         value={value}
         onChange={onChange}
-        {...props}
       />
     ),
   },
-  Select: ({ value, onChange, placeholder, options, ...props }: any) => (
+  Select: ({
+    value,
+    onChange,
+    options,
+  }: {
+    value?: string
+    onChange: (value: string | null) => void
+    options?: Array<{ value: string; label: string }>
+  }) => (
     <select
       data-testid="category-filter"
       value={value || ''}
-      onChange={(e: any) => onChange(e.target.value || null)}
-      {...props}
+      onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value || null)}
     >
       <option value="">All</option>
-      {options?.map((o: any) => (
+      {options?.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
         </option>
       ))}
     </select>
   ),
-  Switch: ({ checked, onChange, ...props }: any) => (
+  Switch: ({ checked, onChange }: { checked?: boolean; onChange?: (checked: boolean) => void }) => (
     <input
       type="checkbox"
       data-testid="switch"
       checked={checked}
-      onChange={(e: any) => onChange(e.target.checked)}
-      {...props}
+      onChange={(e: ChangeEvent<HTMLInputElement>) => onChange?.(e.target.checked)}
     />
   ),
-  Table: ({ dataSource, columns, locale, ...props }: any) => {
-    if (!dataSource?.length)
-      return <div data-testid="empty-table">{locale?.emptyText}</div>
+  Table: ({
+    dataSource,
+    columns,
+    locale,
+  }: {
+    dataSource?: Array<Record<string, ReactNode>>
+    columns: MockColumn[]
+    locale?: { emptyText: ReactNode }
+  }) => {
+    if (!dataSource?.length) return <div data-testid="empty-table">{locale?.emptyText}</div>
     return (
       <table data-testid="terminology-table">
         <tbody>
-          {dataSource.map((row: any, i: number) => (
+          {dataSource.map((row, i) => (
             <tr key={i}>
-              {columns.map((col: any, j: number) => (
+              {columns.map((col, j) => (
                 <td key={j}>
                   {col.render ? col.render(row[col.dataIndex], row) : row[col.dataIndex]}
                 </td>
@@ -63,12 +97,12 @@ vi.mock('antd', () => ({
       </table>
     )
   },
-  Popconfirm: ({ children, onConfirm, title }: any) => (
+  Popconfirm: ({ children, onConfirm }: { children: ReactNode; onConfirm: () => void }) => (
     <span onClick={onConfirm}>{children}</span>
   ),
-  Space: ({ children }: any) => <div>{children}</div>,
+  Space: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Typography: {
-    Text: ({ children }: any) => <span>{children}</span>,
+    Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   },
   App: {
     useApp: () => ({
@@ -111,25 +145,24 @@ let storeState: Record<string, unknown> = {
 }
 
 vi.mock('@renderer/stores', () => ({
-  useTerminologyStore: (selector?: any) => (selector ? selector(storeState) : storeState),
+  useTerminologyStore: (selector?: (state: Record<string, unknown>) => unknown) =>
+    selector ? selector(storeState) : storeState,
 }))
 
 // Mock child components
 vi.mock('@modules/asset/components/TerminologyEntryForm', () => ({
-  TerminologyEntryForm: ({ open }: any) =>
+  TerminologyEntryForm: ({ open }: { open: boolean }) =>
     open ? <div data-testid="entry-form">Form</div> : null,
 }))
 
 vi.mock('@modules/asset/components/TerminologyImportDialog', () => ({
-  TerminologyImportDialog: ({ open }: any) =>
+  TerminologyImportDialog: ({ open }: { open: boolean }) =>
     open ? <div data-testid="import-dialog">Import</div> : null,
 }))
 
-const { TerminologyPage } = await import(
-  '@modules/asset/components/TerminologyPage'
-)
+const { TerminologyPage } = await import('@modules/asset/components/TerminologyPage')
 
-function makeEntry(overrides: Record<string, unknown> = {}) {
+function makeEntry(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'e1',
     sourceTerm: '设备管理',
@@ -172,9 +205,7 @@ describe('TerminologyPage', () => {
     render(<TerminologyPage />)
 
     expect(screen.getByTestId('empty-table')).toBeTruthy()
-    expect(
-      screen.getByText('术语库暂无条目。点击"添加术语"创建第一条行业术语映射。')
-    ).toBeTruthy()
+    expect(screen.getByText('术语库暂无条目。点击"添加术语"创建第一条行业术语映射。')).toBeTruthy()
   })
 
   it('renders table rows when entries exist', () => {
@@ -232,7 +263,11 @@ describe('TerminologyPage', () => {
   })
 
   it('export button calls exportJson', () => {
-    mockExportJson.mockResolvedValue({ cancelled: false, outputPath: '/tmp/out.json', entryCount: 2 })
+    mockExportJson.mockResolvedValue({
+      cancelled: false,
+      outputPath: '/tmp/out.json',
+      entryCount: 2,
+    })
 
     render(<TerminologyPage />)
 

@@ -42,7 +42,10 @@ vi.mock('@main/services/ai-proxy', () => ({
 }))
 
 import { AgentOrchestrator } from '@main/services/agent-orchestrator/orchestrator'
-import type { AgentHandler, AgentPostProcessor } from '@main/services/agent-orchestrator/orchestrator'
+import type {
+  AgentHandler,
+  AgentPostProcessor,
+} from '@main/services/agent-orchestrator/orchestrator'
 
 describe('AgentOrchestrator @story-2-2', () => {
   let orchestrator: AgentOrchestrator

@@ -82,10 +82,7 @@ describe('terminology-handlers', () => {
       (c: unknown[]) => c[0] === 'terminology:create'
     )?.[1] as (...args: unknown[]) => Promise<unknown>
 
-    const result = await createHandler(
-      {},
-      { sourceTerm: 'A', targetTerm: 'B' }
-    )
+    const result = await createHandler({}, { sourceTerm: 'A', targetTerm: 'B' })
 
     expect(result).toEqual({
       success: false,
@@ -101,10 +98,7 @@ describe('terminology-handlers', () => {
       (c: unknown[]) => c[0] === 'terminology:create'
     )?.[1] as (...args: unknown[]) => Promise<unknown>
 
-    const result = await createHandler(
-      {},
-      { sourceTerm: 'X', targetTerm: 'Y' }
-    )
+    const result = await createHandler({}, { sourceTerm: 'X', targetTerm: 'Y' })
 
     expect(result).toEqual({
       success: false,

@@ -122,7 +122,10 @@ describe('terminologyStore', () => {
         success: true,
         data: makeEntry({ targetTerm: '新目标术语' }),
       })
-      mockTerminologyList.mockResolvedValue({ success: true, data: [makeEntry({ targetTerm: '新目标术语' })] })
+      mockTerminologyList.mockResolvedValue({
+        success: true,
+        data: [makeEntry({ targetTerm: '新目标术语' })],
+      })
 
       await useTerminologyStore.getState().updateEntry(input)
 

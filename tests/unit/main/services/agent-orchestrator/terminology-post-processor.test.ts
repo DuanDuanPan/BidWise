@@ -132,9 +132,7 @@ describe('terminologyPostProcessor', () => {
   })
 
   it('annotationService.create receives correct projectId and stable sectionId', async () => {
-    const entries = [
-      { id: 't1', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
-    ]
+    const entries = [{ id: 't1', sourceTerm: '甲方', targetTerm: '采购方', isActive: true }]
     mockGetActiveEntries.mockResolvedValue(entries)
     mockApplyReplacements.mockReturnValue({
       content: '采购方要求如下',
@@ -249,12 +247,10 @@ describe('terminologyPostProcessor', () => {
 
     const controller = new AbortController()
     // First create succeeds normally, second triggers abort, third never attempted
-    mockAnnotationCreate
-      .mockResolvedValueOnce({ id: 'ann-1' })
-      .mockImplementationOnce(async () => {
-        controller.abort()
-        return { id: 'ann-2' }
-      })
+    mockAnnotationCreate.mockResolvedValueOnce({ id: 'ann-1' }).mockImplementationOnce(async () => {
+      controller.abort()
+      return { id: 'ann-2' }
+    })
     mockAnnotationDelete.mockResolvedValue(undefined)
 
     const context: Record<string, unknown> = {
@@ -293,9 +289,9 @@ describe('terminologyPostProcessor', () => {
       target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
     }
 
-    await expect(
-      terminologyPostProcessor(makeResult(), context, makeSignal())
-    ).rejects.toThrow(/批注创建失败/)
+    await expect(terminologyPostProcessor(makeResult(), context, makeSignal())).rejects.toThrow(
+      /批注创建失败/
+    )
 
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
   })
@@ -327,9 +323,9 @@ describe('terminologyPostProcessor', () => {
     }
 
     // AC3: partial annotation failure is an error — every replacement needs its annotation
-    await expect(
-      terminologyPostProcessor(makeResult(), context, makeSignal())
-    ).rejects.toThrow(/批注创建失败/)
+    await expect(terminologyPostProcessor(makeResult(), context, makeSignal())).rejects.toThrow(
+      /批注创建失败/
+    )
 
     // Both annotation creates were attempted
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(2)

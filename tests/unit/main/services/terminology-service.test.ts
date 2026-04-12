@@ -81,9 +81,7 @@ describe('terminologyService', () => {
     })
 
     it('throws DUPLICATE error when normalized source term already exists', async () => {
-      mockFindByNormalizedSourceTerm.mockResolvedValue(
-        makeEntry({ targetTerm: '已有映射' })
-      )
+      mockFindByNormalizedSourceTerm.mockResolvedValue(makeEntry({ targetTerm: '已有映射' }))
 
       await expect(
         terminologyService.create({

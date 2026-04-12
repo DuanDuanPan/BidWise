@@ -41,8 +41,4 @@ export type {
 } from './recommendationStore'
 
 export { useTerminologyStore } from './terminologyStore'
-export type {
-  TerminologyStore,
-  TerminologyState,
-  TerminologyActions,
-} from './terminologyStore'
+export type { TerminologyStore, TerminologyState, TerminologyActions } from './terminologyStore'

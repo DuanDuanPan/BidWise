@@ -1,9 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import type { ReactNode } from 'react'
 
 // Mock antd components
 vi.mock('antd', () => ({
-  Modal: ({ open, title, onOk, onCancel, children }: any) =>
+  Modal: ({
+    open,
+    title,
+    onOk,
+    onCancel,
+    children,
+  }: {
+    open: boolean
+    title: ReactNode
+    onOk: () => void
+    onCancel: () => void
+    children: ReactNode
+  }) =>
     open ? (
       <div data-testid="modal">
         <h2>{title}</h2>
@@ -17,19 +30,25 @@ vi.mock('antd', () => ({
       </div>
     ) : null,
   Form: Object.assign(
-    ({ children }: any) => <form data-testid="form">{children}</form>,
+    ({ children }: { children: ReactNode }) => <form data-testid="form">{children}</form>,
     {
       useForm: () => [
         {
           setFieldsValue: vi.fn(),
           resetFields: vi.fn(),
-          validateFields: vi
-            .fn()
-            .mockResolvedValue({ sourceTerm: '测试', targetTerm: '测试目标' }),
+          validateFields: vi.fn().mockResolvedValue({ sourceTerm: '测试', targetTerm: '测试目标' }),
           setFields: vi.fn(),
         },
       ],
-      Item: ({ children, name, label }: any) => (
+      Item: ({
+        children,
+        name,
+        label,
+      }: {
+        children: ReactNode
+        name: string
+        label: ReactNode
+      }) => (
         <div data-testid={`form-item-${name}`}>
           <label>{label}</label>
           {children}
@@ -38,14 +57,12 @@ vi.mock('antd', () => ({
     }
   ),
   Input: Object.assign(
-    ({ placeholder, ...props }: any) => <input placeholder={placeholder} {...props} />,
+    ({ placeholder }: { placeholder?: string }) => <input placeholder={placeholder} />,
     {
-      TextArea: (props: any) => <textarea {...props} />,
+      TextArea: () => <textarea />,
     }
   ),
-  AutoComplete: ({ placeholder, ...props }: any) => (
-    <input placeholder={placeholder} {...props} />
-  ),
+  AutoComplete: ({ placeholder }: { placeholder?: string }) => <input placeholder={placeholder} />,
   App: {
     useApp: () => ({ message: { success: vi.fn(), error: vi.fn() } }),
   },
@@ -56,7 +73,7 @@ const mockCreateEntry = vi.fn()
 const mockUpdateEntry = vi.fn()
 
 vi.mock('@renderer/stores', () => ({
-  useTerminologyStore: (selector?: any) => {
+  useTerminologyStore: (selector?: (state: Record<string, unknown>) => unknown) => {
     const state = {
       entries: [],
       createEntry: mockCreateEntry,
@@ -66,9 +83,7 @@ vi.mock('@renderer/stores', () => ({
   },
 }))
 
-const { TerminologyEntryForm } = await import(
-  '@modules/asset/components/TerminologyEntryForm'
-)
+const { TerminologyEntryForm } = await import('@modules/asset/components/TerminologyEntryForm')
 
 describe('TerminologyEntryForm', () => {
   const mockOnClose = vi.fn()
@@ -82,9 +97,7 @@ describe('TerminologyEntryForm', () => {
   })
 
   it('shows "添加术语映射" title when editingEntry is null (add mode)', () => {
-    render(
-      <TerminologyEntryForm open={true} editingEntry={null} onClose={mockOnClose} />
-    )
+    render(<TerminologyEntryForm open={true} editingEntry={null} onClose={mockOnClose} />)
 
     expect(screen.getByText('添加术语映射')).toBeTruthy()
   })
@@ -102,25 +115,19 @@ describe('TerminologyEntryForm', () => {
       updatedAt: '2026-04-01T00:00:00.000Z',
     }
 
-    render(
-      <TerminologyEntryForm open={true} editingEntry={entry} onClose={mockOnClose} />
-    )
+    render(<TerminologyEntryForm open={true} editingEntry={entry} onClose={mockOnClose} />)
 
     expect(screen.getByText('编辑术语映射')).toBeTruthy()
   })
 
   it('does not render when open=false', () => {
-    render(
-      <TerminologyEntryForm open={false} editingEntry={null} onClose={mockOnClose} />
-    )
+    render(<TerminologyEntryForm open={false} editingEntry={null} onClose={mockOnClose} />)
 
     expect(screen.queryByTestId('modal')).toBeNull()
   })
 
   it('onClose is called when cancel button clicked', () => {
-    render(
-      <TerminologyEntryForm open={true} editingEntry={null} onClose={mockOnClose} />
-    )
+    render(<TerminologyEntryForm open={true} editingEntry={null} onClose={mockOnClose} />)
 
     fireEvent.click(screen.getByTestId('cancel-btn'))
 
@@ -128,9 +135,7 @@ describe('TerminologyEntryForm', () => {
   })
 
   it('renders form fields for sourceTerm, targetTerm, category, and description', () => {
-    render(
-      <TerminologyEntryForm open={true} editingEntry={null} onClose={mockOnClose} />
-    )
+    render(<TerminologyEntryForm open={true} editingEntry={null} onClose={mockOnClose} />)
 
     expect(screen.getByTestId('form-item-sourceTerm')).toBeTruthy()
     expect(screen.getByTestId('form-item-targetTerm')).toBeTruthy()

@@ -20,6 +20,11 @@ function mockApi(): void {
   })
 }
 
+mockApi()
+
+const { useAnnotationStore } = await import('@renderer/stores/annotationStore')
+const { AnnotationPanel } = await import('@modules/project/components/AnnotationPanel')
+
 const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRecord => ({
   id: 'ann-1',
   projectId: 'proj-1',
@@ -36,17 +41,9 @@ const makeAnnotation = (overrides: Partial<AnnotationRecord> = {}): AnnotationRe
 })
 
 describe('AnnotationPanel', () => {
-  let AnnotationPanel: typeof import('@modules/project/components/AnnotationPanel').AnnotationPanel
-  let useAnnotationStore: typeof import('@renderer/stores/annotationStore').useAnnotationStore
-
-  beforeEach(async () => {
-    vi.resetModules()
+  beforeEach(() => {
     mockApi()
-    const storeModule = await import('@renderer/stores/annotationStore')
-    useAnnotationStore = storeModule.useAnnotationStore
     useAnnotationStore.setState({ projects: {}, repliesByParent: {}, replyLoadingByParent: {} })
-    const panelModule = await import('@modules/project/components/AnnotationPanel')
-    AnnotationPanel = panelModule.AnnotationPanel
   })
 
   afterEach(cleanup)
