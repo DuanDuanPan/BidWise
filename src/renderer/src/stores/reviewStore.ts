@@ -530,6 +530,8 @@ export const useReviewStore = create<ReviewStore>()(
     async startAttackChecklistGeneration(projectId: string): Promise<void> {
       set((state) =>
         updateProject(state, projectId, {
+          attackChecklist: null,
+          attackChecklistLoaded: false,
           attackChecklistLoading: true,
           attackChecklistError: null,
           attackChecklistProgress: 0,
@@ -641,12 +643,18 @@ export const useReviewStore = create<ReviewStore>()(
             })
           })
         } else {
-          // Revert optimistic update
-          await useReviewStore.getState().loadAttackChecklist(projectId)
+          // Revert optimistic update — skip if regeneration is in progress to avoid clobbering taskId
+          const ps = getReviewProjectState(useReviewStore.getState(), projectId)
+          if (!ps.attackChecklistLoading) {
+            await useReviewStore.getState().loadAttackChecklist(projectId)
+          }
         }
       } catch {
-        // Revert optimistic update by reloading
-        await useReviewStore.getState().loadAttackChecklist(projectId)
+        // Revert optimistic update — skip if regeneration is in progress to avoid clobbering taskId
+        const ps = getReviewProjectState(useReviewStore.getState(), projectId)
+        if (!ps.attackChecklistLoading) {
+          await useReviewStore.getState().loadAttackChecklist(projectId)
+        }
       }
     },
 
