@@ -32,6 +32,14 @@ vi.mock('@main/services/adversarial-review-service', () => ({
   },
 }))
 
+vi.mock('@main/services/attack-checklist-service', () => ({
+  attackChecklistService: {
+    generate: vi.fn(),
+    getChecklist: vi.fn(),
+    updateItemStatus: vi.fn(),
+  },
+}))
+
 vi.mock('@main/utils/errors', () => {
   class BidWiseError extends Error {
     code: string
@@ -66,7 +74,10 @@ describe('review-handlers @story-7-2', () => {
     expect(registeredChannels).toContain('review:get-review')
     expect(registeredChannels).toContain('review:handle-finding')
     expect(registeredChannels).toContain('review:retry-role')
-    expect(registeredChannels).toHaveLength(8)
+    expect(registeredChannels).toContain('review:generate-attack-checklist')
+    expect(registeredChannels).toContain('review:get-attack-checklist')
+    expect(registeredChannels).toContain('review:update-checklist-item-status')
+    expect(registeredChannels).toHaveLength(11)
   })
 
   it('review:generate-roles handler wraps response in success envelope', async () => {

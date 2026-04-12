@@ -25,6 +25,9 @@ export function useReviewTaskMonitor(): void {
   const refreshReviewSession = useReviewStore((s) => s.refreshReviewSession)
   const setReviewTaskError = useReviewStore((s) => s.setReviewTaskError)
   const loadReview = useReviewStore((s) => s.loadReview)
+  const setAttackChecklistProgress = useReviewStore((s) => s.setAttackChecklistProgress)
+  const setAttackChecklistTaskError = useReviewStore((s) => s.setAttackChecklistTaskError)
+  const loadAttackChecklist = useReviewStore((s) => s.loadAttackChecklist)
 
   const lastProgressTimeRef = useRef<Record<string, number>>({})
   const terminalHandledRef = useRef<Set<string>>(new Set())
@@ -52,6 +55,12 @@ export function useReviewTaskMonitor(): void {
           lastProgressTimeRef.current[projectState.reviewTaskId] = now
         }
       }
+      if (projectState.attackChecklistTaskId) {
+        activeTaskIds.add(projectState.attackChecklistTaskId)
+        if (lastProgressTimeRef.current[projectState.attackChecklistTaskId] === undefined) {
+          lastProgressTimeRef.current[projectState.attackChecklistTaskId] = now
+        }
+      }
     }
 
     for (const taskId of Object.keys(lastProgressTimeRef.current)) {
@@ -62,7 +71,11 @@ export function useReviewTaskMonitor(): void {
   }, [clearTaskTracking, projects])
 
   const checkTaskStatus = useCallback(
-    async (projectId: string, taskId: string, taskKind: 'lineup' | 'review'): Promise<void> => {
+    async (
+      projectId: string,
+      taskId: string,
+      taskKind: 'lineup' | 'review' | 'attack-checklist'
+    ): Promise<void> => {
       if (terminalHandledRef.current.has(taskId)) return
 
       try {
@@ -78,6 +91,13 @@ export function useReviewTaskMonitor(): void {
           return
         }
         if (taskKind === 'review' && latestProjectState.reviewTaskId !== taskId) {
+          clearTaskTracking(taskId)
+          return
+        }
+        if (
+          taskKind === 'attack-checklist' &&
+          latestProjectState.attackChecklistTaskId !== taskId
+        ) {
           clearTaskTracking(taskId)
           return
         }
@@ -101,7 +121,7 @@ export function useReviewTaskMonitor(): void {
                 message.success('对抗角色阵容生成完成')
               }
             }
-          } else {
+          } else if (taskKind === 'review') {
             // Review task completed
             await loadReview(projectId)
             const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
@@ -113,6 +133,23 @@ export function useReviewTaskMonitor(): void {
               message.warning(`${failedCount}个角色评审失败，可单独重试`)
             } else {
               message.success('对抗评审完成')
+            }
+          } else {
+            // Attack checklist task completed
+            const loaded = await loadAttackChecklist(projectId)
+            if (!loaded) {
+              setAttackChecklistTaskError(projectId, '攻击清单加载失败，请重试')
+              message.error('攻击清单加载失败')
+            } else {
+              const freshState = getReviewProjectState(useReviewStore.getState(), projectId)
+              if (
+                freshState.attackChecklist?.generationSource === 'fallback' &&
+                freshState.attackChecklist.warningMessage
+              ) {
+                message.warning(freshState.attackChecklist.warningMessage)
+              } else {
+                message.success('攻击清单生成完成')
+              }
             }
           }
           clearTaskTracking(taskId)
@@ -126,12 +163,16 @@ export function useReviewTaskMonitor(): void {
             const errMsg = task.error ?? '对抗角色生成失败'
             setLineupTaskError(projectId, errMsg)
             message.error({ content: `对抗角色生成失败：${errMsg}`, duration: 0 })
-          } else {
+          } else if (taskKind === 'review') {
             // Review task failed — still load review to show failed session state
             await loadReview(projectId)
             const errMsg = task.error ?? '对抗评审失败'
             setReviewTaskError(projectId, errMsg)
             message.error(`对抗评审失败：${errMsg}`)
+          } else {
+            const errMsg = task.error ?? '攻击清单生成失败'
+            setAttackChecklistTaskError(projectId, errMsg)
+            message.error(`攻击清单生成失败：${errMsg}`)
           }
           clearTaskTracking(taskId)
           return
@@ -142,8 +183,10 @@ export function useReviewTaskMonitor(): void {
 
           if (taskKind === 'lineup') {
             setLineupTaskError(projectId, '对抗角色生成已取消')
-          } else {
+          } else if (taskKind === 'review') {
             setReviewTaskError(projectId, '对抗评审已取消')
+          } else {
+            setAttackChecklistTaskError(projectId, '攻击清单生成已取消')
           }
           clearTaskTracking(taskId)
           return
@@ -152,7 +195,15 @@ export function useReviewTaskMonitor(): void {
         // Polling failure is non-fatal
       }
     },
-    [clearTaskTracking, loadLineup, loadReview, setLineupTaskError, setReviewTaskError]
+    [
+      clearTaskTracking,
+      loadLineup,
+      loadReview,
+      loadAttackChecklist,
+      setLineupTaskError,
+      setReviewTaskError,
+      setAttackChecklistTaskError,
+    ]
   )
 
   // Subscribe to progress events
@@ -169,10 +220,12 @@ export function useReviewTaskMonitor(): void {
 
       if (taskKind === 'lineup') {
         setLineupProgress(projectId, event.progress, progressMessage)
-      } else {
+      } else if (taskKind === 'review') {
         updateReviewProgress(projectId, event.progress, progressMessage)
         // Refresh session to populate roleResults for real-time role status display
         void refreshReviewSession(projectId)
+      } else {
+        setAttackChecklistProgress(projectId, event.progress, progressMessage)
       }
 
       if (event.progress >= 100 || hasTerminalMessage) {
@@ -181,7 +234,13 @@ export function useReviewTaskMonitor(): void {
     })
 
     return () => unlisten()
-  }, [checkTaskStatus, setLineupProgress, updateReviewProgress, refreshReviewSession])
+  }, [
+    checkTaskStatus,
+    setLineupProgress,
+    updateReviewProgress,
+    refreshReviewSession,
+    setAttackChecklistProgress,
+  ])
 
   // Poll for stale or completed tasks
   useEffect(() => {
@@ -211,6 +270,18 @@ export function useReviewTaskMonitor(): void {
 
           if (shouldPoll) {
             void checkTaskStatus(projectId, taskId, 'review')
+          }
+        }
+
+        // Poll attack checklist tasks
+        if (projectState.attackChecklistTaskId) {
+          const taskId = projectState.attackChecklistTaskId
+          const shouldPoll =
+            projectState.attackChecklistProgress >= 100 ||
+            now - (lastProgressTimeRef.current[taskId] ?? now) > PROGRESS_STALE_THRESHOLD
+
+          if (shouldPoll) {
+            void checkTaskStatus(projectId, taskId, 'attack-checklist')
           }
         }
       }

@@ -11,6 +11,7 @@ import { fogMapAgentHandler } from './agents/fog-map-agent'
 import { traceabilityAgentHandler } from './agents/traceability-agent'
 import { adversarialAgentHandler } from './agents/adversarial-agent'
 import { adversarialReviewAgentHandler } from './agents/adversarial-review-agent'
+import { attackChecklistAgentHandler } from './agents/attack-checklist-agent'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
@@ -25,3 +26,4 @@ agentOrchestrator.registerAgent('fog-map', fogMapAgentHandler)
 agentOrchestrator.registerAgent('traceability', traceabilityAgentHandler)
 agentOrchestrator.registerAgent('adversarial', adversarialAgentHandler)
 agentOrchestrator.registerAgent('adversarial-review', adversarialReviewAgentHandler)
+agentOrchestrator.registerAgent('attack-checklist', attackChecklistAgentHandler)

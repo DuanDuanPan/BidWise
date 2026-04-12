@@ -8,6 +8,7 @@ import type {
   AdversarialReviewSession,
   HandleFindingAction,
 } from '@shared/adversarial-types'
+import type { AttackChecklist, AttackChecklistItemStatus } from '@shared/attack-checklist-types'
 
 export interface ReviewProjectState {
   compliance: MandatoryComplianceResult | null
@@ -30,6 +31,14 @@ export interface ReviewProjectState {
   reviewTaskId: string | null
   reviewProgress: number
   reviewMessage: string | null
+  // Attack checklist state (Story 7.5)
+  attackChecklist: AttackChecklist | null
+  attackChecklistLoaded: boolean
+  attackChecklistLoading: boolean
+  attackChecklistError: string | null
+  attackChecklistTaskId: string | null
+  attackChecklistProgress: number
+  attackChecklistMessage: string | null
 }
 
 export interface ReviewState {
@@ -61,6 +70,18 @@ interface ReviewActions {
   updateReviewProgress: (projectId: string, progress: number, message?: string) => void
   setReviewTaskError: (projectId: string, error: string) => void
   clearReviewError: (projectId: string) => void
+  // Attack checklist actions (Story 7.5)
+  startAttackChecklistGeneration: (projectId: string) => Promise<void>
+  loadAttackChecklist: (projectId: string) => Promise<boolean>
+  refreshAttackChecklist: (projectId: string) => Promise<void>
+  updateChecklistItemStatus: (
+    projectId: string,
+    itemId: string,
+    status: AttackChecklistItemStatus
+  ) => Promise<void>
+  setAttackChecklistProgress: (projectId: string, progress: number, message?: string) => void
+  setAttackChecklistTaskError: (projectId: string, error: string) => void
+  clearAttackChecklistError: (projectId: string) => void
 }
 
 export type ReviewStore = ReviewState & ReviewActions
@@ -85,6 +106,13 @@ export function createProjectState(overrides?: Partial<ReviewProjectState>): Rev
     reviewTaskId: null,
     reviewProgress: 0,
     reviewMessage: null,
+    attackChecklist: null,
+    attackChecklistLoaded: false,
+    attackChecklistLoading: false,
+    attackChecklistError: null,
+    attackChecklistTaskId: null,
+    attackChecklistProgress: 0,
+    attackChecklistMessage: null,
     ...overrides,
   }
 }
@@ -93,7 +121,7 @@ export function getReviewProjectState(state: ReviewState, projectId: string): Re
   return state.projects[projectId] ?? createProjectState()
 }
 
-export type TaskKind = 'lineup' | 'review'
+export type TaskKind = 'lineup' | 'review' | 'attack-checklist'
 
 export function findReviewProjectIdByTaskId(
   state: ReviewState,
@@ -102,6 +130,8 @@ export function findReviewProjectIdByTaskId(
   for (const [projectId, projectState] of Object.entries(state.projects)) {
     if (projectState.lineupTaskId === taskId) return { projectId, taskKind: 'lineup' }
     if (projectState.reviewTaskId === taskId) return { projectId, taskKind: 'review' }
+    if (projectState.attackChecklistTaskId === taskId)
+      return { projectId, taskKind: 'attack-checklist' }
   }
   return undefined
 }
@@ -125,6 +155,8 @@ function updateProject(
 
 /** Per-project monotonic counter to discard stale refreshReviewSession responses */
 const refreshVersions = new Map<string, number>()
+/** Per-project monotonic counter to discard stale refreshAttackChecklist responses */
+const attackChecklistRefreshVersions = new Map<string, number>()
 
 export const useReviewStore = create<ReviewStore>()(
   subscribeWithSelector((set) => ({
@@ -489,6 +521,161 @@ export const useReviewStore = create<ReviewStore>()(
       set((state) =>
         updateProject(state, projectId, {
           reviewError: null,
+        })
+      )
+    },
+
+    // ─── Attack Checklist Actions (Story 7.5) ───
+
+    async startAttackChecklistGeneration(projectId: string): Promise<void> {
+      set((state) =>
+        updateProject(state, projectId, {
+          attackChecklistLoading: true,
+          attackChecklistError: null,
+          attackChecklistProgress: 0,
+          attackChecklistMessage: '正在启动攻击清单生成...',
+        })
+      )
+
+      try {
+        const response = await window.api.reviewGenerateAttackChecklist({ projectId })
+        if (response.success) {
+          set((state) =>
+            updateProject(state, projectId, {
+              attackChecklistTaskId: response.data.taskId,
+            })
+          )
+        } else {
+          set((state) =>
+            updateProject(state, projectId, {
+              attackChecklistLoading: false,
+              attackChecklistError: response.error.message,
+            })
+          )
+        }
+      } catch (err) {
+        set((state) =>
+          updateProject(state, projectId, {
+            attackChecklistLoading: false,
+            attackChecklistError: (err as Error).message,
+          })
+        )
+      }
+    },
+
+    async loadAttackChecklist(projectId: string): Promise<boolean> {
+      try {
+        const response = await window.api.reviewGetAttackChecklist({ projectId })
+        if (response.success) {
+          set((state) =>
+            updateProject(state, projectId, {
+              attackChecklist: response.data ?? null,
+              attackChecklistLoaded: true,
+              attackChecklistLoading: false,
+              attackChecklistTaskId: null,
+              attackChecklistProgress: 0,
+              attackChecklistMessage: null,
+            })
+          )
+          return response.data != null
+        }
+        return false
+      } catch {
+        return false
+      }
+    },
+
+    async refreshAttackChecklist(projectId: string): Promise<void> {
+      const version = (attackChecklistRefreshVersions.get(projectId) ?? 0) + 1
+      attackChecklistRefreshVersions.set(projectId, version)
+
+      try {
+        const response = await window.api.reviewGetAttackChecklist({ projectId })
+        if (response.success && response.data) {
+          if (attackChecklistRefreshVersions.get(projectId) !== version) return
+
+          set((state) =>
+            updateProject(state, projectId, {
+              attackChecklist: response.data,
+            })
+          )
+        }
+      } catch {
+        // Non-fatal
+      }
+    },
+
+    async updateChecklistItemStatus(
+      projectId: string,
+      itemId: string,
+      status: AttackChecklistItemStatus
+    ): Promise<void> {
+      // Optimistic update
+      set((state) => {
+        const ps = getReviewProjectState(state, projectId)
+        if (!ps.attackChecklist) return state
+
+        const updatedItems = ps.attackChecklist.items.map((item) =>
+          item.id === itemId ? { ...item, status } : item
+        )
+
+        return updateProject(state, projectId, {
+          attackChecklist: { ...ps.attackChecklist, items: updatedItems },
+        })
+      })
+
+      try {
+        const response = await window.api.reviewUpdateChecklistItemStatus({ itemId, status })
+        if (response.success) {
+          // Sync with server response
+          set((state) => {
+            const ps = getReviewProjectState(state, projectId)
+            if (!ps.attackChecklist) return state
+
+            const updatedItems = ps.attackChecklist.items.map((item) =>
+              item.id === itemId ? response.data : item
+            )
+
+            return updateProject(state, projectId, {
+              attackChecklist: { ...ps.attackChecklist, items: updatedItems },
+            })
+          })
+        } else {
+          // Revert optimistic update
+          await useReviewStore.getState().loadAttackChecklist(projectId)
+        }
+      } catch {
+        // Revert optimistic update by reloading
+        await useReviewStore.getState().loadAttackChecklist(projectId)
+      }
+    },
+
+    setAttackChecklistProgress(projectId: string, progress: number, message?: string): void {
+      set((state) =>
+        updateProject(state, projectId, {
+          attackChecklistProgress: progress,
+          attackChecklistMessage:
+            message ?? state.projects[projectId]?.attackChecklistMessage ?? null,
+        })
+      )
+    },
+
+    setAttackChecklistTaskError(projectId: string, error: string): void {
+      set((state) =>
+        updateProject(state, projectId, {
+          attackChecklistLoading: false,
+          attackChecklistError: error,
+          attackChecklistTaskId: null,
+          attackChecklistProgress: 0,
+          attackChecklistMessage: null,
+        })
+      )
+    },
+
+    clearAttackChecklistError(projectId: string): void {
+      set((state) =>
+        updateProject(state, projectId, {
+          attackChecklistError: null,
         })
       )
     },

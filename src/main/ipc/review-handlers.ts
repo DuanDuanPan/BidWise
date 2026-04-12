@@ -1,6 +1,7 @@
 import { createIpcHandler } from './create-handler'
 import { adversarialLineupService } from '@main/services/adversarial-lineup-service'
 import { adversarialReviewService } from '@main/services/adversarial-review-service'
+import { attackChecklistService } from '@main/services/attack-checklist-service'
 import type { IpcChannel } from '@shared/ipc-types'
 
 type ReviewChannel = Extract<IpcChannel, `review:${string}`>
@@ -33,6 +34,18 @@ const reviewHandlerMap: { [C in ReviewChannel]: () => void } = {
   'review:retry-role': () =>
     createIpcHandler('review:retry-role', (input) =>
       adversarialReviewService.retryRole(input.projectId, input.roleId)
+    ),
+  'review:generate-attack-checklist': () =>
+    createIpcHandler('review:generate-attack-checklist', (input) =>
+      attackChecklistService.generate(input.projectId)
+    ),
+  'review:get-attack-checklist': () =>
+    createIpcHandler('review:get-attack-checklist', (input) =>
+      attackChecklistService.getChecklist(input.projectId)
+    ),
+  'review:update-checklist-item-status': () =>
+    createIpcHandler('review:update-checklist-item-status', (input) =>
+      attackChecklistService.updateItemStatus(input.itemId, input.status)
     ),
 }
 

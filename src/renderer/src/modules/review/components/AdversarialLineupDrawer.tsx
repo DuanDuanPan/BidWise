@@ -1,5 +1,10 @@
-import { Drawer, Button, Spin, Alert, Empty, Tag, Space } from 'antd'
-import { PlusOutlined, ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons'
+import { Drawer, Button, Spin, Alert, Empty, Tag, Space, Typography } from 'antd'
+import {
+  PlusOutlined,
+  ReloadOutlined,
+  CheckCircleOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons'
 import { useState, useCallback } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useReviewStore, getReviewProjectState } from '@renderer/stores'
@@ -195,6 +200,25 @@ export function AdversarialLineupDrawer({
                   onDelete={handleDeleteRole}
                 />
               ))}
+            {isConfirmed && (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '12px 0',
+                  borderTop: '1px solid var(--color-border)',
+                }}
+                data-testid="attack-checklist-suggestion"
+              >
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <ThunderboltOutlined style={{ marginRight: 4 }} />
+                  建议
+                  <Typography.Link style={{ fontSize: 12 }} onClick={onClose}>
+                    生成攻击清单
+                  </Typography.Link>
+                  进行防御性写作
+                </Typography.Text>
+              </div>
+            )}
           </Space>
         )}
       </Drawer>

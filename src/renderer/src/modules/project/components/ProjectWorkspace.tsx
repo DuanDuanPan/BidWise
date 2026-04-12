@@ -615,6 +615,15 @@ export function ProjectWorkspace(): React.JSX.Element {
                         }
                       : null
                   }
+                  attackChecklistProps={
+                    (isProposalWriting || isComplianceReview) && projectId
+                      ? {
+                          projectId,
+                          defaultCollapsed: isComplianceReview,
+                          onNavigateToChapter: handleNavigateToChapter,
+                        }
+                      : null
+                  }
                 />
               )
             }

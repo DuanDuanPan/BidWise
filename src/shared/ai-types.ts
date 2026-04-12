@@ -93,6 +93,7 @@ export type AgentType =
   | 'traceability'
   | 'adversarial'
   | 'adversarial-review'
+  | 'attack-checklist'
 
 /** Task status state machine */
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'

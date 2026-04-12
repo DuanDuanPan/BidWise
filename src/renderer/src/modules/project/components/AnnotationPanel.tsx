@@ -34,6 +34,7 @@ import type { AnnotationRecord } from '@shared/annotation-types'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import type { AssetRecommendation } from '@shared/recommendation-types'
 import { RecommendationPanel } from '@modules/asset/components/RecommendationPanel'
+import { AttackChecklistPanel } from '@modules/review/components/AttackChecklistPanel'
 
 export interface CurrentSectionProp {
   locator: ChapterHeadingLocator
@@ -50,6 +51,12 @@ interface RecommendationSectionProps {
   onViewRecommendationDetail: (assetId: string) => void
 }
 
+interface AttackChecklistSectionProps {
+  projectId: string
+  defaultCollapsed?: boolean
+  onNavigateToChapter?: (locator: ChapterHeadingLocator) => void
+}
+
 interface AnnotationPanelProps {
   collapsed: boolean
   isCompact: boolean
@@ -60,6 +67,7 @@ interface AnnotationPanelProps {
   focusAnnotationId?: string | null
   expandThreadParentId?: string | null
   recommendationProps?: RecommendationSectionProps | null
+  attackChecklistProps?: AttackChecklistSectionProps | null
 }
 
 function LoadingContent(): React.JSX.Element {
@@ -516,6 +524,7 @@ export function AnnotationPanel({
   focusAnnotationId,
   expandThreadParentId,
   recommendationProps,
+  attackChecklistProps,
 }: AnnotationPanelProps): React.JSX.Element {
   const [flyoutOpen, setFlyoutOpen] = useState(false)
   const flyoutRef = useRef<HTMLDivElement>(null)
@@ -645,6 +654,13 @@ export function AnnotationPanel({
                 requestedFocusAnnotationId={focusAnnotationId}
                 requestedExpandThreadParentId={expandThreadParentId}
               />
+              {attackChecklistProps && (
+                <AttackChecklistPanel
+                  projectId={attackChecklistProps.projectId}
+                  defaultCollapsed={attackChecklistProps.defaultCollapsed}
+                  onNavigateToChapter={attackChecklistProps.onNavigateToChapter}
+                />
+              )}
               {recommendationProps && (
                 <div style={{ borderTop: '1px solid var(--color-border)' }}>
                   <RecommendationPanel
@@ -746,6 +762,15 @@ export function AnnotationPanel({
           requestedFocusAnnotationId={focusAnnotationId}
           requestedExpandThreadParentId={expandThreadParentId}
         />
+
+        {/* Attack checklist section */}
+        {attackChecklistProps && (
+          <AttackChecklistPanel
+            projectId={attackChecklistProps.projectId}
+            defaultCollapsed={attackChecklistProps.defaultCollapsed}
+            onNavigateToChapter={attackChecklistProps.onNavigateToChapter}
+          />
+        )}
 
         {/* Recommendation section */}
         {recommendationProps && (

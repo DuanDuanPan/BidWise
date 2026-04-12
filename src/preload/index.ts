@@ -302,6 +302,17 @@ const requestApi = {
 
   reviewRetryRole: (input: IpcChannelMap['review:retry-role']['input']) =>
     typedInvoke(IPC_CHANNELS.REVIEW_RETRY_ROLE, input),
+
+  reviewGenerateAttackChecklist: (
+    input: IpcChannelMap['review:generate-attack-checklist']['input']
+  ) => typedInvoke(IPC_CHANNELS.REVIEW_GENERATE_ATTACK_CHECKLIST, input),
+
+  reviewGetAttackChecklist: (input: IpcChannelMap['review:get-attack-checklist']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_GET_ATTACK_CHECKLIST, input),
+
+  reviewUpdateChecklistItemStatus: (
+    input: IpcChannelMap['review:update-checklist-item-status']['input']
+  ) => typedInvoke(IPC_CHANNELS.REVIEW_UPDATE_CHECKLIST_ITEM_STATUS, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

@@ -207,6 +207,32 @@ export interface AdversarialFindingsTable {
   updatedAt: string
 }
 
+export interface AttackChecklistsTable {
+  id: string
+  projectId: string
+  status: string // 'generating' | 'generated' | 'failed'
+  generationSource: string // 'llm' | 'fallback'
+  warningMessage: string | null
+  generatedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AttackChecklistItemsTable {
+  id: string
+  checklistId: string
+  category: string
+  attackAngle: string
+  severity: string // 'critical' | 'major' | 'minor'
+  defenseSuggestion: string
+  targetSection: string | null
+  targetSectionLocator: string | null // JSON serialized ChapterHeadingLocator
+  status: string // 'unaddressed' | 'addressed' | 'dismissed'
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -224,4 +250,6 @@ export interface DB {
   adversarialLineups: AdversarialLineupsTable
   adversarialReviewSessions: AdversarialReviewSessionsTable
   adversarialFindings: AdversarialFindingsTable
+  attackChecklists: AttackChecklistsTable
+  attackChecklistItems: AttackChecklistItemsTable
 }

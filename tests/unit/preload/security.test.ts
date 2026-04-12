@@ -155,6 +155,9 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'reviewGetReview',
       'reviewHandleFinding',
       'reviewRetryRole',
+      'reviewGenerateAttackChecklist',
+      'reviewGetAttackChecklist',
+      'reviewUpdateChecklistItemStatus',
       'onTaskProgress',
       'onNotificationNew',
     ])

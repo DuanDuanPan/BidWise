@@ -151,6 +151,12 @@ import type {
   Tag,
 } from './asset-types'
 import type { RecommendationContext, RecommendationResult } from './recommendation-types'
+import type {
+  GenerateAttackChecklistInput,
+  AttackChecklist,
+  UpdateChecklistItemStatusInput,
+  AttackChecklistItem,
+} from './attack-checklist-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -318,6 +324,9 @@ export const IPC_CHANNELS = {
   REVIEW_GET_REVIEW: 'review:get-review',
   REVIEW_HANDLE_FINDING: 'review:handle-finding',
   REVIEW_RETRY_ROLE: 'review:retry-role',
+  REVIEW_GENERATE_ATTACK_CHECKLIST: 'review:generate-attack-checklist',
+  REVIEW_GET_ATTACK_CHECKLIST: 'review:get-attack-checklist',
+  REVIEW_UPDATE_CHECKLIST_ITEM_STATUS: 'review:update-checklist-item-status',
 } as const
 
 /** Filter for task:list queries */
@@ -436,6 +445,18 @@ export type IpcChannelMap = {
   'review:get-review': { input: GetReviewInput; output: AdversarialReviewSession | null }
   'review:handle-finding': { input: HandleFindingInput; output: AdversarialFinding }
   'review:retry-role': { input: RetryRoleInput; output: RetryRoleOutput }
+  'review:generate-attack-checklist': {
+    input: GenerateAttackChecklistInput
+    output: { taskId: string }
+  }
+  'review:get-attack-checklist': {
+    input: { projectId: string }
+    output: AttackChecklist | null
+  }
+  'review:update-checklist-item-status': {
+    input: UpdateChecklistItemStatusInput
+    output: AttackChecklistItem
+  }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
