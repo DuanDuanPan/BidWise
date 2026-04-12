@@ -349,7 +349,7 @@ draw.io void element 应遵循相同模式，但需标记为 `isVoid: true` 使 
 
 - 运行时节点中存储 base64 PNG（`pngDataUrl`）：用于编辑态即时显示，避免每次渲染都读文件
 - assets 目录存储 sibling `.png` 文件：用于 Markdown 图片引用和 docx 导出（Story 8-4）
-- 该 PNG 仅承担编辑态/预览态缩略图职责；高分辨率导出属于 Story 8-4
+- 该 PNG 在当前 Story 中主要承担编辑态/预览态缩略图职责；Story 8-4 会把同一路径的 sibling PNG 升级为导出可用的高清图
 - 两处 PNG 始终同步更新
 
 **3. Void Element 而非 Inline Element**
@@ -420,7 +420,7 @@ src/renderer/
 
 Story 8-4（draw.io 自动转 PNG + 图表编号）是导出阶段的功能，依赖本 Story 建立的 draw.io 存储基础：
 - 本 Story 提供：`.drawio` 源文件 + sibling `.png` 预览图存储在 assets 目录
-- Story 8-4 消费：导出时读取 `.drawio` 源文件重新渲染高清 PNG，自动分配图表编号
+- Story 8-4 消费：导出时直接消费 sibling `.png` 资产，并通过 `DrawioEditor` 的 `scale: 2` 保存链路逐步升级为高清 PNG，再自动分配图表编号
 
 ### 禁止事项
 

@@ -1570,13 +1570,13 @@ So that 导出的 Word 中架构图清晰、编号规范，无需手动处理。
 
 **Acceptance Criteria:**
 
-**Given** 方案中内嵌 draw.io 架构图
-**When** docx 导出执行
-**Then** .drawio 源文件自动转换为高清 PNG 插入 docx（FR55）
+**Given** 方案中内嵌 draw.io / Mermaid 图表
+**When** docx 预览或导出执行
+**Then** draw.io 现有 sibling PNG 资产直接插入，Mermaid SVG 在导出预处理阶段转换为 PNG；图表缺失时以 warning + 占位文本降级而不阻塞导出（FR55）
 
 **Given** 方案中有多个图表
 **When** 导出
-**Then** 按章节位置自动分配图表编号，交叉引用自动替换（FR56）
+**Then** 按章节位置自动分配图表编号，交叉引用自动替换，且不修改原始 Markdown（FR56）
 
 ### Story 8.5: 格式降级方案与合规报告
 
