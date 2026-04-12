@@ -176,6 +176,37 @@ export interface AdversarialLineupsTable {
   updatedAt: string
 }
 
+export interface AdversarialReviewSessionsTable {
+  id: string
+  projectId: string
+  lineupId: string
+  status: string // 'running' | 'completed' | 'partial' | 'failed'
+  roleResults: string | null // JSON
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdversarialFindingsTable {
+  id: string
+  sessionId: string
+  roleId: string
+  roleName: string
+  severity: string // 'critical' | 'major' | 'minor'
+  sectionRef: string | null
+  sectionLocator: string | null // JSON
+  content: string
+  suggestion: string | null
+  reasoning: string | null
+  status: string // 'pending' | 'accepted' | 'rejected' | 'needs-decision'
+  rebuttalReason: string | null
+  contradictionGroupId: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -191,4 +222,6 @@ export interface DB {
   tags: TagsTable
   assetTags: AssetTagsTable
   adversarialLineups: AdversarialLineupsTable
+  adversarialReviewSessions: AdversarialReviewSessionsTable
+  adversarialFindings: AdversarialFindingsTable
 }

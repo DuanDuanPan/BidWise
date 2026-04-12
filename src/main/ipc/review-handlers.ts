@@ -1,5 +1,6 @@
 import { createIpcHandler } from './create-handler'
 import { adversarialLineupService } from '@main/services/adversarial-lineup-service'
+import { adversarialReviewService } from '@main/services/adversarial-review-service'
 import type { IpcChannel } from '@shared/ipc-types'
 
 type ReviewChannel = Extract<IpcChannel, `review:${string}`>
@@ -16,6 +17,22 @@ const reviewHandlerMap: { [C in ReviewChannel]: () => void } = {
   'review:confirm-lineup': () =>
     createIpcHandler('review:confirm-lineup', (input) =>
       adversarialLineupService.confirmLineup(input)
+    ),
+  'review:start-execution': () =>
+    createIpcHandler('review:start-execution', (input) =>
+      adversarialReviewService.startExecution(input.projectId)
+    ),
+  'review:get-review': () =>
+    createIpcHandler('review:get-review', (input) =>
+      adversarialReviewService.getReview(input.projectId)
+    ),
+  'review:handle-finding': () =>
+    createIpcHandler('review:handle-finding', (input) =>
+      adversarialReviewService.handleFinding(input.findingId, input.action, input.rebuttalReason)
+    ),
+  'review:retry-role': () =>
+    createIpcHandler('review:retry-role', (input) =>
+      adversarialReviewService.retryRole(input.projectId, input.roleId)
     ),
 }
 

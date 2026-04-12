@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { useReviewStore, getReviewProjectState } from '@renderer/stores'
 import { AdversarialRoleCard } from './AdversarialRoleCard'
 import { AddRoleModal } from './AddRoleModal'
+import { ReviewExecutionTrigger } from './ReviewExecutionTrigger'
 import type { AdversarialRole, AdversarialIntensity } from '@shared/adversarial-types'
 
 interface AdversarialLineupDrawerProps {
@@ -14,6 +15,8 @@ interface AdversarialLineupDrawerProps {
   onGenerate: () => void
   onUpdateRoles: (roles: AdversarialRole[]) => void
   onConfirm: () => void
+  onStartReview?: () => void
+  onViewReviewResults?: () => void
 }
 
 export function AdversarialLineupDrawer({
@@ -23,6 +26,8 @@ export function AdversarialLineupDrawer({
   onGenerate,
   onUpdateRoles,
   onConfirm,
+  onStartReview,
+  onViewReviewResults,
 }: AdversarialLineupDrawerProps): React.JSX.Element {
   const [addModalOpen, setAddModalOpen] = useState(false)
 
@@ -112,10 +117,21 @@ export function AdversarialLineupDrawer({
                 </Button>
               </>
             )}
-            {isConfirmed && !lineupLoading && !lineupError && (
-              <Button icon={<ReloadOutlined />} onClick={onGenerate} data-testid="regenerate-btn">
-                重新生成
-              </Button>
+            {isConfirmed && !lineupLoading && !lineupError && lineup && (
+              <>
+                <Button icon={<ReloadOutlined />} onClick={onGenerate} data-testid="regenerate-btn">
+                  重新生成
+                </Button>
+                {onStartReview && onViewReviewResults && (
+                  <ReviewExecutionTrigger
+                    lineup={lineup}
+                    reviewSession={projectState.reviewSession}
+                    reviewLoading={projectState.reviewLoading}
+                    onStartReview={onStartReview}
+                    onViewResults={onViewReviewResults}
+                  />
+                )}
+              </>
             )}
             {!lineup && !lineupLoading && (
               <Button type="primary" onClick={onGenerate} data-testid="generate-lineup-btn">

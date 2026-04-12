@@ -290,6 +290,18 @@ const requestApi = {
 
   reviewConfirmLineup: (input: IpcChannelMap['review:confirm-lineup']['input']) =>
     typedInvoke(IPC_CHANNELS.REVIEW_CONFIRM_LINEUP, input),
+
+  reviewStartExecution: (input: IpcChannelMap['review:start-execution']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_START_EXECUTION, input),
+
+  reviewGetReview: (input: IpcChannelMap['review:get-review']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_GET_REVIEW, input),
+
+  reviewHandleFinding: (input: IpcChannelMap['review:handle-finding']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_HANDLE_FINDING, input),
+
+  reviewRetryRole: (input: IpcChannelMap['review:retry-role']['input']) =>
+    typedInvoke(IPC_CHANNELS.REVIEW_RETRY_ROLE, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

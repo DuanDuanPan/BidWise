@@ -264,7 +264,10 @@ describe('reviewStore @story-7-1 @story-7-2', () => {
         },
       })
 
-      expect(findReviewProjectIdByTaskId(useReviewStore.getState(), 'task-abc')).toBe('proj-1')
+      expect(findReviewProjectIdByTaskId(useReviewStore.getState(), 'task-abc')).toEqual({
+        projectId: 'proj-1',
+        taskKind: 'lineup',
+      })
       expect(findReviewProjectIdByTaskId(useReviewStore.getState(), 'task-unknown')).toBeUndefined()
     })
   })

@@ -69,6 +69,14 @@ import type {
   AdversarialLineup,
   UpdateLineupInput,
   ConfirmLineupInput,
+  StartReviewExecutionInput,
+  StartReviewExecutionOutput,
+  GetReviewInput,
+  AdversarialReviewSession,
+  HandleFindingInput,
+  AdversarialFinding,
+  RetryRoleInput,
+  RetryRoleOutput,
 } from './adversarial-types'
 import type { ProposalDocument, ProposalMetadata } from './models/proposal'
 import type {
@@ -306,6 +314,10 @@ export const IPC_CHANNELS = {
   REVIEW_GET_LINEUP: 'review:get-lineup',
   REVIEW_UPDATE_ROLES: 'review:update-roles',
   REVIEW_CONFIRM_LINEUP: 'review:confirm-lineup',
+  REVIEW_START_EXECUTION: 'review:start-execution',
+  REVIEW_GET_REVIEW: 'review:get-review',
+  REVIEW_HANDLE_FINDING: 'review:handle-finding',
+  REVIEW_RETRY_ROLE: 'review:retry-role',
 } as const
 
 /** Filter for task:list queries */
@@ -420,6 +432,10 @@ export type IpcChannelMap = {
   'review:get-lineup': { input: GetLineupInput; output: AdversarialLineup | null }
   'review:update-roles': { input: UpdateLineupInput; output: AdversarialLineup }
   'review:confirm-lineup': { input: ConfirmLineupInput; output: AdversarialLineup }
+  'review:start-execution': { input: StartReviewExecutionInput; output: StartReviewExecutionOutput }
+  'review:get-review': { input: GetReviewInput; output: AdversarialReviewSession | null }
+  'review:handle-finding': { input: HandleFindingInput; output: AdversarialFinding }
+  'review:retry-role': { input: RetryRoleInput; output: RetryRoleOutput }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

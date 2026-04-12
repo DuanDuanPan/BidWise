@@ -5,6 +5,8 @@ import type {
   AdversarialLineup,
   UpdateLineupInput,
   ConfirmLineupInput,
+  AdversarialReviewSession,
+  HandleFindingAction,
 } from '@shared/adversarial-types'
 
 export interface ReviewProjectState {
@@ -20,6 +22,14 @@ export interface ReviewProjectState {
   lineupTaskId: string | null
   lineupProgress: number
   lineupMessage: string | null
+  // Adversarial review execution state (Story 7.3)
+  reviewSession: AdversarialReviewSession | null
+  reviewLoaded: boolean
+  reviewLoading: boolean
+  reviewError: string | null
+  reviewTaskId: string | null
+  reviewProgress: number
+  reviewMessage: string | null
 }
 
 export interface ReviewState {
@@ -37,6 +47,19 @@ interface ReviewActions {
   setLineupProgress: (projectId: string, progress: number, message?: string) => void
   setLineupTaskError: (projectId: string, error: string) => void
   clearLineupError: (projectId: string) => void
+  // Adversarial review actions (Story 7.3)
+  startReview: (projectId: string) => Promise<void>
+  loadReview: (projectId: string) => Promise<boolean>
+  handleFinding: (
+    projectId: string,
+    findingId: string,
+    action: HandleFindingAction,
+    rebuttalReason?: string
+  ) => Promise<void>
+  retryRole: (projectId: string, roleId: string) => Promise<void>
+  updateReviewProgress: (projectId: string, progress: number, message?: string) => void
+  setReviewTaskError: (projectId: string, error: string) => void
+  clearReviewError: (projectId: string) => void
 }
 
 export type ReviewStore = ReviewState & ReviewActions
@@ -54,6 +77,13 @@ export function createProjectState(overrides?: Partial<ReviewProjectState>): Rev
     lineupTaskId: null,
     lineupProgress: 0,
     lineupMessage: null,
+    reviewSession: null,
+    reviewLoaded: false,
+    reviewLoading: false,
+    reviewError: null,
+    reviewTaskId: null,
+    reviewProgress: 0,
+    reviewMessage: null,
     ...overrides,
   }
 }
@@ -62,12 +92,15 @@ export function getReviewProjectState(state: ReviewState, projectId: string): Re
   return state.projects[projectId] ?? createProjectState()
 }
 
+export type TaskKind = 'lineup' | 'review'
+
 export function findReviewProjectIdByTaskId(
   state: ReviewState,
   taskId: string
-): string | undefined {
+): { projectId: string; taskKind: TaskKind } | undefined {
   for (const [projectId, projectState] of Object.entries(state.projects)) {
-    if (projectState.lineupTaskId === taskId) return projectId
+    if (projectState.lineupTaskId === taskId) return { projectId, taskKind: 'lineup' }
+    if (projectState.reviewTaskId === taskId) return { projectId, taskKind: 'review' }
   }
   return undefined
 }
@@ -248,6 +281,186 @@ export const useReviewStore = create<ReviewStore>()(
       set((state) =>
         updateProject(state, projectId, {
           lineupError: null,
+        })
+      )
+    },
+
+    // ─── Review Execution Actions (Story 7.3) ───
+
+    async startReview(projectId: string): Promise<void> {
+      set((state) =>
+        updateProject(state, projectId, {
+          reviewSession: null,
+          reviewLoaded: false,
+          reviewLoading: true,
+          reviewError: null,
+          reviewProgress: 0,
+          reviewMessage: '正在启动对抗评审…',
+        })
+      )
+
+      try {
+        const response = await window.api.reviewStartExecution({ projectId })
+        if (response.success) {
+          set((state) =>
+            updateProject(state, projectId, {
+              reviewTaskId: response.data.taskId,
+            })
+          )
+        } else {
+          set((state) =>
+            updateProject(state, projectId, {
+              reviewLoading: false,
+              reviewError: response.error.message,
+            })
+          )
+        }
+      } catch (err) {
+        set((state) =>
+          updateProject(state, projectId, {
+            reviewLoading: false,
+            reviewError: (err as Error).message,
+          })
+        )
+      }
+    },
+
+    async loadReview(projectId: string): Promise<boolean> {
+      try {
+        const response = await window.api.reviewGetReview({ projectId })
+        if (response.success) {
+          set((state) =>
+            updateProject(state, projectId, {
+              reviewSession: response.data ?? null,
+              reviewLoaded: true,
+              reviewLoading: false,
+              reviewTaskId: null,
+              reviewProgress: 0,
+              reviewMessage: null,
+            })
+          )
+          return response.data != null
+        }
+        return false
+      } catch {
+        return false
+      }
+    },
+
+    async handleFinding(
+      projectId: string,
+      findingId: string,
+      action: HandleFindingAction,
+      rebuttalReason?: string
+    ): Promise<void> {
+      // Optimistic update
+      set((state) => {
+        const ps = getReviewProjectState(state, projectId)
+        if (!ps.reviewSession) return state
+
+        const updatedFindings = ps.reviewSession.findings.map((f) =>
+          f.id === findingId
+            ? {
+                ...f,
+                status: action,
+                rebuttalReason: action === 'rejected' ? (rebuttalReason?.trim() ?? null) : null,
+              }
+            : f
+        )
+
+        return updateProject(state, projectId, {
+          reviewSession: { ...ps.reviewSession, findings: updatedFindings },
+        })
+      })
+
+      try {
+        const response = await window.api.reviewHandleFinding({
+          findingId,
+          action,
+          rebuttalReason,
+        })
+        if (response.success) {
+          // Sync with server response
+          set((state) => {
+            const ps = getReviewProjectState(state, projectId)
+            if (!ps.reviewSession) return state
+
+            const updatedFindings = ps.reviewSession.findings.map((f) =>
+              f.id === findingId ? response.data : f
+            )
+
+            return updateProject(state, projectId, {
+              reviewSession: { ...ps.reviewSession, findings: updatedFindings },
+            })
+          })
+        }
+      } catch {
+        // Revert optimistic update by reloading
+        await useReviewStore.getState().loadReview(projectId)
+      }
+    },
+
+    async retryRole(projectId: string, roleId: string): Promise<void> {
+      set((state) =>
+        updateProject(state, projectId, {
+          reviewLoading: true,
+          reviewError: null,
+          reviewProgress: 0,
+          reviewMessage: '正在重试角色评审…',
+        })
+      )
+
+      try {
+        const response = await window.api.reviewRetryRole({ projectId, roleId })
+        if (response.success) {
+          set((state) =>
+            updateProject(state, projectId, {
+              reviewTaskId: response.data.taskId,
+            })
+          )
+        } else {
+          set((state) =>
+            updateProject(state, projectId, {
+              reviewLoading: false,
+              reviewError: response.error.message,
+            })
+          )
+        }
+      } catch (err) {
+        set((state) =>
+          updateProject(state, projectId, {
+            reviewLoading: false,
+            reviewError: (err as Error).message,
+          })
+        )
+      }
+    },
+
+    updateReviewProgress(projectId: string, progress: number, message?: string): void {
+      set((state) =>
+        updateProject(state, projectId, {
+          reviewProgress: progress,
+          reviewMessage: message ?? state.projects[projectId]?.reviewMessage ?? null,
+        })
+      )
+    },
+
+    setReviewTaskError(projectId: string, error: string): void {
+      set((state) =>
+        updateProject(state, projectId, {
+          reviewLoading: false,
+          reviewError: error,
+          reviewTaskId: null,
+          reviewProgress: 0,
+          reviewMessage: null,
+        })
+      )
+    },
+
+    clearReviewError(projectId: string): void {
+      set((state) =>
+        updateProject(state, projectId, {
+          reviewError: null,
         })
       )
     },

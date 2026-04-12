@@ -47,7 +47,9 @@ import { useDocumentStore, useReviewStore, getReviewProjectState } from '@render
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { useComplianceAutoRefresh } from '@modules/review/hooks/useComplianceAutoRefresh'
 import { useAdversarialLineup } from '@modules/review/hooks/useAdversarialLineup'
+import { useAdversarialReview } from '@modules/review/hooks/useAdversarialReview'
 import { AdversarialLineupDrawer } from '@modules/review/components/AdversarialLineupDrawer'
+import { AdversarialReviewPanel } from '@modules/review/components/AdversarialReviewPanel'
 import { NotificationBell } from '@modules/notification/components/NotificationBell'
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
@@ -202,6 +204,10 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   // Adversarial lineup (Story 7.2) — declared before useEffect that references it
   const adversarialLineup = useAdversarialLineup(projectId, currentStageKey)
+
+  // Adversarial review execution (Story 7.3)
+  const adversarialReview = useAdversarialReview(projectId)
+  const isComplianceReview = currentStageKey === 'compliance-review'
 
   // Override adversarial review command in command palette while workspace is mounted
   useEffect(() => {
@@ -565,28 +571,47 @@ export function ProjectWorkspace(): React.JSX.Element {
               )
             }
             right={
-              <AnnotationPanel
-                collapsed={sidebarCollapsed}
-                isCompact={isCompact}
-                onToggle={toggleSidebar}
-                projectId={isProposalWriting ? projectId : undefined}
-                sopPhase={currentStageKey}
-                currentSection={isProposalWriting ? currentSection : null}
-                focusAnnotationId={focusAnnotationId}
-                expandThreadParentId={expandThreadParentId}
-                recommendationProps={
-                  isProposalWriting
-                    ? {
-                        recommendations: recommendation.recommendations,
-                        recommendationLoading: recommendation.loading,
-                        acceptedAssetIds: recommendation.acceptedAssetIds,
-                        onInsertRecommendation: handleInsertRecommendation,
-                        onIgnoreRecommendation: recommendation.ignore,
-                        onViewRecommendationDetail: setDetailDrawerAssetId,
-                      }
-                    : null
-                }
-              />
+              isComplianceReview && adversarialReview.panelOpen ? (
+                <AdversarialReviewPanel
+                  session={adversarialReview.reviewSession}
+                  loading={adversarialReview.reviewLoading}
+                  progress={adversarialReview.reviewProgress}
+                  message={adversarialReview.reviewMessage}
+                  error={adversarialReview.reviewError}
+                  onClose={adversarialReview.closePanel}
+                  onAction={adversarialReview.handleFinding}
+                  onRetryRole={adversarialReview.retryRole}
+                  onRestart={adversarialReview.startReview}
+                  onNavigateToSection={(finding) => {
+                    if (finding.sectionLocator) {
+                      scrollToHeading(finding.sectionLocator)
+                    }
+                  }}
+                />
+              ) : (
+                <AnnotationPanel
+                  collapsed={sidebarCollapsed}
+                  isCompact={isCompact}
+                  onToggle={toggleSidebar}
+                  projectId={isProposalWriting ? projectId : undefined}
+                  sopPhase={currentStageKey}
+                  currentSection={isProposalWriting ? currentSection : null}
+                  focusAnnotationId={focusAnnotationId}
+                  expandThreadParentId={expandThreadParentId}
+                  recommendationProps={
+                    isProposalWriting
+                      ? {
+                          recommendations: recommendation.recommendations,
+                          recommendationLoading: recommendation.loading,
+                          acceptedAssetIds: recommendation.acceptedAssetIds,
+                          onInsertRecommendation: handleInsertRecommendation,
+                          onIgnoreRecommendation: recommendation.ignore,
+                          onViewRecommendationDetail: setDetailDrawerAssetId,
+                        }
+                      : null
+                  }
+                />
+              )
             }
             statusBar={
               <StatusBar
@@ -645,7 +670,7 @@ export function ProjectWorkspace(): React.JSX.Element {
             onClose={() => setDetailDrawerAssetId(null)}
             onInsert={handleDetailDrawerInsert}
           />
-          {/* Adversarial lineup Drawer (Story 7.2) */}
+          {/* Adversarial lineup Drawer (Story 7.2) + Review trigger (Story 7.3) */}
           {projectId && (
             <AdversarialLineupDrawer
               open={adversarialLineup.drawerOpen}
@@ -664,6 +689,8 @@ export function ProjectWorkspace(): React.JSX.Element {
                   void adversarialLineup.confirmLineup({ lineupId: ps.lineup.id })
                 }
               }}
+              onStartReview={adversarialReview.startReview}
+              onViewReviewResults={adversarialReview.openPanel}
             />
           )}
         </div>

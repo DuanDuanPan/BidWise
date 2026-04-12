@@ -31,7 +31,7 @@ export type {
 } from './analysisStore'
 
 export { useReviewStore, getReviewProjectState, findReviewProjectIdByTaskId } from './reviewStore'
-export type { ReviewStore, ReviewState, ReviewProjectState } from './reviewStore'
+export type { ReviewStore, ReviewState, ReviewProjectState, TaskKind } from './reviewStore'
 
 export { useRecommendationStore } from './recommendationStore'
 export type {

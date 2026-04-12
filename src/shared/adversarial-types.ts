@@ -1,7 +1,10 @@
 /**
- * Adversarial role generation shared types — consumed by adversarial-lineup-service,
- * review-handlers, reviewStore, and UI components (Story 7.2)
+ * Adversarial role generation & review execution shared types — consumed by
+ * adversarial-lineup-service, adversarial-review-service, review-handlers,
+ * reviewStore, and UI components (Stories 7.2, 7.3)
  */
+
+import type { ChapterHeadingLocator } from './chapter-types'
 
 // ─── Enums & Primitives ───
 
@@ -10,6 +13,16 @@ export type AdversarialIntensity = 'low' | 'medium' | 'high'
 export type AdversarialGenerationSource = 'llm' | 'fallback'
 
 export type AdversarialLineupStatus = 'generated' | 'confirmed'
+
+// ─── Review Execution Enums (Story 7.3) ───
+
+export type FindingSeverity = 'critical' | 'major' | 'minor'
+
+export type FindingStatus = 'pending' | 'accepted' | 'rejected' | 'needs-decision'
+
+export type ReviewSessionStatus = 'running' | 'completed' | 'partial' | 'failed'
+
+export type HandleFindingAction = 'accepted' | 'rejected' | 'needs-decision'
 
 // ─── LLM Output Draft ───
 
@@ -47,6 +60,47 @@ export interface AdversarialLineup {
   confirmedAt: string | null
 }
 
+// ─── Review Execution Domain Models (Story 7.3) ───
+
+export interface AdversarialFinding {
+  id: string
+  sessionId: string
+  roleId: string
+  roleName: string
+  severity: FindingSeverity
+  sectionRef: string | null
+  sectionLocator: ChapterHeadingLocator | null
+  content: string
+  suggestion: string | null
+  reasoning: string | null
+  status: FindingStatus
+  rebuttalReason: string | null
+  contradictionGroupId: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RoleReviewResult {
+  roleId: string
+  roleName: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  findingCount: number
+  error?: string
+  latencyMs?: number
+}
+
+export interface AdversarialReviewSession {
+  id: string
+  projectId: string
+  lineupId: string
+  status: ReviewSessionStatus
+  findings: AdversarialFinding[]
+  roleResults: RoleReviewResult[]
+  startedAt: string
+  completedAt: string | null
+}
+
 // ─── IPC Input/Output ───
 
 export interface GenerateRolesInput {
@@ -68,6 +122,35 @@ export interface UpdateLineupInput {
 
 export interface ConfirmLineupInput {
   lineupId: string
+}
+
+// ─── Review Execution IPC (Story 7.3) ───
+
+export interface StartReviewExecutionInput {
+  projectId: string
+}
+
+export interface StartReviewExecutionOutput {
+  taskId: string
+}
+
+export interface GetReviewInput {
+  projectId: string
+}
+
+export interface HandleFindingInput {
+  findingId: string
+  action: HandleFindingAction
+  rebuttalReason?: string
+}
+
+export interface RetryRoleInput {
+  projectId: string
+  roleId: string
+}
+
+export interface RetryRoleOutput {
+  taskId: string
 }
 
 // ─── Constants ───

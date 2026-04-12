@@ -10,6 +10,7 @@ import { validateBaselineAgentHandler } from './agents/validate-baseline-agent'
 import { fogMapAgentHandler } from './agents/fog-map-agent'
 import { traceabilityAgentHandler } from './agents/traceability-agent'
 import { adversarialAgentHandler } from './agents/adversarial-agent'
+import { adversarialReviewAgentHandler } from './agents/adversarial-review-agent'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
@@ -23,3 +24,4 @@ agentOrchestrator.registerAgent('validate-baseline', validateBaselineAgentHandle
 agentOrchestrator.registerAgent('fog-map', fogMapAgentHandler)
 agentOrchestrator.registerAgent('traceability', traceabilityAgentHandler)
 agentOrchestrator.registerAgent('adversarial', adversarialAgentHandler)
+agentOrchestrator.registerAgent('adversarial-review', adversarialReviewAgentHandler)
