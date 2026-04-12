@@ -229,6 +229,51 @@ describe('terminologyPostProcessor', () => {
     expect(mockAnnotationDelete).toHaveBeenCalledWith('ann-1')
   })
 
+  it('rolls back all created annotations when abort happens after multiple succeed', async () => {
+    const entries = [
+      { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
+      { id: 't2', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
+      { id: 't3', sourceTerm: '乙方', targetTerm: '承建方', isActive: true },
+    ]
+    mockGetActiveEntries.mockResolvedValue(entries)
+    mockApplyReplacements.mockReturnValue({
+      content: '装备全寿命周期管理是采购方和承建方核心功能',
+      replacements: [
+        { sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', count: 1 },
+        { sourceTerm: '甲方', targetTerm: '采购方', count: 1 },
+        { sourceTerm: '乙方', targetTerm: '承建方', count: 1 },
+      ],
+      totalReplacements: 3,
+    })
+    mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
+
+    const controller = new AbortController()
+    // First create succeeds normally, second triggers abort, third never attempted
+    mockAnnotationCreate
+      .mockResolvedValueOnce({ id: 'ann-1' })
+      .mockImplementationOnce(async () => {
+        controller.abort()
+        return { id: 'ann-2' }
+      })
+    mockAnnotationDelete.mockResolvedValue(undefined)
+
+    const context: Record<string, unknown> = {
+      mode: 'generate-chapter',
+      projectId: 'proj-1',
+      target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
+    }
+
+    const output = await terminologyPostProcessor(makeResult(), context, controller.signal)
+    expect(output.content).toBe('装备全寿命周期管理是采购方和承建方核心功能')
+
+    // Two annotations created, third never attempted
+    expect(mockAnnotationCreate).toHaveBeenCalledTimes(2)
+    // Both created annotations rolled back — no orphan leaks
+    expect(mockAnnotationDelete).toHaveBeenCalledWith('ann-1')
+    expect(mockAnnotationDelete).toHaveBeenCalledWith('ann-2')
+    expect(mockAnnotationDelete).toHaveBeenCalledTimes(2)
+  })
+
   it('throws BidWiseError when all annotation creates fail', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
@@ -255,7 +300,7 @@ describe('terminologyPostProcessor', () => {
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('succeeds with warning when some but not all annotations fail', async () => {
+  it('throws and rolls back created annotations when some annotations fail', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
       { id: 't2', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
@@ -273,6 +318,7 @@ describe('terminologyPostProcessor', () => {
     mockAnnotationCreate
       .mockRejectedValueOnce(new Error('DB write failed'))
       .mockResolvedValueOnce({ id: 'ann-2' })
+    mockAnnotationDelete.mockResolvedValue(undefined)
 
     const context: Record<string, unknown> = {
       mode: 'generate-chapter',
@@ -280,11 +326,14 @@ describe('terminologyPostProcessor', () => {
       target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
     }
 
-    const output = await terminologyPostProcessor(makeResult(), context, makeSignal())
+    // AC3: partial annotation failure is an error — every replacement needs its annotation
+    await expect(
+      terminologyPostProcessor(makeResult(), context, makeSignal())
+    ).rejects.toThrow(/批注创建失败/)
 
-    // Succeeds — content is still replaced
-    expect(output.content).toBe('装备全寿命周期管理是采购方核心功能')
     // Both annotation creates were attempted
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(2)
+    // The successful annotation is rolled back since operation is incomplete
+    expect(mockAnnotationDelete).toHaveBeenCalledWith('ann-2')
   })
 })

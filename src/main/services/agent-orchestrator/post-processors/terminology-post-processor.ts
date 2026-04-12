@@ -39,8 +39,8 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
 
   if (projectId && target) {
     const sectionId = createChapterLocatorKey(target)
-    let failedCount = 0
     const createdIds: string[] = []
+    let failedCount = 0
 
     for (const replacement of applyResult.replacements) {
       if (signal?.aborted) {
@@ -62,32 +62,41 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
           author: 'system:terminology',
         })
         createdIds.push(record.id)
-
-        // Check abort immediately after create — roll back the just-created annotation
-        if (signal?.aborted) {
-          try {
-            await annotationService.delete(record.id)
-            createdIds.pop()
-          } catch (deleteErr) {
-            logger.warn(`取消后批注回滚失败 (${record.id}): ${(deleteErr as Error).message}`)
-          }
-          logger.info('术语后处理已取消，已回滚当前批注并跳过剩余')
-          break
-        }
       } catch (err) {
         failedCount++
         logger.error(`术语批注创建失败: ${(err as Error).message}`)
       }
     }
 
-    if (failedCount > 0 && failedCount === applyResult.replacements.length) {
+    // On abort, roll back ALL created annotations to prevent orphan leaks
+    if (signal?.aborted) {
+      if (createdIds.length > 0) {
+        logger.info(`术语后处理已取消，回滚 ${createdIds.length} 条已创建批注`)
+        for (const id of createdIds) {
+          try {
+            await annotationService.delete(id)
+          } catch (deleteErr) {
+            logger.warn(`取消后批注回滚失败 (${id}): ${(deleteErr as Error).message}`)
+          }
+        }
+      }
+      // Return replaced content — orchestrator's throwIfAborted() will discard it
+      return { ...result, content: applyResult.content }
+    }
+
+    // AC3: every replaced term must have an annotation — partial failure is an error
+    if (failedCount > 0) {
+      // Roll back successfully created annotations since the operation is incomplete
+      for (const id of createdIds) {
+        try {
+          await annotationService.delete(id)
+        } catch (deleteErr) {
+          logger.warn(`批注回滚失败 (${id}): ${(deleteErr as Error).message}`)
+        }
+      }
       throw new BidWiseError(
         ErrorCode.ANNOTATION_CREATION_FAILED,
-        `术语替换已完成（${applyResult.totalReplacements} 处），但全部 ${failedCount} 条批注创建失败，用户将无法在侧边栏看到替换记录`
-      )
-    } else if (failedCount > 0) {
-      logger.warn(
-        `术语批注部分创建失败: ${failedCount}/${applyResult.replacements.length} 条未写入`
+        `术语替换已完成（${applyResult.totalReplacements} 处），但 ${failedCount}/${applyResult.replacements.length} 条批注创建失败，用户将无法在侧边栏看到完整替换记录`
       )
     }
   }
