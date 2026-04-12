@@ -82,4 +82,59 @@ describe('@story-3-7 DrawioEditor', () => {
     expect(defaultProps.onSave).not.toHaveBeenCalled()
     expect(defaultProps.onExit).not.toHaveBeenCalled()
   })
+
+  it('@story-8-4 export postMessage includes scale: 2', async () => {
+    render(<DrawioEditor {...defaultProps} />)
+
+    const iframe = screen.getByTestId('drawio-iframe') as HTMLIFrameElement
+    const postMessageSpy = vi.fn()
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: { postMessage: postMessageSpy },
+      writable: true,
+    })
+
+    // Simulate init event — triggers load
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ event: 'init' }),
+        origin: 'https://embed.diagrams.net',
+      })
+    )
+
+    // Simulate save event — triggers export with scale: 2
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ event: 'save', xml: '<mxGraphModel/>' }),
+        origin: 'https://embed.diagrams.net',
+      })
+    )
+
+    // Find the export call
+    const exportCall = postMessageSpy.mock.calls.find((call: unknown[]) => {
+      const parsed = JSON.parse(call[0] as string)
+      return parsed.action === 'export'
+    })
+
+    expect(exportCall).toBeDefined()
+    const exportMsg = JSON.parse(exportCall![0] as string)
+    expect(exportMsg).toMatchObject({
+      action: 'export',
+      format: 'png',
+      spin: true,
+      scale: 2,
+    })
+  })
+
+  it('@story-8-4 non-diagrams.net origin messages are still ignored', () => {
+    render(<DrawioEditor {...defaultProps} />)
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({ event: 'save', xml: '<mxGraphModel/>' }),
+        origin: 'https://evil.com',
+      })
+    )
+
+    expect(defaultProps.onSave).not.toHaveBeenCalled()
+  })
 })

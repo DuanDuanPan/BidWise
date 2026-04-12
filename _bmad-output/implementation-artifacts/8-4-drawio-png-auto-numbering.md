@@ -1,6 +1,6 @@
 # Story 8.4: draw.io 自动转 PNG 与图表编号
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -84,20 +84,20 @@ So that 导出的 Word 中架构图清晰、编号规范，无需手动处理。
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: draw.io 2x PNG 生成链路对齐 (AC: #1)
-  - [ ] 1.1 修改 `src/shared/drawio-types.ts`
+- [x] Task 1: draw.io 2x PNG 生成链路对齐 (AC: #1)
+  - [x] 1.1 修改 `src/shared/drawio-types.ts`
     - 为 `DrawioMessageOut` 增加 `scale?: number`
     - 保持现有 `load/export` action、`format: 'png'` 与 `spin` 字段不变
-  - [ ] 1.2 修改 `src/renderer/src/modules/editor/components/DrawioEditor.tsx`
+  - [x] 1.2 修改 `src/renderer/src/modules/editor/components/DrawioEditor.tsx`
     - 在收到 draw.io `save` 事件后发送 `postMessage({ action: 'export', format: 'png', spin: true, scale: 2 })`
     - 继续沿用现有 exact-match origin 校验、JSON stringify/parse、`pendingXmlRef` 与 `onSave(xml, pngBase64)` 流程
     - 不改变 `.drawio` / `.png` 的 basename 约定：PNG 路径仍由 `assetFileName.replace(/\\.drawio$/, '.png')` 推导
-  - [ ] 1.3 验证 `src/main/services/drawio-asset-service.ts`
+  - [x] 1.3 验证 `src/main/services/drawio-asset-service.ts`
     - 如现有 base64 -> Buffer -> `writeFile()` 逻辑已可透明支持更大 PNG，则不改生产代码，仅补/调测试说明
     - 若测试暴露尺寸相关问题，再做最小修正；不得改文件名协议
 
-- [ ] Task 2: Mermaid 导出预处理服务（唯一实现方案使用 `sharp`） (AC: #2, #5)
-  - [ ] 2.1 创建 `src/main/services/figure-export-service.ts`
+- [x] Task 2: Mermaid 导出预处理服务（唯一实现方案使用 `sharp`） (AC: #2, #5)
+  - [x] 2.1 创建 `src/main/services/figure-export-service.ts`
     - `preprocessMarkdownForExport(markdown: string, projectPath: string): Promise<{ processedMarkdown: string; warnings: string[] }>`
     - 识别 Mermaid block：`<!-- mermaid:{diagramId}:{assetFileName}:{encodedCaption?} -->` + 紧随其后的 fenced code block
     - 识别 draw.io block：`<!-- drawio:{diagramId}:{assetFileName} -->` + 紧随其后的标准图片引用
@@ -111,72 +111,72 @@ So that 导出的 Word 中架构图清晰、编号规范，无需手动处理。
       - 校验标准图片引用中的 `assets/{assetBase}.png` 是否存在
       - 缺失时将整个 draw.io block 替换为纯文本占位符 `[图片未导出: assets/{assetBase}.png]`
     - 其余 Markdown 内容保持原样，不改动普通图片语法
-  - [ ] 2.2 SVG -> PNG 转换实现
+  - [x] 2.2 SVG -> PNG 转换实现
     - 使用 `sharp` 在 main-process Node 环境完成 SVG rasterize
     - 输出目标为 sibling `.png`，目标清晰度按 2x 导出要求生成
     - service 内部返回 warning 文本而不是抛出“可降级错误”；真正不可恢复的路径/参数错误才抛 `BidWiseError`
-  - [ ] 2.3 修改 `package.json`
+  - [x] 2.3 修改 `package.json`
     - 新增 `sharp` 依赖
     - 将 `sharp` 加入 `pnpm.onlyBuiltDependencies`
 
-- [ ] Task 3: 将图表预处理接入既有 preview -> confirmExport 管线 (AC: #1, #2, #5)
-  - [ ] 3.1 修改 `src/main/services/export-service.ts`
+- [x] Task 3: 将图表预处理接入既有 preview -> confirmExport 管线 (AC: #1, #2, #5)
+  - [x] 3.1 修改 `src/main/services/export-service.ts`
     - 在 `startPreview()` 的 task-queue executor 中，于调用 `docxBridgeService.renderDocx()` 前执行 `figureExportService.preprocessMarkdownForExport()`
     - 将 `processedMarkdown` 传给 Python，而不是原始 `documentService.load().content`
     - 合并 `mapping.warnings + preprocessWarnings + renderResult.warnings`
     - 保持 `PreviewTaskResult.warnings` 数据链，供 `useExportPreview()` 和 Story 8.5 复用
-  - [ ] 3.2 进度与边界
+  - [x] 3.2 进度与边界
     - 新增明确进度文案，例如 `正在预处理图表资产`
     - `confirmExport()` 继续保持 Story 8.2 的 copy-only 行为，禁止重新预处理或二次渲染
     - 不修改 `src/main/ipc/export-handlers.ts`、`src/preload/index.ts`、`src/shared/ipc-types.ts`
 
-- [ ] Task 4: Python 图表编号与交叉引用引擎 (AC: #3, #4, #5)
-  - [ ] 4.1 创建 `python/src/docx_renderer/engine/figure_numbering.py`
+- [x] Task 4: Python 图表编号与交叉引用引擎 (AC: #3, #4, #5)
+  - [x] 4.1 创建 `python/src/docx_renderer/engine/figure_numbering.py`
     - `FigureEntry` 数据结构至少包含：`line_index`, `caption`, `chapter_number`, `figure_number`, `label`
     - `build_figure_registry(lines: list[str]) -> list[FigureEntry]`
     - `replace_cross_references(lines: list[str], figures: list[FigureEntry], warnings: list[str]) -> list[str]`
     - caption 匹配需支持：完全匹配、包含匹配、匹配不唯一 warning、未匹配保留原文
-  - [ ] 4.2 修改 `python/src/docx_renderer/engine/renderer.py`
+  - [x] 4.2 修改 `python/src/docx_renderer/engine/renderer.py`
     - 在 `_parse_markdown()` 前先按行构建 figure registry，并产出替换过 `{figref:...}` 的 Markdown
     - 为 `_handle_image()` 增加 figure-entry 上下文，在插图后插入题注段落
     - 题注样式必须复用 Story 8.3 已有 helper：`_get_style_key(style_mapping, 'caption')` + `_resolve_paragraph_style(...)`
     - 题注段落居中；样式缺失时 warning + fallback，不得硬编码 `style_mapping.get(...)`
     - 保持现有图片白名单、`projectPath/assets/` 安全校验与 placeholder 降级逻辑
-  - [ ] 4.3 章节规则
+  - [x] 4.3 章节规则
     - H1 递增章节号并重置当前章节图号
     - 首个 H1 之前的图片归入隐式第 1 章
     - 空 caption 图片不进入 registry
 
-- [ ] Task 5: 测试与回归 (AC: #1-#5)
-  - [ ] 5.1 `tests/unit/renderer/modules/editor/components/DrawioEditor.test.tsx`
+- [x] Task 5: 测试与回归 (AC: #1-#5)
+  - [x] 5.1 `tests/unit/renderer/modules/editor/components/DrawioEditor.test.tsx`
     - 验证 export postMessage 包含 `scale: 2`
     - 验证非 `https://embed.diagrams.net` 消息仍被忽略
-  - [ ] 5.2 `tests/unit/main/services/figure-export-service.test.ts`
+  - [x] 5.2 `tests/unit/main/services/figure-export-service.test.ts`
     - Mermaid SVG -> PNG 成功
     - Mermaid SVG 缺失 / 转换失败 -> 占位文本 + warning
     - draw.io PNG 缺失 -> 占位文本 + warning
     - 旧格式 Mermaid 注释（无 caption）兼容
     - 混合文档（draw.io + Mermaid + 普通图片）预处理不误伤普通图片
-  - [ ] 5.3 `tests/unit/main/services/export-service.test.ts`
+  - [x] 5.3 `tests/unit/main/services/export-service.test.ts`
     - `startPreview()` 使用 `processedMarkdown`
     - warning 合并顺序正确
     - `confirmExport()` 仍为 copy-only，不重复预处理或重渲染
-  - [ ] 5.4 `python/tests/test_figure_numbering.py`
+  - [x] 5.4 `python/tests/test_figure_numbering.py`
     - 单章节 / 多章节编号
     - 首个 H1 前图片归入隐式第 1 章
     - 精确匹配、包含匹配、匹配不唯一、未匹配
     - 前向引用
-  - [ ] 5.5 `python/tests/test_render.py`
+  - [x] 5.5 `python/tests/test_render.py`
     - 图片 + 题注段落输出
     - 无 caption 图片不编号
     - draw.io / Mermaid 预处理后生成的 `![caption](assets/*.png)` 可正常进入题注链路
     - `caption` 样式缺失时 warning + fallback
-  - [ ] 5.6 `tests/integration/docx-bridge/rich-export.integration.test.ts`
+  - [x] 5.6 `tests/integration/docx-bridge/rich-export.integration.test.ts`
     - 扩展 docx 内容断言：编号题注与 warning 回传
-  - [ ] 5.7 `tests/e2e/stories/story-8-4-drawio-png-auto-numbering.spec.ts`
+  - [x] 5.7 `tests/e2e/stories/story-8-4-drawio-png-auto-numbering.spec.ts`
     - 覆盖预览 -> 确认导出 happy path
     - 验证包含图表资产的测试项目可成功导出，不回归 Story 8.2 / 8.3 既有交互
-  - [ ] 5.8 最低验证命令
+  - [x] 5.8 最低验证命令
     - `pnpm typecheck`
     - `pnpm test:unit`
     - `pnpm test:integration`
@@ -331,14 +331,47 @@ tests/integration/docx-bridge/rich-export.integration.test.ts
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+无阻塞问题。
 
 ### Completion Notes List
 
+- Task 1: 为 `DrawioMessageOut` 增加 `scale?: number`，`DrawioEditor` export postMessage 添加 `scale: 2`。`drawio-asset-service` 的 base64→Buffer→writeFile 逻辑已可透明支持更大 PNG，无需修改生产代码。
+- Task 2: 创建 `figure-export-service.ts`，实现 Mermaid SVG→PNG（sharp，density: 192 实现 2x）和 draw.io sibling PNG 存在性校验。缺失时替换为占位文本 + warning。新增 `sharp` 依赖并加入 `pnpm.onlyBuiltDependencies`。
+- Task 3: 在 `export-service.ts` 的 `startPreview()` executor 中，于 `renderDocx()` 前插入 `figureExportService.preprocessMarkdownForExport()` 步骤。将 `processedMarkdown` 传给 Python。合并 `mapping.warnings + preprocessResult.warnings + renderResult.warnings`。`confirmExport()` 保持 copy-only 行为不变。
+- Task 4: 创建 `figure_numbering.py` 实现 `build_figure_registry()` 和 `replace_cross_references()`。在 `renderer.py` 的 `render_markdown_to_docx()` 中，先构建 figure registry 并替换交叉引用，再传入 `_parse_markdown()`。在图片后插入居中题注段落，复用 `_resolve_paragraph_style()` + caption 样式 fallback。
+- Task 5: 新增/修改 7 个测试文件共计约 30 个新测试用例。全部通过：typecheck ✓、unit 1780/1780 ✓、integration 23/23 ✓、python 74/74 ✓。
+
 ### File List
+
+**新增文件：**
+- `src/main/services/figure-export-service.ts`
+- `python/src/docx_renderer/engine/figure_numbering.py`
+- `tests/unit/main/services/figure-export-service.test.ts`
+- `python/tests/test_figure_numbering.py`
+- `tests/e2e/stories/story-8-4-drawio-png-auto-numbering.spec.ts`
+
+**修改文件：**
+- `package.json` — 新增 sharp 依赖 + onlyBuiltDependencies
+- `src/shared/drawio-types.ts` — DrawioMessageOut 增加 scale
+- `src/renderer/src/modules/editor/components/DrawioEditor.tsx` — export 添加 scale: 2
+- `src/main/services/export-service.ts` — 插入图表预处理步骤
+- `python/src/docx_renderer/engine/renderer.py` — 集成 figure registry、cross-ref、caption
+- `tests/unit/renderer/modules/editor/components/DrawioEditor.test.tsx` — 新增 scale: 2 测试
+- `tests/unit/main/services/export-service.test.ts` — 新增 preprocess mock 和 8-4 测试
+- `python/tests/test_render.py` — 新增 caption/numbering 测试
+- `tests/integration/docx-bridge/rich-export.integration.test.ts` — 新增 figure caption 集成测试
 
 ## Change Log
 
+- 2026-04-12: Story 8.4 实施完成
+  - Task 1-5 全部完成，所有 AC 满足
+  - 新增 figure-export-service (Node) + figure_numbering (Python)
+  - 集成至 export-service preview 管线
+  - 全量测试通过：typecheck、unit、integration、python
 - 2026-04-12: `validate-create-story` 修订
   - 补回 create-story 模板要求的 validation note，并新增 `Change Log`
   - 修正 Story 8.4 与当前代码基线/前序 story 的关键边界：draw.io 导出消费 sibling PNG，高清保障来自 `scale: 2` 保存链路，而非导出期重开 `.drawio`

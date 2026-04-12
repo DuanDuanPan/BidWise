@@ -68,6 +68,14 @@ vi.mock('@main/services/task-queue', () => ({
   taskQueue: mockTaskQueue,
 }))
 
+const mockFigureExportService = vi.hoisted(() => ({
+  preprocessMarkdownForExport: vi.fn(),
+}))
+
+vi.mock('@main/services/figure-export-service', () => ({
+  figureExportService: mockFigureExportService,
+}))
+
 vi.mock('fs/promises', () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
   copyFile: (...args: unknown[]) => mockCopyFile(...args),
@@ -85,6 +93,10 @@ describe('exportService', () => {
     mockReaddir.mockResolvedValue([])
     mockRm.mockResolvedValue(undefined)
     mockTaskQueue.cancel.mockResolvedValue(undefined)
+    mockFigureExportService.preprocessMarkdownForExport.mockResolvedValue({
+      processedMarkdown: '# Test Proposal',
+      warnings: [],
+    })
   })
 
   describe('startPreview', () => {
@@ -497,6 +509,51 @@ describe('exportService', () => {
         { signal: controller.signal }
       )
     })
+
+    it('@story-8-4 executor calls figureExportService.preprocessMarkdownForExport and uses processedMarkdown', async () => {
+      mockTaskQueue.enqueue.mockResolvedValue('task-figure')
+      let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | undefined
+      mockTaskQueue.execute.mockImplementation(
+        (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return Promise.resolve({})
+        }
+      )
+
+      await exportService.startPreview({ projectId: 'proj-1' })
+
+      const controller = new AbortController()
+      const mockCtx = { updateProgress: vi.fn(), signal: controller.signal }
+      mockDocumentService.load.mockResolvedValue({
+        projectId: 'proj-1',
+        content: '# Raw with <!-- drawio:id:f.drawio -->\n![fig](assets/f.png)',
+        lastSavedAt: '2026-04-12T00:00:00Z',
+        version: 1,
+      })
+      mockReadFile.mockRejectedValue(new Error('ENOENT'))
+      mockFigureExportService.preprocessMarkdownForExport.mockResolvedValue({
+        processedMarkdown: '# Processed content',
+        warnings: ['draw.io PNG 文件不存在: assets/f.png'],
+      })
+      mockDocxBridgeService.renderDocx.mockResolvedValue({
+        outputPath: '/tmp/out.docx',
+        renderTimeMs: 100,
+        warnings: ['render warning'],
+      })
+
+      const result = (await capturedExecutor!(mockCtx)) as { warnings?: string[] }
+
+      // Should use processed markdown, not raw content
+      expect(mockDocxBridgeService.renderDocx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          markdownContent: '# Processed content',
+        }),
+        { signal: controller.signal }
+      )
+
+      // Warnings should be merged in correct order
+      expect(result.warnings).toEqual(['draw.io PNG 文件不存在: assets/f.png', 'render warning'])
+    })
   })
 
   describe('loadPreviewContent', () => {
@@ -576,6 +633,24 @@ describe('exportService', () => {
           tempPath: '/tmp/bidwise-test/data/projects/proj-1/exports/../../../etc/passwd',
         })
       ).rejects.toThrow()
+    })
+
+    it('@story-8-4 remains copy-only — no re-preprocessing', async () => {
+      mockStat.mockResolvedValueOnce({ size: 1024 }).mockResolvedValueOnce({ size: 1024 })
+      mockProjectService.get.mockResolvedValue({ id: 'proj-1', name: '测试项目' })
+      mockDialog.showSaveDialog.mockResolvedValue({
+        canceled: false,
+        filePath: '/Users/test/Desktop/output.docx',
+      })
+      mockCopyFile.mockResolvedValue(undefined)
+
+      await exportService.confirmExport({
+        projectId: 'proj-1',
+        tempPath: '/tmp/bidwise-test/data/projects/proj-1/exports/.preview-12345.docx',
+      })
+
+      // Confirm figureExportService was NOT called during confirmExport
+      expect(mockFigureExportService.preprocessMarkdownForExport).not.toHaveBeenCalled()
     })
   })
 

@@ -13,6 +13,11 @@ from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
+from docx_renderer.engine.figure_numbering import (
+    FigureEntry,
+    build_figure_registry,
+    replace_cross_references,
+)
 from docx_renderer.models.schemas import PageSetup, RenderResult, StyleMapping
 
 # Fallback style names (built-in Word/python-docx English names)
@@ -382,7 +387,13 @@ def render_markdown_to_docx(
     else:
         doc = Document()
 
-    _parse_markdown(doc, markdown_content, style_mapping, page_setup, project_path, warnings)
+    # Build figure registry and replace cross-references before parsing
+    lines = markdown_content.split("\n")
+    figure_registry = build_figure_registry(lines)
+    lines = replace_cross_references(lines, figure_registry, warnings)
+    processed_content = "\n".join(lines)
+
+    _parse_markdown(doc, processed_content, style_mapping, page_setup, project_path, warnings, figure_registry)
 
     output_dir = Path(output_path).parent
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -424,6 +435,22 @@ def _add_code_block_paragraph(
             rpr.append(shd)
 
 
+def _add_figure_caption(
+    doc: Document,
+    figure_entry: FigureEntry,
+    style_mapping: Optional[StyleMapping],
+    warnings: list[str],
+) -> None:
+    """Insert a centered caption paragraph below the figure image."""
+    configured = _get_style_key(style_mapping, "caption")
+    resolved = _resolve_paragraph_style(doc, configured, "Caption", warnings)
+
+    caption_text = f"{figure_entry.label}: {figure_entry.caption}"
+    p = doc.add_paragraph(style=resolved)
+    p.alignment = 1  # WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run(caption_text)
+
+
 def _parse_markdown(
     doc: Document,
     content: str,
@@ -431,9 +458,16 @@ def _parse_markdown(
     page_setup: Optional[PageSetup] = None,
     project_path: Optional[str] = None,
     warnings: Optional[list[str]] = None,
+    figure_registry: Optional[list[FigureEntry]] = None,
 ) -> None:
     if warnings is None:
         warnings = []
+
+    # Build lookup for figure entries by line index
+    figure_by_line: dict[int, FigureEntry] = {}
+    if figure_registry:
+        for entry in figure_registry:
+            figure_by_line[entry.line_index] = entry
 
     lines = content.split("\n")
     i = 0
@@ -472,6 +506,15 @@ def _parse_markdown(
                 page_setup,
                 warnings,
             )
+            # Add figure caption if this image is in the registry
+            figure_entry = figure_by_line.get(i)
+            if figure_entry:
+                _add_figure_caption(
+                    doc,
+                    figure_entry,
+                    style_mapping,
+                    warnings,
+                )
             i += 1
             continue
 

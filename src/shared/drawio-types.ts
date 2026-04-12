@@ -19,6 +19,7 @@ export interface DrawioMessageOut {
   xml?: string
   format?: 'png'
   spin?: boolean
+  scale?: number
 }
 
 export interface DrawioMessageIn {

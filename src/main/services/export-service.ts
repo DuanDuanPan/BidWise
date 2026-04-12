@@ -8,6 +8,7 @@ import { resolveProjectDataPath } from '@main/utils/project-paths'
 import { documentService } from '@main/services/document-service'
 import { projectService } from '@main/services/project-service'
 import { docxBridgeService } from '@main/services/docx-bridge'
+import { figureExportService } from '@main/services/figure-export-service'
 import { taskQueue } from '@main/services/task-queue'
 import { throwIfAborted } from '@main/utils/abort'
 import type {
@@ -282,6 +283,12 @@ export const exportService = {
         const mapping = await resolveTemplateMapping(input.projectId, input.templatePath)
         const projectPath = resolveProjectDataPath(input.projectId)
 
+        ctx.updateProgress(40, '正在预处理图表资产')
+        const preprocessResult = await figureExportService.preprocessMarkdownForExport(
+          doc.content,
+          projectPath
+        )
+
         ctx.updateProgress(50, '正在生成 docx 预览')
         const timestamp = Date.now()
         const fileName = `.preview-${timestamp}.docx`
@@ -300,7 +307,7 @@ export const exportService = {
           try {
             renderResult = await docxBridgeService.renderDocx(
               {
-                markdownContent: doc.content,
+                markdownContent: preprocessResult.processedMarkdown,
                 outputPath,
                 templatePath: mapping.templatePath,
                 projectId: input.projectId,
@@ -325,7 +332,11 @@ export const exportService = {
 
         ctx.updateProgress(100, 'completed')
 
-        const allWarnings = [...mapping.warnings, ...(renderResult.warnings ?? [])]
+        const allWarnings = [
+          ...mapping.warnings,
+          ...preprocessResult.warnings,
+          ...(renderResult.warnings ?? []),
+        ]
         const result: PreviewTaskResult = {
           tempPath: renderResult.outputPath,
           fileName,

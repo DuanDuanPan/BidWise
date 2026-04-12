@@ -58,6 +58,7 @@
     "pdf-parse": "^2.4.5",
     "platejs": "^52.3.4",
     "react-router-dom": "^7.13.1",
+    "sharp": "^0.33.5",
     "remark-gfm": "^4.0.1",
     "uuid": "^13.0.0",
     "zustand": "^5.0.12"
@@ -110,7 +111,8 @@
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "electron",
-      "esbuild"
+      "esbuild",
+      "sharp"
     ]
   }
 }

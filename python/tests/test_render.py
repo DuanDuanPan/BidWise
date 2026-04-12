@@ -1084,6 +1084,133 @@ def test_table_paragraph_style_falls_back(client: TestClient, tmp_output: str, t
     assert len(doc.tables) == 1
 
 
+# === Story 8.4: Figure numbering & caption tests ===
+
+
+def test_figure_caption_added_after_image(client: TestClient, tmp_output: str, tmp_path):
+    """Captioned image should produce a caption paragraph below it."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    import shutil
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "arch.png"))
+
+    md = "# 方案概述\n\n![系统架构图](assets/arch.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    assert any("图 1-1: 系统架构图" in t for t in texts), f"No caption found in: {texts}"
+
+
+def test_no_caption_image_not_numbered(client: TestClient, tmp_output: str, tmp_path):
+    """Image without caption should NOT get a figure number."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    import shutil
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "plain.png"))
+
+    md = "# Title\n\n![](assets/plain.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # No caption paragraph should be present
+    assert not any("图" in t and "-" in t for t in texts), f"Unexpected caption in: {texts}"
+
+
+def test_preprocessed_drawio_mermaid_enters_caption_pipeline(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """Images generated from draw.io/Mermaid preprocessing should be captioned."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    import shutil
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "flow.png"))
+
+    # Simulated preprocessed markdown — draw.io comment + image ref, mermaid already converted
+    md = "# 技术方案\n\n![流程图](assets/flow.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    assert any("图 1-1: 流程图" in t for t in texts), f"No caption found in: {texts}"
+
+
+def test_caption_style_missing_warning_fallback(client: TestClient, tmp_output: str, tmp_path):
+    """Missing caption style should produce warning and fallback, not crash."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    import shutil
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "test.png"))
+
+    md = "# Ch\n\n![Test](assets/test.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+            "styleMapping": {"caption": "NonExistentCaptionStyle"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    warnings = body["data"]["warnings"]
+    assert any("NonExistentCaptionStyle" in w for w in warnings)
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # Caption should still be rendered with fallback
+    assert any("图 1-1: Test" in t for t in texts), f"No caption found: {texts}"
+
+
 def test_unexpected_error_returns_structured_response(client: TestClient, tmp_output: str):
     """Unexpected exceptions must return structured error, not raw 500."""
     # Trigger an error by providing an output path that can't be created

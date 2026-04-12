@@ -42,7 +42,7 @@ export function DrawioEditor({ xml, onSave, onExit }: DrawioEditorProps): React.
         case 'save':
           if (parsed.xml) {
             pendingXmlRef.current = parsed.xml
-            postToDrawio({ action: 'export', format: 'png', spin: true })
+            postToDrawio({ action: 'export', format: 'png', spin: true, scale: 2 })
           }
           break
 
