@@ -57,10 +57,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
   const [statuses, setStatuses] = useState<Map<string, ChapterGenerationStatus>>(new Map())
   const taskToLocatorRef = useRef<Map<string, ChapterHeadingLocator>>(new Map())
   const statusesRef = useRef(statuses)
+  const projectIdRef = useRef(projectId)
 
   useEffect(() => {
     statusesRef.current = statuses
   }, [statuses])
+
+  useEffect(() => {
+    projectIdRef.current = projectId
+  }, [projectId])
 
   const updateStatus = useCallback(
     (key: string, updater: (prev: ChapterGenerationStatus) => ChapterGenerationStatus) => {
@@ -109,7 +114,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               }
             })
             // Refresh annotations — post-processor may have created terminology annotations
-            void useAnnotationStore.getState().loadAnnotations(projectId)
+            void useAnnotationStore.getState().loadAnnotations(projectIdRef.current)
             taskToLocatorRef.current.delete(event.taskId)
           } else if (status.status === 'failed') {
             updateStatus(key, (prev) => ({

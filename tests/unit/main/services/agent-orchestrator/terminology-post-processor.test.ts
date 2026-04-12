@@ -4,7 +4,7 @@ import type { AgentExecuteResult } from '@shared/ai-types'
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
 const mockApplyReplacements = vi.hoisted(() => vi.fn())
 const mockAnnotationCreate = vi.hoisted(() => vi.fn())
-const mockAnnotationUpdate = vi.hoisted(() => vi.fn())
+const mockAnnotationDelete = vi.hoisted(() => vi.fn())
 const mockCreateChapterLocatorKey = vi.hoisted(() => vi.fn())
 
 vi.mock('@main/services/terminology-service', () => ({
@@ -22,7 +22,7 @@ vi.mock('@main/services/terminology-replacement-service', () => ({
 vi.mock('@main/services/annotation-service', () => ({
   annotationService: {
     create: mockAnnotationCreate,
-    update: mockAnnotationUpdate,
+    delete: mockAnnotationDelete,
   },
 }))
 
@@ -92,9 +92,6 @@ describe('terminologyPostProcessor', () => {
       content: expect.stringContaining('设备管理'),
       author: 'system:terminology',
     })
-
-    // Annotations stay as pending for sidebar visibility (AC3)
-    expect(mockAnnotationUpdate).not.toHaveBeenCalled()
   })
 
   it('returns original result unchanged when no active terms exist', async () => {
@@ -193,7 +190,7 @@ describe('terminologyPostProcessor', () => {
     expect(mockAnnotationCreate).not.toHaveBeenCalled()
   })
 
-  it('returns replaced content and stops annotation loop when signal aborted mid-iteration', async () => {
+  it('rolls back annotation and stops loop when signal aborted mid-iteration', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
       { id: 't2', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
@@ -210,11 +207,12 @@ describe('terminologyPostProcessor', () => {
     mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
 
     const controller = new AbortController()
-    // Abort after the first annotation is created
+    // Abort during the first annotation creation
     mockAnnotationCreate.mockImplementationOnce(async () => {
       controller.abort()
       return { id: 'ann-1' }
     })
+    mockAnnotationDelete.mockResolvedValue(undefined)
 
     const context: Record<string, unknown> = {
       mode: 'generate-chapter',
@@ -226,11 +224,12 @@ describe('terminologyPostProcessor', () => {
     const output = await terminologyPostProcessor(makeResult(), context, controller.signal)
     expect(output.content).toBe('装备全寿命周期管理是采购方核心功能')
 
-    // Only one annotation was created before abort; second was skipped
+    // First annotation was created then rolled back; second was never attempted
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
+    expect(mockAnnotationDelete).toHaveBeenCalledWith('ann-1')
   })
 
-  it('returns replaced content even when all annotation creates fail', async () => {
+  it('throws BidWiseError when all annotation creates fail', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
     ]
@@ -249,9 +248,10 @@ describe('terminologyPostProcessor', () => {
       target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
     }
 
-    // Annotation failure does not block content — replaced content is still returned
-    const output = await terminologyPostProcessor(makeResult(), context, makeSignal())
-    expect(output.content).toBe('装备全寿命周期管理是核心功能')
+    await expect(
+      terminologyPostProcessor(makeResult(), context, makeSignal())
+    ).rejects.toThrow(/批注创建失败/)
+
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
   })
 

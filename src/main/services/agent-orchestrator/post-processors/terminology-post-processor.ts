@@ -1,9 +1,11 @@
 import { createLogger } from '@main/utils/logger'
+import { BidWiseError } from '@main/utils/errors'
 import { throwIfAborted } from '@main/utils/abort'
 import { terminologyService } from '@main/services/terminology-service'
 import { terminologyReplacementService } from '@main/services/terminology-replacement-service'
 import { annotationService } from '@main/services/annotation-service'
 import { createChapterLocatorKey } from '@shared/chapter-locator-key'
+import { ErrorCode } from '@shared/constants'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import type { AgentPostProcessor } from '../orchestrator'
 
@@ -35,11 +37,10 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
   const projectId = context.projectId as string | undefined
   const target = context.target as ChapterHeadingLocator | undefined
 
-  // Annotation creation is best-effort — never prevent replaced content from being returned.
-  // Abort, partial failure, or total failure all log but do not throw.
   if (projectId && target) {
     const sectionId = createChapterLocatorKey(target)
     let failedCount = 0
+    const createdIds: string[] = []
 
     for (const replacement of applyResult.replacements) {
       if (signal?.aborted) {
@@ -53,13 +54,26 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
           content += `（共 ${replacement.count} 处）`
         }
 
-        await annotationService.create({
+        const record = await annotationService.create({
           projectId,
           sectionId,
           type: 'ai-suggestion',
           content,
           author: 'system:terminology',
         })
+        createdIds.push(record.id)
+
+        // Check abort immediately after create — roll back the just-created annotation
+        if (signal?.aborted) {
+          try {
+            await annotationService.delete(record.id)
+            createdIds.pop()
+          } catch (deleteErr) {
+            logger.warn(`取消后批注回滚失败 (${record.id}): ${(deleteErr as Error).message}`)
+          }
+          logger.info('术语后处理已取消，已回滚当前批注并跳过剩余')
+          break
+        }
       } catch (err) {
         failedCount++
         logger.error(`术语批注创建失败: ${(err as Error).message}`)
@@ -67,7 +81,8 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
     }
 
     if (failedCount > 0 && failedCount === applyResult.replacements.length) {
-      logger.error(
+      throw new BidWiseError(
+        ErrorCode.ANNOTATION_CREATION_FAILED,
         `术语替换已完成（${applyResult.totalReplacements} 处），但全部 ${failedCount} 条批注创建失败，用户将无法在侧边栏看到替换记录`
       )
     } else if (failedCount > 0) {
