@@ -233,4 +233,156 @@ describe('reviewStore attack-checklist @story-7-5', () => {
       expect(state.attackChecklistError).toBeNull()
     })
   })
+
+  describe('startAttackChecklistGeneration — taskId reset', () => {
+    it('clears stale attackChecklistTaskId on regenerate', async () => {
+      // Simulate a completed previous generation that left a taskId
+      useReviewStore.setState({
+        projects: {
+          'proj-1': createProjectState({
+            attackChecklistTaskId: 'old-task',
+            attackChecklistLoaded: true,
+          }),
+        },
+      })
+
+      mockReviewGenerateAttackChecklist.mockResolvedValue({
+        success: true,
+        data: { taskId: 'new-task' },
+      })
+
+      const genPromise = useReviewStore.getState().startAttackChecklistGeneration('proj-1')
+
+      // After the synchronous set but before the IPC resolves, taskId should be cleared
+      const midState = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(midState.attackChecklistTaskId).toBeNull()
+      expect(midState.attackChecklistLoading).toBe(true)
+
+      await genPromise
+
+      const finalState = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(finalState.attackChecklistTaskId).toBe('new-task')
+    })
+  })
+
+  describe('race condition: auto-load vs generation', () => {
+    it('loadAttackChecklist preserves generation state when generation starts during its flight', async () => {
+      // 1. Initial state: nothing loaded, nothing loading
+      useReviewStore.setState({
+        projects: {
+          'proj-1': createProjectState(),
+        },
+      })
+
+      // 2. Set up mock so loadAttackChecklist's IPC is controllable
+      let resolveLoad!: (value: unknown) => void
+      mockReviewGetAttackChecklist.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLoad = resolve
+        })
+      )
+
+      // 3. Auto-load fires (simulating the useEffect)
+      const loadPromise = useReviewStore.getState().loadAttackChecklist('proj-1')
+
+      // 4. While load IPC is in-flight, user clicks "Generate"
+      mockReviewGenerateAttackChecklist.mockResolvedValue({
+        success: true,
+        data: { taskId: 'gen-task-1' },
+      })
+      await useReviewStore.getState().startAttackChecklistGeneration('proj-1')
+
+      // Verify generation state is set
+      const midState = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(midState.attackChecklistLoading).toBe(true)
+      expect(midState.attackChecklistTaskId).toBe('gen-task-1')
+
+      // 5. Now the auto-load IPC returns (with stale data or null)
+      resolveLoad({ success: true, data: null })
+      await loadPromise
+
+      // 6. Generation state must NOT be clobbered
+      const finalState = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(finalState.attackChecklistLoading).toBe(true)
+      expect(finalState.attackChecklistTaskId).toBe('gen-task-1')
+      expect(finalState.attackChecklistMessage).toBe('正在启动攻击清单生成...')
+    })
+
+    it('loadAttackChecklist clears state normally when no generation is in-flight', async () => {
+      // Simulate task monitor calling loadAttackChecklist after task completion
+      useReviewStore.setState({
+        projects: {
+          'proj-1': createProjectState({
+            attackChecklistLoading: true,
+            attackChecklistTaskId: 'completed-task',
+            attackChecklistProgress: 100,
+          }),
+        },
+      })
+
+      const mockChecklist = {
+        id: 'cl-1',
+        projectId: 'proj-1',
+        status: 'generated',
+        items: [],
+        generationSource: 'llm',
+        warningMessage: null,
+        generatedAt: '',
+        createdAt: '',
+        updatedAt: '',
+      }
+      mockReviewGetAttackChecklist.mockResolvedValue({
+        success: true,
+        data: mockChecklist,
+      })
+
+      await useReviewStore.getState().loadAttackChecklist('proj-1')
+
+      // State should be fully cleared (normal terminal behavior)
+      const state = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(state.attackChecklist).toEqual(mockChecklist)
+      expect(state.attackChecklistLoaded).toBe(true)
+      expect(state.attackChecklistLoading).toBe(false)
+      expect(state.attackChecklistTaskId).toBeNull()
+      expect(state.attackChecklistProgress).toBe(0)
+      expect(state.attackChecklistMessage).toBeNull()
+    })
+
+    it('loadAttackChecklist preserves state when a different generation replaces previous one during flight', async () => {
+      // Task monitor calls loadAttackChecklist for completed task-1
+      useReviewStore.setState({
+        projects: {
+          'proj-1': createProjectState({
+            attackChecklistLoading: true,
+            attackChecklistTaskId: 'task-1',
+          }),
+        },
+      })
+
+      let resolveLoad!: (value: unknown) => void
+      mockReviewGetAttackChecklist.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLoad = resolve
+        })
+      )
+
+      const loadPromise = useReviewStore.getState().loadAttackChecklist('proj-1')
+
+      // User clicks regenerate while load is in-flight — new generation starts
+      mockReviewGenerateAttackChecklist.mockResolvedValue({
+        success: true,
+        data: { taskId: 'task-2' },
+      })
+      await useReviewStore.getState().startAttackChecklistGeneration('proj-1')
+
+      // Load returns from the old request
+      resolveLoad({ success: true, data: null })
+      await loadPromise
+
+      // New generation state must be preserved
+      const state = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(state.attackChecklistLoading).toBe(true)
+      expect(state.attackChecklistTaskId).toBe('task-2')
+    })
+  })
 })

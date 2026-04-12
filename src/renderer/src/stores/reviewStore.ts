@@ -534,6 +534,7 @@ export const useReviewStore = create<ReviewStore>()(
           attackChecklistLoaded: false,
           attackChecklistLoading: true,
           attackChecklistError: null,
+          attackChecklistTaskId: null,
           attackChecklistProgress: 0,
           attackChecklistMessage: '正在启动攻击清单生成...',
         })
@@ -566,11 +567,28 @@ export const useReviewStore = create<ReviewStore>()(
     },
 
     async loadAttackChecklist(projectId: string): Promise<boolean> {
+      // Snapshot generation state before the async call so we can detect
+      // whether a generation started (or changed) while the IPC was in flight.
+      const preCall = getReviewProjectState(useReviewStore.getState(), projectId)
+      const preCallLoading = preCall.attackChecklistLoading
+      const preCallTaskId = preCall.attackChecklistTaskId
+
       try {
         const response = await window.api.reviewGetAttackChecklist({ projectId })
         if (response.success) {
-          set((state) =>
-            updateProject(state, projectId, {
+          set((state) => {
+            const current = getReviewProjectState(state, projectId)
+            // A generation started (or a different generation replaced the old one)
+            // while this load was in-flight — preserve generation tracking state.
+            const generationStartedDuringLoad =
+              current.attackChecklistLoading &&
+              (!preCallLoading || current.attackChecklistTaskId !== preCallTaskId)
+
+            if (generationStartedDuringLoad) {
+              return state
+            }
+
+            return updateProject(state, projectId, {
               attackChecklist: response.data ?? null,
               attackChecklistLoaded: true,
               attackChecklistLoading: false,
@@ -578,7 +596,7 @@ export const useReviewStore = create<ReviewStore>()(
               attackChecklistProgress: 0,
               attackChecklistMessage: null,
             })
-          )
+          })
           return response.data != null
         }
         return false
