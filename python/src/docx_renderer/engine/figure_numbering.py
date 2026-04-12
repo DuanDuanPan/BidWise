@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 _H1_PATTERN = re.compile(r"^#\s+.+$")
 _IMAGE_PATTERN = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")
 _FIGREF_PATTERN = re.compile(r"\{figref:([^}]+)\}")
+_FENCE_OPEN_PATTERN = re.compile(r"^(`{3,}|~{3,})(\w*)\s*$")
 
 
 @dataclass
@@ -29,8 +30,22 @@ def build_figure_registry(lines: list[str]) -> list[FigureEntry]:
     chapter_number = 1
     figure_number = 0
     seen_real_h1 = False
+    fence_marker: str | None = None  # e.g. "```" or "~~~"
 
     for i, line in enumerate(lines):
+        # Track fenced code block state
+        if fence_marker is not None:
+            if line.rstrip() == fence_marker or (
+                line.startswith(fence_marker) and line.strip() == fence_marker
+            ):
+                fence_marker = None
+            continue
+
+        fence_match = _FENCE_OPEN_PATTERN.match(line)
+        if fence_match:
+            fence_marker = fence_match.group(1)
+            continue
+
         if _H1_PATTERN.match(line):
             if not seen_real_h1:
                 seen_real_h1 = True
@@ -72,8 +87,24 @@ def replace_cross_references(
     4. If no match at all, keep original text and append warning
     """
     result: list[str] = []
+    fence_marker: str | None = None
 
     for line in lines:
+        # Track fenced code block state
+        if fence_marker is not None:
+            result.append(line)
+            if line.rstrip() == fence_marker or (
+                line.startswith(fence_marker) and line.strip() == fence_marker
+            ):
+                fence_marker = None
+            continue
+
+        fence_match = _FENCE_OPEN_PATTERN.match(line)
+        if fence_match:
+            fence_marker = fence_match.group(1)
+            result.append(line)
+            continue
+
         def _replace_ref(m: re.Match) -> str:
             ref_text = m.group(1).strip()
 

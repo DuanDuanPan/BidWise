@@ -161,3 +161,82 @@ class TestReplaceCrossReferences:
         lines = ["Normal text without references."]
         result = replace_cross_references(lines, [], [])
         assert result[0] == "Normal text without references."
+
+
+class TestFencedCodeBlockSkipping:
+    """Images and figrefs inside fenced code blocks must be ignored."""
+
+    def test_image_in_code_block_not_registered(self):
+        lines = [
+            "# Chapter 1",
+            "```markdown",
+            "![Fake](assets/fake.png)",
+            "```",
+            "![Real](assets/real.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "Real"
+        assert figures[0].label == "\u56fe 1-1"
+
+    def test_image_in_tilde_code_block_not_registered(self):
+        lines = [
+            "# Chapter 1",
+            "~~~",
+            "![Fake](assets/fake.png)",
+            "~~~",
+            "![Real](assets/real.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "Real"
+        assert figures[0].label == "\u56fe 1-1"
+
+    def test_figref_in_code_block_not_replaced(self):
+        lines = [
+            "```",
+            "See {figref:\u67b6\u6784\u56fe} for details",
+            "```",
+            "Real ref: {figref:\u67b6\u6784\u56fe}",
+        ]
+        figures = build_figure_registry([
+            "# Chapter 1",
+            "![\u67b6\u6784\u56fe](assets/arch.png)",
+        ])
+        warnings: list[str] = []
+        result = replace_cross_references(lines, figures, warnings)
+        # Inside code block: untouched
+        assert "{figref:\u67b6\u6784\u56fe}" in result[1]
+        # Outside code block: replaced
+        assert "\u56fe 1-1" in result[3]
+        assert len(warnings) == 0
+
+    def test_mixed_code_blocks_and_real_images(self):
+        """The exact reproduction from the finding:
+        fenced + ![Fake] + fenced + ![Real] should give Real=\u56fe 1-1 only."""
+        lines = [
+            "# Chapter 1",
+            "```",
+            "![Fake](assets/fake.png)",
+            "```",
+            "![Real](assets/real.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "Real"
+        assert figures[0].label == "\u56fe 1-1"
+
+    def test_h1_inside_code_block_not_counted(self):
+        lines = [
+            "# Chapter 1",
+            "![A](a.png)",
+            "```",
+            "# Not a real heading",
+            "```",
+            "![B](b.png)",
+        ]
+        figures = build_figure_registry(lines)
+        # Both should be chapter 1 — the code block H1 must not increment chapter
+        assert len(figures) == 2
+        assert figures[0].label == "\u56fe 1-1"
+        assert figures[1].label == "\u56fe 1-2"

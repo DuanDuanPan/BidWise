@@ -138,6 +138,55 @@ describe('@story-8-4 figureExportService.preprocessMarkdownForExport', () => {
     expect(result.warnings).toHaveLength(0)
   })
 
+  it('rejects Mermaid asset with path traversal (../)', async () => {
+    const markdown = [
+      '<!-- mermaid:id1:../../../etc/passwd.svg:caption -->',
+      '```mermaid',
+      'graph TD; A-->B',
+      '```',
+    ].join('\n')
+
+    const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
+
+    expect(result.processedMarkdown).toContain('[图片未导出: ../../../etc/passwd.svg]')
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('路径遍历')
+    expect(mockAccess).not.toHaveBeenCalled()
+  })
+
+  it('rejects draw.io asset with path traversal', async () => {
+    const markdown = ['<!-- drawio:id1:../secret/data.drawio -->', '![图](assets/data.png)'].join(
+      '\n'
+    )
+
+    const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
+
+    expect(result.processedMarkdown).toContain('[图片未导出: ../secret/data.drawio]')
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('路径遍历')
+    expect(mockAccess).not.toHaveBeenCalled()
+  })
+
+  it('gracefully handles malformed URI-encoded caption', async () => {
+    const markdown = [
+      '<!-- mermaid:id1:diagram.svg:%E0%A4%A -->',
+      '```mermaid',
+      'graph TD; A-->B',
+      '```',
+    ].join('\n')
+
+    mockAccess.mockResolvedValue(undefined)
+    mockReadFile.mockResolvedValue(Buffer.from('<svg></svg>'))
+    mockSharpToBuffer.mockResolvedValue(Buffer.from('PNG'))
+    mockWriteFile.mockResolvedValue(undefined)
+
+    const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
+
+    // Should not throw — uses raw encoded string as fallback caption
+    expect(result.processedMarkdown).toContain('![%E0%A4%A](assets/diagram.png)')
+    expect(result.warnings.some((w) => w.includes('URI 解码失败'))).toBe(true)
+  })
+
   it('does not modify regular images', async () => {
     const markdown = ['# Title', '![photo](assets/photo.png)', 'Normal text.'].join('\n')
 

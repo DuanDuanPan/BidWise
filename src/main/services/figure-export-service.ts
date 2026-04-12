@@ -14,6 +14,22 @@ const IMAGE_REF_RE = /^!\[([^\]]*)\]\(([^)]+)\)\s*$/
 // Fenced code block start
 const FENCED_CODE_START_RE = /^(`{3,}|~{3,})(\w*)\s*$/
 
+function isValidAssetFileName(assetFileName: string): boolean {
+  return (
+    assetFileName === basename(assetFileName) &&
+    !assetFileName.includes('..') &&
+    !assetFileName.includes('\\')
+  )
+}
+
+function safeDecodeURIComponent(encoded: string): { value: string; error?: string } {
+  try {
+    return { value: decodeURIComponent(encoded) }
+  } catch {
+    return { value: encoded, error: `URI 解码失败: ${encoded}` }
+  }
+}
+
 function assetBaseName(assetFileName: string, ext: string): string {
   const b = basename(assetFileName)
   if (b.endsWith(ext)) {
@@ -58,8 +74,23 @@ async function preprocessMarkdownForExport(
     const mermaidMatch = MERMAID_COMMENT_RE.exec(line)
     if (mermaidMatch) {
       const assetFileName = mermaidMatch[2]
+
+      if (!isValidAssetFileName(assetFileName)) {
+        warnings.push(`Mermaid 资产文件名非法 (路径遍历): ${assetFileName}`)
+        result.push(`[图片未导出: ${assetFileName}]`)
+        i++
+        continue
+      }
+
       const encodedCaption = mermaidMatch[3] ?? ''
-      const caption = encodedCaption ? decodeURIComponent(encodedCaption) : ''
+      let caption = ''
+      if (encodedCaption) {
+        const decoded = safeDecodeURIComponent(encodedCaption)
+        caption = decoded.value
+        if (decoded.error) {
+          warnings.push(decoded.error)
+        }
+      }
       const assetBase = assetBaseName(assetFileName, '.svg')
       const pngRelPath = `assets/${assetBase}.png`
       const svgAbsPath = join(projectPath, 'assets', assetFileName)
@@ -107,6 +138,14 @@ async function preprocessMarkdownForExport(
     const drawioMatch = DRAWIO_COMMENT_RE.exec(line)
     if (drawioMatch) {
       const assetFileName = drawioMatch[2]
+
+      if (!isValidAssetFileName(assetFileName)) {
+        warnings.push(`draw.io 资产文件名非法 (路径遍历): ${assetFileName}`)
+        result.push(`[图片未导出: ${assetFileName}]`)
+        i++
+        continue
+      }
+
       const assetBase = assetBaseName(assetFileName, '.drawio')
       const pngRelPath = `assets/${assetBase}.png`
       const pngAbsPath = join(projectPath, 'assets', `${assetBase}.png`)
