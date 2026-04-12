@@ -22,6 +22,7 @@ interface AdversarialLineupDrawerProps {
   onConfirm: () => void
   onStartReview?: () => void
   onViewReviewResults?: () => void
+  onGenerateChecklist?: () => void
 }
 
 export function AdversarialLineupDrawer({
@@ -33,6 +34,7 @@ export function AdversarialLineupDrawer({
   onConfirm,
   onStartReview,
   onViewReviewResults,
+  onGenerateChecklist,
 }: AdversarialLineupDrawerProps): React.JSX.Element {
   const [addModalOpen, setAddModalOpen] = useState(false)
 
@@ -212,7 +214,13 @@ export function AdversarialLineupDrawer({
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   <ThunderboltOutlined style={{ marginRight: 4 }} />
                   建议
-                  <Typography.Link style={{ fontSize: 12 }} onClick={onClose}>
+                  <Typography.Link
+                    style={{ fontSize: 12 }}
+                    onClick={() => {
+                      onGenerateChecklist?.()
+                      onClose()
+                    }}
+                  >
                     生成攻击清单
                   </Typography.Link>
                   进行防御性写作

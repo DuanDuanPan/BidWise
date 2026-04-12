@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Alert, Badge, Button, Progress, Spin, Switch } from 'antd'
 import { ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useAttackChecklist } from '../hooks/useAttackChecklist'
@@ -25,6 +25,10 @@ export const AttackChecklistPanel: React.FC<AttackChecklistPanelProps> = ({
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const [showAll, setShowAll] = useState(false)
 
+  useEffect(() => {
+    setCollapsed(defaultCollapsed)
+  }, [defaultCollapsed])
+
   const {
     checklist,
     loading,
@@ -37,7 +41,7 @@ export const AttackChecklistPanel: React.FC<AttackChecklistPanelProps> = ({
     stats,
   } = useAttackChecklist(projectId)
 
-  const isGenerating = loading && !checklist
+  const isGenerating = (loading && !checklist) || checklist?.status === 'generating'
   const hasChecklist = !!checklist && checklist.status === 'generated'
   const isFallback = checklist?.generationSource === 'fallback'
 

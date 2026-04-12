@@ -705,6 +705,9 @@ export function ProjectWorkspace(): React.JSX.Element {
               }}
               onStartReview={adversarialReview.startReview}
               onViewReviewResults={adversarialReview.openPanel}
+              onGenerateChecklist={() => {
+                void useReviewStore.getState().startAttackChecklistGeneration(projectId)
+              }}
             />
           )}
         </div>

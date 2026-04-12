@@ -139,6 +139,35 @@ export const AttackChecklistItemCard: React.FC<AttackChecklistItemCardProps> = (
         {item.attackAngle}
       </div>
 
+      {/* Action buttons — always visible for unaddressed items */}
+      {item.status === 'unaddressed' && (
+        <div
+          className="flex gap-2"
+          style={{ marginTop: 6 }}
+          onClick={(e) => e.stopPropagation()}
+          data-testid="action-buttons"
+        >
+          <Button
+            type="primary"
+            size="small"
+            icon={<CheckOutlined />}
+            onClick={handleAddress}
+            data-testid="address-button"
+          >
+            已防御
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            icon={<EyeInvisibleOutlined />}
+            onClick={handleDismiss}
+            data-testid="dismiss-button"
+          >
+            忽略
+          </Button>
+        </div>
+      )}
+
       {/* Expanded details */}
       {expanded && (
         <div style={{ marginTop: 8 }} data-testid="expanded-details">
@@ -158,34 +187,6 @@ export const AttackChecklistItemCard: React.FC<AttackChecklistItemCardProps> = (
             <strong style={{ color: 'var(--color-text-primary)' }}>防御建议：</strong>
             {item.defenseSuggestion}
           </div>
-
-          {/* Action buttons (only when unaddressed) */}
-          {item.status === 'unaddressed' && (
-            <div
-              className="flex gap-2"
-              style={{ marginTop: 8 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Button
-                type="primary"
-                size="small"
-                icon={<CheckOutlined />}
-                onClick={handleAddress}
-                data-testid="address-button"
-              >
-                已防御
-              </Button>
-              <Button
-                type="text"
-                size="small"
-                icon={<EyeInvisibleOutlined />}
-                onClick={handleDismiss}
-                data-testid="dismiss-button"
-              >
-                忽略
-              </Button>
-            </div>
-          )}
         </div>
       )}
     </div>

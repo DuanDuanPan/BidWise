@@ -407,22 +407,25 @@ class AttackChecklistService {
           }))
         )
 
-        // Update checklist status
-        const warningMessage = usedFallback ? 'AI 生成失败，已使用通用攻击清单' : undefined
-        await checklistRepo.updateChecklistStatus(checklistId, 'generated', warningMessage)
-
+        // Update checklist status and generation source
         if (usedFallback) {
-          // Update generation source to fallback
           await checklistRepo.saveChecklist({
             projectId,
             status: 'generated',
             generationSource: 'fallback',
-            warningMessage: warningMessage ?? null,
+            warningMessage: 'AI 生成失败，已使用通用攻击清单',
             generatedAt: new Date().toISOString(),
           })
           ctx.updateProgress(100, '已使用通用攻击清单')
           logger.info(`Fallback attack checklist saved for project ${projectId}`)
         } else {
+          await checklistRepo.saveChecklist({
+            projectId,
+            status: 'generated',
+            generationSource: 'llm',
+            warningMessage: null,
+            generatedAt: new Date().toISOString(),
+          })
           ctx.updateProgress(100, '攻击清单生成完成')
           logger.info(
             `Attack checklist generation complete for project ${projectId}: ${normalizedItems.length} items`
