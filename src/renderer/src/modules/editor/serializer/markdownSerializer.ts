@@ -11,7 +11,7 @@ type EditorWithMarkdownApi = {
 // ── Drawio Markdown patterns ──
 
 const DRAWIO_COMMENT_RE = /^<!-- drawio:([^:]+):(.+?) -->$/
-const DRAWIO_IMAGE_RE = /^!\[([^\]]*)\]\(assets\/(.+?\.png)\)$/
+const DRAWIO_IMAGE_RE = /^!\[((?:[^\]\\]|\\.)*)\]\(assets\/(.+?\.png)\)$/
 
 // Placeholder used during serialization: a unique string that won't appear in real content
 const DRAWIO_PLACEHOLDER_PREFIX = 'DRAWIO-PH-'
@@ -23,6 +23,14 @@ const DRAWIO_PLACEHOLDER_RE = /DRAWIO-PH-(\d+)-END/g
 const MERMAID_COMMENT_RE = /^<!-- mermaid:([^:]+):([^:]+?)(?::(.*)?)? -->$/
 const MERMAID_FENCE_START_RE = /^```mermaid\s*$/
 const MERMAID_FENCE_END_RE = /^```\s*$/
+
+function escapeMarkdownAlt(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/\]/g, '\\]')
+}
+
+function unescapeMarkdownAlt(text: string): string {
+  return text.replace(/\\(.)/g, '$1')
+}
 
 const MERMAID_PLACEHOLDER_PREFIX = 'MERMAID-PH-'
 const MERMAID_PLACEHOLDER_SUFFIX = '-END'
@@ -80,7 +88,7 @@ export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
 
     const pngFileName = block.assetFileName.replace(/\.drawio$/, '.png')
     const comment = `<!-- drawio:${block.diagramId}:${block.assetFileName} -->`
-    const image = `![${block.caption || ''}](assets/${pngFileName})`
+    const image = `![${escapeMarkdownAlt(block.caption || '')}](assets/${pngFileName})`
     return `${comment}\n${image}`
   })
 
@@ -124,7 +132,7 @@ export function deserializeFromMarkdown(
       if (imageMatch) {
         const diagramId = drawioCommentMatch[1]
         const assetFileName = drawioCommentMatch[2]
-        const caption = imageMatch[1]
+        const caption = unescapeMarkdownAlt(imageMatch[1])
         drawioDataMap.set(drawioPlaceholderIndex, { diagramId, assetFileName, caption })
         processedLines.push(
           `${DRAWIO_PLACEHOLDER_PREFIX}${drawioPlaceholderIndex}${DRAWIO_PLACEHOLDER_SUFFIX}`

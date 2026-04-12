@@ -48,7 +48,7 @@ _INLINE_PATTERN = re.compile(
     r"|(`+)(.+?)\7"  # inline code
 )
 
-_IMAGE_PATTERN = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")
+_IMAGE_PATTERN = re.compile(r"^!\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)\s*$")
 _FENCED_CODE_START = re.compile(r"^(`{3,}|~{3,})(\w*)\s*$")
 
 # Allowed image extensions

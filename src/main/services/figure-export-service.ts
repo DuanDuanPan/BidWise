@@ -8,8 +8,8 @@ const MERMAID_COMMENT_RE = /^<!--\s*mermaid:([^:]+):([^:>]+?)(?::([^>]*?))?\s*--
 // draw.io comment: <!-- drawio:{diagramId}:{assetFileName} -->
 const DRAWIO_COMMENT_RE = /^<!--\s*drawio:([^:]+):([^>]+?)\s*-->\s*$/
 
-// Standard image reference: ![caption](path)
-const IMAGE_REF_RE = /^!\[([^\]]*)\]\(([^)]+)\)\s*$/
+// Standard image reference: ![caption](path) — allows \] escapes in alt text
+const IMAGE_REF_RE = /^!\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)\s*$/
 
 // Fenced code block start
 const FENCED_CODE_START_RE = /^(`{3,}|~{3,})(\w*)\s*$/
@@ -20,6 +20,10 @@ function isValidAssetFileName(assetFileName: string): boolean {
     !assetFileName.includes('..') &&
     !assetFileName.includes('\\')
   )
+}
+
+function escapeMarkdownAlt(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/\]/g, '\\]')
 }
 
 function safeDecodeURIComponent(encoded: string): { value: string; error?: string } {
@@ -125,7 +129,7 @@ async function preprocessMarkdownForExport(
           continue
         }
         await convertSvgToPng(svgAbsPath, pngAbsPath)
-        result.push(`![${caption}](${pngRelPath})`)
+        result.push(`![${escapeMarkdownAlt(caption)}](${pngRelPath})`)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         warnings.push(`Mermaid SVG 转 PNG 失败: assets/${assetFileName}: ${msg}`)

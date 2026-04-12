@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 
 _H1_PATTERN = re.compile(r"^#\s+.+$")
-_IMAGE_PATTERN = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")
+_IMAGE_PATTERN = re.compile(r"^!\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)\s*$")
 _FIGREF_PATTERN = re.compile(r"\{figref:([^}]+)\}")
 _FENCE_OPEN_PATTERN = re.compile(r"^(`{3,}|~{3,})(\w*)\s*$")
 
@@ -33,10 +33,13 @@ def build_figure_registry(lines: list[str]) -> list[FigureEntry]:
     fence_marker: str | None = None  # e.g. "```" or "~~~"
 
     for i, line in enumerate(lines):
-        # Track fenced code block state
+        # Track fenced code block state — CommonMark: closing fence must use
+        # the same character as the opening and be at least as long.
         if fence_marker is not None:
-            if line.rstrip() == fence_marker or (
-                line.startswith(fence_marker) and line.strip() == fence_marker
+            stripped = line.strip()
+            if (
+                len(stripped) >= len(fence_marker)
+                and stripped == fence_marker[0] * len(stripped)
             ):
                 fence_marker = None
             continue
@@ -49,6 +52,9 @@ def build_figure_registry(lines: list[str]) -> list[FigureEntry]:
         if _H1_PATTERN.match(line):
             if not seen_real_h1:
                 seen_real_h1 = True
+                # Pre-H1 figures already consumed chapter 1 — advance to 2
+                if figures:
+                    chapter_number += 1
             else:
                 chapter_number += 1
             figure_number = 0
@@ -56,7 +62,7 @@ def build_figure_registry(lines: list[str]) -> list[FigureEntry]:
 
         img_match = _IMAGE_PATTERN.match(line)
         if img_match:
-            caption = img_match.group(1).strip()
+            caption = re.sub(r"\\(.)", r"\1", img_match.group(1)).strip()
             if caption:
                 figure_number += 1
                 label = f"\u56fe {chapter_number}-{figure_number}"
@@ -90,11 +96,14 @@ def replace_cross_references(
     fence_marker: str | None = None
 
     for line in lines:
-        # Track fenced code block state
+        # Track fenced code block state — CommonMark: closing fence must use
+        # the same character as the opening and be at least as long.
         if fence_marker is not None:
             result.append(line)
-            if line.rstrip() == fence_marker or (
-                line.startswith(fence_marker) and line.strip() == fence_marker
+            stripped = line.strip()
+            if (
+                len(stripped) >= len(fence_marker)
+                and stripped == fence_marker[0] * len(stripped)
             ):
                 fence_marker = None
             continue

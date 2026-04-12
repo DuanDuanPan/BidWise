@@ -50,9 +50,20 @@ class TestBuildFigureRegistry:
         assert len(figures) == 2
         assert figures[0].label == "\u56fe 1-1"
         assert figures[0].caption == "Before H1"
-        # First real H1 resets figure number (AC3: each H1 resets)
-        assert figures[1].label == "\u56fe 1-1"
+        # First real H1 advances chapter because pre-H1 figures consumed chapter 1
+        assert figures[1].label == "\u56fe 2-1"
         assert figures[1].caption == "After H1"
+
+    def test_no_pre_h1_figures_first_chapter_is_1(self):
+        """When there are no figures before the first H1, chapter numbering starts at 1."""
+        lines = [
+            "Some intro text",
+            "# Chapter 1",
+            "![First](assets/first.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].label == "\u56fe 1-1"
 
     def test_empty_caption_not_registered(self):
         lines = [
@@ -225,6 +236,47 @@ class TestFencedCodeBlockSkipping:
         assert len(figures) == 1
         assert figures[0].caption == "Real"
         assert figures[0].label == "\u56fe 1-1"
+
+    def test_longer_closing_fence_accepted(self):
+        """A closing fence longer than the opening fence should close the block."""
+        lines = [
+            "# Chapter 1",
+            "```",
+            "![Fake](assets/fake.png)",
+            "````",
+            "![Real](assets/real.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "Real"
+        assert figures[0].label == "\u56fe 1-1"
+
+    def test_longer_closing_fence_cross_ref(self):
+        """Cross-reference replacement must also handle longer closing fences."""
+        lines = [
+            "```",
+            "See {figref:\u67b6\u6784\u56fe} in code",
+            "````",
+            "Real ref: {figref:\u67b6\u6784\u56fe}",
+        ]
+        figures = build_figure_registry([
+            "# Chapter 1",
+            "![\u67b6\u6784\u56fe](assets/arch.png)",
+        ])
+        warnings: list[str] = []
+        result = replace_cross_references(lines, figures, warnings)
+        assert "{figref:\u67b6\u6784\u56fe}" in result[1]
+        assert "\u56fe 1-1" in result[3]
+
+    def test_escaped_bracket_in_caption(self):
+        """Captions with escaped ] should be parsed and unescaped correctly."""
+        lines = [
+            "# Chapter 1",
+            r"![A\]B](assets/ab.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "A]B"
 
     def test_h1_inside_code_block_not_counted(self):
         lines = [
