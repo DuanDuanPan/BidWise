@@ -173,12 +173,12 @@ class AdversarialReviewService {
 
         const roles = currentLineup.roles
 
-        // Initialize roleResults — mark all roles as 'running' immediately so
-        // the UI sees real-time status as soon as the first progress event fires
+        // Initialize roleResults as 'pending' per spec — each role transitions
+        // to 'running' individually when its AI call begins
         const roleResults: RoleReviewResult[] = roles.map((r) => ({
           roleId: r.id,
           roleName: r.name,
-          status: 'running' as const,
+          status: 'pending' as const,
           findingCount: 0,
         }))
 
@@ -201,6 +201,10 @@ class AdversarialReviewService {
         const rolePromises = roles.map(async (role, index) => {
           const startTime = Date.now()
           try {
+            // Transition pending → running before the AI call begins
+            roleResults[index].status = 'running'
+            await reviewRepo.updateSessionStatus(sessionId, 'running', roleResults)
+
             const { prompt, temperature, maxTokens } = buildAdversarialReviewPrompt({
               roleName: role.name,
               rolePerspective: role.perspective,
@@ -675,8 +679,13 @@ class AdversarialReviewService {
           const hasFailedRoles = finalRoleResults.some((r) => r.status === 'failed')
           const finalStatus = hasFailedRoles ? 'partial' : 'completed'
 
-          // Re-run contradiction detection on fresh data
+          // Clear stale contradiction groups unconditionally — the retried
+          // role's old findings were replaced, so any group referencing them
+          // is now orphaned.  Clearing before detection avoids dangling badges
+          // regardless of whether the AI call below succeeds or fails.
           ctx.updateProgress(85, '矛盾检测中…')
+          await reviewRepo.resetContradictionGroups(currentSession.id)
+
           const uniqueRoleIds = new Set(allFindings.map((f) => f.roleId))
 
           if (uniqueRoleIds.size >= 2 && allFindings.length >= 2) {
@@ -706,10 +715,6 @@ class AdversarialReviewService {
               })
 
               const pairs = parseContradictions(cdResponse.content)
-
-              // Clear old groups only after new detection succeeded — preserves
-              // existing contradiction markers when the AI call fails
-              await reviewRepo.resetContradictionGroups(currentSession.id)
 
               let groupCounter = 0
               for (const pair of pairs) {
