@@ -76,7 +76,10 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
   // ─── Idle State ───
   if (!session && !loading && !error) {
     return (
-      <div style={{ width: 480, height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div
+        data-testid="review-panel-idle"
+        style={{ width: 480, height: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <PanelHeader onClose={onClose} />
         <div
           style={{
@@ -96,7 +99,10 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
   // ─── Running State ───
   if (loading && (!session || sessionStatus === 'running')) {
     return (
-      <div style={{ width: 480, height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div
+        data-testid="review-panel-running"
+        style={{ width: 480, height: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <PanelHeader onClose={onClose} />
         <div style={{ padding: 24 }}>
           <Progress percent={progress} size="small" style={{ marginBottom: 16 }} />
@@ -136,7 +142,10 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
   // ─── Failed State ───
   if (sessionStatus === 'failed' || (error && !session)) {
     return (
-      <div style={{ width: 480, height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div
+        data-testid="review-panel-failed"
+        style={{ width: 480, height: '100%', display: 'flex', flexDirection: 'column' }}
+      >
         <PanelHeader onClose={onClose} />
         <div
           style={{
@@ -152,7 +161,7 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
           <div style={{ color: '#FF4D4F', fontSize: 14 }}>
             {error ?? '对抗评审失败，请检查配置后重试'}
           </div>
-          <Button type="primary" onClick={onRestart}>
+          <Button type="primary" onClick={onRestart} data-testid="review-restart-btn">
             重新启动评审
           </Button>
         </div>
@@ -163,6 +172,7 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
   // ─── Completed / Partial State ───
   return (
     <div
+      data-testid="review-panel-results"
       style={{
         width: 480,
         height: '100%',
@@ -175,6 +185,7 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
 
       {/* Stats bar */}
       <div
+        data-testid="review-stats-bar"
         style={{
           background: '#FAFAFA',
           padding: '8px 16px',
@@ -247,7 +258,7 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
       {/* Findings list */}
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         {filteredFindings.length === 0 && stats.total === 0 && (
-          <div style={{ textAlign: 'center', padding: 32 }}>
+          <div data-testid="review-zero-findings" style={{ textAlign: 'center', padding: 32 }}>
             <div style={{ fontSize: 14, color: '#52C41A', fontWeight: 500, marginBottom: 8 }}>
               本轮对抗评审未发现需要处理的问题
             </div>

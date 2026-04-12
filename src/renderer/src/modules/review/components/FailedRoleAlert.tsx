@@ -21,6 +21,7 @@ export const FailedRoleAlert: React.FC<FailedRoleAlertProps> = ({
 
   return (
     <div
+      data-testid={`failed-role-alert-${roleResult.roleId}`}
       style={{
         background: '#FFFBE6',
         border: '1px solid #FFE58F',
@@ -47,7 +48,12 @@ export const FailedRoleAlert: React.FC<FailedRoleAlertProps> = ({
           {roleResult.roleName}评审失败：{errorSummary}
         </span>
       </div>
-      <Button size="small" disabled={retrying} onClick={() => onRetry(roleResult.roleId)}>
+      <Button
+        size="small"
+        disabled={retrying}
+        onClick={() => onRetry(roleResult.roleId)}
+        data-testid="failed-role-retry-btn"
+      >
         {retrying ? <Spin size="small" /> : '重试'}
       </Button>
     </div>

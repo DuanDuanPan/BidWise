@@ -83,6 +83,9 @@ export const AdversarialFindingCard: React.FC<AdversarialFindingCardProps> = ({
 
   return (
     <div
+      data-testid={`finding-card-${finding.id}`}
+      data-finding-status={finding.status}
+      data-finding-severity={finding.severity}
       style={{
         borderLeft: `3px solid ${statusStyle.borderColor}`,
         background: statusStyle.background,
@@ -168,16 +171,29 @@ export const AdversarialFindingCard: React.FC<AdversarialFindingCardProps> = ({
                 value={rebuttalText}
                 onChange={(e) => setRebuttalText(e.target.value)}
                 style={{ fontSize: 13 }}
+                data-testid="finding-rebuttal-input"
               />
             </div>
           )}
 
           {/* Action buttons */}
           <Space size="small">
-            <Button size="small" type="primary" ghost onClick={handleAccept} disabled={disabled}>
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              onClick={handleAccept}
+              disabled={disabled}
+              data-testid="finding-action-accept"
+            >
               接受并修改
             </Button>
-            <Button size="small" onClick={handleReject} disabled={disabled}>
+            <Button
+              size="small"
+              onClick={handleReject}
+              disabled={disabled}
+              data-testid="finding-action-reject"
+            >
               {rebuttalOpen ? '提交反驳' : '反驳'}
             </Button>
             {rebuttalOpen && (
@@ -191,7 +207,12 @@ export const AdversarialFindingCard: React.FC<AdversarialFindingCardProps> = ({
                 取消
               </Button>
             )}
-            <Button size="small" onClick={handleNeedsDecision} disabled={disabled}>
+            <Button
+              size="small"
+              onClick={handleNeedsDecision}
+              disabled={disabled}
+              data-testid="finding-action-needs-decision"
+            >
               请求指导
             </Button>
           </Space>

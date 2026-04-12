@@ -72,7 +72,12 @@ export const ReviewExecutionTrigger: React.FC<ReviewExecutionTriggerProps> = ({
         cancelText="取消"
         onConfirm={buttonConfig.onClick}
       >
-        <Button type="primary" loading={buttonConfig.loading} disabled={buttonConfig.disabled}>
+        <Button
+          type="primary"
+          loading={buttonConfig.loading}
+          disabled={buttonConfig.disabled}
+          data-testid="review-execution-btn"
+        >
           {buttonConfig.text}
         </Button>
       </Popconfirm>
@@ -85,6 +90,7 @@ export const ReviewExecutionTrigger: React.FC<ReviewExecutionTriggerProps> = ({
       loading={buttonConfig.loading}
       disabled={buttonConfig.disabled}
       onClick={buttonConfig.onClick}
+      data-testid="review-execution-btn"
     >
       {buttonConfig.text}
     </Button>
