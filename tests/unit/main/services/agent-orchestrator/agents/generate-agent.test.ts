@@ -1,7 +1,31 @@
-import { describe, it, expect, vi } from 'vitest'
-import { generateAgentHandler } from '@main/services/agent-orchestrator/agents/generate-agent'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const mockGetActiveEntries = vi.hoisted(() => vi.fn())
+const mockBuildPromptContext = vi.hoisted(() => vi.fn())
+
+vi.mock('@main/services/terminology-service', () => ({
+  terminologyService: {
+    getActiveEntries: mockGetActiveEntries,
+  },
+}))
+
+vi.mock('@main/services/terminology-replacement-service', () => ({
+  terminologyReplacementService: {
+    buildPromptContext: mockBuildPromptContext,
+  },
+}))
+
+const { generateAgentHandler } = await import(
+  '@main/services/agent-orchestrator/agents/generate-agent'
+)
 
 describe('generateAgentHandler @story-2-2', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetActiveEntries.mockResolvedValue([])
+    mockBuildPromptContext.mockReturnValue('')
+  })
+
   it('@p1 should return AiRequestParams with messages from generateChapterPrompt', async () => {
     const controller = new AbortController()
     const result = await generateAgentHandler(
@@ -92,6 +116,52 @@ describe('generateAgentHandler @story-2-2', () => {
     )
 
     expect(result.messages[0].content).toContain('专业技术方案撰写助手')
+  })
+
+  describe('@story-5-3 terminology context injection', () => {
+    it('should inject terminologyContext into prompt when active entries exist', async () => {
+      const entries = [
+        {
+          id: 'e1',
+          sourceTerm: '设备管理',
+          targetTerm: '装备全寿命周期管理',
+          normalizedSourceTerm: '设备管理',
+          category: null,
+          description: null,
+          isActive: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]
+      mockGetActiveEntries.mockResolvedValue(entries)
+      mockBuildPromptContext.mockReturnValue(
+        '【行业术语规范】请在生成内容时优先使用以下标准术语：\n- "设备管理" → "装备全寿命周期管理"'
+      )
+
+      const controller = new AbortController()
+      const result = await generateAgentHandler(
+        { chapterTitle: '技术方案', requirements: '支持高并发' },
+        { signal: controller.signal, updateProgress: vi.fn() }
+      )
+
+      expect(mockGetActiveEntries).toHaveBeenCalled()
+      expect(mockBuildPromptContext).toHaveBeenCalledWith(entries)
+      expect(result.messages[1].content).toContain('行业术语规范')
+      expect(result.messages[1].content).toContain('装备全寿命周期管理')
+    })
+
+    it('should not inject terminology section when no active entries', async () => {
+      mockGetActiveEntries.mockResolvedValue([])
+      mockBuildPromptContext.mockReturnValue('')
+
+      const controller = new AbortController()
+      const result = await generateAgentHandler(
+        { chapterTitle: '技术方案', requirements: '支持高并发' },
+        { signal: controller.signal, updateProgress: vi.fn() }
+      )
+
+      expect(result.messages[1].content).not.toContain('行业术语规范')
+    })
   })
 
   describe('ask-system mode', () => {

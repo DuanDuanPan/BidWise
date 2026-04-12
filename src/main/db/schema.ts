@@ -233,6 +233,18 @@ export interface AttackChecklistItemsTable {
   updatedAt: string
 }
 
+export interface TerminologyEntriesTable {
+  id: string
+  sourceTerm: string
+  targetTerm: string
+  normalizedSourceTerm: string
+  category: string | null
+  description: string | null
+  isActive: number // 0 | 1
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DB {
   projects: ProjectTable
   tasks: TaskTable
@@ -252,4 +264,5 @@ export interface DB {
   adversarialFindings: AdversarialFindingsTable
   attackChecklists: AttackChecklistsTable
   attackChecklistItems: AttackChecklistItemsTable
+  terminologyEntries: TerminologyEntriesTable
 }

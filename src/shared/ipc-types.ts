@@ -157,6 +157,15 @@ import type {
   UpdateChecklistItemStatusInput,
   AttackChecklistItem,
 } from './attack-checklist-types'
+import type {
+  TerminologyEntry,
+  CreateTerminologyInput,
+  UpdateTerminologyInput,
+  TerminologyListFilter,
+  BatchCreateTerminologyInput,
+  BatchCreateResult,
+  TerminologyExportOutput,
+} from './terminology-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -327,6 +336,12 @@ export const IPC_CHANNELS = {
   REVIEW_GENERATE_ATTACK_CHECKLIST: 'review:generate-attack-checklist',
   REVIEW_GET_ATTACK_CHECKLIST: 'review:get-attack-checklist',
   REVIEW_UPDATE_CHECKLIST_ITEM_STATUS: 'review:update-checklist-item-status',
+  TERMINOLOGY_LIST: 'terminology:list',
+  TERMINOLOGY_CREATE: 'terminology:create',
+  TERMINOLOGY_UPDATE: 'terminology:update',
+  TERMINOLOGY_DELETE: 'terminology:delete',
+  TERMINOLOGY_BATCH_CREATE: 'terminology:batch-create',
+  TERMINOLOGY_EXPORT: 'terminology:export',
 } as const
 
 /** Filter for task:list queries */
@@ -457,6 +472,12 @@ export type IpcChannelMap = {
     input: UpdateChecklistItemStatusInput
     output: AttackChecklistItem
   }
+  'terminology:list': { input: TerminologyListFilter | void; output: TerminologyEntry[] }
+  'terminology:create': { input: CreateTerminologyInput; output: TerminologyEntry }
+  'terminology:update': { input: UpdateTerminologyInput; output: TerminologyEntry }
+  'terminology:delete': { input: { id: string }; output: void }
+  'terminology:batch-create': { input: BatchCreateTerminologyInput; output: BatchCreateResult }
+  'terminology:export': { input: void; output: TerminologyExportOutput }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---

@@ -33,14 +33,24 @@ export type AgentHandler = (
   }
 ) => Promise<AiRequestParams>
 
-export class AgentOrchestrator {
-  private agents = new Map<AgentType, AgentHandler>()
+/** Optional post-processor applied to AI results after generation */
+export type AgentPostProcessor = (
+  result: AgentExecuteResult,
+  context: Record<string, unknown>,
+  signal: AbortSignal
+) => Promise<AgentExecuteResult>
 
-  registerAgent(type: AgentType, handler: AgentHandler): void {
-    this.agents.set(type, handler)
+export class AgentOrchestrator {
+  private agents = new Map<
+    AgentType,
+    { handler: AgentHandler; postProcessor?: AgentPostProcessor }
+  >()
+
+  registerAgent(type: AgentType, handler: AgentHandler, postProcessor?: AgentPostProcessor): void {
+    this.agents.set(type, { handler, postProcessor })
     taskQueue.registerExecutor(
       { category: 'ai-agent', agentType: type },
-      this.createExecutor(type, handler)
+      this.createExecutor(type, handler, undefined, postProcessor)
     )
     logger.info(`Agent registered: ${type}`)
   }
@@ -48,7 +58,8 @@ export class AgentOrchestrator {
   private createExecutor(
     agentType: AgentType,
     handler: AgentHandler,
-    timeoutMs?: number
+    timeoutMs?: number,
+    postProcessor?: AgentPostProcessor
   ): TaskExecutor {
     return async (ctx: TaskExecutorContext) => {
       throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
@@ -69,11 +80,16 @@ export class AgentOrchestrator {
         })
         throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
-        const result: AgentExecuteResult = {
+        let result: AgentExecuteResult = {
           content: response.content,
           usage: response.usage,
           latencyMs: response.latencyMs,
         }
+
+        if (postProcessor) {
+          result = await postProcessor(result, ctx.input as Record<string, unknown>, ctx.signal)
+        }
+
         return result
       } catch (err) {
         if (ctx.signal.aborted || isAbortError(err)) throw err
@@ -88,8 +104,8 @@ export class AgentOrchestrator {
   }
 
   async execute(request: AgentExecuteRequest): Promise<AgentExecuteResponse> {
-    const handler = this.agents.get(request.agentType)
-    if (!handler) {
+    const registered = this.agents.get(request.agentType)
+    if (!registered) {
       throw new BidWiseError(
         ErrorCode.AGENT_NOT_FOUND,
         `Agent type not registered: ${request.agentType}`
@@ -107,7 +123,12 @@ export class AgentOrchestrator {
 
     // Fire-and-forget background execution
     const timeoutMs = request.options?.timeoutMs
-    const executor = this.createExecutor(request.agentType, handler, timeoutMs)
+    const executor = this.createExecutor(
+      request.agentType,
+      registered.handler,
+      timeoutMs,
+      registered.postProcessor
+    )
     taskQueue.execute(taskId, executor, { timeoutMs }).catch((err) => {
       // Background execution error — already handled by task-queue status
       logger.error(`Background task ${taskId} error:`, err)

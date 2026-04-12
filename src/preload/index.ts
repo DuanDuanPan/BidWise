@@ -313,6 +313,23 @@ const requestApi = {
   reviewUpdateChecklistItemStatus: (
     input: IpcChannelMap['review:update-checklist-item-status']['input']
   ) => typedInvoke(IPC_CHANNELS.REVIEW_UPDATE_CHECKLIST_ITEM_STATUS, input),
+
+  terminologyList: (input?: IpcChannelMap['terminology:list']['input']) =>
+    typedInvoke(IPC_CHANNELS.TERMINOLOGY_LIST, input),
+
+  terminologyCreate: (input: IpcChannelMap['terminology:create']['input']) =>
+    typedInvoke(IPC_CHANNELS.TERMINOLOGY_CREATE, input),
+
+  terminologyUpdate: (input: IpcChannelMap['terminology:update']['input']) =>
+    typedInvoke(IPC_CHANNELS.TERMINOLOGY_UPDATE, input),
+
+  terminologyDelete: (input: IpcChannelMap['terminology:delete']['input']) =>
+    typedInvoke(IPC_CHANNELS.TERMINOLOGY_DELETE, input),
+
+  terminologyBatchCreate: (input: IpcChannelMap['terminology:batch-create']['input']) =>
+    typedInvoke(IPC_CHANNELS.TERMINOLOGY_BATCH_CREATE, input),
+
+  terminologyExport: () => typedInvoke(IPC_CHANNELS.TERMINOLOGY_EXPORT),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

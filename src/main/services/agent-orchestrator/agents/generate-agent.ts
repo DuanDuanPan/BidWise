@@ -8,6 +8,8 @@ import type { AskSystemContext } from '@main/prompts/ask-system.prompt'
 import { annotationFeedbackPrompt } from '@main/prompts/annotation-feedback.prompt'
 import type { AnnotationFeedbackContext } from '@main/prompts/annotation-feedback.prompt'
 import { throwIfAborted } from '@main/utils/abort'
+import { terminologyService } from '@main/services/terminology-service'
+import { terminologyReplacementService } from '@main/services/terminology-replacement-service'
 import type { AgentHandler, AiRequestParams } from '../orchestrator'
 
 export const generateAgentHandler: AgentHandler = async (
@@ -94,6 +96,10 @@ async function handleChapterGeneration(
   // Stage 1: Analyzing (0%)
   updateProgress(0, 'analyzing')
 
+  // Inject terminology context into prompt
+  const activeEntries = await terminologyService.getActiveEntries()
+  const terminologyContext = terminologyReplacementService.buildPromptContext(activeEntries)
+
   const promptContext: GenerateChapterContext = {
     chapterTitle: context.chapterTitle as string,
     chapterLevel: (context.chapterLevel as number) ?? 2,
@@ -106,6 +112,7 @@ async function handleChapterGeneration(
     adjacentChaptersAfter: context.adjacentChaptersAfter as string | undefined,
     strategySeed: context.strategySeed as string | undefined,
     additionalContext: context.additionalContext as string | undefined,
+    terminologyContext: terminologyContext || undefined,
   }
 
   const prompt = generateChapterPrompt(promptContext)

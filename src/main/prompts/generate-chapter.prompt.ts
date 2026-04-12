@@ -16,6 +16,7 @@ export interface GenerateChapterContext {
   adjacentChaptersAfter?: string
   strategySeed?: string
   additionalContext?: string
+  terminologyContext?: string
   language?: string
 }
 
@@ -54,6 +55,10 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 
   if (context.strategySeed) {
     sections.push(`## 投标策略参考\n${context.strategySeed}`)
+  }
+
+  if (context.terminologyContext) {
+    sections.push(`## 行业术语规范\n${context.terminologyContext}`)
   }
 
   if (context.additionalContext) {

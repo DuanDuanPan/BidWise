@@ -15,6 +15,8 @@ import * as migration010 from '@main/db/migrations/010_add_annotation_thread_fie
 import * as migration011 from '@main/db/migrations/011_create_notifications'
 import * as migration012 from '@main/db/migrations/012_create_assets_and_tags'
 import * as migration013 from '@main/db/migrations/013_create_adversarial_lineups'
+import * as migration014 from '@main/db/migrations/014_create_adversarial_reviews'
+import * as migration015 from '@main/db/migrations/015_create_terminology_entries'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -37,6 +39,8 @@ const migrations: Record<string, Migration> = {
   '011_create_notifications': migration011,
   '012_create_assets_and_tags': migration012,
   '013_create_adversarial_lineups': migration013,
+  '014_create_adversarial_reviews': migration014,
+  '015_create_terminology_entries': migration015,
 }
 
 describe('Database migrations', () => {
@@ -58,7 +62,7 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(13)
+    expect(results).toHaveLength(15)
     for (const result of results!) {
       expect(result.status).toBe('Success')
     }
@@ -76,6 +80,8 @@ describe('Database migrations', () => {
       '011_create_notifications',
       '012_create_assets_and_tags',
       '013_create_adversarial_lineups',
+      '014_create_adversarial_reviews',
+      '015_create_terminology_entries',
     ])
   })
 
@@ -142,7 +148,9 @@ describe('Database migrations', () => {
     expect(names).toContain('007_create_annotations')
     expect(names).toContain('008_create_requirement_certainties')
     expect(names).toContain('012_create_assets_and_tags')
-    expect(names).toHaveLength(13)
+    expect(names).toContain('014_create_adversarial_reviews')
+    expect(names).toContain('015_create_terminology_entries')
+    expect(names).toHaveLength(15)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {
@@ -368,6 +376,54 @@ describe('Database migrations', () => {
       expect(
         indexes.rows.some((index) => index.name === 'requirement_certainties_project_id_idx')
       ).toBe(true)
+    } finally {
+      await rawDb.destroy()
+    }
+  })
+
+  it('should create terminology_entries table with UNIQUE constraint and indexes (migration 015)', async () => {
+    const rawDb = new Kysely<DB>({
+      dialect: new SqliteDialect({ database: new Database(':memory:') }),
+    })
+    try {
+      const rawMigrator = new Migrator({
+        db: rawDb,
+        provider: { getMigrations: async () => migrations },
+      })
+      await rawMigrator.migrateToLatest()
+
+      const cols = await sql<{
+        name: string
+        type: string
+        notnull: number
+        dflt_value: string | null
+        pk: number
+      }>`PRAGMA table_info(terminology_entries)`.execute(rawDb)
+      const colMap = new Map(cols.rows.map((c) => [c.name, c]))
+
+      expect(colMap.get('id')!.pk).toBe(1)
+      expect(colMap.get('source_term')!.notnull).toBe(1)
+      expect(colMap.get('target_term')!.notnull).toBe(1)
+      expect(colMap.get('normalized_source_term')!.notnull).toBe(1)
+      expect(colMap.has('category')).toBe(true)
+      expect(colMap.has('description')).toBe(true)
+      expect(colMap.get('is_active')!.notnull).toBe(1)
+      expect(colMap.get('is_active')!.dflt_value).toBe('1')
+      expect(colMap.get('created_at')!.notnull).toBe(1)
+      expect(colMap.get('updated_at')!.notnull).toBe(1)
+
+      // Verify UNIQUE constraint on normalized_source_term
+      const indexes = await sql<{
+        name: string
+        unique: number
+      }>`PRAGMA index_list(terminology_entries)`.execute(rawDb)
+      const indexNames = indexes.rows.map((i) => i.name)
+      const uniqueIndexes = indexes.rows.filter((i) => i.unique === 1)
+      expect(uniqueIndexes.length).toBeGreaterThanOrEqual(1)
+
+      // Verify category and is_active indexes
+      expect(indexNames).toContain('idx_terminology_category')
+      expect(indexNames).toContain('idx_terminology_is_active')
     } finally {
       await rawDb.destroy()
     }

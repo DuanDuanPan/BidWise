@@ -39,3 +39,10 @@ export type {
   RecommendationState,
   RecommendationActions,
 } from './recommendationStore'
+
+export { useTerminologyStore } from './terminologyStore'
+export type {
+  TerminologyStore,
+  TerminologyState,
+  TerminologyActions,
+} from './terminologyStore'

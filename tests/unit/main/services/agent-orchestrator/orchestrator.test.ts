@@ -42,7 +42,7 @@ vi.mock('@main/services/ai-proxy', () => ({
 }))
 
 import { AgentOrchestrator } from '@main/services/agent-orchestrator/orchestrator'
-import type { AgentHandler } from '@main/services/agent-orchestrator/orchestrator'
+import type { AgentHandler, AgentPostProcessor } from '@main/services/agent-orchestrator/orchestrator'
 
 describe('AgentOrchestrator @story-2-2', () => {
   let orchestrator: AgentOrchestrator
@@ -364,6 +364,127 @@ describe('AgentOrchestrator @story-2-2', () => {
       await orchestrator.cancelAgent('task-123')
 
       expect(mockCancel).toHaveBeenCalledWith('task-123')
+    })
+  })
+
+  describe('@story-5-3 postProcessor support', () => {
+    it('should call postProcessor after AI response in executor', async () => {
+      const postProcessor: AgentPostProcessor = vi.fn(async (result) => ({
+        ...result,
+        content: result.content + ' [post-processed]',
+      }))
+
+      const orch = new AgentOrchestrator()
+      orch.registerAgent('generate', mockHandler, postProcessor)
+
+      mockEnqueue.mockResolvedValue('task-pp-1')
+
+      let capturedExecutor: (ctx: unknown) => Promise<unknown>
+      mockExecute.mockImplementation(
+        async (_id: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return {}
+        }
+      )
+
+      await orch.execute({ agentType: 'generate', context: { chapterTitle: 'test' } })
+
+      mockAiProxyCall.mockResolvedValue({
+        content: 'AI response',
+        usage: { promptTokens: 100, completionTokens: 50 },
+        latencyMs: 500,
+        model: 'claude-sonnet-4-20250514',
+        provider: 'claude',
+      })
+
+      const result = await capturedExecutor!({
+        taskId: 'task-pp-1',
+        input: { chapterTitle: 'test' },
+        signal: new AbortController().signal,
+        updateProgress: vi.fn(),
+        setCheckpoint: vi.fn(),
+      })
+
+      expect(postProcessor).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'AI response' }),
+        { chapterTitle: 'test' },
+        expect.any(AbortSignal)
+      )
+      expect((result as { content: string }).content).toBe('AI response [post-processed]')
+    })
+
+    it('should not break agents without postProcessor', async () => {
+      mockEnqueue.mockResolvedValue('task-npp-1')
+
+      let capturedExecutor: (ctx: unknown) => Promise<unknown>
+      mockExecute.mockImplementation(
+        async (_id: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return {}
+        }
+      )
+
+      await orchestrator.execute({ agentType: 'parse', context: { rfpContent: 'test' } })
+
+      mockAiProxyCall.mockResolvedValue({
+        content: 'AI response',
+        usage: { promptTokens: 100, completionTokens: 50 },
+        latencyMs: 500,
+        model: 'claude-sonnet-4-20250514',
+        provider: 'claude',
+      })
+
+      const result = await capturedExecutor!({
+        taskId: 'task-npp-1',
+        input: { rfpContent: 'test' },
+        signal: new AbortController().signal,
+        updateProgress: vi.fn(),
+        setCheckpoint: vi.fn(),
+      })
+
+      expect((result as { content: string }).content).toBe('AI response')
+    })
+
+    it('should use postProcessor from execute() not just registerAgent()', async () => {
+      const postProcessor: AgentPostProcessor = vi.fn(async (result) => ({
+        ...result,
+        content: 'modified',
+      }))
+
+      const orch = new AgentOrchestrator()
+      orch.registerAgent('generate', mockHandler, postProcessor)
+
+      mockEnqueue.mockResolvedValue('task-exe-1')
+
+      let capturedExecutor: (ctx: unknown) => Promise<unknown>
+      mockExecute.mockImplementation(
+        async (_id: string, executor: (ctx: unknown) => Promise<unknown>) => {
+          capturedExecutor = executor
+          return {}
+        }
+      )
+
+      // execute() should also pick up the postProcessor
+      await orch.execute({ agentType: 'generate', context: {} })
+
+      mockAiProxyCall.mockResolvedValue({
+        content: 'original',
+        usage: { promptTokens: 10, completionTokens: 5 },
+        latencyMs: 100,
+        model: 'claude-sonnet-4-20250514',
+        provider: 'claude',
+      })
+
+      const result = await capturedExecutor!({
+        taskId: 'task-exe-1',
+        input: {},
+        signal: new AbortController().signal,
+        updateProgress: vi.fn(),
+        setCheckpoint: vi.fn(),
+      })
+
+      expect(postProcessor).toHaveBeenCalled()
+      expect((result as { content: string }).content).toBe('modified')
     })
   })
 

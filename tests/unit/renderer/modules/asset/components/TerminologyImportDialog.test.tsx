@@ -1,0 +1,111 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+
+// Mock antd components
+vi.mock('antd', () => ({
+  Modal: ({ open, title, children, footer }: any) =>
+    open ? (
+      <div data-testid="import-modal">
+        <h2>{title}</h2>
+        {children}
+        <div data-testid="footer">{footer}</div>
+      </div>
+    ) : null,
+  Upload: {
+    Dragger: ({ children, beforeUpload }: any) => (
+      <div
+        data-testid="upload-dragger"
+        onClick={() => {
+          const file = new File(['源术语,目标术语\nA,B'], 'test.csv', {
+            type: 'text/csv',
+          })
+          beforeUpload(file)
+        }}
+      >
+        {children}
+      </div>
+    ),
+  },
+  Table: ({ dataSource }: any) => (
+    <table data-testid="preview-table">
+      <tbody>
+        {dataSource?.map((r: any, i: number) => (
+          <tr key={i}>
+            <td>{r.sourceTerm}</td>
+            <td>{r.targetTerm}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ),
+  Button: ({ children, onClick, ...props }: any) => (
+    <button onClick={onClick} {...props}>
+      {children}
+    </button>
+  ),
+  Space: ({ children }: any) => <div>{children}</div>,
+  Typography: {
+    Text: ({ children }: any) => <span>{children}</span>,
+  },
+  App: {
+    useApp: () => ({
+      message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    }),
+  },
+}))
+
+vi.mock('@ant-design/icons', () => ({
+  InboxOutlined: () => <span>inbox</span>,
+  DownloadOutlined: () => <span>download</span>,
+}))
+
+// Mock the store
+const mockBatchCreate = vi.fn()
+
+vi.mock('@renderer/stores', () => ({
+  useTerminologyStore: (selector?: any) => {
+    const state = { batchCreate: mockBatchCreate }
+    return selector ? selector(state) : state
+  },
+}))
+
+const { TerminologyImportDialog } = await import(
+  '@modules/asset/components/TerminologyImportDialog'
+)
+
+describe('TerminologyImportDialog', () => {
+  const mockOnClose = vi.fn()
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('shows upload dragger when open (initial state)', () => {
+    render(<TerminologyImportDialog open={true} onClose={mockOnClose} />)
+
+    expect(screen.getByTestId('upload-dragger')).toBeTruthy()
+    expect(screen.getByText('点击或拖拽 CSV 文件到此区域')).toBeTruthy()
+  })
+
+  it('does not render when open=false', () => {
+    render(<TerminologyImportDialog open={false} onClose={mockOnClose} />)
+
+    expect(screen.queryByTestId('import-modal')).toBeNull()
+  })
+
+  it('shows title "批量导入术语"', () => {
+    render(<TerminologyImportDialog open={true} onClose={mockOnClose} />)
+
+    expect(screen.getByText('批量导入术语')).toBeTruthy()
+  })
+
+  it('shows download template button', () => {
+    render(<TerminologyImportDialog open={true} onClose={mockOnClose} />)
+
+    expect(screen.getByText('下载模板')).toBeTruthy()
+  })
+})

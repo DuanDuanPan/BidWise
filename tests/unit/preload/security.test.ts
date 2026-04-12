@@ -158,6 +158,12 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'reviewGenerateAttackChecklist',
       'reviewGetAttackChecklist',
       'reviewUpdateChecklistItemStatus',
+      'terminologyList',
+      'terminologyCreate',
+      'terminologyUpdate',
+      'terminologyDelete',
+      'terminologyBatchCreate',
+      'terminologyExport',
       'onTaskProgress',
       'onNotificationNew',
     ])

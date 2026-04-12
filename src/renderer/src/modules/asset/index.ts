@@ -1,4 +1,8 @@
 export { AssetSearchPage } from './components/AssetSearchPage'
+export { AssetModuleContainer } from './components/AssetModuleContainer'
+export { TerminologyPage } from './components/TerminologyPage'
+export { TerminologyEntryForm } from './components/TerminologyEntryForm'
+export { TerminologyImportDialog } from './components/TerminologyImportDialog'
 export { AssetResultList } from './components/AssetResultList'
 export { AssetResultCard } from './components/AssetResultCard'
 export { AssetDetailCard } from './components/AssetDetailCard'

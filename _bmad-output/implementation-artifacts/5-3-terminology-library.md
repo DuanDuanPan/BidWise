@@ -1,6 +1,6 @@
 # Story 5.3: 行业术语库维护与自动应用
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -65,7 +65,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ### Task 1: 数据模型与类型定义 (AC: #1, #5)
 
-- [ ] 1.1 创建 `src/shared/terminology-types.ts`
+- [x] 1.1 创建 `src/shared/terminology-types.ts`
   - `TerminologyEntry = { id: string; sourceTerm: string; targetTerm: string; normalizedSourceTerm: string; category: string | null; description: string | null; isActive: boolean; createdAt: string; updatedAt: string }`
   - `CreateTerminologyInput = { sourceTerm: string; targetTerm: string; category?: string; description?: string; isActive?: boolean }` — UI 新建 / CSV 导入默认 `true`，JSON 导入可显式传 `false`
   - `UpdateTerminologyInput = { id: string; sourceTerm?: string; targetTerm?: string; category?: string | null; description?: string | null; isActive?: boolean }`
@@ -78,11 +78,11 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
   - `TerminologyExportOutput = { cancelled: boolean; outputPath?: string; entryCount: number }`
   - 注意：DB 层 `isActive` 为 `number`（0/1），TS 接口层为 `boolean`；repo 负责转换
 
-- [ ] 1.2 在 `src/main/db/schema.ts` 新增 `TerminologyEntriesTable` 接口
+- [x] 1.2 在 `src/main/db/schema.ts` 新增 `TerminologyEntriesTable` 接口
   - 字段：`id`, `sourceTerm`, `targetTerm`, `normalizedSourceTerm`, `category`, `description`, `isActive`（integer 0/1）, `createdAt`, `updatedAt`
   - 在 `DB` 接口新增 `terminologyEntries: TerminologyEntriesTable`
 
-- [ ] 1.3 创建 `src/main/db/migrations/015_create_terminology_entries.ts`
+- [x] 1.3 创建 `src/main/db/migrations/015_create_terminology_entries.ts`
   - 表 `terminology_entries`：
     - `id` TEXT PK
     - `source_term` TEXT NOT NULL
@@ -96,17 +96,17 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
   - 索引：`idx_terminology_category` ON `category`，`idx_terminology_is_active` ON `is_active`
   - **注意**：检查当前最新迁移编号，若已超过 015 则使用下一个可用编号
 
-- [ ] 1.4 更新 `src/main/db/migrator.ts`
+- [x] 1.4 更新 `src/main/db/migrator.ts`
   - 将 `015_create_terminology_entries` 注册到手写 migration map
   - 保持与当前 `001-014` 一致的显式 import + map 维护方式；**不要**只创建迁移文件而漏掉注册
 
-- [ ] 1.5 更新 `tests/unit/main/db/migrations.test.ts`
+- [x] 1.5 更新 `tests/unit/main/db/migrations.test.ts`
   - 修正当前测试基线，使迁移链覆盖 `001-014` 的既有链路，并新增 `015_create_terminology_entries`
   - 新增断言：`terminology_entries` 表、UNIQUE(`normalized_source_term`) 约束、`category` / `is_active` 索引均创建成功
 
 ### Task 2: Repository 层 (AC: #1, #2, #4)
 
-- [ ] 2.1 创建 `src/main/db/repositories/terminology-repo.ts`
+- [x] 2.1 创建 `src/main/db/repositories/terminology-repo.ts`
   - 签名遵循 `asset-repo.ts` 模式：`getDb()` + Kysely 查询 + `BidWiseError` 错误
   - `list(filter?: TerminologyListFilter): Promise<TerminologyEntry[]>`
     - 支持 `searchQuery`（对 `source_term` 和 `target_term` 做 LIKE `%keyword%`）
@@ -128,7 +128,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ### Task 3: 术语服务层 (AC: #1, #2, #4, #5)
 
-- [ ] 3.1 创建 `src/main/services/terminology-service.ts`
+- [x] 3.1 创建 `src/main/services/terminology-service.ts`
   - 使用 `createLogger('terminology-service')`
   - 归一化函数 `normalizeSourceTerm(term: string): string` — `term.trim().replace(/\s+/g, ' ').toLowerCase()`
   - `list(filter?: TerminologyListFilter): Promise<TerminologyEntry[]>` — 透传 repo
@@ -157,7 +157,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ### Task 4: 术语替换引擎 (AC: #3)
 
-- [ ] 4.1 创建 `src/main/services/terminology-replacement-service.ts`
+- [x] 4.1 创建 `src/main/services/terminology-replacement-service.ts`
   - 使用 `createLogger('terminology-replacement-service')`
   - `applyReplacements(text: string, entries: TerminologyEntry[]): TerminologyApplyResult`
     - **输入**：待替换文本 + 已启用的术语列表（已按 `sourceTerm` 长度 DESC 排序）
@@ -181,7 +181,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ### Task 5: IPC 通道与预加载 (AC: #1, #2, #4, #5)
 
-- [ ] 5.1 在 `src/shared/ipc-types.ts` 新增术语 IPC 频道
+- [x] 5.1 在 `src/shared/ipc-types.ts` 新增术语 IPC 频道
   - `IPC_CHANNELS` 新增：
     - `TERMINOLOGY_LIST: 'terminology:list'`
     - `TERMINOLOGY_CREATE: 'terminology:create'`
@@ -192,23 +192,23 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
   - `IpcChannelMap` 新增对应 6 个频道的 input/output 类型映射
   - `terminology:export` 的 input 为 `void`，output 为 `TerminologyExportOutput`
 
-- [ ] 5.2 创建 `src/main/ipc/terminology-handlers.ts`
+- [x] 5.2 创建 `src/main/ipc/terminology-handlers.ts`
   - 遵循 `asset-handlers.ts` 模式：`TerminologyChannel` 类型 + `terminologyHandlerMap` + `registerTerminologyHandlers()`
   - 6 个 handler 均使用 `createIpcHandler()` 模式，仅做参数透传
   - `terminology:export` 直接透传到 `terminologyService.exportToFile()`
 
-- [ ] 5.3 在 `src/main/ipc/index.ts` 注册 `registerTerminologyHandlers()`
+- [x] 5.3 在 `src/main/ipc/index.ts` 注册 `registerTerminologyHandlers()`
   - 在已有的 handler 注册列表中新增一行调用
 
-- [ ] 5.4 更新 `src/preload/index.ts` 暴露 6 个术语 API
+- [x] 5.4 更新 `src/preload/index.ts` 暴露 6 个术语 API
   - `window.api.terminologyList()` / `terminologyCreate()` / `terminologyUpdate()` / `terminologyDelete()` / `terminologyBatchCreate()` / `terminologyExport()`
   - 遵循现有 `typedInvoke()` 模式
 
-- [ ] 5.5 更新 `src/preload/index.d.ts` 类型声明
+- [x] 5.5 更新 `src/preload/index.d.ts` 类型声明
 
 ### Task 6: 状态管理 (AC: #1, #2)
 
-- [ ] 6.1 创建 `src/renderer/src/stores/terminologyStore.ts`
+- [x] 6.1 创建 `src/renderer/src/stores/terminologyStore.ts`
   - State：
     - `entries: TerminologyEntry[]`
     - `searchQuery: string`
@@ -229,11 +229,11 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
     - `clearError(): void`
   - 约束：`loading: boolean` 命名，异步 Action 自行管理 loading/error
 
-- [ ] 6.2 在 `src/renderer/src/stores/index.ts` 导出 `useTerminologyStore`
+- [x] 6.2 在 `src/renderer/src/stores/index.ts` 导出 `useTerminologyStore`
 
 ### Task 7: 术语库管理界面 (AC: #1, #2, #4, #5)
 
-- [ ] 7.1 创建 `src/renderer/src/modules/asset/components/TerminologyPage.tsx`
+- [x] 7.1 创建 `src/renderer/src/modules/asset/components/TerminologyPage.tsx`
   - 布局：与 `AssetSearchPage` 同级的页面组件
   - 顶部：搜索框（`Input.Search`，300ms 防抖）+ 分类筛选（`Select`，选项从当前条目 category 动态提取）+ "仅显示启用"开关（`Switch`，默认开）
   - 右上角：`添加术语`（primary Button）+ `批量导入`（default Button）+ `导出 JSON`（default Button）
@@ -245,7 +245,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
   - 删除操作需 `Popconfirm` 二次确认
   - `导出 JSON` 按钮调用 store `exportJson()`；用户取消保存时不提示错误，成功后显示包含导出路径的 success message
 
-- [ ] 7.2 创建 `src/renderer/src/modules/asset/components/TerminologyEntryForm.tsx`
+- [x] 7.2 创建 `src/renderer/src/modules/asset/components/TerminologyEntryForm.tsx`
   - Ant Design `Modal` 对话框，标题：添加时为 `添加术语映射`，编辑时为 `编辑术语映射`
   - 表单字段：
     - 源术语（`Input`，必填，placeholder: `如"设备管理"`）
@@ -255,7 +255,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
   - 操作：`确定`（primary）、`取消`
   - 提交后若返回 `ErrorCode.DUPLICATE` 错误，在源术语字段下方显示红色提示：`该术语已存在（已有映射：{existingTarget}）`
 
-- [ ] 7.3 创建 `src/renderer/src/modules/asset/components/TerminologyImportDialog.tsx`
+- [x] 7.3 创建 `src/renderer/src/modules/asset/components/TerminologyImportDialog.tsx`
   - Ant Design `Modal`，标题：`批量导入术语`，宽度 `600px`
   - Step 1：文件上传区（`Upload.Dragger`，接受 `.csv`）+ 模板下载链接
   - Step 2：解析后预览表格（源术语 / 目标术语 / 分类 / 说明），最多预览 20 行
@@ -263,7 +263,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
   - CSV 解析：优先使用轻量手写解析器（处理 BOM / `\r\n` / `\n` / 引号包裹字段）；**不要**为了本 Story 仅引入 `Papa Parse`
   - CSV 格式：`源术语,目标术语,分类,说明`（分类和说明可选为空）
 
-- [ ] 7.4 资产模块导航集成
+- [x] 7.4 资产模块导航集成
   - 在 `src/renderer/src/modules/asset/` 中添加 `TerminologyPage` 与 `AssetModuleContainer` 导出
   - 新增轻量容器组件 `src/renderer/src/modules/asset/components/AssetModuleContainer.tsx`，在 `/asset` 路由内使用 `Segmented` 组件切换 `资产库` | `术语库`
   - 保留现有 `/asset` 路由与命令面板入口；修改 `src/renderer/src/App.tsx` 让 `/asset` 渲染 `AssetModuleContainer`
@@ -271,7 +271,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ### Task 8: AI 生成术语集成 (AC: #3)
 
-- [ ] 8.1 在 `src/main/services/agent-orchestrator/orchestrator.ts` 扩展后处理能力
+- [x] 8.1 在 `src/main/services/agent-orchestrator/orchestrator.ts` 扩展后处理能力
   - 新增可选 `AgentPostProcessor` 类型：
     ```typescript
     type AgentPostProcessor = (
@@ -293,7 +293,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
     ```
   - 这是非破坏性扩展：无 postProcessor 的 agent 行为不变
 
-- [ ] 8.2 创建 `src/main/services/agent-orchestrator/post-processors/terminology-post-processor.ts`
+- [x] 8.2 创建 `src/main/services/agent-orchestrator/post-processors/terminology-post-processor.ts`
   - 仅对章节生成模式（非 `ask-system`、非 `annotation-feedback`）执行
   - 流程：
     1. 调用 `terminologyService.getActiveEntries()` 获取启用术语（带缓存）
@@ -308,10 +308,10 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
        - 创建后立即调用 `annotationService.update({ id: created.id, status: 'accepted' })`，因为自动应用的替换在语义上是“已采纳”
     5. 返回修改后的 result（content 已替换）
 
-- [ ] 8.3 在 `src/main/services/agent-orchestrator/index.ts` 注册 generate agent 的 postProcessor
+- [x] 8.3 在 `src/main/services/agent-orchestrator/index.ts` 注册 generate agent 的 postProcessor
   - 在 `registerAgent('generate', generateAgentHandler)` 调用中追加 `terminologyPostProcessor` 参数
 
-- [ ] 8.4 在 `generate-agent.ts` 的 `handleChapterGeneration()` 中注入术语上下文到 prompt
+- [x] 8.4 在 `generate-agent.ts` 的 `handleChapterGeneration()` 中注入术语上下文到 prompt
   - 在构建 `GenerateChapterContext` 之前，先调用 `terminologyService.getActiveEntries()` 获取当前启用术语，再调用 `terminologyReplacementService.buildPromptContext(entries)` 生成术语提示文本
   - 将术语提示文本作为新字段 `terminologyContext` 传入 prompt context
   - 更新 `src/main/prompts/generate-chapter.prompt.ts` 的 `GenerateChapterContext` 接口和 prompt 模板，在适当位置注入术语上下文
@@ -319,13 +319,13 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ### Task 9: 测试矩阵 (AC: #1, #2, #3, #4, #5)
 
-- [ ] 9.1 新建 `tests/unit/main/db/repositories/terminology-repo.test.ts`
+- [x] 9.1 新建 `tests/unit/main/db/repositories/terminology-repo.test.ts`
   - 覆盖：`create()` 成功 + `normalizedSourceTerm` 自动填充、`findByNormalizedSourceTerm()` 精确查找、`list()` 搜索/分类/状态过滤、`findActive()` 按长度 DESC 排序、`update()` 自动更新 `updatedAt`、`delete()` 成功移除、重复 `normalizedSourceTerm` 触发 UNIQUE 约束错误
 
-- [ ] 9.2 新建 `tests/unit/main/services/terminology-service.test.ts`
+- [x] 9.2 新建 `tests/unit/main/services/terminology-service.test.ts`
   - 覆盖：`create()` 正常创建 + 归一化、`create()` 重复源术语抛 `BidWiseError(ErrorCode.DUPLICATE)`、`update()` 含 sourceTerm 变更时的冲突检测、`batchCreate()` 批量导入 + 去重统计、`getActiveEntries()` 缓存行为（连续调用只查一次 DB）、`buildExportData()` 数据结构正确、`exportToFile()` 取消保存与成功写出两条路径
 
-- [ ] 9.3 新建 `tests/unit/main/services/terminology-replacement-service.test.ts`
+- [x] 9.3 新建 `tests/unit/main/services/terminology-replacement-service.test.ts`
   - 覆盖：
     - 单个术语替换：`"设备管理"→"装备全寿命周期管理"` 在文本中正确替换
     - 多术语替换：多个不同术语同时替换
@@ -337,28 +337,28 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
     - `buildPromptContext()` 格式正确、空列表返回空字符串
     - 正则特殊字符的 sourceTerm（如含 `.` `(` 等）正确转义
 
-- [ ] 9.4 新建 `tests/unit/main/ipc/terminology-handlers.test.ts`
+- [x] 9.4 新建 `tests/unit/main/ipc/terminology-handlers.test.ts`
   - 覆盖：6 个频道注册、参数透传与错误包装
 
-- [ ] 9.5 更新 `tests/unit/preload/security.test.ts`
+- [x] 9.5 更新 `tests/unit/preload/security.test.ts`
   - 新增 `terminologyList`、`terminologyCreate`、`terminologyUpdate`、`terminologyDelete`、`terminologyBatchCreate`、`terminologyExport` 到 preload 白名单断言
 
-- [ ] 9.6 新建 `tests/unit/renderer/stores/terminologyStore.test.ts`
+- [x] 9.6 新建 `tests/unit/renderer/stores/terminologyStore.test.ts`
   - 覆盖：loadEntries、createEntry（含 duplicate 错误处理）、updateEntry、deleteEntry、batchCreate、搜索/过滤状态管理、loading/error 状态
 
-- [ ] 9.7 新建 `tests/unit/renderer/modules/asset/components/TerminologyPage.test.tsx`
+- [x] 9.7 新建 `tests/unit/renderer/modules/asset/components/TerminologyPage.test.tsx`
   - 覆盖：表格渲染、搜索防抖、分类筛选、状态开关切换、添加按钮触发对话框、删除确认
 
-- [ ] 9.8 新建 `tests/unit/renderer/modules/asset/components/TerminologyEntryForm.test.tsx`
+- [x] 9.8 新建 `tests/unit/renderer/modules/asset/components/TerminologyEntryForm.test.tsx`
   - 覆盖：添加模式 / 编辑模式预填、必填校验、重复错误提示、提交成功后关闭
 
-- [ ] 9.9 新建 `tests/unit/renderer/modules/asset/components/TerminologyImportDialog.test.tsx`
+- [x] 9.9 新建 `tests/unit/renderer/modules/asset/components/TerminologyImportDialog.test.tsx`
   - 覆盖：CSV 上传解析、预览表格、导入结果显示、格式错误提示
 
-- [ ] 9.10 新建 `tests/unit/main/services/agent-orchestrator/terminology-post-processor.test.ts`
+- [x] 9.10 新建 `tests/unit/main/services/agent-orchestrator/terminology-post-processor.test.ts`
   - 覆盖：有术语时替换并创建批注、无术语时跳过、非章节生成模式跳过、`annotationService.create` 收到 `projectId` + stable `sectionId`、`annotationService.create` 后跟 `annotationService.update({ status: 'accepted' })`
 
-- [ ] 9.11 新建 `tests/e2e/stories/story-5-3-terminology-library.spec.ts`
+- [x] 9.11 新建 `tests/e2e/stories/story-5-3-terminology-library.spec.ts`
   - 种入术语数据到测试 SQLite
   - 覆盖：
     - 打开术语库页面，添加术语映射，列表显示新条目
@@ -367,13 +367,13 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
     - 搜索术语列表过滤正确
     - 章节生成后文本中术语已替换 + 对应批注出现
 
-- [ ] 9.12 更新 `tests/unit/main/db/migrations.test.ts`
+- [x] 9.12 更新 `tests/unit/main/db/migrations.test.ts`
   - 覆盖 `015_create_terminology_entries` 注册与迁移链执行成功
 
-- [ ] 9.13 更新 `tests/unit/main/services/agent-orchestrator/agents/generate-agent.test.ts` 与 `tests/unit/main/prompts/generate-chapter.prompt.test.ts`
+- [x] 9.13 更新 `tests/unit/main/services/agent-orchestrator/agents/generate-agent.test.ts` 与 `tests/unit/main/prompts/generate-chapter.prompt.test.ts`
   - 覆盖：有启用术语时 `terminologyContext` 被注入 prompt，无术语时 prompt 结构保持不变
 
-- [ ] 9.14 更新 `tests/unit/main/services/agent-orchestrator/orchestrator.test.ts`
+- [x] 9.14 更新 `tests/unit/main/services/agent-orchestrator/orchestrator.test.ts`
   - 覆盖：`registerAgent(..., postProcessor)` 后，`execute()` 的实际 task executor 也会调用同一个 postProcessor；无 postProcessor 时行为保持不变
 
 ## Dev Notes
@@ -601,14 +601,74 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 
 ## Change Log
 
+- 2026-04-12: 实现完成，9 个 Task 共 42 个子任务全部完成。219/219 测试文件通过，1957/1957 测试用例零回归。新增 22 个文件，修改 18 个文件。
 - 2026-04-12: 按 `validate-create-story` 工作流回写 implementation-ready 修正：补齐 migration 注册/测试链、将 duplicate 错误合同对齐到现有 `ErrorCode.DUPLICATE`、将术语批注锚点改为 `createChapterLocatorKey(locator)`、将自动采纳批注改为 `create()` 后 `update(status='accepted')`、把 JSON 导出拆分为“构建导出数据 + save dialog 写文件”两层、明确 `/asset` 路由使用 `AssetModuleContainer` 集成术语库、补充 orchestrator / generate-agent / prompt / migration 回归测试要求。
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+- Migration test baseline fixed: added missing 014_create_adversarial_reviews + new 015_create_terminology_entries
+- terminologyService cache invalidation requires explicit clearing between tests (module-scoped state)
 
 ### Completion Notes List
 
+- Task 1: 创建 `terminology-types.ts` 类型定义、`TerminologyEntriesTable` schema、015 迁移、迁移注册、迁移测试基线修正
+- Task 2: `TerminologyRepository` 实现 CRUD + list/findActive/count，isActive number↔boolean 转换在 repo 层完成
+- Task 3: `terminologyService` 实现归一化、去重检查、批量导入、缓存管理、导出 JSON（含 save dialog）
+- Task 4: `terminologyReplacementService` 实现占位符保护的正则替换引擎 + prompt 上下文生成
+- Task 5: 6 个 `terminology:*` IPC 频道、handler、preload 暴露、类型安全编译通过
+- Task 6: `terminologyStore` Zustand 状态管理，搜索/过滤/CRUD/导出 actions
+- Task 7: `TerminologyPage` 表格+搜索+过滤+CRUD UI、`TerminologyEntryForm` 模态框、`TerminologyImportDialog` CSV 导入、`AssetModuleContainer` 切换容器
+- Task 8: orchestrator `registerAgent()` 扩展可选 `postProcessor`、`terminologyPostProcessor` 术语替换+批注创建、generate-agent prompt 注入 `terminologyContext`
+- Task 9: 219/219 测试文件通过，1957/1957 测试用例通过，零回归
+
 ### File List
+
+**新增文件：**
+- src/shared/terminology-types.ts
+- src/main/db/migrations/015_create_terminology_entries.ts
+- src/main/db/repositories/terminology-repo.ts
+- src/main/services/terminology-service.ts
+- src/main/services/terminology-replacement-service.ts
+- src/main/ipc/terminology-handlers.ts
+- src/main/services/agent-orchestrator/post-processors/terminology-post-processor.ts
+- src/renderer/src/stores/terminologyStore.ts
+- src/renderer/src/modules/asset/components/AssetModuleContainer.tsx
+- src/renderer/src/modules/asset/components/TerminologyPage.tsx
+- src/renderer/src/modules/asset/components/TerminologyEntryForm.tsx
+- src/renderer/src/modules/asset/components/TerminologyImportDialog.tsx
+- tests/unit/main/db/repositories/terminology-repo.test.ts
+- tests/unit/main/services/terminology-service.test.ts
+- tests/unit/main/services/terminology-replacement-service.test.ts
+- tests/unit/main/ipc/terminology-handlers.test.ts
+- tests/unit/renderer/stores/terminologyStore.test.ts
+- tests/unit/renderer/modules/asset/components/TerminologyPage.test.tsx
+- tests/unit/renderer/modules/asset/components/TerminologyEntryForm.test.tsx
+- tests/unit/renderer/modules/asset/components/TerminologyImportDialog.test.tsx
+- tests/unit/main/services/agent-orchestrator/terminology-post-processor.test.ts
+- tests/e2e/stories/story-5-3-terminology-library.spec.ts
+
+**修改文件：**
+- src/main/db/schema.ts — 新增 TerminologyEntriesTable + DB 接口
+- src/main/db/migrator.ts — 注册 015_create_terminology_entries
+- src/shared/ipc-types.ts — 新增 6 个 terminology:* 频道
+- src/main/ipc/index.ts — 注册 registerTerminologyHandlers()
+- src/preload/index.ts — 暴露 6 个术语 API
+- src/renderer/src/stores/index.ts — 导出 useTerminologyStore
+- src/main/services/agent-orchestrator/orchestrator.ts — registerAgent() 新增可选 postProcessor
+- src/main/services/agent-orchestrator/index.ts — 注册 generate agent 时传入 terminologyPostProcessor
+- src/main/services/agent-orchestrator/agents/generate-agent.ts — handleChapterGeneration() 注入术语上下文
+- src/main/prompts/generate-chapter.prompt.ts — GenerateChapterContext 新增 terminologyContext + 模板更新
+- src/renderer/src/App.tsx — /asset 路由改为 AssetModuleContainer
+- src/renderer/src/modules/asset/index.ts — 导出新组件
+- tests/unit/main/db/migrations.test.ts — 迁移链扩展到 015 并修正 014 基线
+- tests/unit/main/services/agent-orchestrator/agents/generate-agent.test.ts — 术语 prompt 注入回归
+- tests/unit/main/prompts/generate-chapter.prompt.test.ts — terminologyContext 模板回归
+- tests/unit/main/services/agent-orchestrator/orchestrator.test.ts — postProcessor 透传回归
+- tests/unit/preload/security.test.ts — 新增 6 个 API 白名单
+- _bmad-output/implementation-artifacts/sprint-status.yaml — 状态更新

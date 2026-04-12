@@ -117,6 +117,32 @@ describe('@story-3-4 generateChapterPrompt', () => {
     expect(styleIdx).toBeLessThan(adjacentIdx)
   })
 
+  it('@p1 @story-5-3 should include terminology context when provided', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      terminologyContext:
+        '【行业术语规范】请在生成内容时优先使用以下标准术语：\n- "设备管理" → "装备全寿命周期管理"',
+    })
+    expect(prompt).toContain('行业术语规范')
+    expect(prompt).toContain('装备全寿命周期管理')
+  })
+
+  it('@p1 @story-5-3 should not include terminology section when absent', () => {
+    const prompt = generateChapterPrompt(baseContext)
+    expect(prompt).not.toContain('## 行业术语规范')
+  })
+
+  it('@p1 @story-5-3 should place terminology before additional context', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      terminologyContext: '术语规范',
+      additionalContext: '补充上下文',
+    })
+    const termIdx = prompt.indexOf('行业术语规范')
+    const addIdx = prompt.indexOf('补充说明')
+    expect(termIdx).toBeLessThan(addIdx)
+  })
+
   it('@p1 should include additional context for regeneration', () => {
     const prompt = generateChapterPrompt({
       ...baseContext,
@@ -135,6 +161,7 @@ describe('@story-3-4 generateChapterPrompt', () => {
     expect(prompt).not.toContain('## 后续章节摘要')
     expect(prompt).not.toContain('## 投标策略参考')
     expect(prompt).not.toContain('## 补充说明')
+    expect(prompt).not.toContain('## 行业术语规范')
   })
 
   it('@p1 should return well-structured multi-section prompt', () => {
@@ -148,10 +175,11 @@ describe('@story-3-4 generateChapterPrompt', () => {
       adjacentChaptersAfter: '后续摘要',
       strategySeed: '策略种子',
       additionalContext: '补充上下文',
+      terminologyContext: '术语规范',
     }
     const prompt = generateChapterPrompt(fullContext)
     const sections = prompt.split('\n\n').filter((s) => s.startsWith('## '))
-    expect(sections.length).toBeGreaterThanOrEqual(9)
+    expect(sections.length).toBeGreaterThanOrEqual(10)
   })
 
   it('@p0 should define a professional system prompt', () => {

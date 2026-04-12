@@ -16,6 +16,7 @@ import { registerExportHandlers } from './export-handlers'
 import { registerAssetHandlers } from './asset-handlers'
 import { registerComplianceHandlers } from './compliance-handlers'
 import { registerReviewHandlers } from './review-handlers'
+import { registerTerminologyHandlers } from './terminology-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
 import type { RegisteredTaskChannels } from './task-handlers'
@@ -34,6 +35,7 @@ import type { RegisteredExportChannels } from './export-handlers'
 import type { RegisteredAssetChannels } from './asset-handlers'
 import type { RegisteredComplianceChannels } from './compliance-handlers'
 import type { RegisteredReviewChannels } from './review-handlers'
+import type { RegisteredTerminologyChannels } from './terminology-handlers'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Compile-time exhaustive check: every IpcChannel must be covered by a handler module.
@@ -58,6 +60,7 @@ type _AllRegistered =
   | RegisteredAssetChannels
   | RegisteredComplianceChannels
   | RegisteredReviewChannels
+  | RegisteredTerminologyChannels
 type _Unregistered = Exclude<IpcChannel, _AllRegistered>
 void (true satisfies [_Unregistered] extends [never] ? true : never)
 
@@ -80,4 +83,5 @@ export function registerIpcHandlers(): void {
   registerAssetHandlers()
   registerComplianceHandlers()
   registerReviewHandlers()
+  registerTerminologyHandlers()
 }

@@ -1,5 +1,5 @@
 export { AgentOrchestrator } from './orchestrator'
-export type { AgentHandler, AiRequestParams } from './orchestrator'
+export type { AgentHandler, AgentPostProcessor, AiRequestParams } from './orchestrator'
 import { AgentOrchestrator } from './orchestrator'
 import { parseAgentHandler } from './agents/parse-agent'
 import { generateAgentHandler } from './agents/generate-agent'
@@ -12,12 +12,13 @@ import { traceabilityAgentHandler } from './agents/traceability-agent'
 import { adversarialAgentHandler } from './agents/adversarial-agent'
 import { adversarialReviewAgentHandler } from './agents/adversarial-review-agent'
 import { attackChecklistAgentHandler } from './agents/attack-checklist-agent'
+import { terminologyPostProcessor } from './post-processors/terminology-post-processor'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
 // Register Alpha agents
 agentOrchestrator.registerAgent('parse', parseAgentHandler)
-agentOrchestrator.registerAgent('generate', generateAgentHandler)
+agentOrchestrator.registerAgent('generate', generateAgentHandler, terminologyPostProcessor)
 agentOrchestrator.registerAgent('extract', extractAgentHandler)
 agentOrchestrator.registerAgent('seed', seedAgentHandler)
 agentOrchestrator.registerAgent('attribute-sources', attributeSourcesAgentHandler)
