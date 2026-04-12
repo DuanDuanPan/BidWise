@@ -302,10 +302,10 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
     4. 若有替换发生，为每个发生替换的术语映射创建批注：
        - `projectId` 直接复用章节生成上下文中的 `context.projectId`
        - `sectionId` 使用 `createChapterLocatorKey(context.target as ChapterHeadingLocator)` 生成稳定 section key；**不要**只写章节标题
-       - 复用现有 `annotationService.create()` / `annotationService.update()`，不要扩展 `CreateAnnotationInput.status`
+       - 复用现有 `annotationService.create()`，不要扩展 `CreateAnnotationInput.status`
        - `type: 'ai-suggestion'`，`author: 'system:terminology'`
        - `content`: `已将「${sourceTerm}」替换为「${targetTerm}」（术语库自动应用）`；若 `count > 1` 再追加 `（共 ${count} 处）`
-       - 创建后立即调用 `annotationService.update({ id: created.id, status: 'accepted' })`，因为自动应用的替换在语义上是“已采纳”
+       - 创建后保持默认 `pending` 状态，以确保批注在侧边栏中以蓝色 `ai-suggestion` 样式可见（与 AC3 保持一致）
     5. 返回修改后的 result（content 已替换）
 
 - [x] 8.3 在 `src/main/services/agent-orchestrator/index.ts` 注册 generate agent 的 postProcessor
@@ -602,7 +602,7 @@ So that 方案用语专业精准，"设备管理"自动变成"装备全寿命周
 ## Change Log
 
 - 2026-04-12: 实现完成，9 个 Task 共 42 个子任务全部完成。219/219 测试文件通过，1957/1957 测试用例零回归。新增 22 个文件，修改 18 个文件。
-- 2026-04-12: 按 `validate-create-story` 工作流回写 implementation-ready 修正：补齐 migration 注册/测试链、将 duplicate 错误合同对齐到现有 `ErrorCode.DUPLICATE`、将术语批注锚点改为 `createChapterLocatorKey(locator)`、将自动采纳批注改为 `create()` 后 `update(status='accepted')`、把 JSON 导出拆分为“构建导出数据 + save dialog 写文件”两层、明确 `/asset` 路由使用 `AssetModuleContainer` 集成术语库、补充 orchestrator / generate-agent / prompt / migration 回归测试要求。
+- 2026-04-12: 按 `validate-create-story` 工作流回写 implementation-ready 修正：补齐 migration 注册/测试链、将 duplicate 错误合同对齐到现有 `ErrorCode.DUPLICATE`、将术语批注锚点改为 `createChapterLocatorKey(locator)`、把 JSON 导出拆分为”构建导出数据 + save dialog 写文件”两层、明确 `/asset` 路由使用 `AssetModuleContainer` 集成术语库、补充 orchestrator / generate-agent / prompt / migration 回归测试要求。术语批注保持默认 `pending` 状态以保证侧边栏可见性（与 AC3 一致）。
 
 ## Dev Agent Record
 

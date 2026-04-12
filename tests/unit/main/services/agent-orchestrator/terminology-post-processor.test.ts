@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { BidWiseError } from '@main/utils/errors'
 import type { AgentExecuteResult } from '@shared/ai-types'
 
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
@@ -163,5 +164,127 @@ describe('terminologyPostProcessor', () => {
         sectionId: '3:项目概述:1',
       })
     )
+  })
+
+  it('throws AbortError when signal is aborted before annotation loop', async () => {
+    const entries = [
+      { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
+    ]
+    mockGetActiveEntries.mockResolvedValue(entries)
+    mockApplyReplacements.mockReturnValue({
+      content: '装备全寿命周期管理是核心功能',
+      replacements: [{ sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', count: 1 }],
+      totalReplacements: 1,
+    })
+    mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
+
+    const controller = new AbortController()
+    controller.abort()
+
+    const context: Record<string, unknown> = {
+      mode: 'generate-chapter',
+      projectId: 'proj-1',
+      target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
+    }
+
+    await expect(
+      terminologyPostProcessor(makeResult(), context, controller.signal)
+    ).rejects.toThrow(/aborted|cancelled|取消/)
+
+    expect(mockAnnotationCreate).not.toHaveBeenCalled()
+  })
+
+  it('throws AbortError when signal is aborted during annotation loop iteration', async () => {
+    const entries = [
+      { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
+      { id: 't2', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
+    ]
+    mockGetActiveEntries.mockResolvedValue(entries)
+    mockApplyReplacements.mockReturnValue({
+      content: '装备全寿命周期管理是采购方核心功能',
+      replacements: [
+        { sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', count: 1 },
+        { sourceTerm: '甲方', targetTerm: '采购方', count: 1 },
+      ],
+      totalReplacements: 2,
+    })
+    mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
+
+    const controller = new AbortController()
+    // Abort after the first annotation is created
+    mockAnnotationCreate.mockImplementationOnce(async () => {
+      controller.abort()
+      return { id: 'ann-1' }
+    })
+
+    const context: Record<string, unknown> = {
+      mode: 'generate-chapter',
+      projectId: 'proj-1',
+      target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
+    }
+
+    await expect(
+      terminologyPostProcessor(makeResult(), context, controller.signal)
+    ).rejects.toThrow(/aborted|cancelled|取消/)
+
+    // Only one annotation was created before abort
+    expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws BidWiseError when all annotation creates fail', async () => {
+    const entries = [
+      { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
+    ]
+    mockGetActiveEntries.mockResolvedValue(entries)
+    mockApplyReplacements.mockReturnValue({
+      content: '装备全寿命周期管理是核心功能',
+      replacements: [{ sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', count: 1 }],
+      totalReplacements: 1,
+    })
+    mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
+    mockAnnotationCreate.mockRejectedValue(new Error('DB write failed'))
+
+    const context: Record<string, unknown> = {
+      mode: 'generate-chapter',
+      projectId: 'proj-1',
+      target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
+    }
+
+    await expect(
+      terminologyPostProcessor(makeResult(), context, makeSignal())
+    ).rejects.toThrow(BidWiseError)
+  })
+
+  it('succeeds with warning when some but not all annotations fail', async () => {
+    const entries = [
+      { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
+      { id: 't2', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
+    ]
+    mockGetActiveEntries.mockResolvedValue(entries)
+    mockApplyReplacements.mockReturnValue({
+      content: '装备全寿命周期管理是采购方核心功能',
+      replacements: [
+        { sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', count: 1 },
+        { sourceTerm: '甲方', targetTerm: '采购方', count: 1 },
+      ],
+      totalReplacements: 2,
+    })
+    mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
+    mockAnnotationCreate
+      .mockRejectedValueOnce(new Error('DB write failed'))
+      .mockResolvedValueOnce({ id: 'ann-2' })
+
+    const context: Record<string, unknown> = {
+      mode: 'generate-chapter',
+      projectId: 'proj-1',
+      target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
+    }
+
+    const output = await terminologyPostProcessor(makeResult(), context, makeSignal())
+
+    // Succeeds — content is still replaced
+    expect(output.content).toBe('装备全寿命周期管理是采购方核心功能')
+    // Both annotation creates were attempted
+    expect(mockAnnotationCreate).toHaveBeenCalledTimes(2)
   })
 })

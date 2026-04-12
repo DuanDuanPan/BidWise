@@ -47,7 +47,7 @@ vi.mock('antd', () => ({
     <input placeholder={placeholder} {...props} />
   ),
   App: {
-    useApp: () => ({ message: { success: vi.fn() } }),
+    useApp: () => ({ message: { success: vi.fn(), error: vi.fn() } }),
   },
 }))
 

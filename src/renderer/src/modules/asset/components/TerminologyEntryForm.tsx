@@ -78,6 +78,10 @@ export function TerminologyEntryForm({
             errors: [errorMessage],
           },
         ])
+      } else if (errorMessage) {
+        message.error(`保存失败：${errorMessage}`)
+      } else {
+        message.error('保存失败，请稍后重试')
       }
     }
   }
