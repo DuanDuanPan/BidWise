@@ -83,6 +83,23 @@ async function preprocessMarkdownForExport(
         warnings.push(`Mermaid 资产文件名非法 (路径遍历): ${assetFileName}`)
         result.push(`[图片未导出: ${assetFileName}]`)
         i++
+        // Skip the fenced code block that follows the rejected comment
+        if (i < lines.length) {
+          const fenceMatch = FENCED_CODE_START_RE.exec(lines[i])
+          if (fenceMatch) {
+            const fenceChar = fenceMatch[1][0]
+            const fenceLen = fenceMatch[1].length
+            i++ // skip opening fence
+            while (i < lines.length) {
+              const closingRe = new RegExp(`^${fenceChar === '`' ? '`' : '~'}{${fenceLen},}\\s*$`)
+              if (closingRe.test(lines[i])) {
+                i++ // skip closing fence
+                break
+              }
+              i++
+            }
+          }
+        }
         continue
       }
 
@@ -147,6 +164,10 @@ async function preprocessMarkdownForExport(
         warnings.push(`draw.io 资产文件名非法 (路径遍历): ${assetFileName}`)
         result.push(`[图片未导出: ${assetFileName}]`)
         i++
+        // Skip the companion image reference that follows the rejected comment
+        if (i < lines.length && IMAGE_REF_RE.test(lines[i])) {
+          i++
+        }
         continue
       }
 

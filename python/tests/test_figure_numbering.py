@@ -292,3 +292,51 @@ class TestFencedCodeBlockSkipping:
         assert len(figures) == 2
         assert figures[0].label == "\u56fe 1-1"
         assert figures[1].label == "\u56fe 1-2"
+
+    def test_indented_closing_fence_4_spaces_not_closing(self):
+        """CommonMark: closing fence with 4+ spaces indentation is NOT a closing fence.
+        Reproduction from finding: ['```','    ```','![Fake]','```','![Real]']
+        """
+        lines = [
+            "```",
+            "    ```",       # 4 spaces — content, NOT a closing fence
+            "![Fake](assets/fake.png)",
+            "```",           # real closing fence (0 spaces)
+            "![Real](assets/real.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "Real"
+        assert figures[0].label == "\u56fe 1-1"
+
+    def test_indented_closing_fence_3_spaces_is_closing(self):
+        """CommonMark: closing fence with up to 3 spaces indentation IS a valid closing fence."""
+        lines = [
+            "```",
+            "   ```",       # 3 spaces — valid closing fence
+            "![Real](assets/real.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 1
+        assert figures[0].caption == "Real"
+        assert figures[0].label == "\u56fe 1-1"
+
+    def test_indented_fence_figref_not_replaced(self):
+        """figref inside code block with indented non-closing fence must not be replaced."""
+        lines = [
+            "```",
+            "    ```",
+            "{figref:\u67b6\u6784\u56fe}",
+            "```",
+            "Real ref: {figref:\u67b6\u6784\u56fe}",
+        ]
+        figures = build_figure_registry([
+            "# Chapter 1",
+            "![\u67b6\u6784\u56fe](assets/arch.png)",
+        ])
+        warnings: list[str] = []
+        result = replace_cross_references(lines, figures, warnings)
+        # Line inside code block: untouched
+        assert "{figref:\u67b6\u6784\u56fe}" in result[2]
+        # Line outside code block: replaced
+        assert "\u56fe 1-1" in result[4]

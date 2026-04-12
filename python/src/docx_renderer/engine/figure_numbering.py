@@ -36,12 +36,16 @@ def build_figure_registry(lines: list[str]) -> list[FigureEntry]:
         # Track fenced code block state — CommonMark: closing fence must use
         # the same character as the opening and be at least as long.
         if fence_marker is not None:
-            stripped = line.strip()
-            if (
-                len(stripped) >= len(fence_marker)
-                and stripped == fence_marker[0] * len(stripped)
-            ):
-                fence_marker = None
+            # CommonMark: closing fence may be indented 0-3 spaces only
+            lstripped = line.lstrip(' ')
+            indent = len(line) - len(lstripped)
+            if indent <= 3:
+                stripped = lstripped.rstrip()
+                if (
+                    len(stripped) >= len(fence_marker)
+                    and stripped == fence_marker[0] * len(stripped)
+                ):
+                    fence_marker = None
             continue
 
         fence_match = _FENCE_OPEN_PATTERN.match(line)
@@ -100,12 +104,16 @@ def replace_cross_references(
         # the same character as the opening and be at least as long.
         if fence_marker is not None:
             result.append(line)
-            stripped = line.strip()
-            if (
-                len(stripped) >= len(fence_marker)
-                and stripped == fence_marker[0] * len(stripped)
-            ):
-                fence_marker = None
+            # CommonMark: closing fence may be indented 0-3 spaces only
+            lstripped = line.lstrip(' ')
+            indent = len(line) - len(lstripped)
+            if indent <= 3:
+                stripped = lstripped.rstrip()
+                if (
+                    len(stripped) >= len(fence_marker)
+                    and stripped == fence_marker[0] * len(stripped)
+                ):
+                    fence_marker = None
             continue
 
         fence_match = _FENCE_OPEN_PATTERN.match(line)

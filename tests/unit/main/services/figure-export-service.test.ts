@@ -138,30 +138,38 @@ describe('@story-8-4 figureExportService.preprocessMarkdownForExport', () => {
     expect(result.warnings).toHaveLength(0)
   })
 
-  it('rejects Mermaid asset with path traversal (../)', async () => {
+  it('rejects Mermaid asset with path traversal and skips fenced block', async () => {
     const markdown = [
       '<!-- mermaid:id1:../../../etc/passwd.svg:caption -->',
       '```mermaid',
       'graph TD; A-->B',
       '```',
+      'Text after',
     ].join('\n')
 
     const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
 
     expect(result.processedMarkdown).toContain('[图片未导出: ../../../etc/passwd.svg]')
+    expect(result.processedMarkdown).not.toContain('```mermaid')
+    expect(result.processedMarkdown).not.toContain('graph TD')
+    expect(result.processedMarkdown).toContain('Text after')
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain('路径遍历')
     expect(mockAccess).not.toHaveBeenCalled()
   })
 
-  it('rejects draw.io asset with path traversal', async () => {
-    const markdown = ['<!-- drawio:id1:../secret/data.drawio -->', '![图](assets/data.png)'].join(
-      '\n'
-    )
+  it('rejects draw.io asset with path traversal and skips image ref', async () => {
+    const markdown = [
+      '<!-- drawio:id1:../secret/data.drawio -->',
+      '![图](assets/data.png)',
+      'Text after',
+    ].join('\n')
 
     const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
 
     expect(result.processedMarkdown).toContain('[图片未导出: ../secret/data.drawio]')
+    expect(result.processedMarkdown).not.toContain('![图](assets/data.png)')
+    expect(result.processedMarkdown).toContain('Text after')
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain('路径遍历')
     expect(mockAccess).not.toHaveBeenCalled()
