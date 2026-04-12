@@ -123,6 +123,9 @@ function updateProject(
   }
 }
 
+/** Per-project monotonic counter to discard stale refreshReviewSession responses */
+const refreshVersions = new Map<string, number>()
+
 export const useReviewStore = create<ReviewStore>()(
   subscribeWithSelector((set) => ({
     projects: {},
@@ -441,9 +444,15 @@ export const useReviewStore = create<ReviewStore>()(
     },
 
     async refreshReviewSession(projectId: string): Promise<void> {
+      const version = (refreshVersions.get(projectId) ?? 0) + 1
+      refreshVersions.set(projectId, version)
+
       try {
         const response = await window.api.reviewGetReview({ projectId })
         if (response.success && response.data) {
+          // Discard stale response — a newer refresh was already dispatched
+          if (refreshVersions.get(projectId) !== version) return
+
           set((state) =>
             updateProject(state, projectId, {
               reviewSession: response.data,

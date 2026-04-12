@@ -681,8 +681,6 @@ class AdversarialReviewService {
 
           if (uniqueRoleIds.size >= 2 && allFindings.length >= 2) {
             try {
-              await reviewRepo.resetContradictionGroups(currentSession.id)
-
               const summaries: FindingSummary[] = allFindings.map((f) => ({
                 id: f.id,
                 roleId: f.roleId,
@@ -708,6 +706,11 @@ class AdversarialReviewService {
               })
 
               const pairs = parseContradictions(cdResponse.content)
+
+              // Clear old groups only after new detection succeeded — preserves
+              // existing contradiction markers when the AI call fails
+              await reviewRepo.resetContradictionGroups(currentSession.id)
+
               let groupCounter = 0
               for (const pair of pairs) {
                 const aExists = allFindings.some((f) => f.id === pair.findingIdA)
