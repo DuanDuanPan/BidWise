@@ -83,6 +83,22 @@ def build_figure_registry(lines: list[str]) -> list[FigureEntry]:
     return figures
 
 
+def renumber_registry(figures: list[FigureEntry]) -> list[FigureEntry]:
+    """Re-number figure entries after pruning invalid images.
+
+    Preserves chapter grouping — only ``figure_number`` and ``label`` are
+    recalculated; ``chapter_number`` stays unchanged because chapter
+    boundaries are determined by H1 headings, not by images.
+    """
+    chapter_counters: dict[int, int] = {}
+    for entry in figures:
+        ch = entry.chapter_number
+        chapter_counters[ch] = chapter_counters.get(ch, 0) + 1
+        entry.figure_number = chapter_counters[ch]
+        entry.label = f"\u56fe {ch}-{chapter_counters[ch]}"
+    return figures
+
+
 def replace_cross_references(
     lines: list[str],
     figures: list[FigureEntry],

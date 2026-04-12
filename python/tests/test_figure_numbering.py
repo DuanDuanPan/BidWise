@@ -2,6 +2,7 @@
 
 from docx_renderer.engine.figure_numbering import (
     build_figure_registry,
+    renumber_registry,
     replace_cross_references,
 )
 
@@ -340,3 +341,57 @@ class TestFencedCodeBlockSkipping:
         assert "{figref:\u67b6\u6784\u56fe}" in result[2]
         # Line outside code block: replaced
         assert "\u56fe 1-1" in result[4]
+
+
+class TestRenumberRegistry:
+    """Tests for renumber_registry after pruning invalid entries."""
+
+    def test_renumber_after_removing_first(self):
+        """Removing the first figure should shift the second to 1-1."""
+        lines = [
+            "# Ch1",
+            "![A](a.png)",
+            "![B](b.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 2
+        # Simulate pruning: remove the first entry (A)
+        survivors = [figures[1]]
+        renumber_registry(survivors)
+        assert survivors[0].figure_number == 1
+        assert survivors[0].label == "\u56fe 1-1"
+
+    def test_renumber_across_chapters(self):
+        """After pruning, each chapter re-numbers independently."""
+        lines = [
+            "# Ch1",
+            "![A](a.png)",
+            "![B](b.png)",
+            "# Ch2",
+            "![C](c.png)",
+            "![D](d.png)",
+        ]
+        figures = build_figure_registry(lines)
+        assert len(figures) == 4
+        # Prune A (ch1) and C (ch2)
+        survivors = [figures[1], figures[3]]  # B and D
+        renumber_registry(survivors)
+        assert survivors[0].label == "\u56fe 1-1"  # B
+        assert survivors[1].label == "\u56fe 2-1"  # D
+
+    def test_renumber_empty_list(self):
+        """Renumbering an empty list should be a no-op."""
+        result = renumber_registry([])
+        assert result == []
+
+    def test_renumber_no_pruning_is_idempotent(self):
+        """Renumbering without any pruning should produce the same labels."""
+        lines = [
+            "# Ch1",
+            "![A](a.png)",
+            "![B](b.png)",
+        ]
+        figures = build_figure_registry(lines)
+        original_labels = [f.label for f in figures]
+        renumber_registry(figures)
+        assert [f.label for f in figures] == original_labels

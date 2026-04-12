@@ -1288,3 +1288,65 @@ def test_indented_closing_fence_3_spaces_renderer(client: TestClient, tmp_output
     texts = [p.text for p in doc.paragraphs]
     # The image should be captioned (not swallowed into the code block)
     assert any("图 1-1: Real" in t for t in texts), f"Expected caption in: {texts}"
+
+
+def test_missing_image_does_not_occupy_number(client: TestClient, tmp_output: str, tmp_path):
+    """A missing image must not occupy a figure number — valid images after it
+    should be numbered as if the missing one never existed."""
+    import shutil
+
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    fixture_image = os.path.join(os.path.dirname(__file__), "fixtures", "images", "test-image.png")
+    shutil.copy(fixture_image, os.path.join(assets_dir, "valid.png"))
+
+    md = "# Ch1\n\n![Missing](assets/missing.png)\n\n![Valid](assets/valid.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # Valid image should be 图 1-1, NOT 图 1-2
+    assert any("图 1-1: Valid" in t for t in texts), f"Expected caption '图 1-1: Valid' in: {texts}"
+    assert not any("图 1-2" in t for t in texts), f"Unexpected 图 1-2 in: {texts}"
+
+
+def test_figref_to_missing_image_not_resolved(client: TestClient, tmp_output: str, tmp_path):
+    """A {figref:X} that matches only a missing image must NOT be resolved to a
+    numbered label — it must stay as raw text with a warning."""
+    project_path = str(tmp_path / "project")
+    os.makedirs(os.path.join(project_path, "assets"), exist_ok=True)
+
+    md = "# Ch1\n\nSee {figref:Missing}.\n\n![Missing](assets/missing.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    # The figref must NOT have been replaced with a numbered label
+    assert not any("图 1-1" in t for t in texts), f"Phantom label found in: {texts}"
+    # The warning list should mention the unresolved reference
+    warnings = body["data"]["warnings"]
+    assert any("未匹配" in w for w in warnings), f"Expected unmatched warning in: {warnings}"

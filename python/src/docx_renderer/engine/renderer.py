@@ -16,6 +16,7 @@ from docx.text.paragraph import Paragraph
 from docx_renderer.engine.figure_numbering import (
     FigureEntry,
     build_figure_registry,
+    renumber_registry,
     replace_cross_references,
 )
 from docx_renderer.models.schemas import PageSetup, RenderResult, StyleMapping
@@ -232,6 +233,44 @@ def _get_image_size(image_path: str) -> tuple[Optional[int], Optional[int]]:
     return None, None
 
 
+def _resolve_image_path(
+    image_path_raw: str,
+    project_path: Optional[str],
+) -> Optional[str]:
+    """Resolve and validate an image path, returning the resolved filesystem
+    path on success or ``None`` when the image would be rejected.
+
+    Validation gates (same order as ``_handle_image``):
+    1. Extension whitelist
+    2. Path resolution (relative / absolute)
+    3. Security — must be under ``{project_path}/assets/``
+    4. File existence
+    """
+    ext = Path(image_path_raw).suffix.lower()
+    if ext not in _IMAGE_EXTENSIONS:
+        return None
+
+    if project_path and not os.path.isabs(image_path_raw):
+        resolved = os.path.realpath(os.path.join(project_path, image_path_raw))
+        assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
+        if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
+            return None
+    elif os.path.isabs(image_path_raw):
+        if not project_path:
+            return None
+        resolved = os.path.realpath(image_path_raw)
+        assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
+        if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
+            return None
+    else:
+        return None
+
+    if not os.path.exists(resolved):
+        return None
+
+    return resolved
+
+
 def _handle_image(
     doc: Document,
     alt_text: str,
@@ -241,43 +280,31 @@ def _handle_image(
     warnings: list[str],
 ) -> bool:
     """Handle Markdown image syntax and insert into document."""
-    ext = Path(image_path_raw).suffix.lower()
+    resolved = _resolve_image_path(image_path_raw, project_path)
 
-    # Extension whitelist check
-    if ext not in _IMAGE_EXTENSIONS:
-        warnings.append(f"不支持的图片格式 '{ext}': {image_path_raw}")
-        doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-        return False
-
-    # Resolve image path — use realpath to follow symlinks for security
-    if project_path and not os.path.isabs(image_path_raw):
-        resolved = os.path.realpath(os.path.join(project_path, image_path_raw))
-        # Security: ensure real path is under {project_path}/assets/
-        assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
-        if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
-            warnings.append(f"图片路径不在 assets/ 目录下: {image_path_raw}")
-            doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-            return False
-    elif os.path.isabs(image_path_raw):
-        if not project_path:
+    if resolved is None:
+        # Produce a human-readable warning (replicate the specific messages)
+        ext = Path(image_path_raw).suffix.lower()
+        if ext not in _IMAGE_EXTENSIONS:
+            warnings.append(f"不支持的图片格式 '{ext}': {image_path_raw}")
+        elif not project_path and not os.path.isabs(image_path_raw):
+            warnings.append(f"无法解析图片路径 (缺少 projectPath): {image_path_raw}")
+        elif not project_path:
             warnings.append(f"缺少 projectPath，无法校验绝对路径图片: {image_path_raw}")
-            doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-            return False
-        resolved = os.path.realpath(image_path_raw)
-        assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
-        if not resolved.startswith(assets_dir + os.sep) and resolved != assets_dir:
-            warnings.append(f"绝对路径图片不在 assets/ 目录下: {image_path_raw}")
-            doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-            return False
-    else:
-        # No project_path provided
-        warnings.append(f"无法解析图片路径 (缺少 projectPath): {image_path_raw}")
-        doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
-        return False
-
-    # Check file exists (resolved is already a realpath)
-    if not os.path.exists(resolved):
-        warnings.append(f"图片文件不存在: {resolved}")
+        else:
+            real = os.path.realpath(
+                os.path.join(project_path, image_path_raw)
+                if not os.path.isabs(image_path_raw)
+                else image_path_raw
+            )
+            assets_dir = os.path.realpath(os.path.join(project_path, "assets"))
+            if not real.startswith(assets_dir + os.sep) and real != assets_dir:
+                if os.path.isabs(image_path_raw):
+                    warnings.append(f"绝对路径图片不在 assets/ 目录下: {image_path_raw}")
+                else:
+                    warnings.append(f"图片路径不在 assets/ 目录下: {image_path_raw}")
+            else:
+                warnings.append(f"图片文件不存在: {real}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
         return False
 
@@ -390,9 +417,18 @@ def render_markdown_to_docx(
     else:
         doc = Document()
 
-    # Build figure registry and replace cross-references before parsing
+    # Build figure registry, prune images that will fail validation,
+    # re-number survivors, then replace cross-references.
     lines = markdown_content.split("\n")
     figure_registry = build_figure_registry(lines)
+
+    valid_figures: list[FigureEntry] = []
+    for entry in figure_registry:
+        img_match = _IMAGE_PATTERN.match(lines[entry.line_index])
+        if img_match and _resolve_image_path(img_match.group(2), project_path) is not None:
+            valid_figures.append(entry)
+    figure_registry = renumber_registry(valid_figures)
+
     lines = replace_cross_references(lines, figure_registry, warnings)
     processed_content = "\n".join(lines)
 
