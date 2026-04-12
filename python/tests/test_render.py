@@ -1350,3 +1350,39 @@ def test_figref_to_missing_image_not_resolved(client: TestClient, tmp_output: st
     # The warning list should mention the unresolved reference
     warnings = body["data"]["warnings"]
     assert any("未匹配" in w for w in warnings), f"Expected unmatched warning in: {warnings}"
+
+
+def test_figref_to_corrupt_existing_image_not_resolved(
+    client: TestClient, tmp_output: str, tmp_path
+):
+    """A corrupt-but-existing image must not survive figure pruning, because
+    python-docx will reject it during insertion."""
+    project_path = str(tmp_path / "project")
+    assets_dir = os.path.join(project_path, "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    with open(os.path.join(assets_dir, "corrupt.png"), "w", encoding="utf-8") as f:
+        f.write("not a png")
+
+    md = "# Ch1\n\nSee {figref:Broken}.\n\n![Broken](assets/corrupt.png)"
+    response = client.post(
+        "/api/render-documents",
+        json={
+            "markdownContent": md,
+            "outputPath": tmp_output,
+            "projectId": "test-project",
+            "projectPath": project_path,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+
+    doc = Document(tmp_output)
+    texts = [p.text for p in doc.paragraphs]
+    assert "See {figref:Broken}." in texts, f"figref should remain unresolved in: {texts}"
+    assert not any("图 1-1" in t for t in texts), f"Phantom label found in: {texts}"
+    assert any("[图片未导出: assets/corrupt.png]" in t for t in texts), f"Missing placeholder in: {texts}"
+
+    warnings = body["data"]["warnings"]
+    assert any("图片插入失败" in w for w in warnings), f"Expected insert failure warning in: {warnings}"
+    assert any("未匹配" in w for w in warnings), f"Expected unmatched warning in: {warnings}"

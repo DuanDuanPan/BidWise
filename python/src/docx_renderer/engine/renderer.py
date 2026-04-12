@@ -7,6 +7,7 @@ from typing import Optional
 
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.image.image import Image
 from docx.opc.exceptions import PackageNotFoundError
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -271,6 +272,15 @@ def _resolve_image_path(
     return resolved
 
 
+def _preflight_docx_image(resolved_path: str) -> Optional[Exception]:
+    """Return the image-loading error python-docx would raise, if any."""
+    try:
+        Image.from_file(resolved_path)
+    except Exception as exc:
+        return exc
+    return None
+
+
 def _handle_image(
     doc: Document,
     alt_text: str,
@@ -305,6 +315,12 @@ def _handle_image(
                     warnings.append(f"图片路径不在 assets/ 目录下: {image_path_raw}")
             else:
                 warnings.append(f"图片文件不存在: {real}")
+        doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
+        return False
+
+    load_error = _preflight_docx_image(resolved)
+    if load_error is not None:
+        warnings.append(f"图片插入失败: {image_path_raw}: {load_error}")
         doc.add_paragraph(f"[图片未导出: {image_path_raw}]")
         return False
 
@@ -425,7 +441,10 @@ def render_markdown_to_docx(
     valid_figures: list[FigureEntry] = []
     for entry in figure_registry:
         img_match = _IMAGE_PATTERN.match(lines[entry.line_index])
-        if img_match and _resolve_image_path(img_match.group(2), project_path) is not None:
+        if not img_match:
+            continue
+        resolved = _resolve_image_path(img_match.group(2), project_path)
+        if resolved is not None and _preflight_docx_image(resolved) is None:
             valid_figures.append(entry)
     figure_registry = renumber_registry(valid_figures)
 
