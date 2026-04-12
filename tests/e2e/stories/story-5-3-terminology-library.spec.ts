@@ -46,7 +46,7 @@ async function navigateToAssetModule(window: Page): Promise<void> {
 }
 
 async function switchToTerminologyTab(window: Page): Promise<void> {
-  await window.getByText('术语库').click()
+  await window.getByRole('radio', { name: '术语库' }).click()
   await window.waitForTimeout(300)
 }
 
