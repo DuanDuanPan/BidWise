@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { BidWiseError } from '@main/utils/errors'
 import type { AgentExecuteResult } from '@shared/ai-types'
 
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
@@ -194,7 +193,7 @@ describe('terminologyPostProcessor', () => {
     expect(mockAnnotationCreate).not.toHaveBeenCalled()
   })
 
-  it('throws AbortError when signal is aborted during annotation loop iteration', async () => {
+  it('returns replaced content and stops annotation loop when signal aborted mid-iteration', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
       { id: 't2', sourceTerm: '甲方', targetTerm: '采购方', isActive: true },
@@ -223,15 +222,15 @@ describe('terminologyPostProcessor', () => {
       target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
     }
 
-    await expect(
-      terminologyPostProcessor(makeResult(), context, controller.signal)
-    ).rejects.toThrow(/aborted|cancelled|取消/)
+    // Abort does not throw — replaced content is still returned
+    const output = await terminologyPostProcessor(makeResult(), context, controller.signal)
+    expect(output.content).toBe('装备全寿命周期管理是采购方核心功能')
 
-    // Only one annotation was created before abort
+    // Only one annotation was created before abort; second was skipped
     expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('throws BidWiseError when all annotation creates fail', async () => {
+  it('returns replaced content even when all annotation creates fail', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
     ]
@@ -250,9 +249,10 @@ describe('terminologyPostProcessor', () => {
       target: { title: '技术方案', level: 2, occurrenceIndex: 0 },
     }
 
-    await expect(
-      terminologyPostProcessor(makeResult(), context, makeSignal())
-    ).rejects.toThrow(BidWiseError)
+    // Annotation failure does not block content — replaced content is still returned
+    const output = await terminologyPostProcessor(makeResult(), context, makeSignal())
+    expect(output.content).toBe('装备全寿命周期管理是核心功能')
+    expect(mockAnnotationCreate).toHaveBeenCalledTimes(1)
   })
 
   it('succeeds with warning when some but not all annotations fail', async () => {

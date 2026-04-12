@@ -1,7 +1,5 @@
 import { createLogger } from '@main/utils/logger'
 import { throwIfAborted } from '@main/utils/abort'
-import { BidWiseError } from '@main/utils/errors'
-import { ErrorCode } from '@shared/constants'
 import { terminologyService } from '@main/services/terminology-service'
 import { terminologyReplacementService } from '@main/services/terminology-replacement-service'
 import { annotationService } from '@main/services/annotation-service'
@@ -37,12 +35,17 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
   const projectId = context.projectId as string | undefined
   const target = context.target as ChapterHeadingLocator | undefined
 
+  // Annotation creation is best-effort — never prevent replaced content from being returned.
+  // Abort, partial failure, or total failure all log but do not throw.
   if (projectId && target) {
     const sectionId = createChapterLocatorKey(target)
     let failedCount = 0
 
     for (const replacement of applyResult.replacements) {
-      throwIfAborted(signal, '术语后处理已取消')
+      if (signal?.aborted) {
+        logger.info('术语后处理已取消，跳过剩余批注创建')
+        break
+      }
 
       try {
         let content = `已将「${replacement.sourceTerm}」替换为「${replacement.targetTerm}」（术语库自动应用）`
@@ -64,12 +67,10 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
     }
 
     if (failedCount > 0 && failedCount === applyResult.replacements.length) {
-      throw new BidWiseError(
-        ErrorCode.AGENT_EXECUTE,
+      logger.error(
         `术语替换已完成（${applyResult.totalReplacements} 处），但全部 ${failedCount} 条批注创建失败，用户将无法在侧边栏看到替换记录`
       )
-    }
-    if (failedCount > 0) {
+    } else if (failedCount > 0) {
       logger.warn(
         `术语批注部分创建失败: ${failedCount}/${applyResult.replacements.length} 条未写入`
       )

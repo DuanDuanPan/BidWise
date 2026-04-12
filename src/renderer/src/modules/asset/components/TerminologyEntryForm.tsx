@@ -45,9 +45,15 @@ export function TerminologyEntryForm({
   }, [open, editingEntry, form])
 
   const handleSubmit = async (): Promise<void> => {
+    // Validate first — Ant Design shows inline field errors automatically
+    let values: Record<string, string>
     try {
-      const values = await form.validateFields()
+      values = await form.validateFields()
+    } catch {
+      return
+    }
 
+    try {
       if (isEditing) {
         await updateEntry({
           id: editingEntry.id,
