@@ -584,7 +584,12 @@ export function ProjectWorkspace(): React.JSX.Element {
                   onRestart={adversarialReview.startReview}
                   onNavigateToSection={(finding) => {
                     if (finding.sectionLocator) {
-                      scrollToHeading(finding.sectionLocator)
+                      scrollToHeading(
+                        document.querySelector(
+                          '[data-editor-scroll-container="true"]'
+                        ) as HTMLElement | null,
+                        finding.sectionLocator
+                      )
                     }
                   }}
                 />

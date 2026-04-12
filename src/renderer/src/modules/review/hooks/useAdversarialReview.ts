@@ -22,10 +22,12 @@ interface UseAdversarialReviewReturn {
   clearError: () => void
 }
 
-export function useAdversarialReview(projectId: string): UseAdversarialReviewReturn {
+export function useAdversarialReview(projectId: string | undefined): UseAdversarialReviewReturn {
   const [panelOpen, setPanelOpen] = useState(false)
 
-  const projectState = useReviewStore((s) => getReviewProjectState(s, projectId))
+  const projectState = useReviewStore((s) =>
+    projectId ? getReviewProjectState(s, projectId) : null
+  )
   const storeStartReview = useReviewStore((s) => s.startReview)
   const storeLoadReview = useReviewStore((s) => s.loadReview)
   const storeRetryRole = useReviewStore((s) => s.retryRole)
@@ -34,14 +36,14 @@ export function useAdversarialReview(projectId: string): UseAdversarialReviewRet
 
   // Auto-load existing review on mount
   useEffect(() => {
-    if (!projectState.reviewLoaded && !projectState.reviewLoading) {
+    if (projectId && projectState && !projectState.reviewLoaded && !projectState.reviewLoading) {
       void storeLoadReview(projectId)
     }
-  }, [projectId, projectState.reviewLoaded, projectState.reviewLoading, storeLoadReview])
+  }, [projectId, projectState, storeLoadReview])
 
   // Auto-open panel when review reaches terminal state
-  const prevStatusRef = useRef(projectState.reviewSession?.status)
-  const currentStatus = projectState.reviewSession?.status
+  const prevStatusRef = useRef(projectState?.reviewSession?.status)
+  const currentStatus = projectState?.reviewSession?.status
   if (currentStatus !== prevStatusRef.current) {
     prevStatusRef.current = currentStatus
     if (
@@ -56,12 +58,14 @@ export function useAdversarialReview(projectId: string): UseAdversarialReviewRet
   }
 
   const startReview = useCallback(async () => {
+    if (!projectId) return
     setPanelOpen(true)
     await storeStartReview(projectId)
   }, [projectId, storeStartReview])
 
   const retryRole = useCallback(
     async (roleId: string) => {
+      if (!projectId) return
       setPanelOpen(true)
       await storeRetryRole(projectId, roleId)
     },
@@ -70,22 +74,24 @@ export function useAdversarialReview(projectId: string): UseAdversarialReviewRet
 
   const handleFinding = useCallback(
     async (findingId: string, action: HandleFindingAction, rebuttalReason?: string) => {
+      if (!projectId) return
       await storeHandleFinding(projectId, findingId, action, rebuttalReason)
     },
     [projectId, storeHandleFinding]
   )
 
   const clearError = useCallback(() => {
+    if (!projectId) return
     storeClearError(projectId)
   }, [projectId, storeClearError])
 
   return {
-    reviewSession: projectState.reviewSession,
-    reviewLoaded: projectState.reviewLoaded,
-    reviewLoading: projectState.reviewLoading,
-    reviewError: projectState.reviewError,
-    reviewProgress: projectState.reviewProgress,
-    reviewMessage: projectState.reviewMessage,
+    reviewSession: projectState?.reviewSession ?? null,
+    reviewLoaded: projectState?.reviewLoaded ?? false,
+    reviewLoading: projectState?.reviewLoading ?? false,
+    reviewError: projectState?.reviewError ?? null,
+    reviewProgress: projectState?.reviewProgress ?? 0,
+    reviewMessage: projectState?.reviewMessage ?? null,
     panelOpen,
     openPanel: useCallback(() => setPanelOpen(true), []),
     closePanel: useCallback(() => setPanelOpen(false), []),
