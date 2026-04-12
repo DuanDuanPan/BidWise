@@ -625,15 +625,25 @@ class AdversarialReviewService {
             })
           }
 
-          // Merge: keep existing findings from other roles, add new ones
-          const existingFindings = currentSession.findings.filter((f) => f.roleId !== roleId)
-          const merged = [...existingFindings, ...newFindings]
+          // Delete ONLY the retried role's findings, preserving concurrent user actions
+          await reviewRepo.deleteFindingsByRoleId(currentSession.id, roleId)
+
+          // Insert new findings for the retried role
+          if (newFindings.length > 0) {
+            await reviewRepo.saveFindings(newFindings)
+          }
+
+          // Re-read fresh session to get accurate roleResults and all findings
+          const latestSession = await reviewRepo.findSessionByProjectId(projectId)
+          if (!latestSession) throw new ValidationError('评审会话已删除')
+
+          const allFindings = latestSession.findings
 
           // Re-sort all findings
-          const sortable = merged.map((f, i) => {
+          const sortable = allFindings.map((f, i) => {
             const r = lineup.roles.find((lr) => lr.id === f.roleId)
             return {
-              finding: f,
+              id: f.id,
               severityWeight: SEVERITY_WEIGHT[f.severity],
               roleSortOrder: r?.sortOrder ?? 999,
               originalIndex: i,
@@ -646,13 +656,12 @@ class AdversarialReviewService {
             return a.originalIndex - b.originalIndex
           })
 
-          let newSortOrder = 0
-          for (const item of sortable) {
-            item.finding.sortOrder = newSortOrder++
-          }
+          await reviewRepo.batchUpdateSortOrders(
+            sortable.map((item, idx) => ({ id: item.id, sortOrder: idx }))
+          )
 
-          // Update role result
-          const finalRoleResults = currentSession.roleResults.map((r) =>
+          // Update role result using fresh session data
+          const finalRoleResults = latestSession.roleResults.map((r) =>
             r.roleId === roleId
               ? {
                   ...r,
@@ -667,19 +676,15 @@ class AdversarialReviewService {
           const hasFailedRoles = finalRoleResults.some((r) => r.status === 'failed')
           const finalStatus = hasFailedRoles ? 'partial' : 'completed'
 
-          // Re-run contradiction detection if we have enough data
+          // Re-run contradiction detection on fresh data
           ctx.updateProgress(85, '矛盾检测中…')
-          const allMerged = sortable.map((s) => s.finding)
-          const uniqueRoleIds = new Set(allMerged.map((f) => f.roleId))
+          const uniqueRoleIds = new Set(allFindings.map((f) => f.roleId))
 
-          if (uniqueRoleIds.size >= 2 && allMerged.length >= 2) {
+          if (uniqueRoleIds.size >= 2 && allFindings.length >= 2) {
             try {
-              // Reset contradiction groups
-              for (const f of allMerged) {
-                f.contradictionGroupId = null
-              }
+              await reviewRepo.resetContradictionGroups(currentSession.id)
 
-              const summaries: FindingSummary[] = allMerged.map((f) => ({
+              const summaries: FindingSummary[] = allFindings.map((f) => ({
                 id: f.id,
                 roleId: f.roleId,
                 roleName: f.roleName,
@@ -704,15 +709,16 @@ class AdversarialReviewService {
               })
 
               const pairs = parseContradictions(cdResponse.content)
-              const findingMap = new Map(allMerged.map((f) => [f.id, f]))
               let groupCounter = 0
               for (const pair of pairs) {
-                const a = findingMap.get(pair.findingIdA)
-                const b = findingMap.get(pair.findingIdB)
-                if (a && b) {
+                const aExists = allFindings.some((f) => f.id === pair.findingIdA)
+                const bExists = allFindings.some((f) => f.id === pair.findingIdB)
+                if (aExists && bExists) {
                   const groupId = `contradiction-${++groupCounter}`
-                  a.contradictionGroupId = groupId
-                  b.contradictionGroupId = groupId
+                  await reviewRepo.setContradictionGroup(
+                    [pair.findingIdA, pair.findingIdB],
+                    groupId
+                  )
                 }
               }
             } catch (err) {
@@ -721,24 +727,12 @@ class AdversarialReviewService {
             }
           }
 
-          // Persist: delete all findings, re-insert
-          await reviewRepo.deleteFindingsBySessionId(currentSession.id)
           await reviewRepo.updateSessionStatus(
             currentSession.id,
             finalStatus,
             finalRoleResults,
             new Date().toISOString()
           )
-
-          if (allMerged.length > 0) {
-            await reviewRepo.saveFindings(
-              allMerged.map((f) => ({
-                ...f,
-                // Strip createdAt/updatedAt if present from existing findings
-                ...('createdAt' in f ? {} : {}),
-              })) as Omit<AdversarialFinding, 'createdAt' | 'updatedAt'>[]
-            )
-          }
 
           ctx.updateProgress(100, `角色「${role.name}」重试完成`)
           logger.info(
@@ -747,22 +741,25 @@ class AdversarialReviewService {
         } catch (err) {
           if (isAbortError(err)) throw err
 
-          // Retry failed — keep existing findings, mark role as failed again
-          const failedRoleResults = currentSession.roleResults.map((r) =>
-            r.roleId === roleId
-              ? {
-                  ...r,
-                  status: 'failed' as const,
-                  error: err instanceof Error ? err.message : '重试失败',
-                  latencyMs: Date.now() - startTime,
-                }
-              : r
-          )
-          await reviewRepo.updateSessionStatus(
-            currentSession.id,
-            currentSession.status,
-            failedRoleResults
-          )
+          // Retry failed — re-read fresh session, mark role as failed again
+          const errorSession = await reviewRepo.findSessionByProjectId(projectId)
+          if (errorSession) {
+            const failedRoleResults = errorSession.roleResults.map((r) =>
+              r.roleId === roleId
+                ? {
+                    ...r,
+                    status: 'failed' as const,
+                    error: err instanceof Error ? err.message : '重试失败',
+                    latencyMs: Date.now() - startTime,
+                  }
+                : r
+            )
+            await reviewRepo.updateSessionStatus(
+              errorSession.id,
+              errorSession.status,
+              failedRoleResults
+            )
+          }
 
           throw new BidWiseError(
             ErrorCode.ADVERSARIAL_GENERATION_FAILED,

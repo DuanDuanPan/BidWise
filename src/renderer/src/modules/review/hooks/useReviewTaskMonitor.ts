@@ -22,6 +22,7 @@ export function useReviewTaskMonitor(): void {
   const setLineupTaskError = useReviewStore((s) => s.setLineupTaskError)
   const loadLineup = useReviewStore((s) => s.loadLineup)
   const updateReviewProgress = useReviewStore((s) => s.updateReviewProgress)
+  const refreshReviewSession = useReviewStore((s) => s.refreshReviewSession)
   const setReviewTaskError = useReviewStore((s) => s.setReviewTaskError)
   const loadReview = useReviewStore((s) => s.loadReview)
 
@@ -170,6 +171,8 @@ export function useReviewTaskMonitor(): void {
         setLineupProgress(projectId, event.progress, progressMessage)
       } else {
         updateReviewProgress(projectId, event.progress, progressMessage)
+        // Refresh session to populate roleResults for real-time role status display
+        void refreshReviewSession(projectId)
       }
 
       if (event.progress >= 100 || hasTerminalMessage) {
@@ -178,7 +181,7 @@ export function useReviewTaskMonitor(): void {
     })
 
     return () => unlisten()
-  }, [checkTaskStatus, setLineupProgress, updateReviewProgress])
+  }, [checkTaskStatus, setLineupProgress, updateReviewProgress, refreshReviewSession])
 
   // Poll for stale or completed tasks
   useEffect(() => {

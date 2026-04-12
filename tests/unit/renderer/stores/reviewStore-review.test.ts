@@ -190,6 +190,61 @@ describe('reviewStore — review execution domain @story-7-3', () => {
     })
   })
 
+  describe('refreshReviewSession', () => {
+    it('should update reviewSession without clearing task state', async () => {
+      const session = {
+        id: 'session-1',
+        projectId: 'proj-1',
+        lineupId: 'l1',
+        status: 'running',
+        findings: [],
+        roleResults: [{ roleId: 'r1', roleName: '合规', status: 'running', findingCount: 0 }],
+        startedAt: '2026-01-01T00:00:00Z',
+        completedAt: null,
+      }
+      mockApi.reviewGetReview.mockResolvedValue({ success: true, data: session })
+
+      // Set up initial state with taskId and loading
+      useReviewStore.setState({
+        projects: {
+          'proj-1': createProjectState({
+            reviewTaskId: 'task-1',
+            reviewLoading: true,
+            reviewProgress: 30,
+            reviewMessage: '攻击中…',
+          }),
+        },
+      })
+
+      await useReviewStore.getState().refreshReviewSession('proj-1')
+
+      const ps = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      // Session is populated
+      expect(ps.reviewSession).toEqual(session)
+      expect(ps.reviewSession!.roleResults).toHaveLength(1)
+      // Task tracking state is preserved
+      expect(ps.reviewTaskId).toBe('task-1')
+      expect(ps.reviewLoading).toBe(true)
+      expect(ps.reviewProgress).toBe(30)
+      expect(ps.reviewMessage).toBe('攻击中…')
+    })
+
+    it('should not update state when response has no data', async () => {
+      mockApi.reviewGetReview.mockResolvedValue({ success: true, data: null })
+
+      useReviewStore.setState({
+        projects: {
+          'proj-1': createProjectState({ reviewTaskId: 'task-1', reviewLoading: true }),
+        },
+      })
+
+      await useReviewStore.getState().refreshReviewSession('proj-1')
+
+      const ps = getReviewProjectState(useReviewStore.getState(), 'proj-1')
+      expect(ps.reviewSession).toBeNull()
+    })
+  })
+
   describe('updateReviewProgress', () => {
     it('should update progress and message', () => {
       useReviewStore.getState().updateReviewProgress('proj-1', 50, '角色 1/3 完成…')

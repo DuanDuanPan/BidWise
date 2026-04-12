@@ -265,6 +265,7 @@ export const AdversarialReviewPanel: React.FC<AdversarialReviewPanelProps> = ({
             finding={f}
             onAction={onAction}
             onNavigateToSection={onNavigateToSection}
+            disabled={loading}
           />
         ))}
       </div>

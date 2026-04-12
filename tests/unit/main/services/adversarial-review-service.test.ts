@@ -7,6 +7,10 @@ const {
   mockReviewSaveFindings,
   mockReviewUpdateFinding,
   mockReviewDeleteFindings,
+  mockReviewDeleteFindingsByRoleId,
+  mockReviewBatchUpdateSortOrders,
+  mockReviewResetContradictionGroups,
+  mockReviewSetContradictionGroup,
   mockReviewUpdateSessionStatus,
   mockScoringFindByProject,
   mockMandatoryFindByProject,
@@ -22,6 +26,10 @@ const {
   mockReviewSaveFindings: vi.fn(),
   mockReviewUpdateFinding: vi.fn(),
   mockReviewDeleteFindings: vi.fn(),
+  mockReviewDeleteFindingsByRoleId: vi.fn(),
+  mockReviewBatchUpdateSortOrders: vi.fn(),
+  mockReviewResetContradictionGroups: vi.fn(),
+  mockReviewSetContradictionGroup: vi.fn(),
   mockReviewUpdateSessionStatus: vi.fn(),
   mockScoringFindByProject: vi.fn(),
   mockMandatoryFindByProject: vi.fn(),
@@ -39,6 +47,10 @@ vi.mock('@main/db/repositories/adversarial-review-repo', () => ({
     saveFindings = mockReviewSaveFindings
     updateFinding = mockReviewUpdateFinding
     deleteFindingsBySessionId = mockReviewDeleteFindings
+    deleteFindingsByRoleId = mockReviewDeleteFindingsByRoleId
+    batchUpdateSortOrders = mockReviewBatchUpdateSortOrders
+    resetContradictionGroups = mockReviewResetContradictionGroups
+    setContradictionGroup = mockReviewSetContradictionGroup
     updateSessionStatus = mockReviewUpdateSessionStatus
   },
 }))

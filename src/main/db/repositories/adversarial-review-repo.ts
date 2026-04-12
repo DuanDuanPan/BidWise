@@ -160,6 +160,64 @@ export class AdversarialReviewRepository {
     }
   }
 
+  async deleteFindingsByRoleId(sessionId: string, roleId: string): Promise<void> {
+    try {
+      await getDb()
+        .deleteFrom('adversarialFindings')
+        .where('sessionId', '=', sessionId)
+        .where('roleId', '=', roleId)
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`评审发现删除失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  async batchUpdateSortOrders(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+    if (updates.length === 0) return
+    const now = new Date().toISOString()
+
+    try {
+      for (const { id, sortOrder } of updates) {
+        await getDb()
+          .updateTable('adversarialFindings')
+          .set({ sortOrder, updatedAt: now })
+          .where('id', '=', id)
+          .execute()
+      }
+    } catch (err) {
+      throw new DatabaseError(`评审发现排序更新失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  async resetContradictionGroups(sessionId: string): Promise<void> {
+    const now = new Date().toISOString()
+
+    try {
+      await getDb()
+        .updateTable('adversarialFindings')
+        .set({ contradictionGroupId: null, updatedAt: now })
+        .where('sessionId', '=', sessionId)
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`矛盾组重置失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  async setContradictionGroup(findingIds: string[], groupId: string): Promise<void> {
+    if (findingIds.length === 0) return
+    const now = new Date().toISOString()
+
+    try {
+      await getDb()
+        .updateTable('adversarialFindings')
+        .set({ contradictionGroupId: groupId, updatedAt: now })
+        .where('id', 'in', findingIds)
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`矛盾组设置失败: ${(err as Error).message}`, err)
+    }
+  }
+
   async updateSessionStatus(
     sessionId: string,
     status: ReviewSessionStatus,

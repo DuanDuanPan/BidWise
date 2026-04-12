@@ -57,6 +57,7 @@ interface ReviewActions {
     rebuttalReason?: string
   ) => Promise<void>
   retryRole: (projectId: string, roleId: string) => Promise<void>
+  refreshReviewSession: (projectId: string) => Promise<void>
   updateReviewProgress: (projectId: string, progress: number, message?: string) => void
   setReviewTaskError: (projectId: string, error: string) => void
   clearReviewError: (projectId: string) => void
@@ -436,6 +437,21 @@ export const useReviewStore = create<ReviewStore>()(
             reviewError: (err as Error).message,
           })
         )
+      }
+    },
+
+    async refreshReviewSession(projectId: string): Promise<void> {
+      try {
+        const response = await window.api.reviewGetReview({ projectId })
+        if (response.success && response.data) {
+          set((state) =>
+            updateProject(state, projectId, {
+              reviewSession: response.data,
+            })
+          )
+        }
+      } catch {
+        // Non-fatal: session will be loaded on terminal state
       }
     },
 

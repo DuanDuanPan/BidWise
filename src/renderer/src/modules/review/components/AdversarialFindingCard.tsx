@@ -39,12 +39,14 @@ interface AdversarialFindingCardProps {
   finding: AdversarialFinding
   onAction: (findingId: string, action: HandleFindingAction, rebuttalReason?: string) => void
   onNavigateToSection?: (finding: AdversarialFinding) => void
+  disabled?: boolean
 }
 
 export const AdversarialFindingCard: React.FC<AdversarialFindingCardProps> = ({
   finding,
   onAction,
   onNavigateToSection,
+  disabled,
 }) => {
   const [rebuttalOpen, setRebuttalOpen] = useState(false)
   const [rebuttalText, setRebuttalText] = useState('')
@@ -172,10 +174,10 @@ export const AdversarialFindingCard: React.FC<AdversarialFindingCardProps> = ({
 
           {/* Action buttons */}
           <Space size="small">
-            <Button size="small" type="primary" ghost onClick={handleAccept}>
+            <Button size="small" type="primary" ghost onClick={handleAccept} disabled={disabled}>
               接受并修改
             </Button>
-            <Button size="small" onClick={handleReject}>
+            <Button size="small" onClick={handleReject} disabled={disabled}>
               {rebuttalOpen ? '提交反驳' : '反驳'}
             </Button>
             {rebuttalOpen && (
@@ -189,7 +191,7 @@ export const AdversarialFindingCard: React.FC<AdversarialFindingCardProps> = ({
                 取消
               </Button>
             )}
-            <Button size="small" onClick={handleNeedsDecision}>
+            <Button size="small" onClick={handleNeedsDecision} disabled={disabled}>
               请求指导
             </Button>
           </Space>
