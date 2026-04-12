@@ -172,7 +172,6 @@ class AdversarialReviewService {
             : undefined
 
         const roles = currentLineup.roles
-        const sessionId = uuidv4()
 
         // Initialize roleResults
         const roleResults: RoleReviewResult[] = roles.map((r) => ({
@@ -182,15 +181,17 @@ class AdversarialReviewService {
           findingCount: 0,
         }))
 
-        // Upsert session as running
-        await reviewRepo.saveSession({
-          id: sessionId,
+        // Upsert session as running — use the persisted ID (may differ from
+        // the generated UUID when an existing row is reused for this project)
+        const savedSession = await reviewRepo.saveSession({
+          id: uuidv4(),
           projectId,
           lineupId: currentLineup.id,
           status: 'running',
           roleResults,
           startedAt: new Date().toISOString(),
         })
+        const sessionId = savedSession.id
 
         throwIfAborted(ctx.signal, 'Adversarial review task cancelled')
         ctx.updateProgress(10, `开始对 ${roles.length} 个角色并行评审…`)
@@ -236,6 +237,14 @@ class AdversarialReviewService {
             roleResults[index].findingCount = rawFindings.length
             roleResults[index].latencyMs = latencyMs
 
+            // Stream per-role progress
+            const done = roleResults.filter(
+              (r) => r.status === 'success' || r.status === 'failed'
+            ).length
+            const pct = 10 + Math.round((done / roles.length) * 70)
+            ctx.updateProgress(pct, `角色「${role.name}」完成（${done}/${roles.length}）`)
+            await reviewRepo.updateSessionStatus(sessionId, 'running', roleResults)
+
             return { role, rawFindings, success: true as const }
           } catch (err) {
             if (isAbortError(err)) throw err
@@ -245,6 +254,14 @@ class AdversarialReviewService {
             roleResults[index].error = err instanceof Error ? err.message : '未知错误'
             roleResults[index].latencyMs = latencyMs
 
+            // Stream per-role progress
+            const done = roleResults.filter(
+              (r) => r.status === 'success' || r.status === 'failed'
+            ).length
+            const pct = 10 + Math.round((done / roles.length) * 70)
+            ctx.updateProgress(pct, `角色「${role.name}」失败（${done}/${roles.length}）`)
+            await reviewRepo.updateSessionStatus(sessionId, 'running', roleResults)
+
             logger.warn(`Role ${role.name} review failed:`, err)
             return { role, rawFindings: [] as RawFinding[], success: false as const }
           }
@@ -252,12 +269,6 @@ class AdversarialReviewService {
 
         // Execute all roles in parallel
         const results = await Promise.allSettled(rolePromises)
-
-        // Update progress per role completion
-        for (let i = 0; i < results.length; i++) {
-          const pct = 10 + Math.round(((i + 1) / roles.length) * 70)
-          ctx.updateProgress(pct, `角色 ${i + 1}/${roles.length} 完成…`)
-        }
 
         // Collect successful results
         const successResults: Array<{
@@ -423,11 +434,8 @@ class AdversarialReviewService {
 
         throwIfAborted(ctx.signal, 'Adversarial review task cancelled')
 
-        // Delete old findings and persist new ones
-        const existingSession = await reviewRepo.findSessionByProjectId(projectId)
-        if (existingSession) {
-          await reviewRepo.deleteFindingsBySessionId(existingSession.id)
-        }
+        // Delete old findings before persisting new ones
+        await reviewRepo.deleteFindingsBySessionId(sessionId)
 
         // Determine final status
         const failedRoles = roleResults.filter((r) => r.status === 'failed')

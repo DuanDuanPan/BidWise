@@ -393,6 +393,9 @@ export const useReviewStore = create<ReviewStore>()(
               reviewSession: { ...ps.reviewSession, findings: updatedFindings },
             })
           })
+        } else {
+          // Revert optimistic update on server rejection
+          await useReviewStore.getState().loadReview(projectId)
         }
       } catch {
         // Revert optimistic update by reloading

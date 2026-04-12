@@ -56,11 +56,13 @@ export function useAdversarialReview(projectId: string): UseAdversarialReviewRet
   }
 
   const startReview = useCallback(async () => {
+    setPanelOpen(true)
     await storeStartReview(projectId)
   }, [projectId, storeStartReview])
 
   const retryRole = useCallback(
     async (roleId: string) => {
+      setPanelOpen(true)
       await storeRetryRole(projectId, roleId)
     },
     [projectId, storeRetryRole]
