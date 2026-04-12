@@ -88,6 +88,7 @@ export class AgentOrchestrator {
 
         if (postProcessor) {
           result = await postProcessor(result, ctx.input as Record<string, unknown>, ctx.signal)
+          throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
         }
 
         return result

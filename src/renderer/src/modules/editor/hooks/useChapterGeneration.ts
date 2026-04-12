@@ -7,6 +7,7 @@ import type {
 import type { TaskProgressEvent } from '@shared/ai-types'
 import { createContentDigest, extractMarkdownSectionContent } from '@shared/chapter-markdown'
 import { useDocumentStore } from '@renderer/stores'
+import { useAnnotationStore } from '@renderer/stores/annotationStore'
 
 /** Construct a stable map key from a heading locator */
 function locatorKey(locator: ChapterHeadingLocator): string {
@@ -107,6 +108,8 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
                 generatedContent: status.result!.content,
               }
             })
+            // Refresh annotations — post-processor may have created terminology annotations
+            void useAnnotationStore.getState().loadAnnotations(projectId)
             taskToLocatorRef.current.delete(event.taskId)
           } else if (status.status === 'failed') {
             updateStatus(key, (prev) => ({

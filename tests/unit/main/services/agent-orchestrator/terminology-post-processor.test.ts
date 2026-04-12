@@ -59,7 +59,7 @@ describe('terminologyPostProcessor', () => {
     vi.clearAllMocks()
   })
 
-  it('replaces content and creates auto-accepted annotations when active terms exist', async () => {
+  it('replaces content and creates pending annotations when active terms exist', async () => {
     const entries = [
       { id: 't1', sourceTerm: '设备管理', targetTerm: '装备全寿命周期管理', isActive: true },
     ]
@@ -71,7 +71,6 @@ describe('terminologyPostProcessor', () => {
     })
     mockCreateChapterLocatorKey.mockReturnValue('2:技术方案:0')
     mockAnnotationCreate.mockResolvedValue({ id: 'ann-1' })
-    mockAnnotationUpdate.mockResolvedValue({ id: 'ann-1', status: 'accepted' })
 
     const result = makeResult()
     const context: Record<string, unknown> = {
@@ -94,10 +93,8 @@ describe('terminologyPostProcessor', () => {
       author: 'system:terminology',
     })
 
-    expect(mockAnnotationUpdate).toHaveBeenCalledWith({
-      id: 'ann-1',
-      status: 'accepted',
-    })
+    // Annotations stay as pending for sidebar visibility (AC3)
+    expect(mockAnnotationUpdate).not.toHaveBeenCalled()
   })
 
   it('returns original result unchanged when no active terms exist', async () => {
@@ -149,7 +146,6 @@ describe('terminologyPostProcessor', () => {
     })
     mockCreateChapterLocatorKey.mockReturnValue('3:项目概述:1')
     mockAnnotationCreate.mockResolvedValue({ id: 'ann-2' })
-    mockAnnotationUpdate.mockResolvedValue({ id: 'ann-2', status: 'accepted' })
 
     const target = { title: '项目概述', level: 3, occurrenceIndex: 1 }
     const context: Record<string, unknown> = {

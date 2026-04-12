@@ -90,9 +90,13 @@ export const useTerminologyStore = create<TerminologyStore>()(
           await get().loadEntries()
         } else {
           set({ error: response.error.message })
+          throw new Error(response.error.message)
         }
       } catch (err) {
-        set({ error: (err as Error).message })
+        if (!get().error) {
+          set({ error: (err as Error).message })
+        }
+        throw err
       }
     },
 
@@ -104,9 +108,13 @@ export const useTerminologyStore = create<TerminologyStore>()(
           await get().loadEntries()
         } else {
           set({ error: response.error.message })
+          throw new Error(response.error.message)
         }
       } catch (err) {
-        set({ error: (err as Error).message })
+        if (!get().error) {
+          set({ error: (err as Error).message })
+        }
+        throw err
       }
     },
 

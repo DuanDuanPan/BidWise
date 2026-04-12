@@ -44,18 +44,12 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
           content += `（共 ${replacement.count} 处）`
         }
 
-        const annotation = await annotationService.create({
+        await annotationService.create({
           projectId,
           sectionId,
           type: 'ai-suggestion',
           content,
           author: 'system:terminology',
-        })
-
-        // Auto-accept: terminology replacements are deterministic, mark as accepted
-        await annotationService.update({
-          id: annotation.id,
-          status: 'accepted',
         })
       } catch (err) {
         logger.error(`术语批注创建失败: ${(err as Error).message}`)

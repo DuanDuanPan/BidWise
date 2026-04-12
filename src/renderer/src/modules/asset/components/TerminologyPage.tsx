@@ -73,15 +73,23 @@ export function TerminologyPage(): React.JSX.Element {
 
   const handleToggleActive = useCallback(
     async (entry: TerminologyEntry, checked: boolean) => {
-      await updateEntry({ id: entry.id, isActive: checked })
+      try {
+        await updateEntry({ id: entry.id, isActive: checked })
+      } catch {
+        message.error('状态切换失败')
+      }
     },
-    [updateEntry]
+    [updateEntry, message]
   )
 
   const handleDelete = useCallback(
     async (id: string) => {
-      await deleteEntry(id)
-      message.success('术语已删除')
+      try {
+        await deleteEntry(id)
+        message.success('术语已删除')
+      } catch {
+        message.error('删除失败')
+      }
     },
     [deleteEntry, message]
   )

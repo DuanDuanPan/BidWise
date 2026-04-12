@@ -1,5 +1,7 @@
-import { dialog } from 'electron'
+import { app, dialog } from 'electron'
+import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { TerminologyRepository } from '@main/db/repositories/terminology-repo'
 import { BidWiseError } from '@main/utils/errors'
 import { ErrorCode } from '@shared/constants'
@@ -169,8 +171,21 @@ export const terminologyService = {
   async exportToFile(): Promise<TerminologyExportOutput> {
     const data = await this.buildExportData()
 
+    // Prefer company-data/terminology/ as default save directory if it exists
+    let defaultPath = 'terminology-export.json'
+    const candidates = [
+      join(app.getAppPath(), 'company-data', 'terminology'),
+      join(app.getPath('userData'), 'company-data', 'terminology'),
+    ]
+    for (const dir of candidates) {
+      if (existsSync(dir)) {
+        defaultPath = join(dir, 'terminology-export.json')
+        break
+      }
+    }
+
     const result = await dialog.showSaveDialog({
-      defaultPath: 'terminology-export.json',
+      defaultPath,
       filters: [{ name: 'JSON 文件', extensions: ['json'] }],
     })
 

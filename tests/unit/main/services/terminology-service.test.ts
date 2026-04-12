@@ -22,7 +22,15 @@ vi.mock('@main/db/repositories/terminology-repo', () => ({
 }))
 
 vi.mock('electron', () => ({
+  app: {
+    getAppPath: () => '/mock-app',
+    getPath: (name: string) => (name === 'userData' ? '/mock-userdata' : `/mock-${name}`),
+  },
   dialog: { showSaveDialog: vi.fn() },
+}))
+
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(() => false),
 }))
 
 vi.mock('@main/utils/logger', () => ({
