@@ -16,7 +16,8 @@ import * as migration011 from '@main/db/migrations/011_create_notifications'
 import * as migration012 from '@main/db/migrations/012_create_assets_and_tags'
 import * as migration013 from '@main/db/migrations/013_create_adversarial_lineups'
 import * as migration014 from '@main/db/migrations/014_create_adversarial_reviews'
-import * as migration015 from '@main/db/migrations/015_create_terminology_entries'
+import * as migration015 from '@main/db/migrations/015_create_attack_checklists'
+import * as migration016 from '@main/db/migrations/016_create_terminology_entries'
 
 function createTestDb(): Kysely<DB> {
   return new Kysely<DB>({
@@ -40,7 +41,8 @@ const migrations: Record<string, Migration> = {
   '012_create_assets_and_tags': migration012,
   '013_create_adversarial_lineups': migration013,
   '014_create_adversarial_reviews': migration014,
-  '015_create_terminology_entries': migration015,
+  '015_create_attack_checklists': migration015,
+  '016_create_terminology_entries': migration016,
 }
 
 describe('Database migrations', () => {
@@ -62,7 +64,7 @@ describe('Database migrations', () => {
     const { error, results } = await migrator.migrateToLatest()
 
     expect(error).toBeUndefined()
-    expect(results).toHaveLength(15)
+    expect(results).toHaveLength(16)
     for (const result of results!) {
       expect(result.status).toBe('Success')
     }
@@ -81,7 +83,8 @@ describe('Database migrations', () => {
       '012_create_assets_and_tags',
       '013_create_adversarial_lineups',
       '014_create_adversarial_reviews',
-      '015_create_terminology_entries',
+      '015_create_attack_checklists',
+      '016_create_terminology_entries',
     ])
   })
 
@@ -149,8 +152,9 @@ describe('Database migrations', () => {
     expect(names).toContain('008_create_requirement_certainties')
     expect(names).toContain('012_create_assets_and_tags')
     expect(names).toContain('014_create_adversarial_reviews')
-    expect(names).toContain('015_create_terminology_entries')
-    expect(names).toHaveLength(15)
+    expect(names).toContain('015_create_attack_checklists')
+    expect(names).toContain('016_create_terminology_entries')
+    expect(names).toHaveLength(16)
   })
 
   it('should be idempotent (running twice succeeds)', async () => {

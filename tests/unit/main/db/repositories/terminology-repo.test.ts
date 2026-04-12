@@ -16,7 +16,8 @@ import * as migration011 from '@main/db/migrations/011_create_notifications'
 import * as migration012 from '@main/db/migrations/012_create_assets_and_tags'
 import * as migration013 from '@main/db/migrations/013_create_adversarial_lineups'
 import * as migration014 from '@main/db/migrations/014_create_adversarial_reviews'
-import * as migration015 from '@main/db/migrations/015_create_terminology_entries'
+import * as migration015 from '@main/db/migrations/015_create_attack_checklists'
+import * as migration016 from '@main/db/migrations/016_create_terminology_entries'
 
 let testDb: Kysely<DB>
 
@@ -39,7 +40,8 @@ const migrations: Record<string, Migration> = {
   '012_create_assets_and_tags': migration012,
   '013_create_adversarial_lineups': migration013,
   '014_create_adversarial_reviews': migration014,
-  '015_create_terminology_entries': migration015,
+  '015_create_attack_checklists': migration015,
+  '016_create_terminology_entries': migration016,
 }
 
 // Must import AFTER mocking
