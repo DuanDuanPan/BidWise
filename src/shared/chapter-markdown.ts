@@ -312,3 +312,36 @@ export function replaceMarkdownSection(
 
   return newLines.join('\n')
 }
+
+/**
+ * Remove a duplicated chapter heading when the AI echoes the current section title
+ * as the first Markdown block of the generated body.
+ */
+export function sanitizeGeneratedChapterMarkdown(
+  markdownContent: string,
+  locator: ChapterHeadingLocator
+): string {
+  const lines = markdownContent.split('\n')
+  let firstContentLine = 0
+
+  while (firstContentLine < lines.length && lines[firstContentLine].trim() === '') {
+    firstContentLine += 1
+  }
+
+  const firstLine = lines[firstContentLine]
+  if (!firstLine) return markdownContent.trim()
+
+  const headingMatch = HEADING_RE.exec(firstLine)
+  if (!headingMatch) return markdownContent.trim()
+
+  const generatedTitle = normalizeHeadingTitle(headingMatch[2].trim())
+  const targetTitle = normalizeHeadingTitle(locator.title)
+  if (generatedTitle !== targetTitle) return markdownContent.trim()
+
+  let contentStart = firstContentLine + 1
+  while (contentStart < lines.length && lines[contentStart].trim() === '') {
+    contentStart += 1
+  }
+
+  return lines.slice(contentStart).join('\n').trim()
+}

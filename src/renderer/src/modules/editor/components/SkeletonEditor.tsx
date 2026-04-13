@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo } from 'react'
-import { Tree, Tag, Button, Input, Modal, Dropdown, Typography } from 'antd'
+import { Tree, Tag, Button, Input, App, Dropdown, Typography } from 'antd'
 import type { InputRef } from 'antd'
 import { PlusOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
 import type { SkeletonSection } from '@shared/template-types'
@@ -137,6 +137,7 @@ export function SkeletonEditor({
   onConfirm,
   onRegenerate,
 }: SkeletonEditorProps): React.JSX.Element {
+  const { modal } = App.useApp()
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -229,7 +230,7 @@ export function SkeletonEditor({
 
   const deleteNode = useCallback(
     (targetId: string, title: string) => {
-      Modal.confirm({
+      modal.confirm({
         title: '确认删除',
         content: `确定删除「${title}」及其所有子章节？`,
         okText: '删除',
@@ -241,7 +242,7 @@ export function SkeletonEditor({
         },
       })
     },
-    [skeleton, onUpdate]
+    [modal, skeleton, onUpdate]
   )
 
   const handleDrop: TreeProps['onDrop'] = useCallback(

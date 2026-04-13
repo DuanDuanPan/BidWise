@@ -95,8 +95,8 @@ export function DesignSystemDemo(): React.JSX.Element {
         <div className="bg-bg-content rounded-lg p-6 shadow-sm" data-testid="typography">
           <p className="text-h1">H1 — 24px / 600 / 1.4</p>
           <p className="text-h2">H2 — 20px / 600 / 1.4</p>
-          <p className="text-h3">H3 — 16px / 600 / 1.5</p>
-          <p className="text-h4">H4 — 14px / 600 / 1.5</p>
+          <p className="text-h3">H3 — 17px / 600 / 1.5</p>
+          <p className="text-h4">H4 — 15px / 600 / 1.6</p>
           <p className="text-body">Body — 14px / 400 / 1.8</p>
           <p className="text-body-proposal">Body Proposal — 14px / 400 / 1.8（方案正文）</p>
           <p className="text-body-small">Body Small — 12px / 400 / 1.6</p>

@@ -1,7 +1,9 @@
 import type {
+  AiConfigStatus,
   AgentExecuteRequest,
   AgentExecuteResponse,
   AgentStatus,
+  SaveAiProxyConfigInput,
   TaskRecord,
   TaskProgressEvent,
   TaskStatus,
@@ -243,6 +245,8 @@ export const IPC_CHANNELS = {
   PROJECT_DELETE: 'project:delete',
   PROJECT_ARCHIVE: 'project:archive',
   PROJECT_LIST_WITH_PRIORITY: 'project:list-with-priority',
+  CONFIG_GET_AI_STATUS: 'config:get-ai-status',
+  CONFIG_SAVE_AI: 'config:save-ai',
   AGENT_EXECUTE: 'agent:execute',
   AGENT_STATUS: 'agent:status',
   TASK_LIST: 'task:list',
@@ -364,6 +368,8 @@ export type IpcChannelMap = {
   'project:delete': { input: string; output: void }
   'project:archive': { input: string; output: ProjectRecord }
   'project:list-with-priority': { input: void; output: ProjectWithPriority[] }
+  'config:get-ai-status': { input: void; output: AiConfigStatus }
+  'config:save-ai': { input: SaveAiProxyConfigInput; output: void }
   'agent:execute': { input: AgentExecuteRequest; output: AgentExecuteResponse }
   'agent:status': { input: string; output: AgentStatus }
   'task:list': { input: TaskFilter | void; output: TaskRecord[] }
@@ -526,9 +532,13 @@ export type PreloadSyncApi = {
   documentSaveSync: (input: DocumentSaveSyncInput) => ApiResponse<DocumentSaveOutput>
 }
 
+export type PreloadUtilityApi = {
+  getPathForFile: (file: File) => string
+}
+
 // --- Combined API type: request-response + event listeners ---
 
-export type FullPreloadApi = PreloadApi & PreloadEventApi & PreloadSyncApi
+export type FullPreloadApi = PreloadApi & PreloadEventApi & PreloadSyncApi & PreloadUtilityApi
 
 // --- IPC Error 类型（供 renderer 端消费） ---
 

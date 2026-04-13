@@ -120,4 +120,14 @@ describe('@story-3-3 TemplateSelector', () => {
     expect(screen.getByText('8 个章节')).toBeDefined()
     expect(screen.getByText('10 个章节')).toBeDefined()
   })
+
+  it('uses a two-column grid on desktop to keep cards readable', () => {
+    render(<TemplateSelector {...defaultProps} />)
+
+    const technicalCard = screen.getByTestId('template-card-standard-technical')
+    const cardColumn = technicalCard.parentElement
+
+    expect(cardColumn).not.toBeNull()
+    expect(cardColumn).toHaveClass('ant-col-lg-12')
+  })
 })

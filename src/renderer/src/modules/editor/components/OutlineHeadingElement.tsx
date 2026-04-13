@@ -54,6 +54,22 @@ function getHeadingLevel(elementType: string): number {
   }
 }
 
+const headingClassNames: Record<number, string> = {
+  1: [
+    'mb-6 mt-10 rounded-2xl border border-[#D7E5FF]',
+    'bg-[linear-gradient(90deg,_#F7FAFF_0%,_#FFFFFF_85%)] px-5 py-4',
+    'text-[22px] font-semibold leading-[1.35] tracking-[0.01em] text-[#102A43]',
+    'shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]',
+  ].join(' '),
+  2: 'mb-4 mt-8 border-b border-[#D8E4F0] pb-2 text-[18px] font-semibold leading-[1.45] text-[#16324F]',
+  3: 'mb-3 mt-6 border-l-2 border-[#8FB8FF] pl-3 text-[15px] font-semibold leading-[1.6] text-[#284B73]',
+  4: 'mb-2 mt-4 text-[14px] font-semibold leading-[1.6] tracking-[0.02em] text-[#4A5B71]',
+}
+
+function getHeadingClassName(level: number): string {
+  return headingClassNames[level] ?? headingClassNames[4]
+}
+
 function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   const { children, element } = props
   const text = extractText(element).trim()
@@ -162,7 +178,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
-      <PlateElement {...props}>
+      <PlateElement {...props} className={getHeadingClassName(level)}>
         <span className="relative inline-flex items-center gap-1">
           {children}
           {showGenerateButton && hovering && (
@@ -252,7 +268,9 @@ export function OutlineHeadingElement(props: PlateElementProps): React.JSX.Eleme
       data-heading-occurrence={occurrenceIndex}
       data-heading-locator-key={locator ? createChapterLocatorKey(locator) : undefined}
     >
-      <PlateElement {...props}>{children}</PlateElement>
+      <PlateElement {...props} className={getHeadingClassName(level)}>
+        {children}
+      </PlateElement>
     </div>
   )
 }

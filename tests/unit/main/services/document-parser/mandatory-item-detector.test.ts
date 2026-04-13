@@ -75,6 +75,48 @@ const mockTender: ParsedTender = {
   hasScannedContent: false,
 }
 
+const explicitMarkedTender: ParsedTender = {
+  meta: {
+    originalFileName: 'starred.docx',
+    format: 'docx',
+    fileSize: 2048,
+    pageCount: 60,
+    importedAt: '2026-04-13T00:00:00.000Z',
+  },
+  sections: [
+    {
+      id: 's-53',
+      title: '十一、技术支持资料',
+      content:
+        '1、第五章 供货要求-*8.2.2.7 自动生成模块 工业 APP 能与协同设计管理系统、NX、AMEsim、超算平台集成使用。 技术支持资料：',
+      pageStart: 53,
+      pageEnd: 53,
+      level: 1,
+    },
+    {
+      id: 's-43',
+      title: '十一、技术支持资料',
+      content:
+        '2、第五章 供货要求-*8.5.1 需要支持招标方现有服务器环境 投标方需要支持银河麒麟 V10 SP3、达梦安全数据库 V8.2、TongWeb V7.0。 技术支持资料：',
+      pageStart: 43,
+      pageEnd: 43,
+      level: 1,
+    },
+  ],
+  rawText: `十一、技术支持资料
+（投标人需将加注星号“*”的重要技术条款或技术参数的技术支持资料集中在此章节中列出。）
+
+1、第五章 供货要求-*8.2.2.7 自动生成模块
+工业 APP 能与协同设计管理系统、NX、AMEsim、超算平台集成使用。
+技术支持资料：
+
+2、第五章 供货要求-*8.5.1 需要支持招标方现有服务器环境
+投标方需要支持银河麒麟 V10 SP3、达梦安全数据库 V8.2、TongWeb V7.0。
+技术支持资料：`,
+  totalPages: 60,
+  hasScannedContent: false,
+}
+
 describe('MandatoryItemDetector', () => {
   let detector: MandatoryItemDetector
 
@@ -146,6 +188,7 @@ describe('MandatoryItemDetector', () => {
 
     await capturedExecutor!(ctx)
 
+    expect(mockAgentExecute).toHaveBeenCalledTimes(1)
     expect(mockReplaceByProject).toHaveBeenCalledTimes(1)
     const [projectId, persistedItems] = mockReplaceByProject.mock.calls[0] as [
       string,
@@ -169,5 +212,48 @@ describe('MandatoryItemDetector', () => {
     expect(snapshot.items).toHaveLength(2)
     expect(snapshot.items.map((item) => item.content)).toEqual(['投标文件须加盖公章', '提供授权书'])
     expect(snapshot.items[0]?.linkedRequirementId).toBe('req-1')
+  })
+
+  it('prefers deterministic explicit * items and skips AI when star-marked technical clauses exist', async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(explicitMarkedTender))
+
+    let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | null = null
+    mockExecute.mockImplementationOnce(
+      (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+        capturedExecutor = executor
+        return Promise.resolve({})
+      }
+    )
+
+    await detector.detect({ projectId: 'proj-1' })
+
+    const ctx = {
+      taskId: 'task-1',
+      input: { projectId: 'proj-1', rootPath: '/projects/proj-1' },
+      signal: new AbortController().signal,
+      updateProgress: vi.fn(),
+      setCheckpoint: vi.fn(),
+    }
+
+    await capturedExecutor!(ctx)
+
+    expect(mockAgentExecute).not.toHaveBeenCalled()
+    expect(mockGetAgentStatus).not.toHaveBeenCalled()
+    expect(mockReplaceByProject).toHaveBeenCalledTimes(1)
+
+    const [, persistedItems] = mockReplaceByProject.mock.calls[0] as [
+      string,
+      Array<{ content: string; sourcePages: number[]; sourceText: string }>,
+    ]
+
+    expect(persistedItems).toHaveLength(2)
+    expect(persistedItems.map((item) => item.content)).toEqual([
+      '*8.2.2.7 自动生成模块',
+      '*8.5.1 需要支持招标方现有服务器环境',
+    ])
+    expect(persistedItems.map((item) => item.sourcePages)).toEqual([[53], [43]])
+    expect(persistedItems[0]?.sourceText).toContain('工业 APP 能与协同设计管理系统')
+    expect(persistedItems[1]?.sourceText).toContain('银河麒麟 V10 SP3')
+    expect(persistedItems[0]?.sourceText).not.toContain('投标人需将加注星号')
   })
 })

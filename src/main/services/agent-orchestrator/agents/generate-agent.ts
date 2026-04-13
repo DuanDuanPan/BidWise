@@ -108,6 +108,7 @@ async function handleChapterGeneration(
     scoringWeights: context.scoringWeights as string | undefined,
     mandatoryItems: context.mandatoryItems as string | undefined,
     writingStyle: context.writingStyle as string | undefined,
+    documentOutline: context.documentOutline as string | undefined,
     adjacentChaptersBefore: context.adjacentChaptersBefore as string | undefined,
     adjacentChaptersAfter: context.adjacentChaptersAfter as string | undefined,
     strategySeed: context.strategySeed as string | undefined,

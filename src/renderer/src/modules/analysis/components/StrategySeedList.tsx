@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Alert, Progress, Modal, Input, message } from 'antd'
+import { App, Button, Alert, Progress, Modal, Input, message } from 'antd'
 import {
   PlusOutlined,
   ReloadOutlined,
@@ -43,6 +43,7 @@ export function StrategySeedList({
   onAdd,
   onConfirmAll,
 }: StrategySeedListProps): React.JSX.Element {
+  const { modal } = App.useApp()
   const [materialModalOpen, setMaterialModalOpen] = useState(false)
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addTitle, setAddTitle] = useState('')
@@ -57,7 +58,7 @@ export function StrategySeedList({
 
   /** Show confirmation before re-generation when seeds already exist */
   const handleRegenerate = (): void => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认重新生成',
       content: '重新生成将覆盖当前种子，是否继续？',
       okText: '继续',

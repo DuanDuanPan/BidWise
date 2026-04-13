@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, render, screen, act, waitFor } from '@testing-library/react'
-import { Modal } from 'antd'
+import { App } from 'antd'
 import { EditorView } from '@modules/editor/components/EditorView'
 
 const mockLoadDocument = vi.fn().mockResolvedValue(undefined)
+const mockModalConfirm = vi.fn()
 const mockDismissError = vi.fn()
 const mockReplaceSection = vi.fn(() => true)
 const mockTriggerAttribution = vi.fn().mockResolvedValue(undefined)
@@ -107,6 +108,9 @@ vi.mock('@modules/asset/components/AssetImportDialog', () => ({
 describe('@story-3-1 EditorView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(App, 'useApp').mockReturnValue({
+      modal: { confirm: mockModalConfirm },
+    } as unknown as ReturnType<typeof App.useApp>)
     mockLoading = false
     mockError = null
     mockContent = ''
@@ -125,6 +129,7 @@ describe('@story-3-1 EditorView', () => {
 
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
   })
 
   it('should show skeleton when loading', () => {
@@ -203,6 +208,46 @@ describe('@story-3-1 EditorView', () => {
     })
   })
 
+  it('@story-3-4 strips a duplicated chapter heading before replacing editor content', async () => {
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    mockContent = '## 系统架构设计\n\n> 请描述系统架构\n'
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: '## 系统架构设计\n\n### 总体架构\n\nAI 生成内容',
+            progress: 100,
+            taskId: 'task-1b',
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+    mockSourceAttr = {
+      loadPersistedState: mockLoadPersistedState,
+      triggerAttribution: mockTriggerAttribution,
+      triggerBaselineValidation: mockTriggerBaselineValidation,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      expect(mockReplaceSection).toHaveBeenCalledWith(target, '### 总体架构\n\nAI 生成内容')
+      expect(mockTriggerAttribution).toHaveBeenCalledWith(target, '### 总体架构\n\nAI 生成内容')
+      expect(mockTriggerBaselineValidation).toHaveBeenCalledWith(
+        target,
+        '### 总体架构\n\nAI 生成内容'
+      )
+    })
+  })
+
   it('@story-3-5 starts attribution and baseline follow-up before dismissing completed status', async () => {
     const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
     mockContent = '## 系统架构设计\n\n> 请描述系统架构\n'
@@ -249,9 +294,7 @@ describe('@story-3-1 EditorView', () => {
 
   it('@story-3-4 opens the conflict modal only once for the same chapter', async () => {
     const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
-    const confirmSpy = vi
-      .spyOn(Modal, 'confirm')
-      .mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }) as never)
+    mockModalConfirm.mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }) as never)
     mockContent = '## 系统架构设计\n\n用户手动编辑的内容\n'
 
     mockChapterGen = {
@@ -277,7 +320,7 @@ describe('@story-3-1 EditorView', () => {
     })
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(mockModalConfirm).toHaveBeenCalledTimes(1)
     })
 
     mockChapterGen = {
@@ -288,15 +331,13 @@ describe('@story-3-1 EditorView', () => {
     rerender(<EditorView projectId="proj-1" />)
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(mockModalConfirm).toHaveBeenCalledTimes(1)
     })
   })
 
   it('@story-3-4 waits for the replace handler before opening the conflict modal', async () => {
     const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
-    const confirmSpy = vi
-      .spyOn(Modal, 'confirm')
-      .mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }) as never)
+    mockModalConfirm.mockImplementation(() => ({ destroy: vi.fn(), update: vi.fn() }) as never)
 
     mockContent = '## 系统架构设计\n\n用户手动编辑的内容\n'
     mockChapterGen = {
@@ -317,14 +358,14 @@ describe('@story-3-1 EditorView', () => {
 
     render(<EditorView projectId="proj-1" />)
 
-    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(mockModalConfirm).not.toHaveBeenCalled()
 
     act(() => {
       latestReplaceSectionReady?.(mockReplaceSection)
     })
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(mockModalConfirm).toHaveBeenCalledTimes(1)
     })
   })
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Alert, Button, Modal, Spin, Typography, List } from 'antd'
+import { Alert, App, Button, Spin, Typography, List } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { TemplateSelector } from './TemplateSelector'
 import { SkeletonEditor } from './SkeletonEditor'
@@ -45,6 +45,7 @@ export function SolutionDesignView({
   projectId,
   onEnterProposalWriting,
 }: SolutionDesignViewProps): React.JSX.Element {
+  const { modal } = App.useApp()
   const [phase, setPhase] = useState<ViewPhase>('checking')
   const [error, setError] = useState<string | null>(null)
 
@@ -183,7 +184,7 @@ export function SolutionDesignView({
         setPhase('edit-skeleton')
       } else {
         if (res.error.code === 'SKELETON_OVERWRITE_REQUIRED') {
-          Modal.confirm({
+          modal.confirm({
             title: '覆盖确认',
             content: '重新生成骨架将覆盖当前方案内容，是否继续？',
             okText: '确认覆盖',
@@ -202,7 +203,7 @@ export function SolutionDesignView({
     } finally {
       setGenerating(false)
     }
-  }, [selectedTemplateId, projectId, overwriteConfirmed, updateContent])
+  }, [selectedTemplateId, projectId, overwriteConfirmed, updateContent, modal])
 
   // Auto-retry generate after overwrite confirmed
   useEffect(() => {
@@ -275,7 +276,7 @@ export function SolutionDesignView({
   }, [skeleton, doPersist, onEnterProposalWriting])
 
   const handleRegenerate = useCallback(() => {
-    Modal.confirm({
+    modal.confirm({
       title: '重新选择模板',
       content: '重新生成骨架将覆盖当前编辑内容，是否继续？',
       okText: '确认',
@@ -290,10 +291,10 @@ export function SolutionDesignView({
         setOverwriteConfirmed(true)
       },
     })
-  }, [cancelPendingPersist])
+  }, [cancelPendingPersist, modal])
 
   const handleReselectFromHasContent = useCallback(() => {
-    Modal.confirm({
+    modal.confirm({
       title: '重新选择模板',
       content: '重新生成骨架将覆盖当前方案内容，是否继续？',
       okText: '确认',
@@ -305,7 +306,7 @@ export function SolutionDesignView({
         setPhase('select-template')
       },
     })
-  }, [cancelPendingPersist])
+  }, [cancelPendingPersist, modal])
 
   // Cleanup on unmount
   useEffect(() => {

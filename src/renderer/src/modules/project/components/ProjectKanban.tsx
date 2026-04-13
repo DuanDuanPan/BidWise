@@ -1,4 +1,4 @@
-import { Button, Spin, Modal, message } from 'antd'
+import { App, Button, Spin } from 'antd'
 import { PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
 import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -23,6 +23,7 @@ export function ProjectKanban(): React.JSX.Element {
   const { setOpen: setCommandPaletteOpen } = useCommandPalette()
   const loadTodos = useTodoStore((s) => s.loadTodos)
   const { collapsed, isCompact, togglePanel } = useTodoPanel()
+  const { modal, message: messageApi } = App.useApp()
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -46,7 +47,7 @@ export function ProjectKanban(): React.JSX.Element {
 
   const handleArchive = useCallback(
     (id: string) => {
-      Modal.confirm({
+      modal.confirm({
         title: '确认归档',
         content: '归档后项目将从看板移除，确认继续？',
         okText: '确认归档',
@@ -54,19 +55,19 @@ export function ProjectKanban(): React.JSX.Element {
         onOk: async () => {
           try {
             await archiveProject(id)
-            message.success('项目已归档')
+            messageApi.success('项目已归档')
           } catch {
-            message.error('归档失败')
+            messageApi.error('归档失败')
           }
         },
       })
     },
-    [archiveProject]
+    [archiveProject, messageApi, modal]
   )
 
   const handleDelete = useCallback(
     (id: string) => {
-      Modal.confirm({
+      modal.confirm({
         title: '确认删除',
         content: '删除后无法恢复，确认继续？',
         okText: '确认删除',
@@ -75,14 +76,14 @@ export function ProjectKanban(): React.JSX.Element {
         onOk: async () => {
           try {
             await deleteProject(id)
-            message.success('项目已删除')
+            messageApi.success('项目已删除')
           } catch {
-            message.error('删除失败')
+            messageApi.error('删除失败')
           }
         },
       })
     },
-    [deleteProject]
+    [deleteProject, messageApi, modal]
   )
 
   const handleCardClick = useCallback(

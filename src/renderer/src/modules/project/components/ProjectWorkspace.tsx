@@ -51,6 +51,7 @@ import { useAdversarialReview } from '@modules/review/hooks/useAdversarialReview
 import { AdversarialLineupDrawer } from '@modules/review/components/AdversarialLineupDrawer'
 import { AdversarialReviewPanel } from '@modules/review/components/AdversarialReviewPanel'
 import { NotificationBell } from '@modules/notification/components/NotificationBell'
+import { AiConfigModal } from './AiConfigModal'
 import { SOP_STAGES } from '../types'
 import type { ChapterGenerationPhase, ChapterHeadingLocator } from '@shared/chapter-types'
 
@@ -204,6 +205,7 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   // Adversarial lineup (Story 7.2) — declared before useEffect that references it
   const adversarialLineup = useAdversarialLineup(projectId, currentStageKey)
+  const [aiConfigOpen, setAiConfigOpen] = useState(false)
 
   // Adversarial review execution (Story 7.3)
   const adversarialReview = useAdversarialReview(projectId)
@@ -496,9 +498,10 @@ export function ProjectWorkspace(): React.JSX.Element {
                 type="text"
                 icon={<SettingOutlined />}
                 className="text-text-tertiary"
-                disabled
-                title="设置（即将推出）"
-                aria-label="设置（即将推出）"
+                onClick={() => setAiConfigOpen(true)}
+                title="设置"
+                aria-label="设置"
+                data-testid="workspace-settings-btn"
               />
             </div>
           </header>
@@ -710,6 +713,7 @@ export function ProjectWorkspace(): React.JSX.Element {
               }}
             />
           )}
+          <AiConfigModal open={aiConfigOpen} onClose={() => setAiConfigOpen(false)} />
         </div>
       </SourceAttributionProvider>
     </ChapterGenerationProvider>

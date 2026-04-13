@@ -10,6 +10,8 @@ out
 data/
 *.sqlite
 bidwise.config.enc
+ai-provider.enc
+**/ai-provider.enc
 
 # IDE
 .idea/

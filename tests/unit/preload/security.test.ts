@@ -1,10 +1,16 @@
 import { vi, describe, it, expect } from 'vitest'
 
-const mockExposeInMainWorld = vi.hoisted(() => vi.fn())
+const { mockExposeInMainWorld, mockGetPathForFile } = vi.hoisted(() => ({
+  mockExposeInMainWorld: vi.fn(),
+  mockGetPathForFile: vi.fn((file: File) => `/native/${file.name}`),
+}))
 
 vi.mock('electron', () => ({
   contextBridge: {
     exposeInMainWorld: mockExposeInMainWorld,
+  },
+  webUtils: {
+    getPathForFile: mockGetPathForFile,
   },
   ipcRenderer: {
     invoke: vi.fn(),
@@ -67,6 +73,8 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'projectDelete',
       'projectArchive',
       'projectListWithPriority',
+      'configGetAiStatus',
+      'configSaveAi',
       'agentExecute',
       'agentStatus',
       'taskList',
@@ -166,6 +174,7 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'terminologyExport',
       'onTaskProgress',
       'onNotificationNew',
+      'getPathForFile',
     ])
     expect(new Set(Object.keys(exposedApi))).toEqual(allowedMethods)
   })
@@ -174,5 +183,14 @@ describe('preload security isolation (AC-2, AC-5)', () => {
     for (const [key, value] of Object.entries(exposedApi)) {
       expect(typeof value, `${key} should be a function`).toBe('function')
     }
+  })
+
+  it('bridges file path lookup through Electron webUtils', () => {
+    const file = new File(['seed'], 'tender.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+
+    expect(exposedApi.getPathForFile(file)).toBe('/native/tender.docx')
+    expect(mockGetPathForFile).toHaveBeenCalledWith(file)
   })
 })

@@ -68,7 +68,7 @@ export function TemplateSelector({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Row gutter={[16, 16]}>
             {templates.map((tpl) => (
-              <Col key={tpl.id} xs={24} sm={12} lg={8}>
+              <Col key={tpl.id} xs={24} sm={12} lg={12}>
                 <Card
                   hoverable
                   className="cursor-pointer transition-all"

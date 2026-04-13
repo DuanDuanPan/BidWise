@@ -30,6 +30,7 @@ describe('@story-3-4 generateChapterPrompt', () => {
     expect(prompt).toContain('H3/H4')
     expect(prompt).toContain('Markdown')
     expect(prompt).toContain('不要包含章节主标题')
+    expect(prompt).toContain('例如不要输出“## 系统架构设计”')
   })
 
   it('@p0 should default to Chinese language', () => {

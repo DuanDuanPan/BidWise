@@ -7,7 +7,7 @@
 import { ErrorCode } from '@shared/constants'
 import { AiProxyError } from '@main/utils/errors'
 import { createLogger } from '@main/utils/logger'
-import { getAiProxyConfig } from '@main/config/app-config'
+import { getAiConfigRecoveryHint, getAiProxyConfig } from '@main/config/app-config'
 import { Desensitizer } from '@main/services/ai-proxy/desensitizer'
 import { createProvider, getDefaultModel } from '@main/services/ai-proxy/provider-adapter'
 import { writeTrace } from '@main/services/ai-proxy/ai-trace-logger'
@@ -71,13 +71,16 @@ class AiProxyService {
       if (!apiKey) {
         throw new AiProxyError(
           ErrorCode.AI_PROXY_AUTH,
-          `缺少 ${this.config.provider} 的 API Key，请通过 setupAiConfig() 配置`
+          `缺少 ${this.config.provider} 的 API Key。${getAiConfigRecoveryHint()}`
         )
       }
       this.provider = createProvider({
         provider: this.config.provider,
         apiKey,
         defaultModel: this.config.defaultModel ?? getDefaultModel(this.config.provider),
+        ...(this.config.provider === 'openai' && this.config.openaiBaseUrl
+          ? { baseURL: this.config.openaiBaseUrl }
+          : {}),
       })
     }
     return { provider: this.provider, config: this.config }

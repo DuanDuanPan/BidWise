@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs'
 import { hostname, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 
+const APP_USER_DATA_BASENAME = 'bidwise'
 const DEFAULT_MODELS = {
   claude: 'claude-sonnet-4-20250514',
   openai: 'gpt-4o',
@@ -21,10 +22,12 @@ function printUsage() {
 Preferred secrets via environment:
   ANTHROPIC_API_KEY=... pnpm setup:ai-config -- --provider claude
   OPENAI_API_KEY=... pnpm setup:ai-config -- --provider openai --default-model gpt-4o-mini
+  OPENAI_API_KEY=... OPENAI_BASE_URL=https://api.example.com/v1 pnpm setup:ai-config -- --provider openai
 
 Optional flags:
   --anthropic-api-key <key>
   --openai-api-key <key>
+  --openai-base-url <url>
   --desensitize-enabled <true|false>
   --disable-desensitization
   --help
@@ -32,7 +35,8 @@ Optional flags:
 Environment fallbacks:
   AI_PROVIDER
   AI_DEFAULT_MODEL
-  AI_DESENSITIZE_ENABLED`)
+  AI_DESENSITIZE_ENABLED
+  OPENAI_BASE_URL`)
 }
 
 function takeValue(argv, index, flag) {
@@ -56,6 +60,7 @@ function parseArgs(argv) {
     defaultModel: process.env.AI_DEFAULT_MODEL,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openaiApiKey: process.env.OPENAI_API_KEY,
+    openaiBaseUrl: process.env.OPENAI_BASE_URL,
     desensitizeEnabled: process.env.AI_DESENSITIZE_ENABLED
       ? parseBoolean(process.env.AI_DESENSITIZE_ENABLED, 'AI_DESENSITIZE_ENABLED')
       : true,
@@ -81,6 +86,10 @@ function parseArgs(argv) {
         break
       case '--openai-api-key':
         options.openaiApiKey = takeValue(argv, index, arg)
+        index++
+        break
+      case '--openai-base-url':
+        options.openaiBaseUrl = takeValue(argv, index, arg)
         index++
         break
       case '--desensitize-enabled':
@@ -125,12 +134,17 @@ function buildConfig(options) {
   }
 
   const defaultModel = options.defaultModel ?? DEFAULT_MODELS[options.provider]
+  const openaiBaseUrl =
+    typeof options.openaiBaseUrl === 'string' && options.openaiBaseUrl.trim()
+      ? options.openaiBaseUrl.trim()
+      : undefined
   const config = {
     provider: options.provider,
     defaultModel,
     desensitizeEnabled: options.desensitizeEnabled,
     ...(options.anthropicApiKey ? { anthropicApiKey: options.anthropicApiKey } : {}),
     ...(options.openaiApiKey ? { openaiApiKey: options.openaiApiKey } : {}),
+    ...(openaiBaseUrl ? { openaiBaseUrl } : {}),
   }
 
   if (options.provider === 'claude' && !config.anthropicApiKey) {
@@ -147,6 +161,18 @@ function getConfigPath() {
   return join(app.getPath('userData'), 'data', 'config', 'ai-provider.enc')
 }
 
+function alignUserDataPath() {
+  const overridePath = process.env.BIDWISE_USER_DATA_DIR?.trim()
+  app.setName(APP_USER_DATA_BASENAME)
+
+  if (overridePath) {
+    app.setPath('userData', overridePath)
+    return
+  }
+
+  app.setPath('userData', join(app.getPath('appData'), APP_USER_DATA_BASENAME))
+}
+
 async function run() {
   const options = parseArgs(process.argv.slice(2))
   if (options.help) {
@@ -154,6 +180,7 @@ async function run() {
     return 0
   }
 
+  alignUserDataPath()
   await app.whenReady()
 
   const config = buildConfig(options)

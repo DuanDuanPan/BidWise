@@ -32,6 +32,14 @@ interface RawMandatoryItem {
   confidence?: number
 }
 
+interface ExplicitMarkedItemMatch {
+  marker: '*' | '★'
+  clauseNumber: string
+  heading: string
+  sourceText: string
+  sourcePages: number[]
+}
+
 /** Extract JSON from a string that may be wrapped in markdown code fences or contain prose */
 function extractJsonFromResponse(text: string): string {
   // Try code fence first
@@ -148,6 +156,290 @@ function autoLinkToRequirements(
   }
 }
 
+const MARKED_ITEM_START_RE =
+  /(?:^|\n)\s*(?:\d+[、.．)]\s*)?(?:第[一二三四五六七八九十百0-9]+章\s*)?(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)?\s*[-：:]?\s*([*★])\s*([0-9]+(?:\.[0-9]+)+)\s*([^\n]*)/g
+
+const INLINE_MARKED_ITEM_START_RE =
+  /(?:^|[\s（(])(?:\d+[、.．)]\s*)?(?:第[一二三四五六七八九十百0-9]+章\s*)?(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)?\s*[-：:]?\s*([*★])\s*([0-9]+(?:\.[0-9]+)+)\s*/g
+
+function expandPageRange(pageStart: number, pageEnd: number): number[] {
+  if (!Number.isFinite(pageStart) || !Number.isFinite(pageEnd)) return []
+
+  const start = Math.max(1, Math.trunc(pageStart))
+  const end = Math.max(start, Math.trunc(pageEnd))
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+}
+
+function normalizeSearchText(text: string): string {
+  return text.replace(/\s+/g, '').replace(/[“”"'`]/g, '').trim()
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function keepUsefulPages(pages: number[], totalPages: number): number[] {
+  if (pages.length === 0) return []
+  if (pages.length >= totalPages) return []
+  if (pages.length > 6) return []
+  return pages
+}
+
+function sanitizeMarkedExcerpt(excerpt: string): string {
+  return excerpt
+    .replace(/^\s*\d+[、.．)]\s*/, '')
+    .replace(/^\s*第[一二三四五六七八九十百0-9]+章\s*/, '')
+    .replace(/^\s*(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)\s*[-：:]?\s*/, '')
+    .replace(/(?:^|\n)\s*技术支持资料[:：]?\s*/gu, '\n')
+    .replace(/\n+\s*技术支持资料[:：]?\s*$/u, '')
+    .replace(/\s*技术支持资料[:：]?\s*$/u, '')
+    .replace(/\s*[（(](?:如有遗漏|投标人需将加注星号)[\s\S]*$/u, '')
+    .trim()
+}
+
+function summarizeMarkedItem(
+  marker: '*' | '★',
+  clauseNumber: string,
+  heading: string,
+  sourceText: string
+): string {
+  const cleanedHeading = heading
+    .replace(/^\s*[-：:]/, '')
+    .replace(/[，,。；;：:]+.*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const fallback = sourceText
+    .replace(new RegExp(`^[${escapeRegExp(marker)}]\\s*${escapeRegExp(clauseNumber)}\\s*`), '')
+    .replace(/\s+/g, ' ')
+    .replace(/[，,。；;：:]+.*$/, '')
+    .trim()
+
+  const summary = (cleanedHeading || fallback).slice(0, 36).trim()
+  return `${marker}${clauseNumber}${summary ? ` ${summary}` : ''}`
+}
+
+function resolveMarkedItemPages(
+  clauseNumber: string,
+  heading: string,
+  sourceText: string,
+  sections: ParsedTender['sections'],
+  totalPages: number
+): number[] {
+  const clauseNeedle = clauseNumber.trim()
+  const headingNeedle = normalizeSearchText(heading).slice(0, 24)
+  const sourceNeedle = normalizeSearchText(sourceText)
+    .replace(new RegExp(`^[*★]\\s*${escapeRegExp(clauseNumber)}`), '')
+    .slice(0, 36)
+
+  let bestMatch: { score: number; pages: number[] } | null = null
+
+  for (const section of sections) {
+    const haystack = normalizeSearchText(section.content)
+    let score = 0
+
+    if (clauseNeedle && haystack.includes(clauseNeedle)) score += 100
+    if (headingNeedle && haystack.includes(headingNeedle)) score += 30
+    if (sourceNeedle && haystack.includes(sourceNeedle)) score += 10
+    if (/技术支持资料/.test(section.title)) score += 15
+
+    if (score === 0) continue
+
+    const pages = expandPageRange(section.pageStart, section.pageEnd)
+    score -= pages.length
+
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = { score, pages }
+    }
+  }
+
+  return bestMatch ? keepUsefulPages(bestMatch.pages, totalPages) : []
+}
+
+function materializeExplicitMarkedItem(
+  marker: string,
+  clauseNumber: string,
+  heading: string,
+  sourceText: string,
+  sourcePages: number[]
+): ExplicitMarkedItemMatch | null {
+  const normalizedMarker = marker === '★' ? '★' : '*'
+  const cleanedSourceText = sanitizeMarkedExcerpt(sourceText)
+  if (!cleanedSourceText) return null
+
+  return {
+    marker: normalizedMarker,
+    clauseNumber,
+    heading: heading.trim(),
+    sourceText: cleanedSourceText,
+    sourcePages,
+  }
+}
+
+function extractMarkedItemsFromRawText(
+  rawText: string,
+  sections: ParsedTender['sections'],
+  totalPages: number
+): ExplicitMarkedItemMatch[] {
+  const normalizedText = rawText.replace(/\r\n?/g, '\n')
+  const starts = Array.from(normalizedText.matchAll(MARKED_ITEM_START_RE))
+  const items: ExplicitMarkedItemMatch[] = []
+
+  for (let index = 0; index < starts.length; index++) {
+    const match = starts[index]
+    if (!match || match.index === undefined) continue
+
+    const nextMatch = starts[index + 1]
+    const sliceStart = match.index
+    const sliceEnd = nextMatch?.index ?? normalizedText.length
+    const sourceText = normalizedText.slice(sliceStart, sliceEnd)
+    const marker = match[1] ?? '*'
+    const clauseNumber = match[2]?.trim()
+    const heading = (match[3] ?? '').trim()
+    if (!clauseNumber) continue
+
+    const materialized = materializeExplicitMarkedItem(
+      marker,
+      clauseNumber,
+      heading,
+      sourceText,
+      resolveMarkedItemPages(clauseNumber, heading, sourceText, sections, totalPages)
+    )
+
+    if (materialized) {
+      items.push(materialized)
+    }
+  }
+
+  return items
+}
+
+function extractMarkedItemsFromSections(
+  sections: ParsedTender['sections'],
+  totalPages: number
+): ExplicitMarkedItemMatch[] {
+  const items: ExplicitMarkedItemMatch[] = []
+
+  for (const section of sections) {
+    const starts = Array.from(section.content.matchAll(INLINE_MARKED_ITEM_START_RE))
+    if (starts.length === 0) continue
+
+    for (let index = 0; index < starts.length; index++) {
+      const match = starts[index]
+      if (!match || match.index === undefined) continue
+
+      const nextMatch = starts[index + 1]
+      const sliceStart = match.index
+      const sliceEnd = nextMatch?.index ?? section.content.length
+      const sourceText = section.content.slice(sliceStart, sliceEnd)
+      const marker = match[1] ?? '*'
+      const clauseNumber = match[2]?.trim()
+      if (!clauseNumber) continue
+
+      const normalizedBody = sourceText.replace(/\s+/g, ' ').trim()
+      const heading = normalizedBody
+        .replace(
+          new RegExp(`^[^*★]*[${escapeRegExp(marker)}]\\s*${escapeRegExp(clauseNumber)}\\s*`),
+          ''
+        )
+        .slice(0, 36)
+        .trim()
+
+      const materialized = materializeExplicitMarkedItem(
+        marker,
+        clauseNumber,
+        heading,
+        sourceText,
+        keepUsefulPages(expandPageRange(section.pageStart, section.pageEnd), totalPages)
+      )
+
+      if (materialized) {
+        items.push(materialized)
+      }
+    }
+  }
+
+  return items
+}
+
+function deduplicateRawMandatoryItems<T extends { content?: string; sourceText?: string }>(
+  items: T[]
+): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = `${item.content ?? ''}::${item.sourceText ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function choosePreferredRawItem(current: RawMandatoryItem, candidate: RawMandatoryItem): RawMandatoryItem {
+  const currentPageCount = Array.isArray(current.sourcePages) ? current.sourcePages.length : 0
+  const candidatePageCount = Array.isArray(candidate.sourcePages) ? candidate.sourcePages.length : 0
+
+  if (candidatePageCount > 0 && currentPageCount === 0) return candidate
+  if (candidatePageCount === 0 && currentPageCount > 0) return current
+  if (candidatePageCount !== currentPageCount) {
+    return candidatePageCount < currentPageCount ? candidate : current
+  }
+
+  const currentHasNoise = /(?:^|\n)\s*(?:十一、技术支持资料|技术支持资料[:：]?|加注星号)/u.test(
+    current.sourceText ?? ''
+  )
+  const candidateHasNoise = /(?:^|\n)\s*(?:十一、技术支持资料|技术支持资料[:：]?|加注星号)/u.test(
+    candidate.sourceText ?? ''
+  )
+  if (currentHasNoise !== candidateHasNoise) {
+    return candidateHasNoise ? current : candidate
+  }
+
+  const currentSourceLength = (current.sourceText ?? '').length
+  const candidateSourceLength = (candidate.sourceText ?? '').length
+  if (candidateSourceLength !== currentSourceLength) {
+    return candidateSourceLength < currentSourceLength ? candidate : current
+  }
+
+  const currentConfidence = typeof current.confidence === 'number' ? current.confidence : 0
+  const candidateConfidence = typeof candidate.confidence === 'number' ? candidate.confidence : 0
+  return candidateConfidence > currentConfidence ? candidate : current
+}
+
+function deduplicateByContent(items: RawMandatoryItem[]): RawMandatoryItem[] {
+  const byContent = new Map<string, RawMandatoryItem>()
+
+  for (const item of items) {
+    const content = (item.content ?? '').trim()
+    if (!content) continue
+
+    const existing = byContent.get(content)
+    byContent.set(content, existing ? choosePreferredRawItem(existing, item) : item)
+  }
+
+  return [...byContent.values()]
+}
+
+function extractExplicitMarkedItems(tender: ParsedTender): RawMandatoryItem[] {
+  const directMatches = extractMarkedItemsFromRawText(
+    tender.rawText,
+    tender.sections,
+    tender.totalPages
+  )
+  const fallbackMatches =
+    directMatches.length > 0
+      ? []
+      : extractMarkedItemsFromSections(tender.sections, tender.totalPages)
+
+  return deduplicateByContent(
+    deduplicateRawMandatoryItems([...directMatches, ...fallbackMatches]).map((item) => ({
+      content: summarizeMarkedItem(item.marker, item.clauseNumber, item.heading, item.sourceText),
+      sourceText: item.sourceText,
+      sourcePages: item.sourcePages,
+      confidence: 0.98,
+    }))
+  )
+}
+
 export class MandatoryItemDetector {
   private projectRepo = new ProjectRepository()
   private requirementRepo = new RequirementRepository()
@@ -192,67 +484,69 @@ export class MandatoryItemDetector {
     const rootPath = project.rootPath
     taskQueue
       .execute(taskId, async (ctx: TaskExecutorContext) => {
-        ctx.updateProgress(5, '正在构建*项检测提示词...')
+        ctx.updateProgress(5, '正在扫描显式 * / ★ 技术条款...')
 
-        // Step 1: Call agent orchestrator with mandatory-items mode
-        ctx.updateProgress(10, '正在调用 AI 识别必响应项...')
-        const agentResponse = await agentOrchestrator.execute({
-          agentType: 'extract',
-          context: {
-            mode: 'mandatory-items',
-            sections: tender.sections,
-            rawText: tender.rawText,
-            totalPages: tender.totalPages,
-            hasScannedContent: tender.hasScannedContent,
-            existingRequirements,
-          },
-        })
+        let rawItems = extractExplicitMarkedItems(tender)
 
-        // Step 2: Poll for agent completion
-        const innerTaskId = agentResponse.taskId
-        let agentResult: string | undefined
-        const pollingStartedAt = Date.now()
+        if (rawItems.length === 0) {
+          ctx.updateProgress(10, '未发现显式 * / ★ 标记，正在回退到 AI 识别...')
+          const agentResponse = await agentOrchestrator.execute({
+            agentType: 'extract',
+            context: {
+              mode: 'mandatory-items',
+              sections: tender.sections,
+              rawText: tender.rawText,
+              totalPages: tender.totalPages,
+              hasScannedContent: tender.hasScannedContent,
+              existingRequirements,
+            },
+          })
 
-        while (true) {
-          if (Date.now() - pollingStartedAt >= DETECTION_TIMEOUT_MS) {
-            throw new BidWiseError(
-              ErrorCode.MANDATORY_DETECTION_FAILED,
-              'AI *项检测超时（超过 5 分钟），请重试'
-            )
+          const innerTaskId = agentResponse.taskId
+          let agentResult: string | undefined
+          const pollingStartedAt = Date.now()
+
+          while (true) {
+            if (Date.now() - pollingStartedAt >= DETECTION_TIMEOUT_MS) {
+              throw new BidWiseError(
+                ErrorCode.MANDATORY_DETECTION_FAILED,
+                'AI *项检测超时（超过 5 分钟），请重试'
+              )
+            }
+
+            const status = await agentOrchestrator.getAgentStatus(innerTaskId)
+
+            if (status.status === 'completed') {
+              agentResult = status.result?.content
+              break
+            }
+
+            if (status.status === 'failed') {
+              throw new BidWiseError(
+                ErrorCode.MANDATORY_DETECTION_FAILED,
+                `AI *项检测失败: ${status.error?.message ?? '未知错误'}`
+              )
+            }
+
+            if (status.status === 'cancelled') {
+              throw new BidWiseError(ErrorCode.TASK_CANCELLED, 'AI *项检测任务已取消')
+            }
+
+            const progressPct = Math.min(20 + status.progress * 0.6, 80)
+            ctx.updateProgress(progressPct, '未发现显式标记，正在调用 AI 识别...')
+
+            await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
           }
 
-          const status = await agentOrchestrator.getAgentStatus(innerTaskId)
-
-          if (status.status === 'completed') {
-            agentResult = status.result?.content
-            break
+          if (!agentResult) {
+            throw new BidWiseError(ErrorCode.MANDATORY_DETECTION_FAILED, 'AI 返回结果为空')
           }
 
-          if (status.status === 'failed') {
-            throw new BidWiseError(
-              ErrorCode.MANDATORY_DETECTION_FAILED,
-              `AI *项检测失败: ${status.error?.message ?? '未知错误'}`
-            )
-          }
-
-          if (status.status === 'cancelled') {
-            throw new BidWiseError(ErrorCode.TASK_CANCELLED, 'AI *项检测任务已取消')
-          }
-
-          // Report polling progress (20% → 80%)
-          const progressPct = Math.min(20 + status.progress * 0.6, 80)
-          ctx.updateProgress(progressPct, '正在调用 AI 识别必响应项...')
-
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+          ctx.updateProgress(85, 'AI 返回结果，正在解析和持久化...')
+          rawItems = parseMandatoryResponse(agentResult)
+        } else {
+          ctx.updateProgress(85, '已识别显式 * / ★ 条款，正在解析和持久化...')
         }
-
-        if (!agentResult) {
-          throw new BidWiseError(ErrorCode.MANDATORY_DETECTION_FAILED, 'AI 返回结果为空')
-        }
-
-        // Step 3: Parse LLM response
-        ctx.updateProgress(85, 'AI 返回结果，正在解析和持久化...')
-        const rawItems = parseMandatoryResponse(agentResult)
 
         const now = new Date().toISOString()
         const items: MandatoryItem[] = rawItems

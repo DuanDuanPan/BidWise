@@ -280,3 +280,103 @@ describe('@story-5-2 H1 locator data attributes', () => {
     expect(wrapper.getAttribute('data-heading-text')).toBe('项目标题')
   })
 })
+
+describe('heading visual hierarchy classes', () => {
+  beforeEach(() => {
+    mockChapterGen = {
+      statuses: new Map(),
+      currentProjectId: 'proj-1',
+    }
+    mockSourceAttr = {
+      sections: new Map(),
+    }
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('renders H1 headings with a chapter-card treatment', () => {
+    mockContent = '# 项目概述\n\n正文段落\n'
+    const headingElement = {
+      type: 'h1',
+      children: [{ text: '项目概述' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>项目概述</span>
+      </ChapterHeadingElement>
+    )
+
+    const heading = container.firstElementChild?.firstElementChild as HTMLElement
+    expect(heading.className).toContain('rounded-2xl')
+    expect(heading.className).toContain('bg-[linear-gradient(90deg,_#F7FAFF_0%,_#FFFFFF_85%)]')
+    expect(heading.className).toContain('text-[22px]')
+  })
+
+  it('renders H2 headings with a divider treatment', () => {
+    mockContent = '## 系统架构设计\n\n正文段落\n'
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    const heading = container.firstElementChild?.firstElementChild as HTMLElement
+    expect(heading.className).toContain('border-b')
+    expect(heading.className).toContain('text-[18px]')
+    expect(heading.className).toContain('text-[#16324F]')
+  })
+
+  it('renders H3 headings with a left-accent treatment', () => {
+    mockContent = '### 材料库系统集成\n\n正文段落\n'
+    const headingElement = {
+      type: 'h3',
+      children: [{ text: '材料库系统集成' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>材料库系统集成</span>
+      </ChapterHeadingElement>
+    )
+
+    const heading = container.firstElementChild?.firstElementChild as HTMLElement
+    expect(heading.className).toContain('border-l-2')
+    expect(heading.className).toContain('pl-3')
+    expect(heading.className).toContain('text-[15px]')
+  })
+
+  it('renders H4 headings with a compact label treatment', () => {
+    mockContent = '#### 输入输出\n\n正文段落\n'
+    const headingElement = {
+      type: 'h4',
+      children: [{ text: '输入输出' }],
+    }
+
+    mockEditorChildren = [headingElement]
+
+    const { container } = render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>输入输出</span>
+      </ChapterHeadingElement>
+    )
+
+    const heading = container.firstElementChild?.firstElementChild as HTMLElement
+    expect(heading.className).toContain('tracking-[0.02em]')
+    expect(heading.className).toContain('text-[14px]')
+    expect(heading.className).toContain('text-[#4A5B71]')
+  })
+})

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { extractRenderableParagraphs, createContentDigest } from '@shared/chapter-markdown'
+import {
+  extractRenderableParagraphs,
+  createContentDigest,
+  sanitizeGeneratedChapterMarkdown,
+} from '@shared/chapter-markdown'
 
 describe('@story-3-5 extractRenderableParagraphs', () => {
   it('@p0 should extract plain-text paragraphs with sequential indices', () => {
@@ -104,5 +108,25 @@ describe('@story-3-5 extractRenderableParagraphs', () => {
     expect(result).toHaveLength(2)
     expect(result[0].text).toBe('正文')
     expect(result[1].text).toBe('后续')
+  })
+
+  it('@p1 should strip a duplicated leading chapter heading from generated content', () => {
+    const result = sanitizeGeneratedChapterMarkdown('## 系统架构设计\n\n### 总体架构\n\n正文内容', {
+      title: '系统架构设计',
+      level: 2,
+      occurrenceIndex: 0,
+    })
+
+    expect(result).toBe('### 总体架构\n\n正文内容')
+  })
+
+  it('@p1 should keep the first heading when it is not the current chapter title', () => {
+    const result = sanitizeGeneratedChapterMarkdown('### 总体架构\n\n正文内容', {
+      title: '系统架构设计',
+      level: 2,
+      occurrenceIndex: 0,
+    })
+
+    expect(result).toBe('### 总体架构\n\n正文内容')
   })
 })

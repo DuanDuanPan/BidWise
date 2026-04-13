@@ -159,7 +159,14 @@ vi.mock('antd', () => {
   )
   Tag.displayName = 'MockTag'
 
+  const App = {
+    useApp: () => ({
+      modal: { confirm: mockModalConfirm },
+    }),
+  }
+
   return {
+    App,
     Alert,
     Button,
     Input,

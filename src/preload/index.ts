@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ApiResponse,
   DocumentSaveOutput,
@@ -43,6 +43,11 @@ const requestApi = {
     typedInvoke(IPC_CHANNELS.PROJECT_ARCHIVE, projectId),
 
   projectListWithPriority: () => typedInvoke(IPC_CHANNELS.PROJECT_LIST_WITH_PRIORITY),
+
+  configGetAiStatus: () => typedInvoke(IPC_CHANNELS.CONFIG_GET_AI_STATUS),
+
+  configSaveAi: (input: IpcChannelMap['config:save-ai']['input']) =>
+    typedInvoke(IPC_CHANNELS.CONFIG_SAVE_AI, input),
 
   agentExecute: (input: IpcChannelMap['agent:execute']['input']) =>
     typedInvoke(IPC_CHANNELS.AGENT_EXECUTE, input),
@@ -359,11 +364,16 @@ const syncApi = {
     typedSendSync(IPC_CHANNELS.DOCUMENT_SAVE_SYNC, input),
 }
 
+const utilityApi = {
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+}
+
 // Combined API exposed to renderer
 const api: FullPreloadApi = {
   ...requestApi,
   ...eventApi,
   ...syncApi,
+  ...utilityApi,
 }
 
 contextBridge.exposeInMainWorld('api', api)

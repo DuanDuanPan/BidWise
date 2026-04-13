@@ -31,14 +31,15 @@ vi.mock('@main/utils/logger', () => ({
 }))
 
 const mockChat = vi.fn()
+const mockCreateProvider = vi.fn(() => ({
+  name: 'claude',
+  chat: mockChat,
+}))
 vi.mock('@main/services/ai-proxy/provider-adapter', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@main/services/ai-proxy/provider-adapter')>()
   return {
     ...actual,
-    createProvider: vi.fn(() => ({
-      name: 'claude',
-      chat: mockChat,
-    })),
+    createProvider: mockCreateProvider,
   }
 })
 
@@ -212,6 +213,7 @@ describe('aiProxy', () => {
       mockGetConfig.mockResolvedValue({
         provider: 'openai',
         openaiApiKey: 'openai-key',
+        openaiBaseUrl: 'https://minimax.a7m.com.cn/v1',
         desensitizeEnabled: true,
         defaultModel: 'gpt-4o',
       })
@@ -230,6 +232,13 @@ describe('aiProxy', () => {
       })
 
       expect(response.content).toBe('OpenAI response')
+      expect(mockCreateProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openai',
+          apiKey: 'openai-key',
+          baseURL: 'https://minimax.a7m.com.cn/v1',
+        })
+      )
     })
   })
 

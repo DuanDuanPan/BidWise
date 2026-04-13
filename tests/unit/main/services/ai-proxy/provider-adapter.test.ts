@@ -5,11 +5,17 @@ import { AiProxyError } from '@main/utils/errors'
 // Mock SDKs
 const mockCreate = vi.fn()
 const mockCompletionsCreate = vi.fn()
+const mockAnthropicConstructor = vi.fn()
+const mockOpenAIConstructor = vi.fn()
 
 vi.mock('@anthropic-ai/sdk', () => {
   return {
     default: class MockAnthropic {
       messages = { create: mockCreate }
+
+      constructor(options: unknown) {
+        mockAnthropicConstructor(options)
+      }
     },
   }
 })
@@ -18,6 +24,10 @@ vi.mock('openai', () => {
   return {
     default: class MockOpenAI {
       chat = { completions: { create: mockCompletionsCreate } }
+
+      constructor(options: unknown) {
+        mockOpenAIConstructor(options)
+      }
     },
   }
 })
@@ -160,6 +170,26 @@ describe('provider-adapter', () => {
 
       expect(res.usage).toEqual({ promptTokens: 50, completionTokens: 25 })
     })
+
+    it('passes custom baseURL to OpenAI SDK when provided', async () => {
+      mockCompletionsCreate.mockResolvedValue({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 3 },
+        model: 'MiniMax-M2.7-highspeed',
+      })
+
+      const provider = new OpenAiProvider('test-key', 'https://minimax.a7m.com.cn/v1')
+      await provider.chat({
+        messages: [{ role: 'user', content: 'Hello' }],
+        model: 'MiniMax-M2.7-highspeed',
+        maxTokens: 1024,
+      })
+
+      expect(mockOpenAIConstructor).toHaveBeenCalledWith({
+        apiKey: 'test-key',
+        baseURL: 'https://minimax.a7m.com.cn/v1',
+      })
+    })
   })
 
   describe('createProvider factory', () => {
@@ -173,8 +203,17 @@ describe('provider-adapter', () => {
     })
 
     it('creates OpenAiProvider for openai config', () => {
-      const provider = createProvider({ provider: 'openai', apiKey: 'key', defaultModel: 'gpt-4o' })
+      const provider = createProvider({
+        provider: 'openai',
+        apiKey: 'key',
+        defaultModel: 'gpt-4o',
+        baseURL: 'https://minimax.a7m.com.cn/v1',
+      })
       expect(provider.name).toBe('openai')
+      expect(mockOpenAIConstructor).toHaveBeenLastCalledWith({
+        apiKey: 'key',
+        baseURL: 'https://minimax.a7m.com.cn/v1',
+      })
     })
 
     it('throws AiProxyError for invalid provider', () => {

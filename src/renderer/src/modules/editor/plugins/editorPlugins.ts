@@ -18,7 +18,12 @@ import {
   ListPlugin,
   NumberedListPlugin,
 } from '@platejs/list-classic/react'
-import { TablePlugin } from '@platejs/table/react'
+import {
+  TablePlugin,
+  TableRowPlugin,
+  TableCellPlugin,
+  TableCellHeaderPlugin,
+} from '@platejs/table/react'
 import { CodeBlockPlugin, CodeLinePlugin } from '@platejs/code-block/react'
 import { MarkdownPlugin } from '@platejs/markdown'
 import remarkGfm from 'remark-gfm'
@@ -27,6 +32,12 @@ import {
   ChapterHeadingElement,
 } from '@modules/editor/components/OutlineHeadingElement'
 import { SourceAwareParagraph } from '@modules/editor/components/SourceAwareParagraph'
+import {
+  TableElement,
+  TableRowElement,
+  TableCellElement,
+  TableCellHeaderElement,
+} from '@modules/editor/components/TableElements'
 import { DrawioPlugin } from '@modules/editor/plugins/drawioPlugin'
 import { DrawioElement } from '@modules/editor/components/DrawioElement'
 import { MermaidPlugin } from '@modules/editor/plugins/mermaidPlugin'
@@ -49,7 +60,10 @@ export const editorPlugins = [
   NumberedListPlugin,
   ListItemPlugin,
   ListItemContentPlugin.withComponent(SourceAwareParagraph),
-  TablePlugin,
+  TablePlugin.withComponent(TableElement),
+  TableRowPlugin.withComponent(TableRowElement),
+  TableCellPlugin.withComponent(TableCellElement),
+  TableCellHeaderPlugin.withComponent(TableCellHeaderElement),
   CodeBlockPlugin,
   CodeLinePlugin,
   DrawioPlugin.withComponent(DrawioElement),

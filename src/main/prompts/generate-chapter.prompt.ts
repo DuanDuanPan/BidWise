@@ -12,6 +12,7 @@ export interface GenerateChapterContext {
   scoringWeights?: string
   mandatoryItems?: string
   writingStyle?: string
+  documentOutline?: string
   adjacentChaptersBefore?: string
   adjacentChaptersAfter?: string
   strategySeed?: string
@@ -45,6 +46,12 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
     sections.push(`## 写作风格要求\n${context.writingStyle}`)
   }
 
+  if (context.documentOutline) {
+    sections.push(
+      `## 文档完整大纲（仅撰写当前章节，其他章节会单独生成）\n${context.documentOutline}`
+    )
+  }
+
   if (context.adjacentChaptersBefore) {
     sections.push(`## 前序章节摘要（避免重复）\n${context.adjacentChaptersBefore}`)
   }
@@ -72,7 +79,9 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 4. 内容需覆盖招标需求中与本章节相关的要点
 5. 必须回应所有列出的必响应条款
 6. 避免与前后章节内容重复
-7. 直接输出 Markdown 正文，不要包含章节主标题`)
+7. 直接输出 Markdown 正文，不要包含章节主标题
+8. 第一行不得重复输出「${context.chapterTitle}」作为 H1/H2/H3/H4 或普通文本，例如不要输出“## ${context.chapterTitle}”
+9. 严格限定在「${context.chapterTitle}」的主题范围内撰写，文档大纲中的其他章节会独立生成，不要在本章节中涉及其他章节的内容`)
 
   return sections.join('\n\n')
 }

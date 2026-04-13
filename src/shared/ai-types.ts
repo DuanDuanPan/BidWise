@@ -68,8 +68,28 @@ export interface AiProxyConfig {
   provider: AiProviderName
   anthropicApiKey?: string
   openaiApiKey?: string
+  openaiBaseUrl?: string
   defaultModel?: string
   desensitizeEnabled: boolean
+}
+
+export interface AiConfigStatus {
+  configured: boolean
+  configPath: string
+  provider?: AiProviderName
+  defaultModel?: string
+  openaiBaseUrl?: string
+  desensitizeEnabled: boolean
+  hasApiKey: boolean
+  lastError?: string
+}
+
+export interface SaveAiProxyConfigInput {
+  provider: AiProviderName
+  apiKey?: string
+  defaultModel?: string
+  openaiBaseUrl?: string
+  desensitizeEnabled?: boolean
 }
 
 /** Per-provider connection config passed to createProvider() */
@@ -77,6 +97,7 @@ export interface ProviderConfig {
   provider: AiProviderName
   apiKey: string
   defaultModel: string
+  baseURL?: string
 }
 
 // ─── Agent Orchestrator types (Story 2.2) ───

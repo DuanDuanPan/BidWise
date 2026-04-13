@@ -36,6 +36,29 @@ function generateShortId(): string {
   return Math.random().toString(36).substring(2, 10)
 }
 
+const plateContentClassName = [
+  'mx-auto max-w-[800px] text-[14px] leading-[1.9] text-[#4E5B6A] focus:outline-none',
+  '[&_p]:my-4 [&_p]:text-[14px] [&_p]:leading-[1.9] [&_p]:text-[#4E5B6A]',
+  '[&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:text-[#4E5B6A]',
+  '[&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:text-[#4E5B6A]',
+  '[&_li]:my-2 [&_li]:pl-1 [&_li]:leading-[1.85]',
+  '[&_blockquote]:my-5 [&_blockquote]:border-l-4 [&_blockquote]:border-[#91Caff] [&_blockquote]:bg-[#F5F9FF] [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:text-[#4E5B6A]',
+  '[&_table]:my-6 [&_table]:w-full [&_table]:border-collapse [&_table]:text-left',
+  '[&_thead]:bg-[#F5F5F5]',
+  '[&_th]:border [&_th]:border-[#D9D9D9] [&_th]:px-3 [&_th]:py-2 [&_th]:align-top [&_th]:font-semibold [&_th]:text-[#1F1F1F]',
+  '[&_td]:border [&_td]:border-[#D9D9D9] [&_td]:px-3 [&_td]:py-2 [&_td]:align-top',
+  '[&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-[#1F2937] [&_pre]:px-4 [&_pre]:py-3 [&_pre]:font-mono [&_pre]:text-[13px] [&_pre]:leading-6 [&_pre]:text-[#F5F5F5]',
+  '[&_code]:rounded [&_code]:bg-[#F5F5F5] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px]',
+  '[&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit',
+  '[&_strong]:font-semibold [&_em]:italic [&_u]:underline [&_s]:line-through',
+].join(' ')
+
+const plateContentStyle = {
+  fontFamily: "'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif",
+  minHeight: '100%',
+  padding: '24px 0',
+}
+
 export function PlateEditor({
   initialContent,
   projectId,
@@ -300,12 +323,8 @@ export function PlateEditor({
   return (
     <Plate editor={editor} onValueChange={handleValueChange}>
       <PlateContent
-        className="mx-auto max-w-[800px] text-sm leading-[1.8] focus:outline-none [&_h1]:text-2xl [&_h1]:leading-[1.4] [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:leading-[1.4] [&_h2]:font-semibold [&_h3]:text-base [&_h3]:leading-[1.5] [&_h3]:font-semibold [&_h4]:text-sm [&_h4]:leading-[1.5] [&_h4]:font-semibold"
-        style={{
-          fontFamily: "'PingFang SC', 'Microsoft YaHei', sans-serif",
-          minHeight: '100%',
-          padding: '24px 0',
-        }}
+        className={plateContentClassName}
+        style={plateContentStyle}
         placeholder="开始撰写方案..."
         data-testid="plate-editor-content"
       />

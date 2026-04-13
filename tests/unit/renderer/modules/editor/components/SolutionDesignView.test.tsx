@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { App } from 'antd'
 import { SolutionDesignView } from '@modules/editor/components/SolutionDesignView'
 
 const mockLoadDocument = vi.fn().mockResolvedValue(undefined)
@@ -40,6 +41,10 @@ Object.defineProperty(window, 'api', {
 
 const mockOnEnterProposalWriting = vi.fn()
 
+function renderWithApp(ui: React.ReactElement): ReturnType<typeof render> {
+  return render(<App>{ui}</App>)
+}
+
 describe('@story-3-3 SolutionDesignView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -65,7 +70,7 @@ describe('@story-3-3 SolutionDesignView', () => {
 
   it('shows loading state initially', () => {
     mockLoading = true
-    render(
+    renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
     )
     expect(screen.getByTestId('solution-design-loading')).toBeDefined()
@@ -76,7 +81,7 @@ describe('@story-3-3 SolutionDesignView', () => {
     mockLoading = false
     // We need to simulate the checking -> select-template transition
     // The component first calls loadDocument, then checks content
-    render(
+    renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
     )
 
@@ -89,7 +94,7 @@ describe('@story-3-3 SolutionDesignView', () => {
     mockContent = '# 项目概述\n\n# 系统设计\n'
     mockLoading = false
 
-    render(
+    renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
     )
 
@@ -105,7 +110,7 @@ describe('@story-3-3 SolutionDesignView', () => {
     mockContent = '# 已有内容\n'
     mockLoading = false
 
-    render(
+    renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
     )
 
@@ -115,5 +120,25 @@ describe('@story-3-3 SolutionDesignView', () => {
 
     fireEvent.click(screen.getByTestId('continue-writing-btn'))
     expect(mockOnEnterProposalWriting).toHaveBeenCalled()
+  })
+
+  it('opens reselect confirmation when document already has content', async () => {
+    mockContent = '# 已有内容\n'
+    mockLoading = false
+
+    renderWithApp(
+      <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('reselect-template-btn')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByTestId('reselect-template-btn'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: '重新选择模板' })).toBeDefined()
+      expect(screen.getByText('重新生成骨架将覆盖当前方案内容，是否继续？')).toBeDefined()
+    })
   })
 })

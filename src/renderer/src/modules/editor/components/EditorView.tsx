@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Skeleton, Alert, Button, Modal } from 'antd'
+import { App, Skeleton, Alert, Button } from 'antd'
 import { useDocumentStore, useProjectStore } from '@renderer/stores'
 import { useDocument } from '@modules/editor/hooks/useDocument'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
@@ -15,6 +15,7 @@ import type {
 } from './PlateEditor'
 import { EditorToolbar } from './EditorToolbar'
 import type { CurrentSectionInfo } from '@modules/annotation/hooks/useCurrentSection'
+import { sanitizeGeneratedChapterMarkdown } from '@shared/chapter-markdown'
 
 interface EditorViewProps {
   projectId: string
@@ -27,6 +28,7 @@ export function EditorView({
   currentSection,
   onInsertAssetReady,
 }: EditorViewProps): React.JSX.Element {
+  const { modal } = App.useApp()
   const loading = useDocumentStore((s) => s.loading)
   const error = useDocumentStore((s) => s.error)
   const content = useDocumentStore((s) => s.content)
@@ -85,6 +87,12 @@ export function EditorView({
     (s) => s.projects.find((p) => p.id === projectId)?.name ?? null
   )
   const { isOpen: importOpen, importContext, openImport, closeImport } = useAssetImport()
+
+  const sanitizeGeneratedContent = useCallback(
+    (target: { title: string; level: 1 | 2 | 3 | 4; occurrenceIndex: number }, content: string) =>
+      sanitizeGeneratedChapterMarkdown(content, target),
+    []
+  )
 
   const handleImportAsset = useCallback(() => {
     // Only trigger if selection is inside the Plate editor content area
@@ -173,7 +181,8 @@ export function EditorView({
         loadedProjectId === projectId &&
         content.length > 0
       ) {
-        const didReplace = replaceSectionRef.current(status.target, status.generatedContent)
+        const generatedContent = sanitizeGeneratedContent(status.target, status.generatedContent)
+        const didReplace = replaceSectionRef.current(status.target, generatedContent)
         if (!didReplace) {
           consumedKeys.delete(key)
           continue
@@ -181,8 +190,8 @@ export function EditorView({
         consumedKeys.add(key)
         // Trigger source attribution after successful replace
         if (sourceAttr) {
-          void sourceAttr.triggerAttribution(status.target, status.generatedContent)
-          void sourceAttr.triggerBaselineValidation(status.target, status.generatedContent)
+          void sourceAttr.triggerAttribution(status.target, generatedContent)
+          void sourceAttr.triggerBaselineValidation(status.target, generatedContent)
         }
         chapterGen.dismissError(status.target)
         continue
@@ -195,7 +204,7 @@ export function EditorView({
         }
 
         consumedKeys.add(key)
-        Modal.confirm({
+        modal.confirm({
           title: '章节已被修改',
           content: `章节 "${status.target.title}" 在 AI 生成期间被手动修改。是否仍要替换为 AI 生成的内容？`,
           okText: '替换',
@@ -205,16 +214,20 @@ export function EditorView({
               consumedKeys.delete(key)
               return
             }
-            const didReplace = replaceSectionRef.current(status.target, status.generatedContent)
+            const generatedContent = sanitizeGeneratedContent(
+              status.target,
+              status.generatedContent
+            )
+            const didReplace = replaceSectionRef.current(status.target, generatedContent)
             if (!didReplace) {
               consumedKeys.delete(key)
               return
             }
             consumedKeys.delete(key)
             // Trigger source attribution after conflict resolution replace
-            if (sourceAttr && status.generatedContent) {
-              void sourceAttr.triggerAttribution(status.target, status.generatedContent)
-              void sourceAttr.triggerBaselineValidation(status.target, status.generatedContent)
+            if (sourceAttr) {
+              void sourceAttr.triggerAttribution(status.target, generatedContent)
+              void sourceAttr.triggerBaselineValidation(status.target, generatedContent)
             }
             chapterGen.dismissError(status.target)
           },
@@ -236,8 +249,10 @@ export function EditorView({
     chapterStatuses,
     content,
     loadedProjectId,
+    modal,
     projectId,
     replaceSectionVersion,
+    sanitizeGeneratedContent,
     sourceAttr,
   ])
 

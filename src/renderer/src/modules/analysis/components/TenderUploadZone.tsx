@@ -1,6 +1,7 @@
 import { Upload, message } from 'antd'
 import { InboxOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
 import { getAnalysisProjectState, useAnalysisStore } from '@renderer/stores'
+import { getNativeFilePath } from '@renderer/shared/lib/get-native-file-path'
 import type { TenderUploadZoneProps } from '../types'
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024 // 200MB
@@ -22,8 +23,7 @@ export function TenderUploadZone({
       return false
     }
 
-    // Electron extends File with .path property
-    const filePath = (file as File & { path?: string }).path
+    const filePath = getNativeFilePath(file)
     if (!filePath) {
       message.error('无法获取文件路径')
       return false

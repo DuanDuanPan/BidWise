@@ -117,7 +117,14 @@ vi.mock('antd', () => {
   )
   Tooltip.displayName = 'MockTooltip'
 
+  const App = {
+    useApp: () => ({
+      modal: { confirm: mockModalConfirm },
+    }),
+  }
+
   return {
+    App,
     Alert,
     Button,
     Form,

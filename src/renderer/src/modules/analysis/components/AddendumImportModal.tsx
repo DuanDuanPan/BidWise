@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Modal, Input, Upload, Button, message } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import type { UploadFile } from 'antd'
+import { getNativeFilePath } from '@renderer/shared/lib/get-native-file-path'
 
 const { TextArea } = Input
 
@@ -45,8 +46,8 @@ export function AddendumImportModal({
         return
       }
       // For .pdf/.docx/.doc, send file path to main process
-      const file = selectedFile.originFileObj as File & { path?: string }
-      const filePath = file?.path
+      const file = selectedFile.originFileObj as File
+      const filePath = getNativeFilePath(file)
       if (filePath) {
         onImport({ filePath, fileName })
         resetState()

@@ -98,6 +98,17 @@ function summarizeChapter(slice: ChapterSlice): string {
     : content
 }
 
+/** Build a readable document outline from headings, marking the current chapter */
+function buildDocumentOutline(headings: HeadingInfo[], currentHeading: HeadingInfo): string {
+  return headings
+    .map((h) => {
+      const indent = '  '.repeat(h.level - 1)
+      const marker = h.lineIndex === currentHeading.lineIndex ? ' ← 当前章节' : ''
+      return `${indent}- ${h.title}${marker}`
+    })
+    .join('\n')
+}
+
 /** Try to read seed.json for strategy context (graceful degradation) */
 async function readStrategySeed(projectId: string): Promise<string | undefined> {
   try {
@@ -257,6 +268,9 @@ export const chapterGenerationService = {
     const writingStyle = await writingStyleService.getProjectWritingStyle(projectId)
     const writingStyleText = serializeStyleForPrompt(writingStyle)
 
+    // Build document outline for scope awareness
+    const documentOutline = buildDocumentOutline(headings, chapter.heading)
+
     // Dispatch to agent-orchestrator
     const response = await agentOrchestrator.execute({
       agentType: 'generate',
@@ -269,6 +283,7 @@ export const chapterGenerationService = {
         scoringWeights: scoringWeightsText,
         mandatoryItems: mandatoryItemsText,
         writingStyle: writingStyleText,
+        documentOutline,
         adjacentChaptersBefore: adjacentBefore,
         adjacentChaptersAfter: adjacentAfter,
         strategySeed,

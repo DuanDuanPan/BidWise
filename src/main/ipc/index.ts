@@ -1,4 +1,5 @@
 import { registerProjectHandlers } from './project-handlers'
+import { registerConfigHandlers } from './config-handlers'
 import { registerAgentHandlers } from './agent-handlers'
 import { registerTaskHandlers } from './task-handlers'
 import { registerAnalysisHandlers } from './analysis-handlers'
@@ -18,6 +19,7 @@ import { registerComplianceHandlers } from './compliance-handlers'
 import { registerReviewHandlers } from './review-handlers'
 import { registerTerminologyHandlers } from './terminology-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
+import type { RegisteredConfigChannels } from './config-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
 import type { RegisteredTaskChannels } from './task-handlers'
 import type { RegisteredAnalysisChannels } from './analysis-handlers'
@@ -43,6 +45,7 @@ import type { IpcChannel } from '@shared/ipc-types'
 // this fails with: Type 'true' does not satisfy type 'never'.
 type _AllRegistered =
   | RegisteredProjectChannels
+  | RegisteredConfigChannels
   | RegisteredAgentChannels
   | RegisteredTaskChannels
   | RegisteredAnalysisChannels
@@ -66,6 +69,7 @@ void (true satisfies [_Unregistered] extends [never] ? true : never)
 
 export function registerIpcHandlers(): void {
   registerProjectHandlers()
+  registerConfigHandlers()
   registerAgentHandlers()
   registerTaskHandlers()
   registerAnalysisHandlers()

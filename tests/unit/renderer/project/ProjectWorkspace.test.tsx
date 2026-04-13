@@ -233,6 +233,17 @@ describe('@story-1-6 ProjectWorkspace', () => {
       projectCreate: vi.fn(),
       projectDelete: vi.fn(),
       projectArchive: vi.fn(),
+      configGetAiStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          configured: false,
+          configPath: '/mock-user-data/data/config/ai-provider.enc',
+          provider: 'openai',
+          desensitizeEnabled: true,
+          hasApiKey: false,
+        },
+      }),
+      configSaveAi: vi.fn().mockResolvedValue({ success: true, data: undefined }),
       analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
       analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
       onTaskProgress: vi.fn().mockReturnValue(() => {}),
@@ -309,6 +320,15 @@ describe('@story-1-6 ProjectWorkspace', () => {
     expect(btn).toBeInTheDocument()
     fireEvent.click(btn)
     expect(mockNavigate).toHaveBeenCalledWith('/')
+  })
+
+  it('@p1 opens AI settings modal from header', async () => {
+    renderWorkspace()
+    await screen.findByTestId('project-workspace')
+
+    fireEvent.click(screen.getByTestId('workspace-settings-btn'))
+
+    expect(await screen.findByText('AI 设置')).toBeInTheDocument()
   })
 
   it('@p0 restores the persisted SOP stage from loaded project data', async () => {
@@ -400,6 +420,17 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
       projectCreate: vi.fn(),
       projectDelete: vi.fn(),
       projectArchive: vi.fn(),
+      configGetAiStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          configured: false,
+          configPath: '/mock-user-data/data/config/ai-provider.enc',
+          provider: 'openai',
+          desensitizeEnabled: true,
+          hasApiKey: false,
+        },
+      }),
+      configSaveAi: vi.fn().mockResolvedValue({ success: true, data: undefined }),
       analysisGetTender: vi.fn().mockResolvedValue({ success: true, data: null }),
       analysisImportTender: vi.fn().mockResolvedValue({ success: true, data: { taskId: 't1' } }),
       onTaskProgress: vi.fn().mockReturnValue(() => {}),

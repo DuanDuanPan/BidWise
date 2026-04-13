@@ -123,6 +123,12 @@ describe('AddendumImportModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     uploadState.nextFileList = []
+    Object.defineProperty(window, 'api', {
+      configurable: true,
+      value: {
+        getPathForFile: vi.fn((file: File) => `/resolved/${file.name}`),
+      },
+    })
   })
 
   afterEach(() => {
@@ -167,7 +173,7 @@ describe('AddendumImportModal', () => {
     })
   })
 
-  it('shows an error when the selected file path is unavailable', () => {
+  it('imports non-text files using the preload file path bridge', async () => {
     const onImport = vi.fn()
     uploadState.nextFileList = [
       {
@@ -182,7 +188,13 @@ describe('AddendumImportModal', () => {
     fireEvent.click(screen.getByTestId('mock-upload-select'))
     fireEvent.click(screen.getByTestId('start-addendum-import'))
 
-    expect(onImport).not.toHaveBeenCalled()
-    expect(mockMessageError).toHaveBeenCalled()
+    expect(onImport).toHaveBeenCalledWith({
+      filePath: '/resolved/notice.pdf',
+      fileName: 'notice.pdf',
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('start-addendum-import')).toBeDisabled()
+    })
+    expect(mockMessageError).not.toHaveBeenCalled()
   })
 })

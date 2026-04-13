@@ -296,6 +296,73 @@ test('@story-1-8 @p0 shows the empty state and falls back to SOP-stage ordering 
   })
 })
 
+test('@story-1-8 @p0 deletes a project from the card actions menu after confirmation', async () => {
+  await withIsolatedApp({ width: 1600, height: 920 }, async (page) => {
+    const runId = Date.now().toString()
+    const project = await seedProject(page, {
+      name: `Story 1-8 Delete ${runId}`,
+      customerName: '客户删除',
+      industry: '军工',
+      sopStage: 'requirements-analysis',
+    })
+
+    await reloadKanban(page)
+
+    const card = page.getByTestId(`project-card-${project.id}`)
+    await expect(card).toBeVisible()
+
+    await card.getByTestId('card-actions-btn').click()
+    await page.getByRole('menuitem', { name: '删除' }).click()
+
+    const confirmDialog = page.getByRole('dialog', { name: '确认删除' })
+    await expect(confirmDialog).toBeVisible()
+
+    await confirmDialog.getByRole('button', { name: '确认删除' }).click()
+
+    await expect(card).toHaveCount(0)
+
+    const listResult = await page.evaluate(async () => window.api.projectList())
+
+    expect(listResult.success, listResult.error?.message ?? 'projectList failed').toBeTruthy()
+    expect(listResult.data?.some((item) => item.id === project.id)).toBeFalsy()
+  })
+})
+
+test('@story-1-8 @p1 archives a project from the card actions menu after confirmation', async () => {
+  await withIsolatedApp({ width: 1600, height: 920 }, async (page) => {
+    const runId = Date.now().toString()
+    const project = await seedProject(page, {
+      name: `Story 1-8 Archive ${runId}`,
+      customerName: '客户归档',
+      industry: '能源',
+      sopStage: 'solution-design',
+    })
+
+    await reloadKanban(page)
+
+    const card = page.getByTestId(`project-card-${project.id}`)
+    await expect(card).toBeVisible()
+
+    await card.getByTestId('card-actions-btn').click()
+    await page.getByRole('menuitem', { name: '归档' }).click()
+
+    const confirmDialog = page.getByRole('dialog', { name: '确认归档' })
+    await expect(confirmDialog).toBeVisible()
+
+    await confirmDialog.getByRole('button', { name: '确认归档' }).click()
+
+    await expect(card).toHaveCount(0)
+
+    const getResult = await page.evaluate(
+      async (projectId) => window.api.projectGet(projectId),
+      project.id
+    )
+
+    expect(getResult.success, getResult.error?.message ?? 'projectGet failed').toBeTruthy()
+    expect(getResult.data?.status).toBe('archived')
+  })
+})
+
 test('@story-1-8 @p1 auto-collapses the smart todo panel in compact mode and keeps manual overrides until the breakpoint changes', async () => {
   await withIsolatedApp({ width: 1180, height: 920 }, async (page) => {
     const runId = Date.now().toString()

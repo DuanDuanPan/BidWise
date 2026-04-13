@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Table, Tag, Button, Progress, Alert, Modal, Input, Form, message, Tooltip } from 'antd'
+import { App, Table, Tag, Button, Progress, Alert, Modal, Input, Form, message, Tooltip } from 'antd'
 import {
   CheckOutlined,
   CloseOutlined,
@@ -43,6 +43,7 @@ export function MandatoryItemsList({
   onUpdate,
   onAdd,
 }: MandatoryItemsListProps): React.JSX.Element {
+  const { modal } = App.useApp()
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [form] = Form.useForm()
 
@@ -69,7 +70,7 @@ export function MandatoryItemsList({
   )
 
   const confirmRedetect = (): void => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认重新检测',
       icon: <ExclamationCircleOutlined />,
       content: '重新检测将清除现有的必响应项及其审核结果，是否继续？',
