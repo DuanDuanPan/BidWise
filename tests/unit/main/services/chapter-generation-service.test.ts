@@ -3,10 +3,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // ─── Mocks (hoisted so vi.mock factories can reference them) ───
 
 const mockLoad = vi.hoisted(() => vi.fn())
+const mockGetMetadata = vi.hoisted(() => vi.fn())
 const mockExecute = vi.hoisted(() => vi.fn())
 const mockFindRequirements = vi.hoisted(() => vi.fn())
 const mockFindScoringModel = vi.hoisted(() => vi.fn())
 const mockFindMandatoryItems = vi.hoisted(() => vi.fn())
+const mockFindBySection = vi.hoisted(() => vi.fn())
 const mockGetProjectWritingStyle = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
@@ -18,6 +20,7 @@ vi.mock('electron', () => ({
 vi.mock('@main/services/document-service', () => ({
   documentService: {
     load: (...args: unknown[]) => mockLoad(...args),
+    getMetadata: (...args: unknown[]) => mockGetMetadata(...args),
   },
 }))
 
@@ -42,6 +45,12 @@ vi.mock('@main/db/repositories/scoring-model-repo', () => ({
 vi.mock('@main/db/repositories/mandatory-item-repo', () => ({
   MandatoryItemRepository: class {
     findByProject = mockFindMandatoryItems
+  },
+}))
+
+vi.mock('@main/db/repositories/traceability-link-repo', () => ({
+  TraceabilityLinkRepository: class {
+    findBySection = mockFindBySection
   },
 }))
 
@@ -121,9 +130,11 @@ describe('@story-3-4 chapterGenerationService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockLoad.mockResolvedValue({ content: PROPOSAL_MD })
+    mockGetMetadata.mockResolvedValue({ sectionIndex: [] })
     mockFindRequirements.mockResolvedValue([])
     mockFindScoringModel.mockResolvedValue(null)
     mockFindMandatoryItems.mockResolvedValue([])
+    mockFindBySection.mockResolvedValue([])
     mockGetProjectWritingStyle.mockResolvedValue({
       id: 'general',
       name: '通用文风',
@@ -331,6 +342,129 @@ describe('@story-3-4 chapterGenerationService', () => {
       await expect(
         chapterGenerationService.regenerateChapter('proj-1', target, 'context')
       ).rejects.toThrow('章节未找到')
+    })
+  })
+
+  describe('requirement filtering via traceability links', () => {
+    const PROPOSAL_WITH_MATRIX_MD = `# 投标技术方案
+
+## 系统架构设计
+
+> 请设计系统整体架构
+
+## 需求响应对照表
+
+> 逐条对照招标要求进行响应说明。
+`
+    const allRequirements = [
+      { id: 'r1', category: 'technical', priority: 'high', description: '支持高并发' },
+      { id: 'r2', category: 'service', priority: 'medium', description: '提供7×24服务' },
+      { id: 'r3', category: 'qualification', priority: 'high', description: 'CMMI 3级' },
+    ]
+
+    it('@p1 should filter requirements by traceability links for non-matrix chapters', async () => {
+      mockLoad.mockResolvedValue({ content: PROPOSAL_WITH_MATRIX_MD })
+      mockFindRequirements.mockResolvedValue(allRequirements)
+      mockGetMetadata.mockResolvedValue({
+        sectionIndex: [
+          {
+            sectionId: 's3.1',
+            title: '系统架构设计',
+            level: 2,
+            order: 0,
+            occurrenceIndex: 0,
+            headingLocator: { title: '系统架构设计', level: 2, occurrenceIndex: 0 },
+          },
+        ],
+      })
+      mockFindBySection.mockResolvedValue([{ requirementId: 'r1', sectionId: 's3.1' }])
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.requirements).toContain('支持高并发')
+      expect(request.context.requirements).not.toContain('7×24服务')
+      expect(request.context.requirements).not.toContain('CMMI')
+    })
+
+    it('@p1 should pass all requirements for compliance matrix chapters', async () => {
+      mockLoad.mockResolvedValue({ content: PROPOSAL_WITH_MATRIX_MD })
+      mockFindRequirements.mockResolvedValue(allRequirements)
+      const target = { title: '需求响应对照表', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.requirements).toContain('支持高并发')
+      expect(request.context.requirements).toContain('7×24服务')
+      expect(request.context.requirements).toContain('CMMI')
+      expect(mockFindBySection).not.toHaveBeenCalled()
+    })
+
+    it('@p1 should fallback to all requirements when no traceability links exist', async () => {
+      mockLoad.mockResolvedValue({ content: PROPOSAL_WITH_MATRIX_MD })
+      mockFindRequirements.mockResolvedValue(allRequirements)
+      mockGetMetadata.mockResolvedValue({
+        sectionIndex: [
+          {
+            sectionId: 's3.1',
+            title: '系统架构设计',
+            level: 2,
+            order: 0,
+            occurrenceIndex: 0,
+            headingLocator: { title: '系统架构设计', level: 2, occurrenceIndex: 0 },
+          },
+        ],
+      })
+      mockFindBySection.mockResolvedValue([])
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.requirements).toContain('支持高并发')
+      expect(request.context.requirements).toContain('7×24服务')
+      expect(request.context.requirements).toContain('CMMI')
+    })
+
+    it('@p1 should fallback to all requirements when sectionId cannot be resolved', async () => {
+      mockLoad.mockResolvedValue({ content: PROPOSAL_WITH_MATRIX_MD })
+      mockFindRequirements.mockResolvedValue(allRequirements)
+      mockGetMetadata.mockResolvedValue({ sectionIndex: [] })
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.requirements).toContain('支持高并发')
+      expect(request.context.requirements).toContain('7×24服务')
+    })
+
+    it('@p1 should fallback gracefully when traceability link query fails', async () => {
+      mockLoad.mockResolvedValue({ content: PROPOSAL_WITH_MATRIX_MD })
+      mockFindRequirements.mockResolvedValue(allRequirements)
+      mockGetMetadata.mockResolvedValue({
+        sectionIndex: [
+          {
+            sectionId: 's3.1',
+            title: '系统架构设计',
+            level: 2,
+            order: 0,
+            occurrenceIndex: 0,
+            headingLocator: { title: '系统架构设计', level: 2, occurrenceIndex: 0 },
+          },
+        ],
+      })
+      mockFindBySection.mockRejectedValue(new Error('DB error'))
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      const result = await chapterGenerationService.generateChapter('proj-1', target)
+      expect(result).toEqual({ taskId: 'task-gen-1' })
+      const request = mockExecute.mock.calls[0][0]
+      // Should fallback to all requirements
+      expect(request.context.requirements).toContain('支持高并发')
+      expect(request.context.requirements).toContain('7×24服务')
     })
   })
 

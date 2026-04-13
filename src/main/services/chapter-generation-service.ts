@@ -14,6 +14,8 @@ import { writingStyleService, serializeStyleForPrompt } from '@main/services/wri
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
 import { ScoringModelRepository } from '@main/db/repositories/scoring-model-repo'
 import { MandatoryItemRepository } from '@main/db/repositories/mandatory-item-repo'
+import { TraceabilityLinkRepository } from '@main/db/repositories/traceability-link-repo'
+import { isComplianceMatrixChapter } from '@main/prompts/generate-chapter.prompt'
 import type { ChapterHeadingLocator, ChapterGenerateOutput } from '@shared/chapter-types'
 import {
   createContentDigest,
@@ -129,6 +131,7 @@ async function readStrategySeed(projectId: string): Promise<string | undefined> 
 const requirementRepo = new RequirementRepository()
 const scoringModelRepo = new ScoringModelRepository()
 const mandatoryItemRepo = new MandatoryItemRepository()
+const traceabilityLinkRepo = new TraceabilityLinkRepository()
 
 export const chapterGenerationService = {
   async generateChapter(
@@ -196,12 +199,38 @@ export const chapterGenerationService = {
     const guidanceText = extractGuidanceText(chapter.contentLines)
     const baselineDigest = createContentDigest(chapter.contentLines.join('\n'))
 
-    // Load requirements
+    // Load requirements — filter by traceability links when available
     let requirementsText = '暂无需求信息'
     try {
-      const requirements = await requirementRepo.findByProject(projectId)
-      if (requirements.length > 0) {
-        requirementsText = requirements
+      const allRequirements = await requirementRepo.findByProject(projectId)
+      if (allRequirements.length > 0) {
+        const isMatrix = isComplianceMatrixChapter(target.title)
+        let filtered = allRequirements
+
+        // For non-matrix chapters, try to filter by traceability links
+        if (!isMatrix) {
+          const sectionId = await this._resolveSectionId(projectId, target)
+          if (sectionId) {
+            try {
+              const links = await traceabilityLinkRepo.findBySection(projectId, sectionId)
+              if (links.length > 0) {
+                const linkedIds = new Set(links.map((l) => l.requirementId))
+                filtered = allRequirements.filter((r) => linkedIds.has(r.id))
+                // Fallback to all if filtering yields nothing (orphaned links or data mismatch)
+                if (filtered.length === 0) {
+                  logger.warn(
+                    `Traceability links for section ${sectionId} reference ${links.length} requirement(s) not found in current requirements — possible orphaned links. Falling back to all requirements.`
+                  )
+                  filtered = allRequirements
+                }
+              }
+            } catch (err) {
+              logger.warn('Failed to load traceability links, using all requirements:', err)
+            }
+          }
+        }
+
+        requirementsText = filtered
           .map((r) => `- [${r.category}/${r.priority}] ${r.description}`)
           .join('\n')
       }
@@ -298,5 +327,27 @@ export const chapterGenerationService = {
     })
 
     return { taskId: response.taskId }
+  },
+
+  /** Resolve sectionId from proposal.meta.json sectionIndex by matching heading locator */
+  async _resolveSectionId(
+    projectId: string,
+    target: ChapterHeadingLocator
+  ): Promise<string | undefined> {
+    try {
+      const metadata = await documentService.getMetadata(projectId)
+      if (!metadata.sectionIndex || metadata.sectionIndex.length === 0) return undefined
+
+      const entry = metadata.sectionIndex.find(
+        (s) =>
+          s.headingLocator.title === target.title &&
+          s.headingLocator.level === target.level &&
+          s.headingLocator.occurrenceIndex === target.occurrenceIndex
+      )
+      return entry?.sectionId
+    } catch (err) {
+      logger.warn('Failed to resolve sectionId from metadata:', err)
+      return undefined
+    }
   },
 }

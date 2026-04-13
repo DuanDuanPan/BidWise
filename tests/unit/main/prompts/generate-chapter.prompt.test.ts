@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   generateChapterPrompt,
+  isComplianceMatrixChapter,
   GENERATE_CHAPTER_SYSTEM_PROMPT,
 } from '@main/prompts/generate-chapter.prompt'
 import type { GenerateChapterContext } from '@main/prompts/generate-chapter.prompt'
@@ -186,5 +187,93 @@ describe('@story-3-4 generateChapterPrompt', () => {
   it('@p0 should define a professional system prompt', () => {
     expect(GENERATE_CHAPTER_SYSTEM_PROMPT).toContain('专业技术方案撰写助手')
     expect(GENERATE_CHAPTER_SYSTEM_PROMPT).toContain('Markdown')
+  })
+})
+
+describe('isComplianceMatrixChapter', () => {
+  it.each([
+    '需求响应对照表',
+    '需求响应矩阵',
+    '需求响应表',
+    '符合性说明',
+    '技术偏离表',
+    '商务偏离表',
+    'Compliance Matrix',
+  ])('should detect "%s" as compliance matrix chapter', (title) => {
+    expect(isComplianceMatrixChapter(title)).toBe(true)
+  })
+
+  it.each([
+    '系统架构设计',
+    '项目概述',
+    '数据架构设计',
+    '实施计划',
+    '售后服务与技术支持',
+    '技术响应表达能力',
+    '符合性说明书编制',
+  ])('should NOT detect "%s" as compliance matrix chapter', (title) => {
+    expect(isComplianceMatrixChapter(title)).toBe(false)
+  })
+})
+
+describe('generateChapterPrompt — compliance matrix specialization', () => {
+  const matrixContext: GenerateChapterContext = {
+    chapterTitle: '需求响应对照表',
+    chapterLevel: 2,
+    requirements: '- [technical/high] 支持高并发\n- [service/medium] 提供7×24服务',
+    guidanceText: '逐条对照招标要求进行响应说明。',
+    documentOutline: '  - 系统架构设计\n  - 需求响应对照表 ← 当前章节\n  - 实施计划',
+  }
+
+  it('@p0 should override guidanceText with index-table semantics', () => {
+    const prompt = generateChapterPrompt(matrixContext)
+    expect(prompt).toContain('需求响应对照索引表')
+    expect(prompt).toContain('Markdown 表格形式')
+    expect(prompt).not.toContain('逐条对照招标要求进行响应说明')
+  })
+
+  it('@p0 should include table column definitions in output rules', () => {
+    const prompt = generateChapterPrompt(matrixContext)
+    expect(prompt).toContain('序号')
+    expect(prompt).toContain('招标需求条目')
+    expect(prompt).toContain('响应说明')
+    expect(prompt).toContain('详见章节')
+  })
+
+  it('@p0 should instruct not to expand detailed solutions', () => {
+    const prompt = generateChapterPrompt(matrixContext)
+    expect(prompt).toContain('不要展开详细')
+  })
+
+  it('@p0 should not contain narrative chapter output rules', () => {
+    const prompt = generateChapterPrompt(matrixContext)
+    // Narrative-specific rules should be absent
+    expect(prompt).not.toContain('内容需覆盖招标需求中与本章节相关的要点')
+    expect(prompt).not.toContain('严格限定在「需求响应对照表」的主题范围内撰写')
+  })
+
+  it('@p1 should preserve standard rules for non-matrix chapters', () => {
+    const normalContext: GenerateChapterContext = {
+      chapterTitle: '系统架构设计',
+      chapterLevel: 2,
+      requirements: '- [technical/high] 支持高并发',
+      guidanceText: '描述系统逻辑架构和技术选型。',
+    }
+    const prompt = generateChapterPrompt(normalContext)
+    expect(prompt).toContain('描述系统逻辑架构和技术选型')
+    expect(prompt).toContain('内容需覆盖招标需求中与本章节相关的要点')
+    expect(prompt).toContain('严格限定在「系统架构设计」的主题范围内撰写')
+    expect(prompt).not.toContain('需求响应对照索引表')
+  })
+
+  it('@p1 should work with 需求响应矩阵 variant from standard-technical template', () => {
+    const variantContext: GenerateChapterContext = {
+      ...matrixContext,
+      chapterTitle: '需求响应矩阵',
+      guidanceText: '逐项响应招标文件中的需求条目。',
+    }
+    const prompt = generateChapterPrompt(variantContext)
+    expect(prompt).toContain('需求响应对照索引表')
+    expect(prompt).not.toContain('逐项响应招标文件中的需求条目')
   })
 })
