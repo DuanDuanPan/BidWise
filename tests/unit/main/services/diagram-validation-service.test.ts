@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockMermaidParse = vi.fn()
+const mockMermaidInitialize = vi.fn()
 
 vi.mock('mermaid', () => ({
-  default: { parse: (...args: unknown[]) => mockMermaidParse(...args) },
+  default: {
+    parse: (...args: unknown[]) => mockMermaidParse(...args),
+    initialize: (...args: unknown[]) => mockMermaidInitialize(...args),
+  },
 }))
 
 const {
+  buildDiagramFailureMarkdown,
   parseDiagramPlaceholders,
   replaceSkeletonWithDiagram,
   removeSkeletonPlaceholder,
@@ -30,6 +35,8 @@ const VALID_DRAWIO_XML = `<mxGraphModel>
 describe('diagram-validation-service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockMermaidParse.mockReset()
+    mockMermaidInitialize.mockReset()
   })
 
   describe('parseDiagramPlaceholders', () => {
@@ -55,6 +62,26 @@ describe('diagram-validation-service', () => {
       expect(result.placeholders).toHaveLength(1)
       expect(result.placeholders[0].type).toBe('drawio')
       expect(result.placeholders[0].assetFileName).toMatch(/^diagram-[a-f0-9]{8}\.drawio$/)
+    })
+
+    it('@p0 should parse wrapped base64 descriptions from chapter prompt output', () => {
+      const desc = Buffer.from('展示自动生成模块与外部系统集成关系').toString('base64')
+      const wrappedDesc = `${desc.slice(0, 12)}\n${desc.slice(12)}`
+      const md = `%%DIAGRAM:mermaid:自动生成模块集成架构图:base64(${wrappedDesc})%%`
+      const result = parseDiagramPlaceholders(md)
+
+      expect(result.placeholders).toHaveLength(1)
+      expect(result.placeholders[0].title).toBe('自动生成模块集成架构图')
+      expect(result.placeholders[0].description).toBe('展示自动生成模块与外部系统集成关系')
+      expect(result.markdownWithSkeletons).not.toContain('%%DIAGRAM:')
+    })
+
+    it('@p1 should fall back to raw wrapped description when content is not base64', () => {
+      const md = '%%DIAGRAM:drawio:系统部署图:base64(应用服务到数据库的调用链路)%%'
+      const result = parseDiagramPlaceholders(md)
+
+      expect(result.placeholders).toHaveLength(1)
+      expect(result.placeholders[0].description).toBe('应用服务到数据库的调用链路')
     })
 
     it('@p0 should parse multiple placeholders', () => {
@@ -162,6 +189,28 @@ describe('diagram-validation-service', () => {
       expect(result.valid).toBe(true)
     })
 
+    it('@p1 should initialize mermaid before parsing in the main-process validator', async () => {
+      mockMermaidParse.mockResolvedValueOnce(true)
+      vi.resetModules()
+
+      const { validateMermaidDiagram: freshValidateMermaidDiagram } =
+        await import('@main/services/diagram-validation-service')
+
+      await freshValidateMermaidDiagram('graph TD\nA-->B')
+
+      expect(mockMermaidInitialize).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'neutral',
+          logLevel: 'error',
+        })
+      )
+      expect(mockMermaidInitialize.mock.invocationCallOrder[0]).toBeLessThan(
+        mockMermaidParse.mock.invocationCallOrder[0]
+      )
+    })
+
     it('@p0 should return error when mermaid.parse throws', async () => {
       mockMermaidParse.mockRejectedValueOnce(new Error('Parse error at line 2'))
       const result = await validateMermaidDiagram('invalid diagram')
@@ -193,6 +242,18 @@ describe('diagram-validation-service', () => {
       })
       expect(result).toContain('<!-- drawio:id-2:diagram-abc.drawio -->')
       expect(result).toContain('![架构图](assets/diagram-abc.png)')
+    })
+  })
+
+  describe('buildDiagramFailureMarkdown', () => {
+    it('@p0 should produce a visible failure note instead of silently dropping the diagram', () => {
+      const result = buildDiagramFailureMarkdown({
+        type: 'mermaid',
+        caption: '系统集成架构图',
+        error: 'Parse error at line 2',
+      })
+
+      expect(result).toBe('> [图表生成失败] 系统集成架构图（mermaid）: Parse error at line 2')
     })
   })
 

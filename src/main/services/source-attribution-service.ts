@@ -10,6 +10,7 @@ import { documentService } from '@main/services/document-service'
 import { projectService } from '@main/services/project-service'
 import { taskQueue } from '@main/services/task-queue'
 import { extractRenderableParagraphs, createContentDigest } from '@shared/chapter-markdown'
+import { extractJsonArray } from '@main/utils/llm-json'
 import type {
   AttributeSourcesInput,
   ValidateBaselineInput,
@@ -297,62 +298,48 @@ interface RawBaselineItem {
 }
 
 function parseAttributionJson(content: string): RawAttributionItem[] {
-  const jsonMatch = content.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) {
-    logger.warn('No JSON array found in attribution response')
+  const parsed = extractJsonArray<Record<string, unknown>>(content)
+  if (!parsed) {
+    logger.warn('No valid JSON array found in attribution response')
     return []
   }
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as unknown[]
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter(
-        (item): item is Record<string, unknown> =>
-          typeof item === 'object' &&
-          item !== null &&
-          'paragraphIndex' in item &&
-          'sourceType' in item
-      )
-      .map((item) => ({
-        paragraphIndex: Number(item.paragraphIndex),
-        sourceType: String(item.sourceType),
-        sourceRef: item.sourceRef != null ? String(item.sourceRef) : undefined,
-        snippet: item.snippet != null ? String(item.snippet) : undefined,
-        confidence: item.confidence != null ? Number(item.confidence) : undefined,
-      }))
-  } catch (err) {
-    logger.warn('Failed to parse attribution JSON:', err)
-    return []
-  }
+  return parsed
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' &&
+        item !== null &&
+        'paragraphIndex' in item &&
+        'sourceType' in item
+    )
+    .map((item) => ({
+      paragraphIndex: Number(item.paragraphIndex),
+      sourceType: String(item.sourceType),
+      sourceRef: item.sourceRef != null ? String(item.sourceRef) : undefined,
+      snippet: item.snippet != null ? String(item.snippet) : undefined,
+      confidence: item.confidence != null ? Number(item.confidence) : undefined,
+    }))
 }
 
 function parseBaselineJson(content: string): RawBaselineItem[] {
-  const jsonMatch = content.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) {
-    logger.warn('No JSON array found in baseline response')
+  const parsed = extractJsonArray<Record<string, unknown>>(content)
+  if (!parsed) {
+    logger.warn('No valid JSON array found in baseline response')
     return []
   }
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as unknown[]
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter(
-        (item): item is Record<string, unknown> =>
-          typeof item === 'object' &&
-          item !== null &&
-          'paragraphIndex' in item &&
-          'claim' in item &&
-          'matched' in item
-      )
-      .map((item) => ({
-        paragraphIndex: Number(item.paragraphIndex),
-        claim: String(item.claim),
-        baselineRef: item.baselineRef != null ? String(item.baselineRef) : undefined,
-        matched: Boolean(item.matched),
-        mismatchReason: item.mismatchReason != null ? String(item.mismatchReason) : undefined,
-      }))
-  } catch (err) {
-    logger.warn('Failed to parse baseline JSON:', err)
-    return []
-  }
+  return parsed
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' &&
+        item !== null &&
+        'paragraphIndex' in item &&
+        'claim' in item &&
+        'matched' in item
+    )
+    .map((item) => ({
+      paragraphIndex: Number(item.paragraphIndex),
+      claim: String(item.claim),
+      baselineRef: item.baselineRef != null ? String(item.baselineRef) : undefined,
+      matched: Boolean(item.matched),
+      mismatchReason: item.mismatchReason != null ? String(item.mismatchReason) : undefined,
+    }))
 }

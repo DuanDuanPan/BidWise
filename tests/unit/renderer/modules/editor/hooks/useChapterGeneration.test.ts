@@ -261,6 +261,96 @@ describe('@story-3-4 useChapterGeneration', () => {
     expect(status!.streamRevision).toBe(1)
   })
 
+  it('@p0 should not mark streamed AI content as a conflict on completion', async () => {
+    const streamedContent = '正文段落\n\n```mermaid\ngraph TD\nA-->B\n```'
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-gen-1',
+          status: 'completed',
+          result: { content: streamedContent },
+        },
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startGeneration(mockTarget)
+    })
+
+    act(() => {
+      progressListener?.({
+        taskId: 'task-gen-1',
+        progress: 80,
+        message: 'composing',
+        payload: {
+          kind: 'chapter-stream',
+          markdown: streamedContent,
+        },
+      })
+    })
+
+    mockDocumentContent.current = `## 系统架构设计\n\n${streamedContent}\n`
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-gen-1', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status!.phase).toBe('completed')
+      expect(status!.generatedContent).toBe(streamedContent)
+    })
+  })
+
+  it('@p0 should treat terminal completion before editor sync as completed rather than conflicted', async () => {
+    const streamedContent = '正文段落\n\n```mermaid\ngraph TD\nA-->B\n```'
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-gen-1',
+          status: 'completed',
+          result: { content: streamedContent },
+        },
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startGeneration(mockTarget)
+    })
+
+    act(() => {
+      progressListener?.({
+        taskId: 'task-gen-1',
+        progress: 80,
+        message: 'composing',
+        payload: {
+          kind: 'chapter-stream',
+          markdown: streamedContent,
+        },
+      })
+    })
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-gen-1', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status!.phase).toBe('completed')
+      expect(status!.generatedContent).toBe(streamedContent)
+    })
+  })
+
   it('@p1 should restore active tasks on mount scoped to current project', async () => {
     vi.stubGlobal('api', {
       ...window.api,
@@ -514,6 +604,54 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
   })
 
+  it('@p1 should restore completed tasks as completed when the document already contains final AI content', async () => {
+    const baselineSectionContent = '\n> 请描述系统架构\n'
+    const baselineDigest = createHash('sha256')
+      .update(baselineSectionContent)
+      .digest('hex')
+      .slice(0, 16)
+    const finalContent = '### 总体架构\n\nAI 已写入的最终内容'
+
+    mockDocumentContent.current = `## 系统架构设计\n\n${finalContent}\n`
+
+    vi.stubGlobal('api', {
+      ...window.api,
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({
+        success: true,
+        data: [
+          {
+            id: 'task-restored-completed-same-content',
+            status: 'completed',
+            progress: 100,
+            input: JSON.stringify({
+              projectId: PROJECT_ID,
+              target: mockTarget,
+              baselineDigest,
+            }),
+          },
+        ],
+      }),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-restored-completed-same-content',
+          status: 'completed',
+          result: { content: finalContent },
+        },
+      }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await waitFor(() => {
+      const status = result.current.getStatus(mockTarget)
+      expect(status).toBeDefined()
+      expect(status!.phase).toBe('completed')
+      expect(status!.generatedContent).toBe(finalContent)
+    })
+  })
+
   it('@p1 should restore running tasks that already completed as conflicted when the document changed since baseline', async () => {
     const baselineSectionContent = '\n> 请描述系统架构\n'
     const baselineDigest = createHash('sha256')
@@ -692,5 +830,118 @@ describe('@story-3-4 useChapterGeneration', () => {
   it('@p0 should expose currentProjectId', () => {
     const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
     expect(result.current.currentProjectId).toBe(PROJECT_ID)
+  })
+
+  it('@p0 @story-5-4 startSkeletonGenerate sets correct initial status with skeleton-generate operationType and skeleton-generating phase', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterSkeletonGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-skel-1' } }),
+      chapterSkeletonConfirm: vi.fn().mockResolvedValue({ success: true, data: { success: true } }),
+      chapterBatchGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-batch-1' } }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startSkeletonGenerate(mockTarget)
+    })
+
+    expect(window.api.chapterSkeletonGenerate).toHaveBeenCalledWith({
+      projectId: PROJECT_ID,
+      target: mockTarget,
+    })
+
+    const status = result.current.getStatus(mockTarget)
+    expect(status).toBeDefined()
+    expect(status!.taskId).toBe('task-skel-1')
+    expect(status!.operationType).toBe('skeleton-generate')
+    expect(status!.phase).toBe('skeleton-generating')
+  })
+
+  it('@p1 @story-5-4 skeleton-generate completion with fallback:true auto-triggers startGeneration', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterSkeletonGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-skel-1' } }),
+      chapterSkeletonConfirm: vi.fn().mockResolvedValue({ success: true, data: { success: true } }),
+      chapterBatchGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-batch-1' } }),
+      chapterGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-gen-fallback-1' } }),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-skel-1',
+          status: 'completed',
+          result: { fallback: true },
+        },
+      }),
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startSkeletonGenerate(mockTarget)
+    })
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-skel-1', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      expect(window.api.chapterGenerate).toHaveBeenCalledWith({
+        projectId: PROJECT_ID,
+        target: mockTarget,
+      })
+    })
+  })
+
+  it('@p0 @story-5-4 startBatchGenerate sets correct initial status with batch-generate operationType', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterSkeletonGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-skel-1' } }),
+      chapterSkeletonConfirm: vi.fn().mockResolvedValue({ success: true, data: { success: true } }),
+      chapterBatchGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-batch-1' } }),
+      onTaskProgress: vi.fn().mockReturnValue(() => {}),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+    const sectionId = '2:系统架构设计:0'
+
+    await act(async () => {
+      await result.current.startBatchGenerate(mockTarget, sectionId)
+    })
+
+    expect(window.api.chapterBatchGenerate).toHaveBeenCalledWith({
+      projectId: PROJECT_ID,
+      target: mockTarget,
+      sectionId,
+    })
+
+    const status = result.current.getStatus(mockTarget)
+    expect(status).toBeDefined()
+    expect(status!.taskId).toBe('task-batch-1')
+    expect(status!.operationType).toBe('batch-generate')
   })
 })

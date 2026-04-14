@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
 const mockBuildPromptContext = vi.hoisted(() => vi.fn())
 const mockLoggerWarn = vi.hoisted(() => vi.fn())
+const mockMermaidParse = vi.hoisted(() => vi.fn().mockResolvedValue(true))
 
 vi.mock('@main/services/terminology-service', () => ({
   terminologyService: {
@@ -25,6 +26,12 @@ vi.mock('@main/utils/logger', () => ({
   }),
 }))
 
+vi.mock('mermaid', () => ({
+  default: {
+    parse: (...args: unknown[]) => mockMermaidParse(...args),
+  },
+}))
+
 const { generateAgentHandler } =
   await import('@main/services/agent-orchestrator/agents/generate-agent')
 
@@ -44,6 +51,7 @@ describe('generateAgentHandler @story-2-2', () => {
     vi.clearAllMocks()
     mockGetActiveEntries.mockResolvedValue([])
     mockBuildPromptContext.mockReturnValue('')
+    mockMermaidParse.mockReset().mockResolvedValue(true)
   })
 
   it('@p1 should return AiRequestParams with messages from generateChapterPrompt', async () => {
@@ -189,6 +197,199 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(updateProgress).toHaveBeenCalledWith(60, 'validating-diagrams')
     expect(updateProgress).toHaveBeenCalledWith(80, 'composing', expect.any(Object))
     expect(updateProgress).toHaveBeenCalledWith(90, 'validating-coherence')
+  })
+
+  it('@p0 should call a dedicated diagram repair prompt with invalid code and validation error', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    mockMermaidParse
+      .mockRejectedValueOnce(new Error('Parse error at line 2'))
+      .mockResolvedValueOnce(true)
+
+    const aiProxy = {
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content:
+              '正文段落\n\n%%DIAGRAM:mermaid:系统集成架构图:' +
+              Buffer.from('展示系统集成关系').toString('base64') +
+              '%%',
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        if (request.caller === 'generate-agent:diagram:mermaid') {
+          return {
+            content: 'graph TD\ntitle 系统集成架构图\nA-->B',
+            usage: { promptTokens: 5, completionTokens: 8 },
+            latencyMs: 50,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        if (request.caller === 'generate-agent:diagram-repair:mermaid') {
+          return {
+            content: 'graph TD\nA[系统集成平台] --> B[业务系统]',
+            usage: { promptTokens: 6, completionTokens: 9 },
+            latencyMs: 55,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        return {
+          content: '{"pass":true,"issues":[]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+        }
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '总体架构设计',
+        requirements: '描述系统集成关系',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    const repairCall = aiProxy.call.mock.calls.find(
+      ([request]: [{ caller: string }]) =>
+        request.caller === 'generate-agent:diagram-repair:mermaid'
+    )?.[0]
+
+    expect(repairCall).toBeDefined()
+    expect(repairCall.messages[1].content).toContain('Parse error at line 2')
+    expect(repairCall.messages[1].content).toContain('graph TD\ntitle 系统集成架构图\nA-->B')
+
+    expect(result).toMatchObject({ kind: 'result' })
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toContain('```mermaid')
+      expect(result.value.content).toContain('A[系统集成平台] --> B[业务系统]')
+      expect(result.value.content).not.toContain('[图表生成失败]')
+    }
+  })
+
+  it('@p0 should keep a visible failure marker when diagram generation exhausts retries', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    mockMermaidParse.mockRejectedValue(new Error('Parse error at line 2'))
+
+    const aiProxy = {
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content:
+              '正文段落\n\n%%DIAGRAM:mermaid:系统集成架构图:' +
+              Buffer.from('展示系统集成关系').toString('base64') +
+              '%%',
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        if (request.caller.startsWith('generate-agent:diagram')) {
+          return {
+            content: 'graph TD\ntitle 系统集成架构图\nA-->B',
+            usage: { promptTokens: 5, completionTokens: 8 },
+            latencyMs: 50,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        return {
+          content: '{"pass":true,"issues":[]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+        }
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '总体架构设计',
+        requirements: '描述系统集成关系',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(result).toMatchObject({ kind: 'result' })
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toContain(
+        '[图表生成失败] 系统集成架构图（mermaid）: Parse error at line 2'
+      )
+      expect(result.value.content).not.toContain('图表生成中')
+      expect(result.value.content).not.toContain('%%DIAGRAM:')
+    }
+  })
+
+  it('@story-3-4 @p1 should replace wrapped diagram placeholders instead of leaking raw markers', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const wrappedDesc = Buffer.from('展示自动生成模块与外部系统集成关系').toString('base64')
+    const aiProxy = {
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content: `正文段落\n\n%%DIAGRAM:mermaid:自动生成模块集成架构图:base64(${wrappedDesc})%%`,
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        if (request.caller.startsWith('generate-agent:diagram')) {
+          return {
+            content: 'graph TD\nA[自动生成模块] --> B[外部系统]',
+            usage: { promptTokens: 5, completionTokens: 8 },
+            latencyMs: 50,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        return {
+          content: '{"pass":true,"issues":[]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+        }
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '自动生成模块架构设计',
+        requirements: '支持与外部系统集成',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(result).toMatchObject({ kind: 'result' })
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).not.toContain('%%DIAGRAM:')
+      expect(result.value.content).toContain('<!-- mermaid:')
+      expect(result.value.content).toContain('```mermaid')
+    }
   })
 
   it('@story-3-4 @p1 should stay on single-pass flow when diagrams are disabled', async () => {

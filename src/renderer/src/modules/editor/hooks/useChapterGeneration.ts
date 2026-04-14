@@ -4,9 +4,15 @@ import type {
   ChapterStreamProgressPayload,
   ChapterGenerationPhase,
   ChapterGenerationStatus,
+  SkeletonExpandPlan,
 } from '@shared/chapter-types'
 import type { TaskProgressEvent } from '@shared/ai-types'
-import { createContentDigest, extractMarkdownSectionContent } from '@shared/chapter-markdown'
+import {
+  createContentDigest,
+  extractMarkdownSectionContent,
+  normalizeGeneratedHeadingLevels,
+  sanitizeGeneratedChapterMarkdown,
+} from '@shared/chapter-markdown'
 import { useDocumentStore } from '@renderer/stores'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
 
@@ -26,6 +32,10 @@ function progressToPhase(progress: number, message?: string): ChapterGenerationP
   if (message === 'composing') return 'composing'
   if (message === 'validating-coherence') return 'validating-coherence'
   if (message === 'annotating-sources') return 'annotating-sources'
+  if (message === 'skeleton-generating') return 'skeleton-generating'
+  if (message === 'skeleton-ready') return 'skeleton-ready'
+  if (message === 'batch-generating') return 'batch-generating'
+  if (message === 'batch-composing') return 'batch-composing'
   if (progress >= 90) return 'validating-coherence'
   if (progress >= 80) return 'composing'
   if (progress >= 60) return 'validating-diagrams'
@@ -46,20 +56,53 @@ function isChapterStreamPayload(payload: unknown): payload is ChapterStreamProgr
   )
 }
 
+function normalizeComparableGeneratedContent(
+  target: ChapterHeadingLocator,
+  content?: string
+): string | undefined {
+  if (typeof content !== 'string') return undefined
+  const deduped = sanitizeGeneratedChapterMarkdown(content, target)
+  return normalizeGeneratedHeadingLevels(deduped, target.level).trim()
+}
+
 function resolveTerminalPhase(params: {
+  target: ChapterHeadingLocator
   currentDigest: string
   currentSectionContent: string
   baselineDigest?: string
   baselineSectionContent?: string
+  streamedContent?: string
+  finalContent?: string
 }): Extract<ChapterGenerationPhase, 'completed' | 'conflicted'> {
-  const { currentDigest, currentSectionContent, baselineDigest, baselineSectionContent } = params
-  const hasConflict =
-    (baselineDigest !== undefined && currentDigest !== baselineDigest) ||
-    (baselineDigest === undefined &&
-      baselineSectionContent !== undefined &&
-      currentSectionContent !== baselineSectionContent)
+  const {
+    target,
+    currentDigest,
+    currentSectionContent,
+    baselineDigest,
+    baselineSectionContent,
+    streamedContent,
+    finalContent,
+  } = params
+  const normalizedCurrent = currentSectionContent.trim()
+  const normalizedBaseline = baselineSectionContent?.trim()
+  const normalizedStream = normalizeComparableGeneratedContent(target, streamedContent)
+  const normalizedFinal = normalizeComparableGeneratedContent(target, finalContent)
 
-  return hasConflict ? 'conflicted' : 'completed'
+  if (
+    (baselineDigest !== undefined && currentDigest === baselineDigest) ||
+    (normalizedBaseline !== undefined && normalizedCurrent === normalizedBaseline)
+  ) {
+    return 'completed'
+  }
+
+  if (
+    (normalizedStream !== undefined && normalizedCurrent === normalizedStream) ||
+    (normalizedFinal !== undefined && normalizedCurrent === normalizedFinal)
+  ) {
+    return 'completed'
+  }
+
+  return 'conflicted'
 }
 
 export interface UseChapterGenerationReturn {
@@ -67,8 +110,16 @@ export interface UseChapterGenerationReturn {
   statuses: Map<string, ChapterGenerationStatus>
   startGeneration: (target: ChapterHeadingLocator) => Promise<void>
   startRegeneration: (target: ChapterHeadingLocator, additionalContext: string) => Promise<void>
+  startSkeletonGenerate: (target: ChapterHeadingLocator) => Promise<void>
+  confirmSkeleton: (
+    target: ChapterHeadingLocator,
+    sectionId: string,
+    plan: SkeletonExpandPlan
+  ) => Promise<boolean>
+  startBatchGenerate: (target: ChapterHeadingLocator, sectionId: string) => Promise<void>
   retry: (target: ChapterHeadingLocator) => Promise<void>
   dismissError: (target: ChapterHeadingLocator) => void
+  notifySectionCleared: (target: ChapterHeadingLocator) => void
   getStatus: (target: ChapterHeadingLocator) => ChapterGenerationStatus | undefined
 }
 
@@ -77,6 +128,9 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
   const taskToLocatorRef = useRef<Map<string, ChapterHeadingLocator>>(new Map())
   const statusesRef = useRef(statuses)
   const projectIdRef = useRef(projectId)
+  const startGenerationRef = useRef<(target: ChapterHeadingLocator) => Promise<void>>(() =>
+    Promise.resolve()
+  )
 
   useEffect(() => {
     statusesRef.current = statuses
@@ -118,8 +172,6 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           streamedContent: streamPayload.markdown,
           latestDiagramPatch: streamPayload.patch,
           streamRevision: (prev.streamRevision ?? 0) + 1,
-          baselineDigest: createContentDigest(streamPayload.markdown),
-          baselineSectionContent: streamPayload.markdown,
         }))
 
         if (!hasTerminalMessage && phase !== 'completed') {
@@ -133,7 +185,58 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           if (!res.success) return
           const status = res.data
           if (status.status === 'completed' && status.result) {
-            // Conflict detection: compare current section content with baseline
+            // Check if this is a skeleton-generate completion
+            const currentStatusEntry = statusesRef.current.get(key)
+            if (currentStatusEntry?.operationType === 'skeleton-generate') {
+              try {
+                const parsed = JSON.parse(status.result.content) as {
+                  fallback?: boolean
+                  reason?: string
+                  plan?: SkeletonExpandPlan
+                }
+                if (parsed.fallback) {
+                  // Auto-fallback to standard generation
+                  updateStatus(key, (prev) => ({
+                    ...prev,
+                    phase: 'queued',
+                    progress: 0,
+                    operationType: 'generate',
+                    message: '骨架生成失败，已切换为标准生成',
+                  }))
+                  taskToLocatorRef.current.delete(event.taskId)
+                  void window.api.taskDelete(event.taskId)
+                  void startGenerationRef.current(locator)
+                  return
+                }
+                if (parsed.plan) {
+                  updateStatus(key, (prev) => ({
+                    ...prev,
+                    phase: 'skeleton-ready',
+                    progress: 100,
+                    skeletonPlan: parsed.plan,
+                  }))
+                  taskToLocatorRef.current.delete(event.taskId)
+                  // Task delivered its value — clean up persistent record
+                  void window.api.taskDelete(event.taskId)
+                  return
+                }
+              } catch {
+                // JSON parse failed — fallback
+                updateStatus(key, (prev) => ({
+                  ...prev,
+                  phase: 'queued',
+                  progress: 0,
+                  operationType: 'generate',
+                  message: '骨架生成失败，已切换为标准生成',
+                }))
+                taskToLocatorRef.current.delete(event.taskId)
+                void window.api.taskDelete(event.taskId)
+                void startGenerationRef.current(locator)
+                return
+              }
+            }
+
+            // Standard / batch generation completion — conflict detection
             const currentContent = useDocumentStore.getState().content
             const currentSectionContent = extractMarkdownSectionContent(currentContent, locator)
             const currentDigest = createContentDigest(currentSectionContent)
@@ -142,10 +245,13 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               return {
                 ...prev,
                 phase: resolveTerminalPhase({
+                  target: locator,
                   currentDigest,
                   currentSectionContent,
                   baselineDigest: prev.baselineDigest,
                   baselineSectionContent: prev.baselineSectionContent,
+                  streamedContent: prev.streamedContent,
+                  finalContent: status.result!.content,
                 }),
                 progress: 100,
                 generatedContent: status.result!.content,
@@ -211,6 +317,87 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           const target = input.target as ChapterHeadingLocator | undefined
           if (!target) continue
           const key = locatorKey(target)
+
+          // Rebuild operationType from the mode that was dispatched
+          const inputMode = input.mode as string | undefined
+          const operationType: ChapterGenerationStatus['operationType'] =
+            inputMode === 'skeleton-generate'
+              ? 'skeleton-generate'
+              : inputMode === 'skeleton-batch'
+                ? 'batch-generate'
+                : input.additionalContext !== undefined
+                  ? 'regenerate'
+                  : 'generate'
+
+          // skeleton-generate tasks produce JSON, not markdown — handle separately
+          if (operationType === 'skeleton-generate') {
+            const statusRes = await window.api.agentStatus(task.id)
+            if (statusRes.success) {
+              const status = statusRes.data
+
+              if (status.status === 'completed' && status.result) {
+                // Attempt to restore the plan so user can confirm without re-generating
+                try {
+                  const parsed = JSON.parse(status.result.content) as {
+                    fallback?: boolean
+                    plan?: SkeletonExpandPlan
+                  }
+                  if (parsed.plan && !parsed.fallback) {
+                    restoredStatuses.set(key, {
+                      target,
+                      phase: 'skeleton-ready',
+                      progress: 100,
+                      taskId: task.id,
+                      operationType,
+                      skeletonPlan: parsed.plan,
+                    })
+                    // Task delivered its value — clean up persistent record
+                    void window.api.taskDelete(task.id)
+                  }
+                  // fallback=true results are transient; discard and clean up
+                  if (parsed.fallback) {
+                    void window.api.taskDelete(task.id)
+                  }
+                } catch {
+                  // Unparseable — discard silently
+                  void window.api.taskDelete(task.id)
+                }
+              } else if (status.status === 'failed' || status.status === 'cancelled') {
+                restoredStatuses.set(key, {
+                  target,
+                  phase: 'failed',
+                  progress: task.progress,
+                  taskId: task.id,
+                  operationType,
+                  error:
+                    status.error?.message ??
+                    (status.status === 'cancelled' ? '任务已取消' : '骨架生成失败'),
+                })
+              } else {
+                // Still pending/running — register for progress events
+                taskToLocatorRef.current.set(task.id, target)
+                restoredStatuses.set(key, {
+                  target,
+                  phase: 'skeleton-generating',
+                  progress: task.progress,
+                  taskId: task.id,
+                  operationType,
+                })
+              }
+            } else if (task.status === 'pending' || task.status === 'running') {
+              // agentStatus call failed but task is queued — still register
+              taskToLocatorRef.current.set(task.id, target)
+              restoredStatuses.set(key, {
+                target,
+                phase: 'skeleton-generating',
+                progress: task.progress,
+                taskId: task.id,
+                operationType,
+              })
+            }
+            continue
+          }
+
           const baselineSectionContent = input.baselineSectionContent as string | undefined
           const baselineDigest =
             (input.baselineDigest as string | undefined) ??
@@ -223,23 +410,25 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             target
           )
           const currentDigest = createContentDigest(currentSectionContent)
-          const terminalPhase = resolveTerminalPhase({
-            currentDigest,
-            currentSectionContent,
-            baselineDigest,
-            baselineSectionContent,
-          })
-
           if (task.status === 'pending' || task.status === 'running') {
             const statusRes = await window.api.agentStatus(task.id)
             if (statusRes.success) {
               const status = statusRes.data
               if (status.status === 'completed' && status.result) {
+                const terminalPhase = resolveTerminalPhase({
+                  target,
+                  currentDigest,
+                  currentSectionContent,
+                  baselineDigest,
+                  baselineSectionContent,
+                  finalContent: status.result.content,
+                })
                 restoredStatuses.set(key, {
                   target,
                   phase: terminalPhase,
                   progress: 100,
                   taskId: task.id,
+                  operationType,
                   generatedContent: status.result.content,
                   baselineDigest,
                   baselineSectionContent,
@@ -253,6 +442,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
                   phase: 'failed',
                   progress: task.progress,
                   taskId: task.id,
+                  operationType,
                   error:
                     status.error?.message ??
                     (status.status === 'cancelled' ? '任务已取消' : '生成失败'),
@@ -269,6 +459,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               phase: task.status === 'pending' ? 'queued' : progressToPhase(task.progress),
               progress: task.progress,
               taskId: task.id,
+              operationType,
               baselineDigest,
               baselineSectionContent,
             })
@@ -280,11 +471,20 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           const status = statusRes.data
 
           if (status.status === 'completed' && status.result) {
+            const terminalPhase = resolveTerminalPhase({
+              target,
+              currentDigest,
+              currentSectionContent,
+              baselineDigest,
+              baselineSectionContent,
+              finalContent: status.result.content,
+            })
             restoredStatuses.set(key, {
               target,
               phase: terminalPhase,
               progress: 100,
               taskId: task.id,
+              operationType,
               generatedContent: status.result.content,
               baselineDigest,
               baselineSectionContent,
@@ -298,6 +498,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               phase: 'failed',
               progress: task.progress,
               taskId: task.id,
+              operationType,
               error:
                 status.error?.message ??
                 (status.status === 'cancelled' ? '任务已取消' : '生成失败'),
@@ -371,6 +572,10 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
     [projectId, updateStatus]
   )
 
+  useEffect(() => {
+    startGenerationRef.current = startGeneration
+  }, [startGeneration])
+
   const startRegeneration = useCallback(
     async (target: ChapterHeadingLocator, additionalContext: string) => {
       const key = locatorKey(target)
@@ -421,6 +626,119 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
     [projectId, updateStatus]
   )
 
+  const startSkeletonGenerate = useCallback(
+    async (target: ChapterHeadingLocator) => {
+      const key = locatorKey(target)
+
+      const currentContent = useDocumentStore.getState().content
+      const baselineSectionContent = extractMarkdownSectionContent(currentContent, target)
+      const baselineDigest = createContentDigest(baselineSectionContent)
+
+      setStatuses((prev) => {
+        const next = new Map(prev)
+        next.set(key, {
+          target,
+          phase: 'skeleton-generating',
+          progress: 0,
+          taskId: '',
+          operationType: 'skeleton-generate',
+          baselineDigest,
+          baselineSectionContent,
+        })
+        return next
+      })
+
+      const res = await window.api.chapterSkeletonGenerate({ projectId, target })
+      if (!res.success) {
+        setStatuses((prev) => {
+          const next = new Map(prev)
+          next.set(key, {
+            target,
+            phase: 'failed',
+            progress: 0,
+            taskId: '',
+            error: res.error.message,
+            operationType: 'skeleton-generate',
+            baselineDigest,
+            baselineSectionContent,
+          })
+          return next
+        })
+        return
+      }
+
+      taskToLocatorRef.current.set(res.data.taskId, target)
+      updateStatus(key, (prev) => ({ ...prev, taskId: res.data.taskId }))
+    },
+    [projectId, updateStatus]
+  )
+
+  const confirmSkeleton = useCallback(
+    async (
+      target: ChapterHeadingLocator,
+      sectionId: string,
+      plan: SkeletonExpandPlan
+    ): Promise<boolean> => {
+      const key = locatorKey(target)
+      const res = await window.api.chapterSkeletonConfirm({ projectId, sectionId, plan })
+      if (!res.success) {
+        updateStatus(key, (prev) => ({
+          ...prev,
+          phase: 'failed',
+          error: '骨架确认失败',
+        }))
+        return false
+      }
+      updateStatus(key, (prev) => ({
+        ...prev,
+        phase: 'skeleton-ready',
+        skeletonPlan: plan,
+      }))
+      return true
+    },
+    [projectId, updateStatus]
+  )
+
+  const startBatchGenerate = useCallback(
+    async (target: ChapterHeadingLocator, sectionId: string) => {
+      const key = locatorKey(target)
+
+      const currentContent = useDocumentStore.getState().content
+      const baselineSectionContent = extractMarkdownSectionContent(currentContent, target)
+      const baselineDigest = createContentDigest(baselineSectionContent)
+
+      setStatuses((prev) => {
+        const next = new Map(prev)
+        const existing = prev.get(key)
+        next.set(key, {
+          ...(existing ?? { target, taskId: '' }),
+          target,
+          phase: 'batch-generating',
+          progress: 0,
+          taskId: existing?.taskId ?? '',
+          operationType: 'batch-generate',
+          baselineDigest,
+          baselineSectionContent,
+        })
+        return next
+      })
+
+      const res = await window.api.chapterBatchGenerate({ projectId, target, sectionId })
+      if (!res.success) {
+        updateStatus(key, (prev) => ({
+          ...prev,
+          phase: 'failed',
+          error: res.error.message,
+        }))
+        return
+      }
+
+      taskToLocatorRef.current.set(res.data.taskId, target)
+      updateStatus(key, (prev) => ({ ...prev, taskId: res.data.taskId }))
+    },
+    [projectId, updateStatus]
+  )
+
   const retry = useCallback(
     async (target: ChapterHeadingLocator) => {
       const key = locatorKey(target)
@@ -429,11 +747,17 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       // Use the correct operation type for retry
       if (currentStatus?.operationType === 'regenerate') {
         await startRegeneration(target, currentStatus.additionalContext ?? '')
+      } else if (currentStatus?.operationType === 'skeleton-generate') {
+        await startSkeletonGenerate(target)
+      } else if (currentStatus?.operationType === 'batch-generate') {
+        // For batch retry, we need the sectionId — derive from target
+        // The sectionId is constructed the same way as locatorKey
+        await startBatchGenerate(target, locatorKey(target))
       } else {
         await startGeneration(target)
       }
     },
-    [startGeneration, startRegeneration]
+    [startGeneration, startRegeneration, startSkeletonGenerate, startBatchGenerate]
   )
 
   const dismissError = useCallback((target: ChapterHeadingLocator) => {
@@ -451,6 +775,20 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
     })
   }, [])
 
+  /** Reset baseline after the editor section is cleared for regeneration */
+  const notifySectionCleared = useCallback(
+    (target: ChapterHeadingLocator) => {
+      const key = locatorKey(target)
+      const emptyDigest = createContentDigest('')
+      updateStatus(key, (prev) => ({
+        ...prev,
+        baselineDigest: emptyDigest,
+        baselineSectionContent: '',
+      }))
+    },
+    [updateStatus]
+  )
+
   const getStatus = useCallback(
     (target: ChapterHeadingLocator): ChapterGenerationStatus | undefined => {
       return statusesRef.current.get(locatorKey(target))
@@ -464,11 +802,27 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       statuses,
       startGeneration,
       startRegeneration,
+      startSkeletonGenerate,
+      confirmSkeleton,
+      startBatchGenerate,
       retry,
       dismissError,
+      notifySectionCleared,
       getStatus,
     }),
-    [dismissError, getStatus, projectId, retry, startGeneration, startRegeneration, statuses]
+    [
+      confirmSkeleton,
+      dismissError,
+      getStatus,
+      notifySectionCleared,
+      projectId,
+      retry,
+      startBatchGenerate,
+      startGeneration,
+      startRegeneration,
+      startSkeletonGenerate,
+      statuses,
+    ]
   )
 }
 

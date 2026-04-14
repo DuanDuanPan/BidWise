@@ -2,6 +2,7 @@ import type { SectionWeightEntry, ProposalSectionIndexEntry } from '../template-
 import type { AnnotationRecord } from '../annotation-types'
 import type { SourceAttribution, BaselineValidation } from '../source-attribution-types'
 import type { WritingStyleId } from '../writing-style-types'
+import type { SkeletonExpandPlan } from '../chapter-types'
 
 /** 方案文档数据模型 */
 export interface ProposalDocument {
@@ -23,6 +24,7 @@ export interface ProposalMetadata {
   sectionIndex?: ProposalSectionIndexEntry[]
   templateId?: string
   writingStyleId?: WritingStyleId
+  confirmedSkeletons?: Record<string, SkeletonExpandPlan>
   lastSavedAt: string // ISO-8601
 }
 

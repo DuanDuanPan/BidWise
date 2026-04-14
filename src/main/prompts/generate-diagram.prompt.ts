@@ -6,8 +6,11 @@ export interface GenerateDiagramPromptContext {
   diagramTitle: string
   diagramDescription: string
   chapterMarkdown: string
-  repairFeedback?: string
-  previousOutput?: string
+}
+
+export interface RepairDiagramPromptContext extends GenerateDiagramPromptContext {
+  invalidOutput: string
+  validationError: string
 }
 
 const DRAWIO_FEW_SHOT = `<mxGraphModel dx="1268" dy="716" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
@@ -27,13 +30,6 @@ const DRAWIO_FEW_SHOT = `<mxGraphModel dx="1268" dy="716" grid="1" gridSize="10"
 </mxGraphModel>`
 
 export function generateDiagramPrompt(context: GenerateDiagramPromptContext): string {
-  const repairSection =
-    context.repairFeedback || context.previousOutput
-      ? `## 修正上下文
-${context.repairFeedback ? `- 校验反馈：${context.repairFeedback}` : ''}
-${context.previousOutput ? `- 上一轮输出：\n${context.previousOutput}` : ''}`.trim()
-      : ''
-
   if (context.diagramType === 'drawio') {
     return [
       `## 任务`,
@@ -50,7 +46,6 @@ ${context.previousOutput ? `- 上一轮输出：\n${context.previousOutput}` : '
       `5. 优先布局简洁、可读，不超过 8 个节点。`,
       `## 合格示例`,
       DRAWIO_FEW_SHOT,
-      repairSection,
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -68,11 +63,55 @@ ${context.previousOutput ? `- 上一轮输出：\n${context.previousOutput}` : '
     `2. 默认优先使用 flowchart / graph；仅在明显更合适时使用 sequenceDiagram、classDiagram、stateDiagram、gantt。`,
     `3. 节点标签必须使用章节中出现过的术语，不要发明新模块名。`,
     `4. 结构保持简洁，不超过 10 个节点。`,
-    repairSection,
   ]
     .filter(Boolean)
     .join('\n\n')
 }
 
+export function generateDiagramRepairPrompt(context: RepairDiagramPromptContext): string {
+  if (context.diagramType === 'drawio') {
+    return [
+      `## 任务`,
+      `修复下面的 draw.io XML 图表，使其通过程序校验。`,
+      `图表标题：${context.diagramTitle}`,
+      `图表意图：${context.diagramDescription}`,
+      `## 章节正文`,
+      context.chapterMarkdown,
+      `## 校验错误`,
+      context.validationError,
+      `## 待修复源码`,
+      context.invalidOutput,
+      `## 输出要求`,
+      `1. 只输出修复后的完整 mxGraph XML，不要输出解释、Markdown、代码围栏或 JSON。`,
+      `2. 必须保留原始图表表达的核心结构与业务术语，除非修复错误所必需。`,
+      `3. 根元素必须是 <mxGraphModel>，且必须包含 <root>、id=0 与 id=1 的基础 mxCell。`,
+      `4. 只允许使用基础矩形节点、文本标签和箭头连线，不要使用复杂样式。`,
+      `5. 节点总数不超过 8 个。`,
+    ].join('\n\n')
+  }
+
+  return [
+    `## 任务`,
+    `修复下面的 Mermaid 图表，使其通过程序校验。`,
+    `图表标题：${context.diagramTitle}`,
+    `图表意图：${context.diagramDescription}`,
+    `## 章节正文`,
+    context.chapterMarkdown,
+    `## 校验错误`,
+    context.validationError,
+    `## 待修复源码`,
+    context.invalidOutput,
+    `## 输出要求`,
+    `1. 只输出修复后的 Mermaid DSL 正文，不要输出解释、Markdown 代码围栏或 JSON。`,
+    `2. 必须保留原始图表表达的核心结构与业务术语，除非修复错误所必需。`,
+    `3. 默认优先使用 flowchart / graph；仅在明显更合适时使用 sequenceDiagram、classDiagram、stateDiagram、gantt。`,
+    `4. 节点标签必须使用章节中出现过的术语，不要发明新模块名。`,
+    `5. 结构保持简洁，不超过 10 个节点。`,
+  ].join('\n\n')
+}
+
 export const GENERATE_DIAGRAM_SYSTEM_PROMPT =
   '你是一个技术图表生成助手。请严格输出可被程序直接消费的图表源码，不要附加任何解释。'
+
+export const REPAIR_DIAGRAM_SYSTEM_PROMPT =
+  '你是一个技术图表修复助手。请根据给定的源码和校验错误，输出一份可被程序直接消费的修复后图表源码，不要附加任何解释。'

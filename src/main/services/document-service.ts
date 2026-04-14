@@ -105,6 +105,9 @@ function normalizeMetadata(
     ...(meta?.sectionIndex !== undefined ? { sectionIndex: meta.sectionIndex } : {}),
     ...(meta?.templateId !== undefined ? { templateId: meta.templateId } : {}),
     ...(meta?.writingStyleId !== undefined ? { writingStyleId: meta.writingStyleId } : {}),
+    ...(meta?.confirmedSkeletons !== undefined
+      ? { confirmedSkeletons: meta.confirmedSkeletons }
+      : {}),
     lastSavedAt: meta?.lastSavedAt || lastSavedAt,
   }
 }
@@ -170,6 +173,14 @@ function parseMetadata(
   }
   if (metadata.writingStyleId !== undefined && typeof metadata.writingStyleId !== 'string') {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 writingStyleId 必须是字符串`)
+  }
+  if (
+    metadata.confirmedSkeletons !== undefined &&
+    (typeof metadata.confirmedSkeletons !== 'object' ||
+      metadata.confirmedSkeletons === null ||
+      Array.isArray(metadata.confirmedSkeletons))
+  ) {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 confirmedSkeletons 必须是对象`)
   }
 
   return metadata

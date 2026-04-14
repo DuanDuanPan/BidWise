@@ -54,6 +54,8 @@ export type AgentHandler = (
     signal: AbortSignal
     updateProgress: (progress: number, message?: string, payload?: unknown) => void
     aiProxy?: AiProxyLike
+    setCheckpoint?: (data: unknown) => Promise<void>
+    checkpoint?: unknown
   }
 ) => Promise<AiRequestParams | AgentHandlerResult>
 
@@ -93,6 +95,8 @@ export class AgentOrchestrator {
           signal: ctx.signal,
           updateProgress: ctx.updateProgress,
           aiProxy,
+          setCheckpoint: ctx.setCheckpoint,
+          checkpoint: ctx.checkpoint,
         })
         throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 

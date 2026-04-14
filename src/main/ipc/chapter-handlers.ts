@@ -17,6 +17,18 @@ const chapterHandlerMap: { [C in ChapterChannel]: () => void } = {
         input.additionalContext
       )
     ),
+  'chapter:skeleton-generate': () =>
+    createIpcHandler('chapter:skeleton-generate', (input) =>
+      chapterGenerationService.skeletonGenerate(input.projectId, input.target)
+    ),
+  'chapter:skeleton-confirm': () =>
+    createIpcHandler('chapter:skeleton-confirm', (input) =>
+      chapterGenerationService.skeletonConfirm(input.projectId, input.sectionId, input.plan)
+    ),
+  'chapter:batch-generate': () =>
+    createIpcHandler('chapter:batch-generate', (input) =>
+      chapterGenerationService.batchGenerate(input.projectId, input.target, input.sectionId)
+    ),
 }
 
 export type RegisteredChapterChannels = ChapterChannel

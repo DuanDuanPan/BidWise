@@ -46,6 +46,7 @@ export function EditorView({
   const insertAssetRef = useRef<InsertAssetFn | null>(null)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const consumedStreamRevisionsRef = useRef<Map<string, number>>(new Map())
+  const clearedRegenerateKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const [insertDrawioAvailable, setInsertDrawioAvailable] = useState(false)
   const [insertMermaidAvailable, setInsertMermaidAvailable] = useState(false)
@@ -190,6 +191,27 @@ export function EditorView({
     if (loadedProjectId !== projectId || content.length === 0) return
 
     const consumedRevisions = consumedStreamRevisionsRef.current
+    const clearedKeys = clearedRegenerateKeysRef.current
+
+    // Clear old content immediately when regeneration starts
+    for (const [key, status] of chapterStatuses) {
+      if (
+        status.operationType === 'regenerate' &&
+        !clearedKeys.has(key) &&
+        !status.streamedContent &&
+        !status.generatedContent &&
+        status.phase !== 'completed' &&
+        status.phase !== 'failed' &&
+        status.phase !== 'conflicted'
+      ) {
+        const didClear = replaceSectionRef.current(status.target, '')
+        if (didClear) {
+          clearedKeys.add(key)
+          // Reset conflict-detection baseline so the cleared section isn't treated as manual edit
+          chapterGen.notifySectionCleared(status.target)
+        }
+      }
+    }
 
     for (const [key, status] of chapterStatuses) {
       const revision = status.streamRevision ?? 0
@@ -230,6 +252,13 @@ export function EditorView({
     for (const key of Array.from(consumedRevisions.keys())) {
       if (!chapterStatuses.has(key)) {
         consumedRevisions.delete(key)
+      }
+    }
+
+    // Clean up cleared-keys tracking for finished/removed entries
+    for (const key of Array.from(clearedKeys)) {
+      if (!chapterStatuses.has(key)) {
+        clearedKeys.delete(key)
       }
     }
   }, [

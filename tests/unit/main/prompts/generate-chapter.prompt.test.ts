@@ -3,8 +3,14 @@ import {
   generateChapterPrompt,
   isComplianceMatrixChapter,
   GENERATE_CHAPTER_SYSTEM_PROMPT,
+  generateSkeletonPrompt,
+  generateSubChapterPrompt,
 } from '@main/prompts/generate-chapter.prompt'
-import type { GenerateChapterContext } from '@main/prompts/generate-chapter.prompt'
+import type {
+  GenerateChapterContext,
+  SkeletonPromptContext,
+  SubChapterPromptContext,
+} from '@main/prompts/generate-chapter.prompt'
 
 describe('@story-3-4 generateChapterPrompt', () => {
   const baseContext: GenerateChapterContext = {
@@ -216,6 +222,102 @@ describe('isComplianceMatrixChapter', () => {
   })
 })
 
+describe('generateSkeletonPrompt', () => {
+  const baseSkeletonContext: SkeletonPromptContext = {
+    chapterTitle: '系统功能设计',
+    chapterLevel: 2,
+    requirements: '- [技术/高] 支持多租户\n- [技术/中] 提供 RESTful API',
+    dimensionChecklist: '设计维度检查清单（根据实际需求选择性应用）',
+  }
+
+  it('@p0 should include chapter title and dimension checklist in output', () => {
+    const prompt = generateSkeletonPrompt(baseSkeletonContext)
+    expect(prompt).toContain('系统功能设计')
+    expect(prompt).toContain('2级标题')
+    expect(prompt).toContain('设计维度检查清单')
+  })
+
+  it('@p0 should include JSON output instructions', () => {
+    const prompt = generateSkeletonPrompt(baseSkeletonContext)
+    expect(prompt).toContain('输出严格 JSON')
+    expect(prompt).toContain('"sections"')
+    expect(prompt).toContain('"title"')
+    expect(prompt).toContain('"level"')
+    expect(prompt).toContain('"dimensions"')
+    expect(prompt).toContain('"guidanceHint"')
+  })
+
+  it('@p1 should include scoring weights when provided', () => {
+    const prompt = generateSkeletonPrompt({
+      ...baseSkeletonContext,
+      scoringWeights: '- 功能完备性 (40分, 权重0.4)',
+    })
+    expect(prompt).toContain('评分标准与权重')
+    expect(prompt).toContain('功能完备性 (40分')
+  })
+
+  it('@p1 should not include scoring section when absent', () => {
+    const prompt = generateSkeletonPrompt(baseSkeletonContext)
+    expect(prompt).not.toContain('## 评分标准与权重')
+  })
+
+  it('@p1 should include document outline when provided', () => {
+    const prompt = generateSkeletonPrompt({
+      ...baseSkeletonContext,
+      documentOutline: '  - 项目概述\n  - 系统功能设计 ← 当前章节\n  - 实施计划',
+    })
+    expect(prompt).toContain('文档完整大纲')
+    expect(prompt).toContain('项目概述')
+    expect(prompt).toContain('实施计划')
+  })
+
+  it('@p1 should not include outline section when absent', () => {
+    const prompt = generateSkeletonPrompt(baseSkeletonContext)
+    expect(prompt).not.toContain('## 文档完整大纲')
+  })
+})
+
+describe('generateSubChapterPrompt', () => {
+  const baseSubContext: SubChapterPromptContext = {
+    chapterTitle: '用户管理模块 - 功能设计',
+    chapterLevel: 3,
+    requirements: '- [技术/高] 支持 RBAC 权限控制',
+    dimensionFocus: 'functional, ui',
+  }
+
+  it('@p0 should include dimensionFocus in output', () => {
+    const prompt = generateSubChapterPrompt(baseSubContext)
+    expect(prompt).toContain('设计维度聚焦')
+    expect(prompt).toContain('functional, ui')
+  })
+
+  it('@p0 should include previousSectionsSummary when provided', () => {
+    const prompt = generateSubChapterPrompt({
+      ...baseSubContext,
+      previousSectionsSummary: '**登录模块**: 实现了用户名密码及 SSO 登录',
+    })
+    expect(prompt).toContain('已生成的同级子章节摘要')
+    expect(prompt).toContain('登录模块')
+  })
+
+  it('@p1 should omit previousSectionsSummary block when not provided (first section)', () => {
+    const prompt = generateSubChapterPrompt(baseSubContext)
+    expect(prompt).not.toContain('已生成的同级子章节摘要')
+  })
+
+  it('@p0 should wrap the base generateChapterPrompt output', () => {
+    const prompt = generateSubChapterPrompt(baseSubContext)
+    // Base prompt sections should appear
+    expect(prompt).toContain('用户管理模块 - 功能设计')
+    expect(prompt).toContain('RBAC 权限控制')
+    // Sub-chapter-specific section should appear after base content
+    const baseIdx = prompt.indexOf('招标需求')
+    const focusIdx = prompt.indexOf('设计维度聚焦')
+    expect(baseIdx).toBeGreaterThanOrEqual(0)
+    expect(focusIdx).toBeGreaterThan(baseIdx)
+  })
+})
+
 describe('generateChapterPrompt — compliance matrix specialization', () => {
   const matrixContext: GenerateChapterContext = {
     chapterTitle: '需求响应对照表',
@@ -243,6 +345,17 @@ describe('generateChapterPrompt — compliance matrix specialization', () => {
   it('@p0 should instruct not to expand detailed solutions', () => {
     const prompt = generateChapterPrompt(matrixContext)
     expect(prompt).toContain('不要展开详细')
+  })
+
+  it('@p1 should require pure base64 diagram placeholders for diagram-heavy chapters', () => {
+    const prompt = generateChapterPrompt({
+      chapterTitle: '系统架构设计',
+      chapterLevel: 2,
+      requirements: '- [technical/high] 支持高并发',
+    })
+
+    expect(prompt).toContain('图表描述的UTF-8 Base64编码')
+    expect(prompt).toContain('不要输出 `base64(...)` 包装')
   })
 
   it('@p0 should not contain narrative chapter output rules', () => {

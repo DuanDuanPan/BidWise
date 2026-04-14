@@ -1,10 +1,13 @@
 import { randomUUID } from 'crypto'
+import createDOMPurify from 'dompurify'
+import { JSDOM } from 'jsdom'
 import mermaid from 'mermaid'
 import { XMLParser } from 'fast-xml-parser'
 
 export type DiagramType = 'mermaid' | 'drawio'
 
-const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM:(mermaid|drawio):([^:\n]+):([A-Za-z0-9+/=]+)%%/g
+const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM:(mermaid|drawio):([^:\n]+):([\s\S]*?)%%/g
+const BASE64_TEXT_RE = /^[A-Za-z0-9+/]+={0,2}$/
 
 export interface DiagramPlaceholder {
   placeholderId: string
@@ -17,12 +20,30 @@ export interface DiagramPlaceholder {
 export interface DiagramValidationResult {
   valid: boolean
   error?: string
+  failureKind?: 'infrastructure'
 }
 
 export interface ParsedDiagramPlaceholders {
   placeholders: DiagramPlaceholder[]
   markdownWithSkeletons: string
 }
+
+type MermaidParserHolder = {
+  parse?: (source: string) => Promise<unknown> | unknown
+  initialize?: (config: Record<string, unknown>) => void
+  default?: MermaidParserHolder
+}
+
+const MERMAID_VALIDATION_CONFIG = {
+  startOnLoad: false,
+  theme: 'neutral',
+  securityLevel: 'strict',
+  logLevel: 'error',
+} as const
+
+let mermaidInitializedForValidation = false
+let mermaidDomPurifyBridged = false
+let mermaidDomWindow: JSDOM | null = null
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -39,11 +60,30 @@ function fileNamePrefix(type: DiagramType): string {
   return type === 'mermaid' ? 'mermaid' : 'diagram'
 }
 
-function decodeBase64Text(input: string): string {
+function tryDecodeBase64Text(input: string): string | null {
+  const normalized = input.replace(/\s+/g, '')
+  if (!normalized || normalized.length % 4 === 1 || !BASE64_TEXT_RE.test(normalized)) {
+    return null
+  }
+
   try {
-    return Buffer.from(input, 'base64').toString('utf-8').trim()
+    const decodedBuffer = Buffer.from(normalized, 'base64')
+    if (decodedBuffer.length === 0) return null
+
+    const canonicalInput = normalized.replace(/=+$/, '')
+    const canonicalOutput = decodedBuffer.toString('base64').replace(/=+$/, '')
+    if (canonicalInput !== canonicalOutput) {
+      return null
+    }
+
+    const decodedText = decodedBuffer.toString('utf-8').trim()
+    if (!decodedText || decodedText.includes('\uFFFD')) {
+      return null
+    }
+
+    return decodedText
   } catch {
-    return ''
+    return null
   }
 }
 
@@ -51,11 +91,19 @@ function sanitizeTitle(title: string): string {
   return title.replace(/\s+/g, ' ').trim()
 }
 
+function normalizeDescription(rawDescription: string): string {
+  const trimmed = rawDescription.trim()
+  const wrapped = trimmed.match(/^base64\(([\s\S]*)\)$/i)
+  const candidate = (wrapped ? wrapped[1] : trimmed).trim()
+  const decoded = tryDecodeBase64Text(candidate)
+  return decoded ?? candidate.replace(/\s+/g, ' ').trim()
+}
+
 export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceholders {
   const placeholders: DiagramPlaceholder[] = []
   const markdownWithSkeletons = markdown.replace(
     DIAGRAM_PLACEHOLDER_RE,
-    (_match, type: DiagramType, rawTitle: string, encodedDescription: string) => {
+    (_match, type: DiagramType, rawTitle: string, rawDescription: string) => {
       const placeholderId = randomUUID()
       const title = sanitizeTitle(rawTitle)
       const shortId = placeholderId.slice(0, 8)
@@ -68,7 +116,7 @@ export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceho
         placeholderId,
         type,
         title,
-        description: decodeBase64Text(encodedDescription),
+        description: normalizeDescription(rawDescription),
         assetFileName,
       }
       placeholders.push(placeholder)
@@ -129,14 +177,89 @@ export function buildDrawioMarkdown(input: {
   return `${comment}\n![${input.caption}](assets/${pngFileName})`
 }
 
+export function buildDiagramFailureMarkdown(input: {
+  type: DiagramType
+  caption: string
+  error: string
+}): string {
+  const normalizedError = input.error.replace(/\s+/g, ' ').trim()
+  return `> [图表生成失败] ${input.caption}（${input.type}）: ${normalizedError}`
+}
+
+function resolveMermaidRuntime(holder: MermaidParserHolder): MermaidParserHolder | null {
+  let current: MermaidParserHolder | undefined = holder
+
+  for (let depth = 0; depth < 3 && current; depth += 1) {
+    if (typeof current.parse === 'function' || typeof current.initialize === 'function') {
+      return current
+    }
+    current = current.default
+  }
+
+  return null
+}
+
+function hasDomPurifyRuntime(factory: typeof createDOMPurify): factory is typeof createDOMPurify & {
+  addHook: (hook: string, fn: (node: unknown) => void) => void
+  sanitize: (input: string, config?: Record<string, unknown>) => string
+} {
+  return typeof factory.addHook === 'function' && typeof factory.sanitize === 'function'
+}
+
+function isMermaidInfrastructureError(message: string): boolean {
+  return (
+    message.includes('DOMPurify.') ||
+    message.includes('Mermaid parser unavailable') ||
+    message.includes('Mermaid DOMPurify bridge unavailable')
+  )
+}
+
+function ensureMermaidDomPurifyBridge(): void {
+  if (hasDomPurifyRuntime(createDOMPurify)) {
+    mermaidDomPurifyBridged = true
+    return
+  }
+
+  if (!mermaidDomPurifyBridged) {
+    mermaidDomWindow = new JSDOM('')
+    const purifier = createDOMPurify(mermaidDomWindow.window)
+    Object.assign(createDOMPurify, purifier)
+    mermaidDomPurifyBridged = true
+  }
+
+  if (!hasDomPurifyRuntime(createDOMPurify)) {
+    throw new Error('Mermaid DOMPurify bridge unavailable')
+  }
+}
+
 export async function validateMermaidDiagram(source: string): Promise<DiagramValidationResult> {
   try {
-    await mermaid.parse(source)
+    const runtime = resolveMermaidRuntime(mermaid as MermaidParserHolder)
+    const parse = typeof runtime?.parse === 'function' ? runtime.parse.bind(runtime) : null
+
+    if (!parse) {
+      return {
+        valid: false,
+        error: 'Mermaid parser unavailable',
+        failureKind: 'infrastructure',
+      }
+    }
+
+    ensureMermaidDomPurifyBridge()
+
+    if (!mermaidInitializedForValidation && typeof runtime?.initialize === 'function') {
+      runtime.initialize(MERMAID_VALIDATION_CONFIG)
+      mermaidInitializedForValidation = true
+    }
+
+    await parse(source)
     return { valid: true }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return {
       valid: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
+      failureKind: isMermaidInfrastructureError(errorMessage) ? 'infrastructure' : undefined,
     }
   }
 }

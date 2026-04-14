@@ -332,4 +332,14 @@ describe('terminologyPostProcessor', () => {
     // The successful annotation is rolled back since operation is incomplete
     expect(mockAnnotationDelete).toHaveBeenCalledWith('ann-2')
   })
+
+  it('skips processing for skeleton-generate mode', async () => {
+    const result = makeResult()
+    const context: Record<string, unknown> = { mode: 'skeleton-generate' }
+
+    const output = await terminologyPostProcessor(result, context, makeSignal())
+
+    expect(output).toBe(result)
+    expect(mockGetActiveEntries).not.toHaveBeenCalled()
+  })
 })

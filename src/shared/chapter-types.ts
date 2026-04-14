@@ -21,9 +21,85 @@ export type ChapterGenerationPhase =
   | 'composing'
   | 'validating-coherence'
   | 'annotating-sources'
+  | 'skeleton-generating'
+  | 'skeleton-ready'
+  | 'batch-generating'
+  | 'batch-composing'
   | 'conflicted'
   | 'completed'
   | 'failed'
+
+// ─── Skeleton-Expand types ───
+
+/** Known design dimensions for skeleton generation */
+export const KNOWN_DIMENSIONS = [
+  'functional',
+  'ui',
+  'process-flow',
+  'data-model',
+  'interface',
+  'security',
+  'deployment',
+] as const
+
+/** Design dimension — string for extensibility, KNOWN_DIMENSIONS for common values */
+export type DesignDimension = string
+
+/** A single section in a skeleton-expand plan */
+export interface SkeletonExpandSection {
+  title: string
+  level: number
+  dimensions: string[]
+  guidanceHint?: string
+}
+
+/** Confirmed skeleton plan for a chapter */
+export interface SkeletonExpandPlan {
+  parentTitle: string
+  parentLevel: number
+  sections: SkeletonExpandSection[]
+  dimensionChecklist: string[]
+  confirmedAt: string
+}
+
+/** Progress payload for batch sub-chapter generation */
+export interface SkeletonBatchProgressPayload {
+  kind: 'skeleton-batch'
+  completedCount: number
+  totalCount: number
+  completedSections: string[]
+  failedSections: Array<{ title: string; error: string }>
+}
+
+/** IPC input for chapter:skeleton-generate */
+export interface SkeletonGenerateInput {
+  projectId: string
+  target: ChapterHeadingLocator
+}
+
+/** IPC output for chapter:skeleton-generate */
+export interface SkeletonGenerateOutput {
+  taskId: string
+}
+
+/** IPC input for chapter:skeleton-confirm */
+export interface SkeletonConfirmInput {
+  projectId: string
+  sectionId: string
+  plan: SkeletonExpandPlan
+}
+
+/** IPC input for chapter:batch-generate */
+export interface BatchGenerateInput {
+  projectId: string
+  target: ChapterHeadingLocator
+  sectionId: string
+}
+
+/** IPC output for chapter:batch-generate */
+export interface BatchGenerateOutput {
+  taskId: string
+}
 
 export interface ChapterDiagramPatch {
   placeholderId: string
@@ -65,7 +141,7 @@ export interface ChapterGenerationStatus {
   generatedContent?: string
   baselineDigest?: string
   /** Tracks which operation started this task, so retry uses the correct path */
-  operationType?: 'generate' | 'regenerate'
+  operationType?: 'generate' | 'regenerate' | 'skeleton-generate' | 'batch-generate'
   /** Stored for regeneration retry */
   additionalContext?: string
   /** Snapshot of section content at task start, for conflict detection */
@@ -76,4 +152,6 @@ export interface ChapterGenerationStatus {
   streamRevision?: number
   /** Latest incremental diagram patch to apply over the streamed section */
   latestDiagramPatch?: ChapterDiagramPatch
+  /** Skeleton plan for skeleton-expand flow */
+  skeletonPlan?: SkeletonExpandPlan
 }

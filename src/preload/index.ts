@@ -187,6 +187,15 @@ const requestApi = {
   chapterRegenerate: (input: IpcChannelMap['chapter:regenerate']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_REGENERATE, input),
 
+  chapterSkeletonGenerate: (input: IpcChannelMap['chapter:skeleton-generate']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_SKELETON_GENERATE, input),
+
+  chapterSkeletonConfirm: (input: IpcChannelMap['chapter:skeleton-confirm']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_SKELETON_CONFIRM, input),
+
+  chapterBatchGenerate: (input: IpcChannelMap['chapter:batch-generate']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_BATCH_GENERATE, input),
+
   annotationCreate: (input: IpcChannelMap['annotation:create']['input']) =>
     typedInvoke(IPC_CHANNELS.ANNOTATION_CREATE, input),
 

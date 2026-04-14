@@ -47,12 +47,18 @@ importers:
       docx-preview:
         specifier: ^0.3.7
         version: 0.3.7
+      dompurify:
+        specifier: ^3.3.3
+        version: 3.3.3
       fast-xml-parser:
         specifier: ^5.5.12
         version: 5.5.12
       fuse.js:
         specifier: ^7.1.0
         version: 7.1.0
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
       kysely:
         specifier: ^0.28.13
         version: 0.28.13
@@ -156,9 +162,6 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
-      jsdom:
-        specifier: ^26.1.0
-        version: 26.1.0
       lint-staged:
         specifier: ^16.1.0
         version: 16.4.0
@@ -1768,6 +1771,7 @@ packages:
   '@xmldom/xmldom@0.8.11':
     resolution: {integrity: sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@3.0.1:
     resolution: {integrity: sha512-AO2ac6pjRB3SJmGJo+v5/aK6Omggp6fsLrs6wN9bd35ulu4cCwaAU9+7ZhXjeqHVkaHThLuzH0nZr0YpCDhygg==}

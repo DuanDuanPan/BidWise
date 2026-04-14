@@ -6,6 +6,7 @@ import {
   ApartmentOutlined,
   FileSearchOutlined,
   CheckSquareOutlined,
+  BranchesOutlined,
 } from '@ant-design/icons'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
 
@@ -22,6 +23,10 @@ const PHASE_CONFIG: Record<
   composing: { icon: <EditOutlined />, label: '整合章节内容...' },
   'validating-coherence': { icon: <FileSearchOutlined />, label: '检查文图一致性...' },
   'annotating-sources': { icon: <FileSearchOutlined />, label: '标注来源...' },
+  'skeleton-generating': { icon: <BranchesOutlined />, label: '生成骨架结构...' },
+  'skeleton-ready': { icon: <CheckSquareOutlined />, label: '骨架已就绪' },
+  'batch-generating': { icon: <EditOutlined />, label: '分治生成子章节...' },
+  'batch-composing': { icon: <EditOutlined />, label: '组装章节内容...' },
 }
 
 interface ChapterGenerationProgressProps {

@@ -39,8 +39,12 @@ function protectDiagramRegions(content: string): {
 }
 
 export const terminologyPostProcessor: AgentPostProcessor = async (result, context, signal) => {
-  // Only apply to chapter generation mode (not ask-system, not annotation-feedback)
-  if (context.mode === 'ask-system' || context.mode === 'annotation-feedback') {
+  // Only apply to chapter generation mode (not ask-system, not annotation-feedback, not skeleton-generate)
+  if (
+    context.mode === 'ask-system' ||
+    context.mode === 'annotation-feedback' ||
+    context.mode === 'skeleton-generate'
+  ) {
     return result
   }
 

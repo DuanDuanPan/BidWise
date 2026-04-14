@@ -93,6 +93,11 @@ import type {
   ChapterGenerateInput,
   ChapterRegenerateInput,
   ChapterGenerateOutput,
+  SkeletonGenerateInput,
+  SkeletonGenerateOutput,
+  SkeletonConfirmInput,
+  BatchGenerateInput,
+  BatchGenerateOutput,
 } from './chapter-types'
 import type {
   AnnotationRecord,
@@ -295,6 +300,9 @@ export const IPC_CHANNELS = {
   TEMPLATE_PERSIST_SKELETON: 'template:persist-skeleton',
   CHAPTER_GENERATE: 'chapter:generate',
   CHAPTER_REGENERATE: 'chapter:regenerate',
+  CHAPTER_SKELETON_GENERATE: 'chapter:skeleton-generate',
+  CHAPTER_SKELETON_CONFIRM: 'chapter:skeleton-confirm',
+  CHAPTER_BATCH_GENERATE: 'chapter:batch-generate',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
   ANNOTATION_DELETE: 'annotation:delete',
@@ -420,6 +428,9 @@ export type IpcChannelMap = {
   'template:persist-skeleton': { input: PersistSkeletonInput; output: PersistSkeletonOutput }
   'chapter:generate': { input: ChapterGenerateInput; output: ChapterGenerateOutput }
   'chapter:regenerate': { input: ChapterRegenerateInput; output: ChapterGenerateOutput }
+  'chapter:skeleton-generate': { input: SkeletonGenerateInput; output: SkeletonGenerateOutput }
+  'chapter:skeleton-confirm': { input: SkeletonConfirmInput; output: { success: true } }
+  'chapter:batch-generate': { input: BatchGenerateInput; output: BatchGenerateOutput }
   'annotation:create': { input: CreateAnnotationInput; output: AnnotationRecord }
   'annotation:update': { input: UpdateAnnotationInput; output: AnnotationRecord }
   'annotation:delete': { input: DeleteAnnotationInput; output: void }

@@ -128,12 +128,13 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
       sections.push(`## 图表插入要求
 1. 如果本章节存在明显的结构关系、流程关系、分层关系、时序关系或部署关系，请在合适位置插入 1-3 个图表占位符。
 2. 占位符必须严格使用如下格式，不要改写、不要加代码围栏：
-   %%DIAGRAM:mermaid:图表标题:base64(图表要表达的内容描述)%%
+   %%DIAGRAM:mermaid:图表标题:图表描述的UTF-8 Base64编码%%
    或
-   %%DIAGRAM:drawio:图表标题:base64(图表要表达的内容描述)%%
-3. 默认优先使用 mermaid。只有在自由布局明显更合适时才使用 drawio。
-4. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
-5. 占位符应紧跟在相关段落之后，不要集中堆到文末。`)
+   %%DIAGRAM:drawio:图表标题:图表描述的UTF-8 Base64编码%%
+3. 第四段必须是纯 base64 字符串，只能包含 A-Z、a-z、0-9、+、/、=；不要输出 \`base64(...)\` 包装、不要换行、不要加解释文字。
+4. 默认优先使用 mermaid。只有在自由布局明显更合适时才使用 drawio。
+5. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
+6. 占位符应紧跟在相关段落之后，不要集中堆到文末。`)
     } else {
       sections.push(`## 图表策略
 本章节以文字说明为主。除非确实无法清楚表达结构关系，否则不要输出任何图表占位符。`)
@@ -145,3 +146,90 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 
 export const GENERATE_CHAPTER_SYSTEM_PROMPT =
   '你是一个专业技术方案撰写助手（Professional Proposal Writing Assistant）。你擅长根据招标文件需求、评分标准和投标策略，撰写高质量的投标书章节内容。你的输出必须是结构化的 Markdown 格式。'
+
+// ─── Skeleton-Expand prompts ───
+
+export const SKELETON_GENERATION_SYSTEM_PROMPT =
+  '你是一个专业技术方案结构规划助手。你的任务是根据招标需求和章节主题，规划详细设计章节的子章节结构。你必须输出严格的 JSON 格式。'
+
+/** Generic B/S web design dimension checklist (Story A) */
+export const DEFAULT_DIMENSION_CHECKLIST = `设计维度检查清单（根据实际需求选择性应用，不要强行套用所有维度）：
+- functional: 功能设计（业务流程、功能模块、用例场景）
+- ui: 界面设计（页面布局、交互设计、用户体验）
+- process-flow: 流程设计（业务流程图、审批流、数据流）
+- data-model: 数据模型（数据库设计、实体关系、数据字典）
+- interface: 接口设计（API 规范、系统集成、第三方对接）
+- security: 安全设计（权限控制、数据安全、审计日志）
+- deployment: 部署设计（部署架构、运维方案、高可用设计）`
+
+export interface SkeletonPromptContext {
+  chapterTitle: string
+  chapterLevel: number
+  requirements: string
+  scoringWeights?: string
+  documentOutline?: string
+  dimensionChecklist: string
+}
+
+export function generateSkeletonPrompt(context: SkeletonPromptContext): string {
+  const sections: string[] = []
+
+  sections.push(`## 章节标题：${context.chapterTitle}（${context.chapterLevel}级标题）`)
+  sections.push(`## 招标需求\n${context.requirements}`)
+
+  if (context.scoringWeights) {
+    sections.push(`## 评分标准与权重\n${context.scoringWeights}`)
+  }
+
+  if (context.documentOutline) {
+    sections.push(`## 文档完整大纲\n${context.documentOutline}`)
+  }
+
+  sections.push(`## 设计维度参考\n${context.dimensionChecklist}`)
+
+  sections.push(`## 任务
+分析上述需求，确定本章节应覆盖的功能模块/子系统，为每个模块选择适用的设计维度。
+
+## 输出要求
+输出严格 JSON，格式如下（不要包含任何其他文字）：
+{
+  "sections": [
+    {
+      "title": "子章节标题（如：用户管理模块 - 功能设计）",
+      "level": ${context.chapterLevel + 1},
+      "dimensions": ["functional", "ui"],
+      "guidanceHint": "简要说明该子章节应聚焦的内容"
+    }
+  ]
+}
+
+注意：
+1. level 必须在 ${context.chapterLevel + 1} 到 4 之间（含）
+2. 每个子章节的 title 应清晰体现模块名和设计维度
+3. dimensions 数组包含该子章节关联的设计维度标识
+4. 根据实际需求灵活规划，不要机械地为每个模块都生成所有维度的子章节
+5. 子章节数量建议 3-10 个，避免过于细碎`)
+
+  return sections.join('\n\n')
+}
+
+export interface SubChapterPromptContext extends GenerateChapterContext {
+  dimensionFocus: string
+  previousSectionsSummary?: string
+}
+
+export function generateSubChapterPrompt(context: SubChapterPromptContext): string {
+  const basePrompt = generateChapterPrompt(context)
+
+  const extras: string[] = []
+
+  extras.push(`## 设计维度聚焦\n本子章节应重点围绕以下设计维度展开：${context.dimensionFocus}`)
+
+  if (context.previousSectionsSummary) {
+    extras.push(
+      `## 已生成的同级子章节摘要（避免重复，保持衔接）\n${context.previousSectionsSummary}`
+    )
+  }
+
+  return basePrompt + '\n\n' + extras.join('\n\n')
+}
