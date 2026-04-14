@@ -37,6 +37,7 @@ import {
   buildDrawioMarkdown,
   buildMermaidMarkdown,
   extractJsonObject,
+  normalizeMermaidSource,
   parseDiagramPlaceholders,
   replaceSkeletonWithDiagram,
   validateDrawioDiagram,
@@ -138,7 +139,9 @@ function stripSkeletonMarkers(markdown: string): string {
 }
 
 function normalizeDiagramSource(type: DiagramType, content: string): string {
-  return type === 'mermaid' ? stripMermaidFences(content) : stripDrawioEnvelope(content)
+  return type === 'mermaid'
+    ? normalizeMermaidSource(stripMermaidFences(content))
+    : stripDrawioEnvelope(content)
 }
 
 async function validateDiagramSource(

@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockMermaidParse = vi.fn()
-const mockMermaidInitialize = vi.fn()
+const mockMermaidRuntimeValidate = vi.fn()
 
-vi.mock('mermaid', () => ({
-  default: {
-    parse: (...args: unknown[]) => mockMermaidParse(...args),
-    initialize: (...args: unknown[]) => mockMermaidInitialize(...args),
+vi.mock('@main/services/diagram-runtime/mermaid-runtime-client', () => ({
+  mermaidRuntimeClient: {
+    validate: (...args: unknown[]) => mockMermaidRuntimeValidate(...args),
   },
 }))
 
@@ -35,8 +33,7 @@ const VALID_DRAWIO_XML = `<mxGraphModel>
 describe('diagram-validation-service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockMermaidParse.mockReset()
-    mockMermaidInitialize.mockReset()
+    mockMermaidRuntimeValidate.mockReset()
   })
 
   describe('parseDiagramPlaceholders', () => {
@@ -93,6 +90,37 @@ describe('diagram-validation-service', () => {
       expect(result.placeholders).toHaveLength(2)
       expect(result.placeholders[0].title).toBe('图一')
       expect(result.placeholders[1].title).toBe('图二')
+    })
+
+    it('@p0 should repair an unclosed placeholder line and keep parsing later diagrams', () => {
+      const d1 = Buffer.from('展示系统逻辑架构').toString('base64')
+      const brokenLine =
+        '%%DIAGRAM:mermaid:自动生成模块架构图:' +
+        '展示自动生成模块与外部系统集成，包含模型自动生成引擎、仿真自动执行引擎、报告自动生成引擎、数据交换接口层:' +
+        Buffer.from('flowchart TD\nA[自动生成模块] --> B[外部系统]').toString('base64')
+      const md = `%%DIAGRAM:mermaid:系统逻辑架构图:${d1}%%\n正文\n${brokenLine}`
+
+      const result = parseDiagramPlaceholders(md)
+
+      expect(result.placeholders).toHaveLength(2)
+      expect(result.placeholders[0].title).toBe('系统逻辑架构图')
+      expect(result.placeholders[1].title).toBe('自动生成模块架构图')
+      expect(result.placeholders[1].description).toBe(
+        '展示自动生成模块与外部系统集成，包含模型自动生成引擎、仿真自动执行引擎、报告自动生成引擎、数据交换接口层'
+      )
+      expect(result.markdownWithSkeletons).not.toContain('%%DIAGRAM:')
+      expect(result.markdownWithSkeletons).toContain('> [图表生成中] 系统逻辑架构图')
+      expect(result.markdownWithSkeletons).toContain('> [图表生成中] 自动生成模块架构图')
+    })
+
+    it('@p1 should strip a trailing base64 suffix from hybrid descriptions', () => {
+      const encodedDsl = Buffer.from('flowchart LR\nA --> B').toString('base64')
+      const md = `%%DIAGRAM:mermaid:自动生成模块架构图:展示模块与外部系统集成:${encodedDsl}%%`
+
+      const result = parseDiagramPlaceholders(md)
+
+      expect(result.placeholders).toHaveLength(1)
+      expect(result.placeholders[0].description).toBe('展示模块与外部系统集成')
     })
 
     it('@p0 should return empty array when no placeholders', () => {
@@ -183,39 +211,77 @@ describe('diagram-validation-service', () => {
   })
 
   describe('validateMermaidDiagram', () => {
-    it('@p0 should return valid when mermaid.parse succeeds', async () => {
-      mockMermaidParse.mockResolvedValueOnce(true)
+    it('@p0 should return valid when the isolated runtime validates successfully', async () => {
+      mockMermaidRuntimeValidate.mockResolvedValueOnce({ valid: true })
       const result = await validateMermaidDiagram('graph TD\nA-->B')
       expect(result.valid).toBe(true)
+      expect(mockMermaidRuntimeValidate).toHaveBeenCalledWith('graph TD\nA-->B')
     })
 
-    it('@p1 should initialize mermaid before parsing in the main-process validator', async () => {
-      mockMermaidParse.mockResolvedValueOnce(true)
-      vi.resetModules()
+    it('@p0 should normalize recoverable declaration ordering before runtime validation', async () => {
+      mockMermaidRuntimeValidate.mockResolvedValueOnce({ valid: true })
 
-      const { validateMermaidDiagram: freshValidateMermaidDiagram } =
-        await import('@main/services/diagram-validation-service')
-
-      await freshValidateMermaidDiagram('graph TD\nA-->B')
-
-      expect(mockMermaidInitialize).toHaveBeenCalledWith(
-        expect.objectContaining({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          theme: 'neutral',
-          logLevel: 'error',
-        })
+      const result = await validateMermaidDiagram(
+        [
+          "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+          'classDef primary fill:#DAE8FC,stroke:#6C8EBF,stroke-width:2px,color:#333',
+          'graph TB',
+          'A[应用层]:::primary --> B[服务层]:::primary',
+        ].join('\n')
       )
-      expect(mockMermaidInitialize.mock.invocationCallOrder[0]).toBeLessThan(
-        mockMermaidParse.mock.invocationCallOrder[0]
+
+      expect(result).toEqual({ valid: true })
+      expect(mockMermaidRuntimeValidate).toHaveBeenCalledWith(
+        [
+          "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+          'graph TB',
+          'classDef primary fill:#DAE8FC,stroke:#6C8EBF,stroke-width:2px,color:#333',
+          'A[应用层]:::primary --> B[服务层]:::primary',
+        ].join('\n')
       )
     })
 
-    it('@p0 should return error when mermaid.parse throws', async () => {
-      mockMermaidParse.mockRejectedValueOnce(new Error('Parse error at line 2'))
-      const result = await validateMermaidDiagram('invalid diagram')
-      expect(result.valid).toBe(false)
-      expect(result.error).toContain('Parse error')
+    it('@p1 should preserve runtime validation failures returned by the isolated runtime', async () => {
+      mockMermaidRuntimeValidate.mockResolvedValueOnce({
+        valid: false,
+        error: 'Parse error at line 2',
+      })
+
+      const result = await validateMermaidDiagram('graph TD\nA -->')
+
+      expect(result).toEqual({
+        valid: false,
+        error: 'Parse error at line 2',
+      })
+    })
+
+    it('@p0 should reject mermaid source without a supported diagram declaration', async () => {
+      const result = await validateMermaidDiagram(
+        [
+          "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+          'classDef primary fill:#DAE8FC,stroke:#6C8EBF,stroke-width:2px,color:#333',
+          'A[应用层]:::primary --> B[服务层]:::primary',
+        ].join('\n')
+      )
+
+      expect(result).toEqual({
+        valid: false,
+        error:
+          'Mermaid 缺少图表类型声明；请在 init 之后以 flowchart/graph、sequenceDiagram、classDiagram、stateDiagram-v2、gantt、C4Context、block-beta 开头。',
+      })
+      expect(mockMermaidRuntimeValidate).not.toHaveBeenCalled()
+    })
+
+    it('@p0 should mark runtime bootstrap failures as infrastructure errors', async () => {
+      mockMermaidRuntimeValidate.mockRejectedValueOnce(new Error('Mermaid runtime unavailable'))
+
+      const result = await validateMermaidDiagram('graph TD\nA --> B')
+
+      expect(result).toEqual({
+        valid: false,
+        error: 'Mermaid runtime unavailable',
+        failureKind: 'infrastructure',
+      })
     })
   })
 

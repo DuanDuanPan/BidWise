@@ -4,7 +4,7 @@ import type { SkeletonExpandPlan } from '@shared/chapter-types'
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
 const mockBuildPromptContext = vi.hoisted(() => vi.fn())
 const mockLoggerWarn = vi.hoisted(() => vi.fn())
-const mockMermaidParse = vi.hoisted(() => vi.fn().mockResolvedValue(true))
+const mockMermaidRuntimeValidate = vi.hoisted(() => vi.fn().mockResolvedValue({ valid: true }))
 
 vi.mock('@main/services/terminology-service', () => ({
   terminologyService: { getActiveEntries: mockGetActiveEntries },
@@ -20,8 +20,10 @@ vi.mock('@main/utils/logger', () => ({
     debug: vi.fn(),
   }),
 }))
-vi.mock('mermaid', () => ({
-  default: { parse: (...args: unknown[]) => mockMermaidParse(...args) },
+vi.mock('@main/services/diagram-runtime/mermaid-runtime-client', () => ({
+  mermaidRuntimeClient: {
+    validate: (...args: unknown[]) => mockMermaidRuntimeValidate(...args),
+  },
 }))
 vi.mock('@main/services/drawio-asset-service', () => ({
   drawioAssetService: { saveDrawioAsset: vi.fn() },

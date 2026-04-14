@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
 const mockBuildPromptContext = vi.hoisted(() => vi.fn())
 const mockLoggerWarn = vi.hoisted(() => vi.fn())
-const mockMermaidParse = vi.hoisted(() => vi.fn().mockResolvedValue(true))
+const mockMermaidRuntimeValidate = vi.hoisted(() => vi.fn().mockResolvedValue({ valid: true }))
 
 vi.mock('@main/services/terminology-service', () => ({
   terminologyService: {
@@ -26,9 +26,9 @@ vi.mock('@main/utils/logger', () => ({
   }),
 }))
 
-vi.mock('mermaid', () => ({
-  default: {
-    parse: (...args: unknown[]) => mockMermaidParse(...args),
+vi.mock('@main/services/diagram-runtime/mermaid-runtime-client', () => ({
+  mermaidRuntimeClient: {
+    validate: (...args: unknown[]) => mockMermaidRuntimeValidate(...args),
   },
 }))
 
@@ -51,7 +51,7 @@ describe('generateAgentHandler @story-2-2', () => {
     vi.clearAllMocks()
     mockGetActiveEntries.mockResolvedValue([])
     mockBuildPromptContext.mockReturnValue('')
-    mockMermaidParse.mockReset().mockResolvedValue(true)
+    mockMermaidRuntimeValidate.mockReset().mockResolvedValue({ valid: true })
   })
 
   it('@p1 should return AiRequestParams with messages from generateChapterPrompt', async () => {
@@ -202,9 +202,9 @@ describe('generateAgentHandler @story-2-2', () => {
   it('@p0 should call a dedicated diagram repair prompt with invalid code and validation error', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
-    mockMermaidParse
-      .mockRejectedValueOnce(new Error('Parse error at line 2'))
-      .mockResolvedValueOnce(true)
+    mockMermaidRuntimeValidate
+      .mockResolvedValueOnce({ valid: false, error: 'Parse error at line 2' })
+      .mockResolvedValueOnce({ valid: true })
 
     const aiProxy = {
       call: vi.fn().mockImplementation(async (request: { caller: string }) => {
@@ -281,7 +281,7 @@ describe('generateAgentHandler @story-2-2', () => {
   it('@p0 should keep a visible failure marker when diagram generation exhausts retries', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
-    mockMermaidParse.mockRejectedValue(new Error('Parse error at line 2'))
+    mockMermaidRuntimeValidate.mockResolvedValue({ valid: false, error: 'Parse error at line 2' })
 
     const aiProxy = {
       call: vi.fn().mockImplementation(async (request: { caller: string }) => {

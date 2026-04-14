@@ -1,13 +1,16 @@
 import { randomUUID } from 'crypto'
-import createDOMPurify from 'dompurify'
-import { JSDOM } from 'jsdom'
-import mermaid from 'mermaid'
 import { XMLParser } from 'fast-xml-parser'
+import { mermaidRuntimeClient } from '@main/services/diagram-runtime/mermaid-runtime-client'
+import {
+  normalizeMermaidSource,
+  preflightMermaidSource,
+} from '@main/services/diagram-runtime/mermaid-source'
 
 export type DiagramType = 'mermaid' | 'drawio'
 
 const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM:(mermaid|drawio):([^:\n]+):([\s\S]*?)%%/g
 const BASE64_TEXT_RE = /^[A-Za-z0-9+/]+={0,2}$/
+const DIAGRAM_PLACEHOLDER_LINE_RE = /^%%DIAGRAM:(mermaid|drawio):/
 
 export interface DiagramPlaceholder {
   placeholderId: string
@@ -27,23 +30,6 @@ export interface ParsedDiagramPlaceholders {
   placeholders: DiagramPlaceholder[]
   markdownWithSkeletons: string
 }
-
-type MermaidParserHolder = {
-  parse?: (source: string) => Promise<unknown> | unknown
-  initialize?: (config: Record<string, unknown>) => void
-  default?: MermaidParserHolder
-}
-
-const MERMAID_VALIDATION_CONFIG = {
-  startOnLoad: false,
-  theme: 'neutral',
-  securityLevel: 'strict',
-  logLevel: 'error',
-} as const
-
-let mermaidInitializedForValidation = false
-let mermaidDomPurifyBridged = false
-let mermaidDomWindow: JSDOM | null = null
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -91,17 +77,66 @@ function sanitizeTitle(title: string): string {
   return title.replace(/\s+/g, ' ').trim()
 }
 
+function repairUnclosedDiagramPlaceholders(markdown: string): string {
+  let repairedMarkdown = markdown
+  let cursor = 0
+
+  while (cursor < repairedMarkdown.length) {
+    const startIndex = repairedMarkdown.indexOf('%%DIAGRAM:', cursor)
+    if (startIndex === -1) break
+
+    const lineStart = repairedMarkdown.lastIndexOf('\n', startIndex) + 1
+    const lineEndIndex = repairedMarkdown.indexOf('\n', startIndex)
+    const safeLineEnd = lineEndIndex === -1 ? repairedMarkdown.length : lineEndIndex
+    const line = repairedMarkdown.slice(lineStart, safeLineEnd)
+
+    if (!DIAGRAM_PLACEHOLDER_LINE_RE.test(line.trim())) {
+      cursor = startIndex + 10
+      continue
+    }
+
+    const nextStartIndex = repairedMarkdown.indexOf('%%DIAGRAM:', startIndex + 10)
+    const searchLimit = nextStartIndex === -1 ? repairedMarkdown.length : nextStartIndex
+    const closeIndex = repairedMarkdown.indexOf('%%', startIndex + 2)
+
+    if (closeIndex !== -1 && closeIndex < searchLimit) {
+      cursor = closeIndex + 2
+      continue
+    }
+
+    repairedMarkdown =
+      repairedMarkdown.slice(0, safeLineEnd) + '%%' + repairedMarkdown.slice(safeLineEnd)
+    cursor = safeLineEnd + 2
+  }
+
+  return repairedMarkdown
+}
+
 function normalizeDescription(rawDescription: string): string {
   const trimmed = rawDescription.trim()
   const wrapped = trimmed.match(/^base64\(([\s\S]*)\)$/i)
   const candidate = (wrapped ? wrapped[1] : trimmed).trim()
   const decoded = tryDecodeBase64Text(candidate)
-  return decoded ?? candidate.replace(/\s+/g, ' ').trim()
+  if (decoded) return decoded
+
+  const lastColonIndex = candidate.lastIndexOf(':')
+  if (lastColonIndex > -1) {
+    const prefix = candidate.slice(0, lastColonIndex).replace(/\s+/g, ' ').trim()
+    const suffix = candidate.slice(lastColonIndex + 1).trim()
+    const decodedSuffix = tryDecodeBase64Text(suffix)
+
+    if (decodedSuffix) {
+      return prefix || decodedSuffix
+    }
+  }
+
+  return candidate.replace(/\s+/g, ' ').trim()
 }
 
 export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceholders {
+  const repairedMarkdown = repairUnclosedDiagramPlaceholders(markdown)
   const placeholders: DiagramPlaceholder[] = []
-  const markdownWithSkeletons = markdown.replace(
+  const markdownWithSkeletons = repairedMarkdown.replace(
     DIAGRAM_PLACEHOLDER_RE,
     (_match, type: DiagramType, rawTitle: string, rawDescription: string) => {
       const placeholderId = randomUUID()
@@ -186,80 +221,23 @@ export function buildDiagramFailureMarkdown(input: {
   return `> [图表生成失败] ${input.caption}（${input.type}）: ${normalizedError}`
 }
 
-function resolveMermaidRuntime(holder: MermaidParserHolder): MermaidParserHolder | null {
-  let current: MermaidParserHolder | undefined = holder
-
-  for (let depth = 0; depth < 3 && current; depth += 1) {
-    if (typeof current.parse === 'function' || typeof current.initialize === 'function') {
-      return current
-    }
-    current = current.default
-  }
-
-  return null
-}
-
-function hasDomPurifyRuntime(factory: typeof createDOMPurify): factory is typeof createDOMPurify & {
-  addHook: (hook: string, fn: (node: unknown) => void) => void
-  sanitize: (input: string, config?: Record<string, unknown>) => string
-} {
-  return typeof factory.addHook === 'function' && typeof factory.sanitize === 'function'
-}
-
-function isMermaidInfrastructureError(message: string): boolean {
-  return (
-    message.includes('DOMPurify.') ||
-    message.includes('Mermaid parser unavailable') ||
-    message.includes('Mermaid DOMPurify bridge unavailable')
-  )
-}
-
-function ensureMermaidDomPurifyBridge(): void {
-  if (hasDomPurifyRuntime(createDOMPurify)) {
-    mermaidDomPurifyBridged = true
-    return
-  }
-
-  if (!mermaidDomPurifyBridged) {
-    mermaidDomWindow = new JSDOM('')
-    const purifier = createDOMPurify(mermaidDomWindow.window)
-    Object.assign(createDOMPurify, purifier)
-    mermaidDomPurifyBridged = true
-  }
-
-  if (!hasDomPurifyRuntime(createDOMPurify)) {
-    throw new Error('Mermaid DOMPurify bridge unavailable')
-  }
-}
-
 export async function validateMermaidDiagram(source: string): Promise<DiagramValidationResult> {
+  const { normalizedSource, error } = preflightMermaidSource(source)
+  if (error) {
+    return {
+      valid: false,
+      error,
+    }
+  }
+
   try {
-    const runtime = resolveMermaidRuntime(mermaid as MermaidParserHolder)
-    const parse = typeof runtime?.parse === 'function' ? runtime.parse.bind(runtime) : null
-
-    if (!parse) {
-      return {
-        valid: false,
-        error: 'Mermaid parser unavailable',
-        failureKind: 'infrastructure',
-      }
-    }
-
-    ensureMermaidDomPurifyBridge()
-
-    if (!mermaidInitializedForValidation && typeof runtime?.initialize === 'function') {
-      runtime.initialize(MERMAID_VALIDATION_CONFIG)
-      mermaidInitializedForValidation = true
-    }
-
-    await parse(source)
-    return { valid: true }
+    return await mermaidRuntimeClient.validate(normalizedSource)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     return {
       valid: false,
       error: errorMessage,
-      failureKind: isMermaidInfrastructureError(errorMessage) ? 'infrastructure' : undefined,
+      failureKind: 'infrastructure',
     }
   }
 }
@@ -326,3 +304,5 @@ export function extractJsonObject<T>(content: string): T | null {
     return null
   }
 }
+
+export { normalizeMermaidSource }

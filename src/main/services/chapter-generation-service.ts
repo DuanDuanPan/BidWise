@@ -36,8 +36,8 @@ import type { MarkdownHeadingInfo } from '@shared/chapter-markdown'
 
 const logger = createLogger('chapter-generation-service')
 
-const CHAPTER_TIMEOUT_MS = 300_000
-const BATCH_CHAPTER_TIMEOUT_MS = 600_000
+const CHAPTER_TIMEOUT_MS = 600_000
+const BATCH_CHAPTER_TIMEOUT_MS = 1_200_000
 const MAX_ADJACENT_SUMMARY_LENGTH = 500
 
 type HeadingInfo = MarkdownHeadingInfo

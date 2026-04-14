@@ -12,6 +12,7 @@ import { taskQueue } from '@main/services/task-queue'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { createLogger } from '@main/utils/logger'
 import { docxBridgeService } from '@main/services/docx-bridge'
+import { mermaidRuntimeClient } from '@main/services/diagram-runtime/mermaid-runtime-client'
 
 const logger = createLogger('main')
 
@@ -96,6 +97,11 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', async () => {
+  try {
+    await mermaidRuntimeClient.stop()
+  } catch (err) {
+    logger.error(`mermaid runtime 关闭异常: ${err}`)
+  }
   try {
     await docxBridgeService.stop()
   } catch (err) {
