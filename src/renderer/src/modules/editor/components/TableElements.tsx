@@ -7,7 +7,12 @@ import React from 'react'
 import { PlateElement, type PlateElementProps } from 'platejs/react'
 
 export function TableElement(props: PlateElementProps): React.JSX.Element {
-  return <PlateElement {...props} as="table" />
+  const { children, ...rest } = props
+  return (
+    <PlateElement {...rest} as="table">
+      <tbody>{children}</tbody>
+    </PlateElement>
+  )
 }
 
 export function TableRowElement(props: PlateElementProps): React.JSX.Element {

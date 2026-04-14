@@ -105,6 +105,7 @@ describe('aiProxy', () => {
       expect(response.provider).toBe('claude')
       expect(response.latencyMs).toBeGreaterThanOrEqual(0)
       expect(response.usage).toBeDefined()
+      expect(response.finishReason).toBe('end_turn')
     })
 
     it('trace log is written before restore (contains desensitizedInput and outputContent)', async () => {
@@ -232,6 +233,7 @@ describe('aiProxy', () => {
       })
 
       expect(response.content).toBe('OpenAI response')
+      expect(response.finishReason).toBe('stop')
       expect(mockCreateProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           provider: 'openai',

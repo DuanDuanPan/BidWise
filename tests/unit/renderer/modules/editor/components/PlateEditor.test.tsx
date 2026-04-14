@@ -172,9 +172,14 @@ describe('@story-3-1 PlateEditor', () => {
 
     expect(result).toBe('# Serialized')
     expect(mockSerialize).toHaveBeenCalledTimes(1)
-    expect(mockUpdateContent).toHaveBeenCalledWith('# Serialized', 'proj-1', {
-      scheduleSave: false,
-    })
+    expect(mockUpdateContent).toHaveBeenCalledWith(
+      '# Serialized',
+      'proj-1',
+      expect.objectContaining({
+        scheduleSave: false,
+        debugContext: expect.objectContaining({ source: 'plate:flush-sync' }),
+      })
+    )
   })
 
   it('hydrates the editor when external initialContent changes', async () => {
@@ -204,7 +209,9 @@ describe('@story-3-1 PlateEditor', () => {
 
   it('@story-3-4 replaceSectionContent replaces target section and persists to store', () => {
     const onReplaceSectionReady = vi.fn()
-    mockSerialize.mockReturnValue('## Chapter 1\n\nOld content\n\n## Chapter 2\n\nKeep this')
+    const initialMarkdown = '## Chapter 1\n\nOld content\n\n## Chapter 2\n\nKeep this'
+    const persistedMarkdown = '## Chapter 1\n\nNew AI content\n\n## Chapter 2\n\nKeep this'
+    mockSerialize.mockReturnValueOnce(initialMarkdown).mockReturnValueOnce(persistedMarkdown)
     mockDeserialize.mockImplementation((_e: unknown, md: string) => [
       { type: 'p', children: [{ text: md }] },
     ])
@@ -226,16 +233,61 @@ describe('@story-3-1 PlateEditor', () => {
 
     expect(mockSetValue).toHaveBeenCalled()
     expect(mockUpdateContent).toHaveBeenCalledWith(
-      expect.stringContaining('New AI content'),
-      'proj-1'
+      persistedMarkdown,
+      'proj-1',
+      expect.objectContaining({
+        debugContext: expect.objectContaining({ source: 'plate:replace-section' }),
+      })
     )
+  })
+
+  it('@p0 avoids re-hydrating identical markdown after a local replaceSection update', () => {
+    const onReplaceSectionReady = vi.fn()
+    const initialMarkdown = '## Chapter 1\n\nOld content\n\n## Chapter 2\n\nKeep this'
+    const persistedMarkdown = '## Chapter 1\n\nNew AI content\n\n## Chapter 2\n\nKeep this'
+    mockSerialize.mockReturnValueOnce(initialMarkdown).mockReturnValueOnce(persistedMarkdown)
+    mockDeserialize.mockImplementation((_e: unknown, md: string) => [
+      { type: 'p', children: [{ text: md }] },
+    ])
+
+    const { rerender } = render(
+      <PlateEditor
+        initialContent="## Chapter 1\n\nOld content\n\n## Chapter 2\n\nKeep this"
+        projectId="proj-1"
+        onReplaceSectionReady={onReplaceSectionReady}
+      />
+    )
+
+    mockSetValue.mockClear()
+
+    const replaceSection = onReplaceSectionReady.mock.calls[0]?.[0] as
+      | ((target: { title: string; level: number; occurrenceIndex: number }, md: string) => void)
+      | undefined
+
+    replaceSection?.({ title: 'Chapter 1', level: 2, occurrenceIndex: 0 }, 'New AI content')
+
+    expect(mockSetValue).toHaveBeenCalledTimes(1)
+
+    const nextMarkdown = mockUpdateContent.mock.calls.at(-1)?.[0]
+    expect(typeof nextMarkdown).toBe('string')
+
+    rerender(
+      <PlateEditor
+        initialContent={nextMarkdown as string}
+        projectId="proj-1"
+        onReplaceSectionReady={onReplaceSectionReady}
+      />
+    )
+
+    expect(mockSetValue).toHaveBeenCalledTimes(1)
   })
 
   it('@story-3-4 replaceSectionContent ignores heading-like lines inside fenced code blocks', () => {
     const onReplaceSectionReady = vi.fn()
-    mockSerialize.mockReturnValue(
+    const initialMarkdown =
       '## Chapter 1\n\n```md\n## Fake Heading\n```\n\nReal content\n\n## Chapter 2\n\nKeep this'
-    )
+    const persistedMarkdown = '## Chapter 1\n\nNew AI content\n\n## Chapter 2\n\nKeep this'
+    mockSerialize.mockReturnValueOnce(initialMarkdown).mockReturnValueOnce(persistedMarkdown)
     mockDeserialize.mockImplementation((_e: unknown, md: string) => [
       { type: 'p', children: [{ text: md }] },
     ])
@@ -256,13 +308,51 @@ describe('@story-3-1 PlateEditor', () => {
 
     replaceSection?.({ title: 'Chapter 1', level: 2, occurrenceIndex: 0 }, 'New AI content')
 
-    expect(mockUpdateContent).toHaveBeenCalledWith(
-      expect.not.stringContaining('## Fake Heading'),
-      'proj-1'
+    const latestCall = mockUpdateContent.mock.calls.at(-1)
+    expect(latestCall?.[0]).toBe(persistedMarkdown)
+    expect(latestCall?.[0]).not.toContain('## Fake Heading')
+    expect(latestCall?.[0]).toContain('## Chapter 2')
+    expect(latestCall?.[1]).toBe('proj-1')
+    expect(latestCall?.[2]).toEqual(
+      expect.objectContaining({
+        debugContext: expect.objectContaining({ source: 'plate:replace-section' }),
+      })
     )
+  })
+
+  it('@bugfix persists Plate-canonical markdown after replaceSection normalization', () => {
+    const onReplaceSectionReady = vi.fn()
+    const initialMarkdown = '## 总体架构设计\n\n旧内容\n\n## 下一章\n\n保留内容'
+    const persistedMarkdown =
+      '## 总体架构设计\n\n### 系统设计原则\n\n* **模块化设计**：说明\n\n## 下一章\n\n保留内容'
+    mockSerialize.mockReturnValueOnce(initialMarkdown).mockReturnValueOnce(persistedMarkdown)
+
+    render(
+      <PlateEditor
+        initialContent={initialMarkdown}
+        projectId="proj-1"
+        onReplaceSectionReady={onReplaceSectionReady}
+      />
+    )
+
+    const replaceSection = onReplaceSectionReady.mock.calls[0]?.[0] as
+      | ((target: { title: string; level: number; occurrenceIndex: number }, md: string) => void)
+      | undefined
+
+    replaceSection?.(
+      { title: '总体架构设计', level: 2, occurrenceIndex: 0 },
+      '### 系统设计原则\n\n- **模块化设计**：说明'
+    )
+
     expect(mockUpdateContent).toHaveBeenCalledWith(
-      expect.stringContaining('## Chapter 2'),
-      'proj-1'
+      persistedMarkdown,
+      'proj-1',
+      expect.objectContaining({
+        debugContext: expect.objectContaining({
+          source: 'plate:replace-section',
+          contentDigest: expect.any(String),
+        }),
+      })
     )
   })
 
@@ -292,7 +382,13 @@ describe('@story-3-1 PlateEditor', () => {
     await vi.advanceTimersByTimeAsync(300)
 
     expect(mockSerialize).toHaveBeenCalledTimes(1)
-    expect(mockUpdateContent).toHaveBeenCalledWith('# Serialized', 'proj-1')
+    expect(mockUpdateContent).toHaveBeenCalledWith(
+      '# Serialized',
+      'proj-1',
+      expect.objectContaining({
+        debugContext: expect.objectContaining({ source: 'plate:debounced-serialize' }),
+      })
+    )
   })
 
   it('@story-5-2 registers an insertAsset handler via onInsertAssetReady', () => {

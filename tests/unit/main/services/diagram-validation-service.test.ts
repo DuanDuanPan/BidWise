@@ -267,9 +267,32 @@ describe('diagram-validation-service', () => {
       expect(result).toEqual({
         valid: false,
         error:
-          'Mermaid 缺少图表类型声明；请在 init 之后以 flowchart/graph、sequenceDiagram、classDiagram、stateDiagram-v2、gantt、C4Context、block-beta 开头。',
+          'Mermaid 缺少图表类型声明；请在 init 之后以 flowchart/graph、sequenceDiagram、classDiagram、stateDiagram-v2、architecture-beta、gantt、C4Context、C4Container、C4Component、C4Deployment、block-beta 开头。',
       })
       expect(mockMermaidRuntimeValidate).not.toHaveBeenCalled()
+    })
+
+    it('@p1 should accept architecture-beta declarations as valid supported mermaid syntax', async () => {
+      mockMermaidRuntimeValidate.mockResolvedValueOnce({ valid: true })
+
+      const result = await validateMermaidDiagram(
+        [
+          "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+          'architecture-beta',
+          'group client(cloud)[客户端]',
+          'service ui(server)[BidWise UI] in client',
+        ].join('\n')
+      )
+
+      expect(result).toEqual({ valid: true })
+      expect(mockMermaidRuntimeValidate).toHaveBeenCalledWith(
+        [
+          "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+          'architecture-beta',
+          'group client(cloud)[客户端]',
+          'service ui(server)[BidWise UI] in client',
+        ].join('\n')
+      )
     })
 
     it('@p0 should mark runtime bootstrap failures as infrastructure errors', async () => {

@@ -104,7 +104,7 @@ export function AssigneePickerModal({
       open={open}
       onCancel={handleClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       data-testid="assignee-picker-modal"
     >
       {annotation && (

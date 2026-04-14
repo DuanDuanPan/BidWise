@@ -91,6 +91,9 @@ export class AgentOrchestrator {
       throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
       try {
+        logger.info(
+          `Task executor start: agentType=${agentType}, taskId=${ctx.taskId ?? 'unknown'}`
+        )
         const handlerResult = await handler(ctx.input as Record<string, unknown>, {
           signal: ctx.signal,
           updateProgress: ctx.updateProgress,
@@ -102,6 +105,9 @@ export class AgentOrchestrator {
 
         let result: AgentExecuteResult
         if (isAgentResult(handlerResult) && handlerResult.kind === 'result') {
+          logger.info(
+            `Task executor handler returned direct result: agentType=${agentType}, contentLen=${handlerResult.value.content.length}`
+          )
           result = handlerResult.value
         } else {
           const params = unwrapAiRequestParams(handlerResult)
@@ -122,10 +128,19 @@ export class AgentOrchestrator {
         }
 
         if (postProcessor) {
+          logger.info(
+            `Task executor running postProcessor: agentType=${agentType}, inputContentLen=${result.content.length}`
+          )
           result = await postProcessor(result, ctx.input as Record<string, unknown>, ctx.signal)
           throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
+          logger.info(
+            `Task executor postProcessor done: agentType=${agentType}, outputContentLen=${result.content.length}`
+          )
         }
 
+        logger.info(
+          `Task executor complete: agentType=${agentType}, finalContentLen=${result.content.length}`
+        )
         return result
       } catch (err) {
         if (ctx.signal.aborted || isAbortError(err)) throw err
@@ -137,6 +152,69 @@ export class AgentOrchestrator {
         )
       }
     }
+  }
+
+  /**
+   * Execute an agent task with an optional completion callback.
+   * The callback fires in the main process after the task finishes
+   * (success, failure, or cancellation) — used by batch orchestration
+   * to chain sub-chapter tasks.
+   */
+  async executeWithCallback(
+    request: AgentExecuteRequest,
+    onComplete: (
+      taskId: string,
+      result: { status: 'completed' | 'failed' | 'cancelled'; content?: string; error?: string }
+    ) => void
+  ): Promise<AgentExecuteResponse> {
+    const registered = this.agents.get(request.agentType)
+    if (!registered) {
+      throw new BidWiseError(
+        ErrorCode.AGENT_NOT_FOUND,
+        `Agent type not registered: ${request.agentType}`
+      )
+    }
+
+    const taskId = await taskQueue.enqueue({
+      category: 'ai-agent',
+      agentType: request.agentType,
+      input: request.context,
+      priority: request.options?.priority ?? 'normal',
+      maxRetries: request.options?.maxRetries,
+    })
+
+    const timeoutMs = request.options?.timeoutMs
+    const executor = this.createExecutor(
+      request.agentType,
+      registered.handler,
+      timeoutMs,
+      registered.postProcessor
+    )
+    taskQueue
+      .execute(taskId, executor, { timeoutMs })
+      .then(async (taskRecord) => {
+        if (taskRecord.status === 'completed' && taskRecord.output) {
+          try {
+            const parsed = JSON.parse(taskRecord.output) as { content?: string }
+            onComplete(taskId, { status: 'completed', content: parsed.content })
+          } catch {
+            onComplete(taskId, { status: 'completed', content: taskRecord.output })
+          }
+        } else if (taskRecord.status === 'failed') {
+          onComplete(taskId, { status: 'failed', error: taskRecord.error })
+        } else if (taskRecord.status === 'cancelled') {
+          onComplete(taskId, { status: 'cancelled', error: taskRecord.error })
+        }
+      })
+      .catch((err) => {
+        logger.error(`Background task ${taskId} error (with callback):`, err)
+        onComplete(taskId, {
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+
+    return { taskId }
   }
 
   async execute(request: AgentExecuteRequest): Promise<AgentExecuteResponse> {

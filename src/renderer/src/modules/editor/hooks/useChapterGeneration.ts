@@ -5,6 +5,10 @@ import type {
   ChapterGenerationPhase,
   ChapterGenerationStatus,
   SkeletonExpandPlan,
+  BatchSectionProgressPayload,
+  BatchSectionFailedPayload,
+  BatchCompletePayload,
+  BatchSectionStatus,
 } from '@shared/chapter-types'
 import type { TaskProgressEvent } from '@shared/ai-types'
 import {
@@ -36,6 +40,9 @@ function progressToPhase(progress: number, message?: string): ChapterGenerationP
   if (message === 'skeleton-ready') return 'skeleton-ready'
   if (message === 'batch-generating') return 'batch-generating'
   if (message === 'batch-composing') return 'batch-composing'
+  if (message === 'batch-section-complete') return 'batch-generating'
+  if (message === 'batch-section-failed') return 'batch-generating'
+  if (message === 'batch-complete') return 'completed'
   if (progress >= 90) return 'validating-coherence'
   if (progress >= 80) return 'composing'
   if (progress >= 60) return 'validating-diagrams'
@@ -53,6 +60,30 @@ function isChapterStreamPayload(payload: unknown): payload is ChapterStreamProgr
     (payload as { kind?: unknown }).kind === 'chapter-stream' &&
     'markdown' in payload &&
     typeof (payload as { markdown?: unknown }).markdown === 'string'
+  )
+}
+
+function isBatchSectionCompletePayload(payload: unknown): payload is BatchSectionProgressPayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as { kind?: unknown }).kind === 'batch-section-complete'
+  )
+}
+
+function isBatchSectionFailedPayload(payload: unknown): payload is BatchSectionFailedPayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as { kind?: unknown }).kind === 'batch-section-failed'
+  )
+}
+
+function isBatchCompletePayload(payload: unknown): payload is BatchCompletePayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as { kind?: unknown }).kind === 'batch-complete'
   )
 }
 
@@ -88,10 +119,22 @@ function resolveTerminalPhase(params: {
   const normalizedStream = normalizeComparableGeneratedContent(target, streamedContent)
   const normalizedFinal = normalizeComparableGeneratedContent(target, finalContent)
 
+  const tag = `[gen-debug:resolveTerminal] "${target.title}"(L${target.level}#${target.occurrenceIndex})`
+
+  console.debug(
+    `${tag} currentDigest=${currentDigest}, baselineDigest=${baselineDigest ?? 'undefined'}`
+  )
+  console.debug(
+    `${tag} currentLen=${normalizedCurrent.length}, baselineLen=${normalizedBaseline?.length ?? 'N/A'}, streamLen=${normalizedStream?.length ?? 'N/A'}, finalLen=${normalizedFinal?.length ?? 'N/A'}`
+  )
+
   if (
     (baselineDigest !== undefined && currentDigest === baselineDigest) ||
     (normalizedBaseline !== undefined && normalizedCurrent === normalizedBaseline)
   ) {
+    console.debug(
+      `${tag} → completed (baseline match: digest=${currentDigest === baselineDigest}, text=${normalizedCurrent === normalizedBaseline})`
+    )
     return 'completed'
   }
 
@@ -99,7 +142,37 @@ function resolveTerminalPhase(params: {
     (normalizedStream !== undefined && normalizedCurrent === normalizedStream) ||
     (normalizedFinal !== undefined && normalizedCurrent === normalizedFinal)
   ) {
+    console.debug(
+      `${tag} → completed (stream/final match: stream=${normalizedCurrent === normalizedStream}, final=${normalizedCurrent === normalizedFinal})`
+    )
     return 'completed'
+  }
+
+  // Conflict detected — dump diff hints for debugging
+  console.warn(`${tag} → CONFLICTED`)
+  if (normalizedBaseline !== undefined && normalizedCurrent !== normalizedBaseline) {
+    const diffIdx = [...normalizedCurrent].findIndex((ch, i) => ch !== normalizedBaseline[i])
+    console.warn(`${tag} baseline vs current first diff at char ${diffIdx}`)
+    if (diffIdx >= 0) {
+      console.warn(
+        `${tag}   current[${diffIdx}..+40]: ${JSON.stringify(normalizedCurrent.slice(diffIdx, diffIdx + 40))}`
+      )
+      console.warn(
+        `${tag}   baseline[${diffIdx}..+40]: ${JSON.stringify(normalizedBaseline.slice(diffIdx, diffIdx + 40))}`
+      )
+    }
+  }
+  if (normalizedFinal !== undefined && normalizedCurrent !== normalizedFinal) {
+    const diffIdx = [...normalizedCurrent].findIndex((ch, i) => ch !== normalizedFinal[i])
+    console.warn(`${tag} final vs current first diff at char ${diffIdx}`)
+    if (diffIdx >= 0) {
+      console.warn(
+        `${tag}   current[${diffIdx}..+40]: ${JSON.stringify(normalizedCurrent.slice(diffIdx, diffIdx + 40))}`
+      )
+      console.warn(
+        `${tag}   final[${diffIdx}..+40]: ${JSON.stringify(normalizedFinal.slice(diffIdx, diffIdx + 40))}`
+      )
+    }
   }
 
   return 'conflicted'
@@ -120,6 +193,8 @@ export interface UseChapterGenerationReturn {
   retry: (target: ChapterHeadingLocator) => Promise<void>
   dismissError: (target: ChapterHeadingLocator) => void
   notifySectionCleared: (target: ChapterHeadingLocator) => void
+  /** Advance baseline to the current editor section content after a streaming patch is applied */
+  advanceBaseline: (target: ChapterHeadingLocator) => void
   getStatus: (target: ChapterHeadingLocator) => ChapterGenerationStatus | undefined
 }
 
@@ -161,6 +236,84 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       const key = locatorKey(locator)
       const phase = progressToPhase(event.progress, event.message)
       const hasTerminalMessage = event.message === 'failed' || event.message === 'cancelled'
+      // ── Progressive batch payloads ──
+      if (isBatchSectionCompletePayload(event.payload)) {
+        const p = event.payload
+        // Register next sub-task's taskId for progress routing
+        if (p.nextTaskId) {
+          taskToLocatorRef.current.set(p.nextTaskId, locator)
+        }
+        updateStatus(key, (prev) => {
+          const sections = prev.batchSections ? [...prev.batchSections] : []
+          if (sections[p.sectionIndex]) {
+            sections[p.sectionIndex] = {
+              ...sections[p.sectionIndex],
+              phase: 'completed',
+              content: p.sectionMarkdown,
+            }
+          }
+          // Mark next section as generating
+          if (p.nextSectionIndex !== undefined && sections[p.nextSectionIndex]) {
+            sections[p.nextSectionIndex] = {
+              ...sections[p.nextSectionIndex],
+              phase: 'generating',
+              taskId: p.nextTaskId,
+            }
+          }
+          return {
+            ...prev,
+            phase: 'batch-generating',
+            progress: event.progress,
+            message: event.message,
+            batchSections: sections,
+            streamedContent: p.assembledSnapshot,
+            streamRevision: (prev.streamRevision ?? 0) + 1,
+          }
+        })
+        return
+      }
+
+      if (isBatchSectionFailedPayload(event.payload)) {
+        const p = event.payload
+        updateStatus(key, (prev) => {
+          const sections = prev.batchSections ? [...prev.batchSections] : []
+          if (sections[p.sectionIndex]) {
+            sections[p.sectionIndex] = {
+              ...sections[p.sectionIndex],
+              phase: 'failed',
+              error: p.error,
+            }
+          }
+          return {
+            ...prev,
+            phase: 'batch-generating',
+            progress: event.progress,
+            message: event.message,
+            batchSections: sections,
+          }
+        })
+        return
+      }
+
+      if (isBatchCompletePayload(event.payload)) {
+        const p = event.payload
+        updateStatus(key, (prev) => ({
+          ...prev,
+          phase: p.failedSections.length > 0 ? 'failed' : 'completed',
+          progress: 100,
+          message: 'batch-complete',
+          generatedContent: p.assembledMarkdown,
+          streamedContent: p.assembledMarkdown,
+          locked: false,
+          error:
+            p.failedSections.length > 0 ? `${p.failedSections.length} 个子章节生成失败` : undefined,
+        }))
+        // Refresh annotations
+        void useAnnotationStore.getState().loadAnnotations(projectIdRef.current)
+        taskToLocatorRef.current.delete(event.taskId)
+        return
+      }
+
       const streamPayload = isChapterStreamPayload(event.payload) ? event.payload : null
 
       if (streamPayload) {
@@ -241,7 +394,14 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             const currentSectionContent = extractMarkdownSectionContent(currentContent, locator)
             const currentDigest = createContentDigest(currentSectionContent)
 
+            console.debug(
+              `[gen-debug:taskComplete] "${locator.title}" currentDigest=${currentDigest}, currentSectionLen=${currentSectionContent.length}, generatedContentLen=${status.result!.content.length}`
+            )
+
             updateStatus(key, (prev) => {
+              console.debug(
+                `[gen-debug:taskComplete] "${locator.title}" prevBaselineDigest=${prev.baselineDigest ?? 'undefined'}, prevBaselineLen=${prev.baselineSectionContent?.length ?? 'N/A'}, streamedLen=${prev.streamedContent?.length ?? 'N/A'}`
+              )
               return {
                 ...prev,
                 phase: resolveTerminalPhase({
@@ -532,6 +692,10 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       const baselineSectionContent = extractMarkdownSectionContent(currentContent, target)
       const baselineDigest = createContentDigest(baselineSectionContent)
 
+      console.debug(
+        `[gen-debug:startGeneration] "${target.title}" baselineDigest=${baselineDigest}, baselineLen=${baselineSectionContent.length}, docLen=${currentContent.length}`
+      )
+
       // Set initial queued status
       setStatuses((prev) => {
         const next = new Map(prev)
@@ -707,6 +871,18 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       const baselineSectionContent = extractMarkdownSectionContent(currentContent, target)
       const baselineDigest = createContentDigest(baselineSectionContent)
 
+      // Build initial batchSections from the skeleton plan
+      const currentStatusEntry = statusesRef.current.get(key)
+      const skeletonPlan = currentStatusEntry?.skeletonPlan
+      const initialBatchSections: BatchSectionStatus[] = skeletonPlan
+        ? skeletonPlan.sections.map((s, i) => ({
+            index: i,
+            title: s.title,
+            level: s.level,
+            phase: i === 0 ? 'generating' : 'pending',
+          }))
+        : []
+
       setStatuses((prev) => {
         const next = new Map(prev)
         const existing = prev.get(key)
@@ -719,6 +895,8 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           operationType: 'batch-generate',
           baselineDigest,
           baselineSectionContent,
+          batchSections: initialBatchSections,
+          locked: true,
         })
         return next
       })
@@ -729,12 +907,17 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           ...prev,
           phase: 'failed',
           error: res.error.message,
+          locked: false,
         }))
         return
       }
 
       taskToLocatorRef.current.set(res.data.taskId, target)
-      updateStatus(key, (prev) => ({ ...prev, taskId: res.data.taskId }))
+      updateStatus(key, (prev) => ({
+        ...prev,
+        taskId: res.data.taskId,
+        batchId: res.data.batchId,
+      }))
     },
     [projectId, updateStatus]
   )
@@ -780,11 +963,36 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
     (target: ChapterHeadingLocator) => {
       const key = locatorKey(target)
       const emptyDigest = createContentDigest('')
+      console.debug(`[gen-debug:sectionCleared] "${target.title}" emptyDigest=${emptyDigest}`)
       updateStatus(key, (prev) => ({
         ...prev,
         baselineDigest: emptyDigest,
         baselineSectionContent: '',
       }))
+    },
+    [updateStatus]
+  )
+
+  /** Advance baseline to current editor content so streaming patches are not mistaken for manual edits */
+  const advanceBaseline = useCallback(
+    (target: ChapterHeadingLocator) => {
+      const key = locatorKey(target)
+      const currentContent = useDocumentStore.getState().content
+      const sectionContent = extractMarkdownSectionContent(currentContent, target)
+      const digest = createContentDigest(sectionContent)
+      console.debug(
+        `[gen-debug:advanceBaseline] "${target.title}" newDigest=${digest}, sectionLen=${sectionContent.length}`
+      )
+      updateStatus(key, (prev) => {
+        console.debug(
+          `[gen-debug:advanceBaseline] "${target.title}" prevDigest=${prev.baselineDigest ?? 'undefined'} → ${digest}`
+        )
+        return {
+          ...prev,
+          baselineDigest: digest,
+          baselineSectionContent: sectionContent,
+        }
+      })
     },
     [updateStatus]
   )
@@ -808,9 +1016,11 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       retry,
       dismissError,
       notifySectionCleared,
+      advanceBaseline,
       getStatus,
     }),
     [
+      advanceBaseline,
       confirmSkeleton,
       dismissError,
       getStatus,

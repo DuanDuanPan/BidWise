@@ -38,14 +38,15 @@ describe('@story-3-7 DrawioEditor', () => {
     expect(iframe.src).toContain('proto=json')
   })
 
-  it('applies sandbox security policy', () => {
+  it('applies clipboard permissions and stealth mode', () => {
     render(<DrawioEditor {...defaultProps} />)
 
     const iframe = screen.getByTestId('drawio-iframe') as HTMLIFrameElement
-    const sandbox = iframe.getAttribute('sandbox') ?? ''
-    expect(sandbox).toContain('allow-scripts')
-    expect(sandbox).toContain('allow-same-origin')
-    expect(sandbox).toContain('allow-popups')
+    const allow = iframe.getAttribute('allow') ?? ''
+    expect(allow).toContain('clipboard-read')
+    expect(allow).toContain('clipboard-write')
+    expect(iframe.src).toContain('stealth=1')
+    expect(iframe.src).toContain('pwa=0')
   })
 
   it('has fixed height of 500px', () => {

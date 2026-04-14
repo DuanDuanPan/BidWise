@@ -37,6 +37,7 @@ function isRetryable(err: unknown, signal?: AbortSignal): boolean {
     if (msg.includes('timeout')) return true
     // 'aborted' without signal.aborted means a transient network abort, not caller cancel
     if (msg.includes('aborted')) return true
+    if (msg.includes('empty ai response')) return true
   }
   // Check HTTP status from SDK errors
   const status = (err as { status?: number }).status
@@ -194,15 +195,25 @@ export class OpenAiProvider implements AiProvider {
         }
       )
 
-      const choice = response.choices[0]
+      const choices = Array.isArray(response.choices) ? response.choices : []
+      const choice = choices[0]
+      if (!choice) {
+        throw new Error('Empty AI response: missing choices[0] in chat.completion payload')
+      }
+
+      const content = choice.message?.content
+      if (typeof content !== 'string' || !content.trim()) {
+        throw new Error('Empty AI response: missing assistant message content')
+      }
+
       return {
-        content: choice?.message?.content ?? '',
+        content,
         usage: {
           promptTokens: response.usage?.prompt_tokens ?? 0,
           completionTokens: response.usage?.completion_tokens ?? 0,
         },
         model: response.model,
-        finishReason: choice?.finish_reason ?? 'unknown',
+        finishReason: choice.finish_reason ?? 'unknown',
       }
     }, options?.signal)
   }

@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 import type { AutoSaveState } from '@shared/models/proposal'
+import type { DocumentSaveDebugContext } from '@shared/ipc-types'
+
+interface UpdateContentOptions {
+  scheduleSave?: boolean
+  debugContext?: DocumentSaveDebugContext
+}
 
 export interface DocumentState {
   content: string
@@ -11,7 +17,7 @@ export interface DocumentState {
 
 export interface DocumentActions {
   loadDocument: (projectId: string) => Promise<void>
-  updateContent: (content: string, projectId: string, options?: { scheduleSave?: boolean }) => void
+  updateContent: (content: string, projectId: string, options?: UpdateContentOptions) => void
   saveDocument: (projectId: string) => Promise<void>
   saveDocumentSync: (projectId: string, rootPath: string | null, content?: string) => boolean
   resetDocument: () => void
@@ -33,6 +39,19 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
   let queuedProjectId: string | null = null
   let latestSaveAttemptToken = 0
   let latestDocumentVersion = 0
+  let latestDebugContext: DocumentSaveDebugContext | undefined
+  let recentDebugTrail: DocumentSaveDebugContext[] = []
+
+  const recordDebugContext = (context?: DocumentSaveDebugContext): void => {
+    latestDebugContext = context
+    if (!context) return
+    recentDebugTrail = [...recentDebugTrail.slice(-5), context]
+  }
+
+  const resetDebugTrail = (): void => {
+    latestDebugContext = undefined
+    recentDebugTrail = []
+  }
 
   const clearDebounceTimer = (): void => {
     if (!debounceTimer) {
@@ -66,6 +85,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
 
     loadDocument: async (projectId: string) => {
       resetAutoSaveQueue()
+      resetDebugTrail()
       latestSaveAttemptToken += 1
       const requestVersion = ++latestDocumentVersion
 
@@ -99,8 +119,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
       }
     },
 
-    updateContent: (content: string, projectId: string, options?: { scheduleSave?: boolean }) => {
+    updateContent: (content: string, projectId: string, options?: UpdateContentOptions) => {
+      recordDebugContext(options?.debugContext)
       latestDocumentVersion += 1
+      const prevContent = get().content
+      const contentChanged = prevContent !== content
+      const source = options?.debugContext?.source ?? 'unknown'
+      console.debug(
+        `[gen-debug:updateContent] source=${source}, changed=${contentChanged}, lenDelta=${content.length - prevContent.length}, scheduleSave=${options?.scheduleSave !== false}`
+      )
       set((state) => ({
         content,
         autoSave: {
@@ -133,7 +160,12 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
       }))
 
       try {
-        const res = await window.api.documentSave({ projectId, content: contentToSave })
+        const res = await window.api.documentSave({
+          projectId,
+          content: contentToSave,
+          debugContext: latestDebugContext,
+          debugTrail: recentDebugTrail,
+        })
         if (saveAttemptToken !== latestSaveAttemptToken) {
           return
         }
@@ -149,6 +181,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
               error: null,
             },
           }))
+          if (!contentChangedDuringSave) {
+            resetDebugTrail()
+          }
         } else {
           set((state) => ({
             autoSave: {
@@ -207,8 +242,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
         autoSave: { ...state.autoSave, dirty: true, saving: true, error: null },
       }))
 
-      const res = window.api.documentSaveSync({ projectId, rootPath, content: contentToSave })
+      const res = window.api.documentSaveSync({
+        projectId,
+        rootPath,
+        content: contentToSave,
+        debugContext: latestDebugContext,
+        debugTrail: recentDebugTrail,
+      })
       if (res.success) {
+        resetDebugTrail()
         set({
           content: contentToSave,
           autoSave: {
@@ -235,6 +277,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
 
     resetDocument: () => {
       resetAutoSaveQueue()
+      resetDebugTrail()
       latestSaveAttemptToken += 1
       latestDocumentVersion += 1
       set({

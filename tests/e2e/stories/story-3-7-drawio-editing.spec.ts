@@ -156,19 +156,12 @@ test.describe('Story 3.7 — draw.io 架构图内嵌编辑', () => {
     await ctx?.electronApp?.close()
   })
 
-  test('AC1: insert-drawio button is visible in toolbar', async () => {
-    const btn = ctx.window.getByTestId('insert-drawio-btn')
-    await expect(btn).toBeVisible({ timeout: 10_000 })
+  test('legacy mode: insert-drawio button is hidden from toolbar', async () => {
+    await expect(ctx.window.getByTestId('insert-drawio-btn')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test('AC1: clicking insert-drawio inserts a drawio element', async () => {
-    // Click the insert button
-    const btn = ctx.window.getByTestId('insert-drawio-btn')
-    await btn.click()
-
-    // Verify a drawio element appeared in the editor
-    const drawioElement = ctx.window.getByTestId('drawio-element').first()
-    await expect(drawioElement).toBeVisible({ timeout: 15_000 })
+  test('legacy mode: toolbar still exposes Mermaid insertion for new diagrams', async () => {
+    await expect(ctx.window.getByTestId('insert-mermaid-btn')).toBeVisible({ timeout: 10_000 })
   })
 
   test('AC8: delete button removes drawio element in preview mode', async () => {
@@ -206,22 +199,10 @@ test.describe('Story 3.7 — draw.io 架构图内嵌编辑', () => {
     await expect(ctx.window.getByTestId('drawio-element')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test('AC5: drawio block serializes to markdown with comment + image', async () => {
-    // Insert a drawio element
-    const btn = ctx.window.getByTestId('insert-drawio-btn')
-    await btn.click()
-    await expect(ctx.window.getByTestId('drawio-element').first()).toBeVisible({ timeout: 15_000 })
-
-    // Wait for serialization (debounce + idle callback)
-    await ctx.window.waitForTimeout(2000)
-
-    // Read the proposal.md file to verify serialization
+  test('legacy mode: hidden toolbar keeps proposal markdown free from newly inserted drawio blocks', async () => {
+    await ctx.window.waitForTimeout(1000)
     const proposalMd = await readFile(join(project.rootPath, 'proposal.md'), 'utf-8')
-
-    // Should contain drawio comment
-    expect(proposalMd).toMatch(/<!-- drawio:[^:]+:[^>]+\.drawio -->/)
-    // Should contain image reference
-    expect(proposalMd).toMatch(/!\[.*\]\(assets\/.*\.png\)/)
+    expect(proposalMd).not.toContain('<!-- drawio:')
   })
 
   test('AC7: CSP allows embed.diagrams.net iframe', async () => {

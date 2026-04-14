@@ -53,6 +53,13 @@ describe('reviewStore @story-7-1 @story-7-2', () => {
     expect(ps.lineupMessage).toBeNull()
   })
 
+  it('getReviewProjectState returns a stable default reference for unknown project', () => {
+    const first = getReviewProjectState(useReviewStore.getState(), 'unknown-proj')
+    const second = getReviewProjectState(useReviewStore.getState(), 'unknown-proj')
+
+    expect(first).toBe(second)
+  })
+
   describe('checkCompliance', () => {
     it('sets loading=true during fetch', async () => {
       let resolvePromise: (value: unknown) => void

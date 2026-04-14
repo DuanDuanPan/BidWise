@@ -527,6 +527,37 @@ describe('@story-1-7 ProjectWorkspace three-column layout', () => {
     expect(screen.queryByTestId('stage-guide-placeholder')).not.toBeInTheDocument()
   })
 
+  it('@story-3-2 @p1 avoids getSnapshot warnings when review state is still empty', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      vi.stubGlobal('api', {
+        ...window.api,
+        projectGet: vi.fn().mockResolvedValue({
+          success: true,
+          data: { ...mockProject, sopStage: 'proposal-writing' },
+        }),
+        documentLoad: vi.fn().mockResolvedValue({
+          success: true,
+          data: { content: '# 项目概述' },
+        }),
+      })
+
+      renderWorkspace()
+
+      expect(await screen.findByTestId('editor-view')).toBeInTheDocument()
+
+      const warningTexts = [...errorSpy.mock.calls, ...warnSpy.mock.calls]
+        .flat()
+        .filter((arg): arg is string => typeof arg === 'string')
+
+      expect(warningTexts.some((text) => text.includes('getSnapshot should be cached'))).toBe(false)
+    } finally {
+      errorSpy.mockRestore()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('@story-3-2 @p0 injects outline content into OutlinePanel for proposal-writing', async () => {
     vi.stubGlobal('api', {
       ...window.api,

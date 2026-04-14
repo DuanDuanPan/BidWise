@@ -35,6 +35,106 @@ function unescapeMarkdownAlt(text: string): string {
 const MERMAID_PLACEHOLDER_PREFIX = 'MERMAID-PH-'
 const MERMAID_PLACEHOLDER_SUFFIX = '-END'
 const MERMAID_PLACEHOLDER_RE = /MERMAID-PH-(\d+)-END/g
+const HEADING_LINE_RE = /^(#{1,4})\s+(.+?)\s*$/
+const GUIDANCE_LINE_RE = /^>\s*(.+?)\s*$/
+
+type GuidanceHeadingPair = {
+  level: number
+  title: string
+  guidance: string
+}
+
+function collectGuidanceHeadingPairs(markdown: string): GuidanceHeadingPair[] {
+  const lines = markdown.split('\n')
+  const pairs: GuidanceHeadingPair[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const headingMatch = lines[i].match(HEADING_LINE_RE)
+    if (!headingMatch) continue
+
+    let j = i + 1
+    while (j < lines.length && lines[j].trim() === '') {
+      j += 1
+    }
+
+    const guidanceMatch = lines[j]?.match(GUIDANCE_LINE_RE)
+    if (!guidanceMatch) continue
+
+    pairs.push({
+      level: headingMatch[1].length,
+      title: headingMatch[2].trim(),
+      guidance: guidanceMatch[1].trim(),
+    })
+  }
+
+  return pairs
+}
+
+function getNodePlainText(node: unknown): string {
+  if (!node || typeof node !== 'object') return ''
+
+  const candidate = node as { text?: unknown; children?: unknown[] }
+  if (typeof candidate.text === 'string') {
+    return candidate.text
+  }
+  if (!Array.isArray(candidate.children)) {
+    return ''
+  }
+
+  return candidate.children.map((child) => getNodePlainText(child)).join('')
+}
+
+function replaceNodeText(node: unknown, text: string): unknown {
+  if (!node || typeof node !== 'object') {
+    return node
+  }
+
+  return {
+    ...(node as Record<string, unknown>),
+    children: [{ text }],
+  }
+}
+
+function repairMergedGuidanceHeadings(
+  nodes: unknown[],
+  guidancePairs: GuidanceHeadingPair[]
+): unknown[] {
+  if (guidancePairs.length === 0) {
+    return nodes
+  }
+
+  const repairedNodes: unknown[] = []
+
+  for (const node of nodes) {
+    const candidate = node as { type?: unknown }
+    const level = typeof candidate.type === 'string' ? Number(candidate.type.slice(1)) : NaN
+    if (!Number.isInteger(level) || level < 1 || level > 4) {
+      repairedNodes.push(node)
+      continue
+    }
+
+    const plainText = getNodePlainText(node).trim()
+    const matchedPair = guidancePairs.find(
+      (pair) =>
+        pair.level === level &&
+        (plainText === `${pair.title}> ${pair.guidance}` ||
+          plainText === `${pair.title}>${pair.guidance}`)
+    )
+
+    if (!matchedPair) {
+      repairedNodes.push(node)
+      continue
+    }
+
+    repairedNodes.push(replaceNodeText(node, matchedPair.title))
+    repairedNodes.push({
+      type: 'blockquote',
+      children: [{ text: matchedPair.guidance }],
+    })
+  }
+
+  return repairedNodes
+}
 
 /** 将当前编辑器内容序列化为 Markdown */
 export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
@@ -111,6 +211,8 @@ export function deserializeFromMarkdown(
   editor: { api: { markdown: { deserialize: (md: string) => unknown[] } } },
   markdown: string
 ): unknown[] {
+  const guidancePairs = collectGuidanceHeadingPairs(markdown)
+
   // 1. Pre-process: extract drawio & mermaid blocks and replace with placeholders
   const drawioDataMap: Map<number, { diagramId: string; assetFileName: string; caption: string }> =
     new Map()
@@ -197,14 +299,14 @@ export function deserializeFromMarkdown(
 
   // If no special blocks found, deserialize normally
   if (drawioDataMap.size === 0 && mermaidDataMap.size === 0) {
-    return editor.api.markdown.deserialize(markdown)
+    return repairMergedGuidanceHeadings(editor.api.markdown.deserialize(markdown), guidancePairs)
   }
 
   // 2. Deserialize the processed markdown
   const nodes = editor.api.markdown.deserialize(processedLines.join('\n'))
 
   // 3. Post-process: replace placeholder paragraphs with void elements
-  return nodes.map((node) => {
+  const restoredNodes = nodes.map((node) => {
     const n = node as Record<string, unknown>
     if (n.type === 'p' && Array.isArray(n.children) && n.children.length === 1) {
       const child = n.children[0] as Record<string, unknown>
@@ -243,4 +345,6 @@ export function deserializeFromMarkdown(
     }
     return node
   })
+
+  return repairMergedGuidanceHeadings(restoredNodes, guidancePairs)
 }

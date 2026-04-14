@@ -190,6 +190,53 @@ describe('provider-adapter', () => {
         baseURL: 'https://minimax.a7m.com.cn/v1',
       })
     })
+
+    it('retries when chat.completion payload is missing choices', async () => {
+      mockCompletionsCreate
+        .mockResolvedValueOnce({
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+          model: 'gpt-4o',
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'Recovered response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 12, completion_tokens: 7 },
+          model: 'gpt-4o',
+        })
+
+      const provider = new OpenAiProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'test' }],
+        model: 'gpt-4o',
+        maxTokens: 1024,
+      })
+
+      expect(res.content).toBe('Recovered response')
+      expect(mockCompletionsCreate).toHaveBeenCalledTimes(2)
+    })
+
+    it('retries when assistant message content is empty', async () => {
+      mockCompletionsCreate
+        .mockResolvedValueOnce({
+          choices: [{ message: { role: 'assistant' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+          model: 'gpt-4o',
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'Recovered content' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 12, completion_tokens: 7 },
+          model: 'gpt-4o',
+        })
+
+      const provider = new OpenAiProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'test' }],
+        model: 'gpt-4o',
+        maxTokens: 1024,
+      })
+
+      expect(res.content).toBe('Recovered content')
+      expect(mockCompletionsCreate).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('createProvider factory', () => {
@@ -457,6 +504,30 @@ describe('provider-adapter', () => {
         expect(err).toBeInstanceOf(AiProxyError)
         expect((err as AiProxyError).code).toBe(ErrorCode.AI_PROXY_RATE_LIMIT)
       }
+    }, 30000)
+
+    it('throws AI_PROXY_PROVIDER after exhausting retries on empty OpenAI content', async () => {
+      mockCompletionsCreate.mockResolvedValue({
+        choices: [{ message: { role: 'assistant' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+        model: 'gpt-4o',
+      })
+
+      const provider = new OpenAiProvider('key')
+      try {
+        await provider.chat({
+          messages: [{ role: 'user', content: 'test' }],
+          model: 'gpt-4o',
+          maxTokens: 1024,
+        })
+        expect.fail('should have thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AiProxyError)
+        expect((err as AiProxyError).code).toBe(ErrorCode.AI_PROXY_PROVIDER)
+        expect((err as Error).message).toContain('Empty AI response')
+      }
+
+      expect(mockCompletionsCreate).toHaveBeenCalledTimes(4)
     }, 30000)
   })
 })

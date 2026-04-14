@@ -75,6 +75,57 @@ const mockTender: ParsedTender = {
   hasScannedContent: false,
 }
 
+const bareStarTender: ParsedTender = {
+  meta: {
+    originalFileName: 'bare-star.docx',
+    format: 'docx',
+    fileSize: 4096,
+    pageCount: 80,
+    importedAt: '2026-04-14T00:00:00.000Z',
+  },
+  sections: [
+    {
+      id: 's-tech',
+      title: '供货要求',
+      content: `（1）关键特性联合计算及优化模块：
+★支持涡轮泵、推力室大喷管、减压阀、单机产品等进行关键特性进行联合计算，根据联合计算结果进行性能分析、组合件性能偏差影响分析，支持自动最优选择设计，并支持人为修改，调整偏差与实际试车复现结果小于3%
+（2）试车数据处理模块：
+★支持对试车数据调用，进行分段、平均、连接、平移等处理，支持组合件性能偏差分析、历史数据包络分析，参数数量不少于100个，包络范围不少于1000次`,
+      pageStart: 40,
+      pageEnd: 42,
+      level: 1,
+    },
+    {
+      id: 's-response',
+      title: '技术支持资料',
+      content: `1.1.2关键特性联合计算及优化模块
+★（1）支持涡轮泵、推力室大喷管、减压阀、单机产品等进行关键特性进行联合计算，根据联合计算结果进行性能分析、组合件性能偏差影响分析，支持自动最优选择设计，并支持人为修改，调整偏差与实际试车复现结果小于3%
+1.1.3试车数据处理模块
+★（1）支持对试车数据调用，进行分段、平均、连接、平移等处理，支持组合件性能偏差分析、历史数据包络分析，参数数量不少于100个，包络范围不少于1000次`,
+      pageStart: 50,
+      pageEnd: 52,
+      level: 1,
+    },
+  ],
+  rawText: `投标文件应当对招标文件中带*或★号的实质性要求和条件作出满足性响应。
+
+注：招标文件中标注星号（"*或★"）的技术指标为关键技术指标。
+
+（1）关键特性联合计算及优化模块：
+★支持涡轮泵、推力室大喷管、减压阀、单机产品等进行关键特性进行联合计算，根据联合计算结果进行性能分析、组合件性能偏差影响分析，支持自动最优选择设计，并支持人为修改，调整偏差与实际试车复现结果小于3%
+（2）试车数据处理模块：
+★支持对试车数据调用，进行分段、平均、连接、平移等处理，支持组合件性能偏差分析、历史数据包络分析，参数数量不少于100个，包络范围不少于1000次
+（3）飞行数据处理模块：
+★支持飞行结果与关键特性联合计算结果自动比较，支持飞行性能偏差分析、历史数据包络分析，支持的飞行数据时长不小于2h、偏差分析因素不少于20项。
+
+1.1.2关键特性联合计算及优化模块
+★（1）支持涡轮泵、推力室大喷管、减压阀、单机产品等进行关键特性进行联合计算
+1.1.3试车数据处理模块
+★（1）支持对试车数据调用，进行分段、平均、连接、平移等处理`,
+  totalPages: 80,
+  hasScannedContent: false,
+}
+
 const explicitMarkedTender: ParsedTender = {
   meta: {
     originalFileName: 'starred.docx',
@@ -255,5 +306,60 @@ describe('MandatoryItemDetector', () => {
     expect(persistedItems[0]?.sourceText).toContain('工业 APP 能与协同设计管理系统')
     expect(persistedItems[1]?.sourceText).toContain('银河麒麟 V10 SP3')
     expect(persistedItems[0]?.sourceText).not.toContain('投标人需将加注星号')
+  })
+
+  it('extracts bare ★ items without dotted clause numbers (★支持... and ★（1）支持...)', async () => {
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(bareStarTender))
+
+    let capturedExecutor: ((ctx: unknown) => Promise<unknown>) | null = null
+    mockExecute.mockImplementationOnce(
+      (_taskId: string, executor: (ctx: unknown) => Promise<unknown>) => {
+        capturedExecutor = executor
+        return Promise.resolve({})
+      }
+    )
+
+    await detector.detect({ projectId: 'proj-1' })
+
+    const ctx = {
+      taskId: 'task-1',
+      input: { projectId: 'proj-1', rootPath: '/projects/proj-1' },
+      signal: new AbortController().signal,
+      updateProgress: vi.fn(),
+      setCheckpoint: vi.fn(),
+    }
+
+    await capturedExecutor!(ctx)
+
+    expect(mockAgentExecute).not.toHaveBeenCalled()
+    expect(mockReplaceByProject).toHaveBeenCalledTimes(1)
+
+    const [, persistedItems] = mockReplaceByProject.mock.calls[0] as [
+      string,
+      Array<{ content: string; sourcePages: number[]; sourceText: string }>,
+    ]
+
+    // Should find bare star items — exact count depends on dedup, but must be > 0
+    expect(persistedItems.length).toBeGreaterThanOrEqual(3)
+
+    // All content entries should start with ★
+    for (const item of persistedItems) {
+      expect(item.content).toMatch(/^★/)
+    }
+
+    // Should contain the key technical descriptions
+    const allContent = persistedItems.map((item) => item.content).join(' ')
+    expect(allContent).toContain('支持涡轮泵')
+    expect(allContent).toContain('试车数据')
+    expect(allContent).toContain('飞行')
+
+    // sourceText should contain substantive technical content
+    expect(persistedItems[0]?.sourceText).toContain('联合计算')
+
+    // Noise lines should NOT appear as items
+    const noiseContent = persistedItems.find((item) =>
+      /加注星号|标注星号|带\*或★/.test(item.content)
+    )
+    expect(noiseContent).toBeUndefined()
   })
 })

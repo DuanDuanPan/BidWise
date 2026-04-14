@@ -356,6 +356,13 @@ describe('generateChapterPrompt — compliance matrix specialization', () => {
 
     expect(prompt).toContain('图表描述的UTF-8 Base64编码')
     expect(prompt).toContain('不要输出 `base64(...)` 包装')
+    expect(prompt).not.toContain('%%DIAGRAM:drawio')
+    expect(prompt).toContain('总体架构：优先使用 C4Context')
+    expect(prompt).toContain('技术架构：优先使用 C4Container 或 C4Component')
+    expect(prompt).toContain('数据架构、部署/拓扑图、系统集成架构：优先使用 architecture-beta')
+    expect(prompt).toContain(
+      '时序图、状态图、类图：分别使用 sequenceDiagram、stateDiagram-v2、classDiagram'
+    )
   })
 
   it('@p0 should not contain narrative chapter output rules', () => {

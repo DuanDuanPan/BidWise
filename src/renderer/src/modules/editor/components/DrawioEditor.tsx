@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef } from 'react'
 import { message } from 'antd'
 import type { DrawioMessageIn, DrawioMessageOut } from '@shared/drawio-types'
 
-const DRAWIO_EMBED_URL = 'https://embed.diagrams.net/?embed=1&proto=json&spin=1&libraries=1'
+const DRAWIO_EMBED_URL =
+  'https://embed.diagrams.net/?embed=1&proto=json&spin=1&libraries=1&stealth=1&pwa=0'
 const DRAWIO_ORIGIN = 'https://embed.diagrams.net'
 
 interface DrawioEditorProps {
@@ -76,7 +77,7 @@ export function DrawioEditor({ xml, onSave, onExit }: DrawioEditorProps): React.
     <iframe
       ref={iframeRef}
       src={DRAWIO_EMBED_URL}
-      sandbox="allow-scripts allow-same-origin allow-popups"
+      allow="clipboard-read; clipboard-write"
       className="w-full border-0"
       style={{ height: 500 }}
       title="draw.io 编辑器"

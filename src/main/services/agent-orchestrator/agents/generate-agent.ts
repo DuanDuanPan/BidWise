@@ -46,14 +46,21 @@ import {
   type DiagramPlaceholder,
   type DiagramValidationResult,
 } from '@main/services/diagram-validation-service'
+import {
+  resolveDiagramPlaceholder,
+  type ResolvedDiagramPlaceholder,
+} from '@main/services/diagram-intent-service'
 import type { AgentHandler, AgentHandlerResult, AiRequestParams } from '../orchestrator'
 import { createLogger } from '@main/utils/logger'
-import type { AiProxyResponse, TokenUsage } from '@shared/ai-types'
+import type { AiChatMessage, AiProxyResponse, TokenUsage } from '@shared/ai-types'
 import type { ChapterStreamProgressPayload } from '@shared/chapter-types'
 
 const logger = createLogger('generate-agent')
-const MAX_DIAGRAM_ATTEMPTS = 3
+const MAX_DIAGRAM_ATTEMPTS = 10
 const MAX_DIAGRAM_CONCURRENCY = 2
+const MAX_CONTINUATIONS = 3
+const CONTINUATION_PROMPT =
+  '请从上文断点处继续撰写。要求：1) 不要重复已有内容和标题；2) 保持当前 markdown 标题层级；3) 不要插入新的图表占位符；4) 如果核心要点已阐述完毕，请自然收尾而非强行扩展。'
 
 type ProgressReporter = (progress: number, message?: string, payload?: unknown) => void
 
@@ -101,6 +108,43 @@ function accumulateUsage(target: TokenUsage, response: AiProxyResponse): void {
   target.completionTokens += response.usage.completionTokens
 }
 
+async function callWithContinuation(params: {
+  aiProxy: NonNullable<Parameters<AgentHandler>[1]['aiProxy']>
+  signal: AbortSignal
+  caller: string
+  messages: AiChatMessage[]
+  maxTokens: number
+  usage: TokenUsage
+}): Promise<{ content: string; continuationCount: number }> {
+  const { aiProxy, signal, caller, maxTokens, usage } = params
+  // 浅拷贝 messages 数组：后续 push 不会影响调用方的原始数组
+  const messages = [...params.messages]
+  const parts: string[] = []
+
+  for (let attempt = 0; attempt < MAX_CONTINUATIONS + 1; attempt++) {
+    throwIfAborted(signal, 'Generate agent cancelled')
+    const response = await aiProxy.call({
+      caller: attempt === 0 ? caller : `${caller}:cont-${attempt}`,
+      signal,
+      maxTokens,
+      messages,
+    })
+    accumulateUsage(usage, response)
+    parts.push(response.content.trim())
+
+    if (response.finishReason !== 'length') break
+
+    // 续写：追加 assistant + user 消息对，然后循环继续
+    logger.info(
+      `Truncation detected (${caller}), continuing attempt ${attempt + 1}/${MAX_CONTINUATIONS}, promptTokens this call: ${response.usage.promptTokens}`
+    )
+    messages.push({ role: 'assistant', content: response.content })
+    messages.push({ role: 'user', content: CONTINUATION_PROMPT })
+  }
+
+  return { content: parts.join('\n\n'), continuationCount: parts.length - 1 }
+}
+
 function createStreamPayload(
   markdown: string,
   patch?: ChapterStreamProgressPayload['patch']
@@ -142,6 +186,95 @@ function normalizeDiagramSource(type: DiagramType, content: string): string {
   return type === 'mermaid'
     ? normalizeMermaidSource(stripMermaidFences(content))
     : stripDrawioEnvelope(content)
+}
+
+// ─── Inline mermaid guard ───────────────────────────────────────────
+// LLM sometimes ignores the %%DIAGRAM%% placeholder instruction and emits
+// raw ```mermaid fenced blocks.  The helpers below detect these and either
+// convert them to placeholders (chapter path) or validate-and-strip them
+// (batch path) so broken diagrams never reach the editor.
+
+const INLINE_FENCE_RE = /```mermaid\s*\n([\s\S]*?)```/g
+const MANAGED_COMMENT_RE = /<!-- mermaid:[^>]+ -->\s*$/
+
+function extractInlineMermaidTitle(source: string): string {
+  const lines = source.split('\n')
+  const titleLine = lines.find((l) => /^\s*title\s+/.test(l))
+  if (titleLine)
+    return titleLine
+      .replace(/^\s*title\s+/, '')
+      .trim()
+      .slice(0, 60)
+
+  const decl = lines.find((l) => l.trim() && !l.trim().startsWith('%%'))?.trim() ?? ''
+  if (/^flowchart/i.test(decl)) return '流程图'
+  if (/^sequenceDiagram/i.test(decl)) return '时序图'
+  if (/^classDiagram/i.test(decl)) return '类图'
+  if (/^stateDiagram/i.test(decl)) return '状态图'
+  if (/^architecture-beta/i.test(decl)) return '架构拓扑图'
+  if (/^C4Context/i.test(decl)) return '系统上下文图'
+  if (/^C4Container/i.test(decl)) return '容器架构图'
+  if (/^C4Component/i.test(decl)) return '组件架构图'
+  if (/^C4Deployment/i.test(decl)) return '部署架构图'
+  if (/^gantt/i.test(decl)) return '甘特图'
+  return '系统图表'
+}
+
+/**
+ * Convert inline \`\`\`mermaid fenced blocks to %%DIAGRAM%% placeholders
+ * so they enter the diagram validation + repair pipeline.
+ * Blocks preceded by a \`<!-- mermaid:… -->\` comment are already managed.
+ */
+function convertInlineMermaidToPlaceholders(text: string): { text: string; count: number } {
+  let count = 0
+  const converted = text.replace(INLINE_FENCE_RE, (fullMatch, source: string, offset: number) => {
+    const before = text.slice(Math.max(0, offset - 300), offset)
+    if (MANAGED_COMMENT_RE.test(before)) return fullMatch
+
+    const trimmed = source.trim()
+    if (!trimmed) return fullMatch
+
+    const title = extractInlineMermaidTitle(trimmed).replace(/:/g, '-')
+    const encoded = Buffer.from(trimmed.slice(0, 800), 'utf-8').toString('base64')
+    count += 1
+    return `%%DIAGRAM:mermaid:${title}:${encoded}%%`
+  })
+  return { text: converted, count }
+}
+
+/**
+ * Validate inline \`\`\`mermaid blocks in batch-path output.
+ * Valid blocks are kept; invalid blocks are replaced with a failure marker.
+ */
+async function stripInvalidInlineMermaid(text: string): Promise<string> {
+  const matches: Array<{ full: string; source: string; index: number }> = []
+  const re = new RegExp(INLINE_FENCE_RE.source, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const before = text.slice(Math.max(0, m.index - 300), m.index)
+    if (!MANAGED_COMMENT_RE.test(before)) {
+      matches.push({ full: m[0], source: m[1], index: m.index })
+    }
+  }
+  if (matches.length === 0) return text
+
+  let result = text
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i]
+    const trimmed = match.source.trim()
+    if (!trimmed) continue
+    const validation = await validateDiagramSource('mermaid', trimmed)
+    if (!validation.valid) {
+      logger.warn('Stripping invalid inline mermaid in batch section', {
+        error: validation.error?.slice(0, 200),
+      })
+      const title = extractInlineMermaidTitle(trimmed)
+      const replacement = `> [图表语法错误] ${title}——请重新生成此图表`
+      result =
+        result.slice(0, match.index) + replacement + result.slice(match.index + match.full.length)
+    }
+  }
+  return result
 }
 
 async function validateDiagramSource(
@@ -194,7 +327,7 @@ async function generateDiagramWithRepair(params: {
   projectId: string | undefined
   chapterTitle: string
   chapterMarkdown: string
-  placeholder: DiagramPlaceholder
+  placeholder: ResolvedDiagramPlaceholder
 }): Promise<DiagramGenerationOutcome> {
   const { aiProxy, signal, usage, projectId, chapterTitle, chapterMarkdown, placeholder } = params
   const diagramDescription = placeholder.description || placeholder.title
@@ -215,6 +348,8 @@ async function generateDiagramWithRepair(params: {
           chapterMarkdown,
           diagramTitle: placeholder.title,
           diagramDescription,
+          diagramSemantic: placeholder.semantic,
+          preferredMermaidType: placeholder.mermaidDiagramKind,
         }),
       },
     ],
@@ -288,6 +423,8 @@ async function generateDiagramWithRepair(params: {
             diagramDescription,
             invalidOutput: currentSource,
             validationError: lastError,
+            diagramSemantic: placeholder.semantic,
+            preferredMermaidType: placeholder.mermaidDiagramKind,
           }),
         },
       ],
@@ -516,18 +653,19 @@ async function handleSkeletonBatch(
         previousSectionsSummary,
       })
 
-      const response = await aiProxy.call({
-        caller: `generate-agent:batch:${i}`,
+      const subContent = await callWithContinuation({
+        aiProxy,
         signal,
-        maxTokens: 4096,
+        caller: `generate-agent:batch:${i}`,
         messages: [
           { role: 'system', content: GENERATE_CHAPTER_SYSTEM_PROMPT },
           { role: 'user', content: subChapterPrompt },
         ],
+        maxTokens: 8192,
+        usage: totalUsage,
       })
-      accumulateUsage(totalUsage, response)
 
-      sectionResults[i] = { kind: 'completed', markdown: response.content.trim() }
+      sectionResults[i] = { kind: 'completed', markdown: subContent.content }
 
       if (setCheckpoint) {
         await setCheckpoint({ sectionResults, nextIndex: i + 1 })
@@ -570,6 +708,10 @@ async function handleSkeletonBatch(
 
   const assembledMarkdown = assembledParts.join('\n\n')
 
+  logger.info(
+    `Skeleton-batch assembled: "${confirmedSkeleton.parentTitle}", sections=${totalSections}, completed=${countCompleted()}, failed=${getFailedSections().length}, finalLen=${assembledMarkdown.length}`
+  )
+
   // Report final metadata via progress payload
   updateProgress(95, 'batch-composing', {
     kind: 'skeleton-batch',
@@ -580,6 +722,84 @@ async function handleSkeletonBatch(
   })
 
   return wrapResult(assembledMarkdown, totalUsage, Date.now() - startedAt)
+}
+
+async function handleSkeletonBatchSingle(
+  context: Record<string, unknown>,
+  signal: AbortSignal,
+  updateProgress: ProgressReporter,
+  aiProxy?: NonNullable<Parameters<AgentHandler>[1]['aiProxy']>
+): Promise<AgentHandlerResult> {
+  if (!aiProxy) {
+    throw new BidWiseError(ErrorCode.AGENT_EXECUTE, 'AI proxy required for skeleton-batch-single')
+  }
+
+  const section = context.section as {
+    title: string
+    level: number
+    dimensions: string[]
+    guidanceHint?: string
+  }
+  const previousSections = (context.previousSections ?? []) as Array<{
+    title: string
+    markdown: string
+  }>
+
+  const activeEntries = await terminologyService.getActiveEntries()
+  const terminologyContext = terminologyReplacementService.buildPromptContext(activeEntries)
+
+  const startedAt = Date.now()
+  const totalUsage = createEmptyUsage()
+
+  updateProgress(10, 'generating-text')
+
+  // Build previousSectionsSummary: immediately preceding section gets full content,
+  // earlier sections get title + truncated summary
+  const previousSectionsSummary =
+    previousSections.length > 0
+      ? previousSections
+          .map(({ title: sTitle, markdown: md }) => `**${sTitle}**: ${md}`)
+          .join('\n\n')
+      : undefined
+
+  const subChapterPrompt = generateSubChapterPrompt({
+    chapterTitle: section.title,
+    chapterLevel: section.level,
+    requirements: context.requirements as string,
+    guidanceText: section.guidanceHint,
+    scoringWeights: context.scoringWeights as string | undefined,
+    writingStyle: context.writingStyle as string | undefined,
+    documentOutline: context.documentOutline as string | undefined,
+    adjacentChaptersBefore: context.adjacentChaptersBefore as string | undefined,
+    adjacentChaptersAfter: context.adjacentChaptersAfter as string | undefined,
+    strategySeed: context.strategySeed as string | undefined,
+    terminologyContext: terminologyContext || undefined,
+    dimensionFocus: (section.dimensions ?? []).join(', '),
+    previousSectionsSummary,
+  })
+
+  const subContent = await callWithContinuation({
+    aiProxy,
+    signal,
+    caller: `generate-agent:batch-single:${context.sectionIndex}`,
+    messages: [
+      { role: 'system', content: GENERATE_CHAPTER_SYSTEM_PROMPT },
+      { role: 'user', content: subChapterPrompt },
+    ],
+    maxTokens: 8192,
+    usage: totalUsage,
+  })
+
+  // Guard: validate inline mermaid blocks; strip invalid ones
+  const guardedContent = await stripInvalidInlineMermaid(subContent.content)
+
+  updateProgress(90, 'composing')
+
+  logger.info(
+    `Skeleton-batch-single completed: section="${section.title}", index=${context.sectionIndex}, contentLen=${guardedContent.length}, continuations=${subContent.continuationCount}`
+  )
+
+  return wrapResult(guardedContent, totalUsage, Date.now() - startedAt)
 }
 
 async function handleAskSystem(
@@ -670,14 +890,15 @@ async function handleChapterGeneration(
 
   const enableDiagrams = context.enableDiagrams === true
 
-  if (!aiProxy || !enableDiagrams) {
+  // 路径 A：无 aiProxy — 向后兼容回退到 wrapParams
+  if (!aiProxy) {
     updateProgress(10, 'generating-text')
     return wrapParams({
       messages: [
         { role: 'system', content: GENERATE_CHAPTER_SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
-      maxTokens: 8192,
+      maxTokens: 16384,
     })
   }
 
@@ -685,31 +906,84 @@ async function handleChapterGeneration(
   const totalUsage = createEmptyUsage()
 
   updateProgress(10, 'generating-text')
-  const textResponse = await aiProxy.call({
-    caller: 'generate-agent:text',
+
+  const textResult = await callWithContinuation({
+    aiProxy,
     signal,
-    maxTokens: 8192,
+    caller: 'generate-agent:text',
     messages: [
       { role: 'system', content: GENERATE_CHAPTER_SYSTEM_PROMPT },
       { role: 'user', content: prompt },
     ],
+    maxTokens: 16384,
+    usage: totalUsage,
   })
-  accumulateUsage(totalUsage, textResponse)
   throwIfAborted(signal, 'Generate agent cancelled')
 
+  const textContent = textResult.content
+
+  logger.info(
+    `Chapter text generated: "${context.chapterTitle}", textLen=${textContent.length}, continuations=${textResult.continuationCount}, enableDiagrams=${enableDiagrams}`
+  )
+
+  // 路径 B：有 aiProxy 无图表 — 直接返回
+  if (!enableDiagrams) {
+    logger.info(
+      `Chapter generation complete (no diagrams): "${context.chapterTitle}", totalLen=${textContent.length}`
+    )
+    return wrapResult(textContent, totalUsage, Date.now() - startedAt)
+  }
+
+  // 路径 C：有 aiProxy 有图表 — 继续图表生成流程
+  if (textResult.continuationCount > 0 && /%%DIAGRAM:/.test(textContent)) {
+    logger.warn('Continuation text contains diagram placeholders despite prompt constraint')
+  }
+
+  // Guard: LLM may ignore %%DIAGRAM%% instruction and emit raw ```mermaid blocks.
+  // Convert them to placeholders so they enter the validation + repair pipeline.
+  const inlineMermaidGuard = convertInlineMermaidToPlaceholders(textContent)
+  if (inlineMermaidGuard.count > 0) {
+    logger.warn(
+      `Converted ${inlineMermaidGuard.count} inline mermaid block(s) to diagram placeholders`,
+      { chapterTitle: context.chapterTitle }
+    )
+  }
+
   updateProgress(20, 'validating-text')
-  const parsed = parseDiagramPlaceholders(textResponse.content.trim())
+  const parsed = parseDiagramPlaceholders(inlineMermaidGuard.text)
   let currentMarkdown = parsed.markdownWithSkeletons.trim()
+
+  logger.info(
+    `Diagram placeholders parsed: "${context.chapterTitle}", count=${parsed.placeholders.length}, skeletonLen=${currentMarkdown.length}`
+  )
 
   updateProgress(20, 'validating-text', createStreamPayload(currentMarkdown))
 
   if (parsed.placeholders.length > 0) {
+    const resolvedPlaceholders = parsed.placeholders.map((placeholder) =>
+      resolveDiagramPlaceholder(placeholder, {
+        chapterTitle: context.chapterTitle as string,
+        chapterMarkdown: textContent,
+      })
+    )
     const diagramSummaries: string[] = []
     let completedCount = 0
 
-    await runWithConcurrency(parsed.placeholders, MAX_DIAGRAM_CONCURRENCY, async (placeholder) => {
+    await runWithConcurrency(resolvedPlaceholders, MAX_DIAGRAM_CONCURRENCY, async (placeholder) => {
       throwIfAborted(signal, 'Generate agent cancelled')
       updateProgress(35, 'generating-diagrams')
+
+      if (placeholder.requestedType !== placeholder.type) {
+        logger.info('Diagram engine rerouted by semantic classifier', {
+          placeholderId: placeholder.placeholderId,
+          title: placeholder.title,
+          requestedType: placeholder.requestedType,
+          resolvedType: placeholder.type,
+          semantic: placeholder.semantic,
+          confidence: placeholder.routingConfidence,
+          reasons: placeholder.routingReasons,
+        })
+      }
 
       const diagram = await generateDiagramWithRepair({
         aiProxy,
@@ -741,7 +1015,7 @@ async function handleChapterGeneration(
       }
 
       completedCount += 1
-      const progress = 35 + Math.round((completedCount / parsed.placeholders.length) * 25)
+      const progress = 35 + Math.round((completedCount / resolvedPlaceholders.length) * 25)
       updateProgress(
         progress,
         'generating-diagrams',
@@ -783,6 +1057,9 @@ async function handleChapterGeneration(
     updateProgress(90, 'validating-coherence')
   }
 
+  logger.info(
+    `Chapter generation complete: "${context.chapterTitle}", finalLen=${currentMarkdown.length}, elapsed=${Date.now() - startedAt}ms`
+  )
   return wrapResult(currentMarkdown, totalUsage, Date.now() - startedAt)
 }
 
@@ -802,6 +1079,10 @@ export const generateAgentHandler: AgentHandler = async (
 
   if (context.mode === 'skeleton-generate') {
     return handleSkeletonGenerate(context, signal, updateProgress, aiProxy)
+  }
+
+  if (context.mode === 'skeleton-batch-single') {
+    return handleSkeletonBatchSingle(context, signal, updateProgress, aiProxy)
   }
 
   if (context.mode === 'skeleton-batch') {

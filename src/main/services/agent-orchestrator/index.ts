@@ -5,6 +5,8 @@ export type {
   AgentPostProcessor,
   AiRequestParams,
 } from './orchestrator'
+export { batchOrchestrationManager } from './batch-orchestration-manager'
+export type { BatchOrchestration, CompletedSectionSummary } from './batch-orchestration-manager'
 import { AgentOrchestrator } from './orchestrator'
 import { parseAgentHandler } from './agents/parse-agent'
 import { generateAgentHandler } from './agents/generate-agent'

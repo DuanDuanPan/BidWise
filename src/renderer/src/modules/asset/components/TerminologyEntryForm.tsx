@@ -100,7 +100,7 @@ export function TerminologyEntryForm({
       onCancel={onClose}
       okText="确定"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical" preserve={false}>
         <Form.Item

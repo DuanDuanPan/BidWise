@@ -117,8 +117,10 @@ export function createProjectState(overrides?: Partial<ReviewProjectState>): Rev
   }
 }
 
+const EMPTY_REVIEW_PROJECT_STATE = createProjectState()
+
 export function getReviewProjectState(state: ReviewState, projectId: string): ReviewProjectState {
-  return state.projects[projectId] ?? createProjectState()
+  return state.projects[projectId] ?? EMPTY_REVIEW_PROJECT_STATE
 }
 
 export type TaskKind = 'lineup' | 'review' | 'attack-checklist'

@@ -4,6 +4,9 @@ const mockGetActiveEntries = vi.hoisted(() => vi.fn())
 const mockBuildPromptContext = vi.hoisted(() => vi.fn())
 const mockLoggerWarn = vi.hoisted(() => vi.fn())
 const mockMermaidRuntimeValidate = vi.hoisted(() => vi.fn().mockResolvedValue({ valid: true }))
+const mockSaveDrawioAsset = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ assetPath: '/tmp/diagram.drawio' })
+)
 
 vi.mock('@main/services/terminology-service', () => ({
   terminologyService: {
@@ -32,6 +35,12 @@ vi.mock('@main/services/diagram-runtime/mermaid-runtime-client', () => ({
   },
 }))
 
+vi.mock('@main/services/drawio-asset-service', () => ({
+  drawioAssetService: {
+    saveDrawioAsset: (...args: unknown[]) => mockSaveDrawioAsset(...args),
+  },
+}))
+
 const { generateAgentHandler } =
   await import('@main/services/agent-orchestrator/agents/generate-agent')
 
@@ -52,6 +61,7 @@ describe('generateAgentHandler @story-2-2', () => {
     mockGetActiveEntries.mockResolvedValue([])
     mockBuildPromptContext.mockReturnValue('')
     mockMermaidRuntimeValidate.mockReset().mockResolvedValue({ valid: true })
+    mockSaveDrawioAsset.mockReset().mockResolvedValue({ assetPath: '/tmp/diagram.drawio' })
   })
 
   it('@p1 should return AiRequestParams with messages from generateChapterPrompt', async () => {
@@ -68,7 +78,7 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(result.messages[1].role).toBe('user')
     expect(result.messages[1].content).toContain('技术方案')
     expect(result.messages[1].content).toContain('支持高并发')
-    expect(result.maxTokens).toBe(8192)
+    expect(result.maxTokens).toBe(16384)
   })
 
   it('@p1 should return wrapped params without caller field', async () => {
@@ -155,6 +165,7 @@ describe('generateAgentHandler @story-2-2', () => {
             latencyMs: 100,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -165,6 +176,7 @@ describe('generateAgentHandler @story-2-2', () => {
             latencyMs: 50,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -175,6 +187,7 @@ describe('generateAgentHandler @story-2-2', () => {
           latencyMs: 30,
           model: 'mock',
           provider: 'mock',
+          finishReason: 'stop',
         }
       }),
     }
@@ -199,6 +212,79 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(updateProgress).toHaveBeenCalledWith(90, 'validating-coherence')
   })
 
+  it('@p0 should reroute architecture placeholders to mermaid C4 when semantic classification requires it', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const aiProxy = {
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content:
+              '正文段落\n\n%%DIAGRAM:mermaid:系统总体架构图:' +
+              Buffer.from('展示系统分层结构、核心模块与基础设施关系').toString('base64') +
+              '%%',
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+            finishReason: 'stop',
+          }
+        }
+
+        if (request.caller === 'generate-agent:diagram:mermaid') {
+          return {
+            content: [
+              "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+              'C4Context',
+              'Person(user, "售前工程师", "编写与打磨投标方案")',
+              'System(bidwise, "BidWise", "投标方案工作台")',
+              'System_Ext(model, "模型网关", "Claude / OpenAI 代理")',
+              'Rel(user, bidwise, "使用")',
+              'Rel(bidwise, model, "调用")',
+            ].join('\n'),
+            usage: { promptTokens: 8, completionTokens: 12 },
+            latencyMs: 60,
+            model: 'mock',
+            provider: 'mock',
+            finishReason: 'stop',
+          }
+        }
+
+        return {
+          content: '{"pass":true,"issues":[]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+          finishReason: 'stop',
+        }
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '总体架构设计',
+        requirements: '描述系统总体分层架构和基础设施关系',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(aiProxy.call).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: 'generate-agent:diagram:mermaid' })
+    )
+    expect(mockSaveDrawioAsset).not.toHaveBeenCalled()
+
+    expect(result).toMatchObject({ kind: 'result' })
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toContain('<!-- mermaid:')
+      expect(result.value.content).toContain('```mermaid')
+      expect(result.value.content).toContain('C4Context')
+      expect(result.value.content).not.toContain('<!-- drawio:')
+    }
+  })
+
   it('@p0 should call a dedicated diagram repair prompt with invalid code and validation error', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
@@ -211,33 +297,36 @@ describe('generateAgentHandler @story-2-2', () => {
         if (request.caller === 'generate-agent:text') {
           return {
             content:
-              '正文段落\n\n%%DIAGRAM:mermaid:系统集成架构图:' +
-              Buffer.from('展示系统集成关系').toString('base64') +
+              '正文段落\n\n%%DIAGRAM:mermaid:任务处理流程图:' +
+              Buffer.from('展示任务从提交到处理完成的主要步骤').toString('base64') +
               '%%',
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
         if (request.caller === 'generate-agent:diagram:mermaid') {
           return {
-            content: 'graph TD\ntitle 系统集成架构图\nA-->B',
+            content: 'graph TD\ntitle 任务处理流程图\nA-->B',
             usage: { promptTokens: 5, completionTokens: 8 },
             latencyMs: 50,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
         if (request.caller === 'generate-agent:diagram-repair:mermaid') {
           return {
-            content: 'graph TD\nA[系统集成平台] --> B[业务系统]',
+            content: 'graph TD\nA[提交任务] --> B[完成处理]',
             usage: { promptTokens: 6, completionTokens: 9 },
             latencyMs: 55,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -247,6 +336,7 @@ describe('generateAgentHandler @story-2-2', () => {
           latencyMs: 30,
           model: 'mock',
           provider: 'mock',
+          finishReason: 'stop',
         }
       }),
     }
@@ -254,8 +344,8 @@ describe('generateAgentHandler @story-2-2', () => {
     const result = await generateAgentHandler(
       {
         projectId: 'proj-1',
-        chapterTitle: '总体架构设计',
-        requirements: '描述系统集成关系',
+        chapterTitle: '任务流程设计',
+        requirements: '描述任务处理的关键流程',
         enableDiagrams: true,
       },
       { signal: controller.signal, updateProgress, aiProxy }
@@ -268,12 +358,12 @@ describe('generateAgentHandler @story-2-2', () => {
 
     expect(repairCall).toBeDefined()
     expect(repairCall.messages[1].content).toContain('Parse error at line 2')
-    expect(repairCall.messages[1].content).toContain('graph TD\ntitle 系统集成架构图\nA-->B')
+    expect(repairCall.messages[1].content).toContain('graph TD\ntitle 任务处理流程图\nA-->B')
 
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
       expect(result.value.content).toContain('```mermaid')
-      expect(result.value.content).toContain('A[系统集成平台] --> B[业务系统]')
+      expect(result.value.content).toContain('A[提交任务] --> B[完成处理]')
       expect(result.value.content).not.toContain('[图表生成失败]')
     }
   })
@@ -288,23 +378,25 @@ describe('generateAgentHandler @story-2-2', () => {
         if (request.caller === 'generate-agent:text') {
           return {
             content:
-              '正文段落\n\n%%DIAGRAM:mermaid:系统集成架构图:' +
-              Buffer.from('展示系统集成关系').toString('base64') +
+              '正文段落\n\n%%DIAGRAM:mermaid:任务处理流程图:' +
+              Buffer.from('展示任务从提交到处理完成的主要步骤').toString('base64') +
               '%%',
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
         if (request.caller.startsWith('generate-agent:diagram')) {
           return {
-            content: 'graph TD\ntitle 系统集成架构图\nA-->B',
+            content: 'graph TD\ntitle 任务处理流程图\nA-->B',
             usage: { promptTokens: 5, completionTokens: 8 },
             latencyMs: 50,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -314,6 +406,7 @@ describe('generateAgentHandler @story-2-2', () => {
           latencyMs: 30,
           model: 'mock',
           provider: 'mock',
+          finishReason: 'stop',
         }
       }),
     }
@@ -321,8 +414,8 @@ describe('generateAgentHandler @story-2-2', () => {
     const result = await generateAgentHandler(
       {
         projectId: 'proj-1',
-        chapterTitle: '总体架构设计',
-        requirements: '描述系统集成关系',
+        chapterTitle: '任务流程设计',
+        requirements: '描述任务处理的关键流程',
         enableDiagrams: true,
       },
       { signal: controller.signal, updateProgress, aiProxy }
@@ -331,7 +424,7 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
       expect(result.value.content).toContain(
-        '[图表生成失败] 系统集成架构图（mermaid）: Parse error at line 2'
+        '[图表生成失败] 任务处理流程图（mermaid）: Parse error at line 2'
       )
       expect(result.value.content).not.toContain('图表生成中')
       expect(result.value.content).not.toContain('%%DIAGRAM:')
@@ -346,11 +439,12 @@ describe('generateAgentHandler @story-2-2', () => {
       call: vi.fn().mockImplementation(async (request: { caller: string }) => {
         if (request.caller === 'generate-agent:text') {
           return {
-            content: `正文段落\n\n%%DIAGRAM:mermaid:自动生成模块集成架构图:base64(${wrappedDesc})%%`,
+            content: `正文段落\n\n%%DIAGRAM:mermaid:自动生成模块流程图:base64(${wrappedDesc})%%`,
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -361,6 +455,7 @@ describe('generateAgentHandler @story-2-2', () => {
             latencyMs: 50,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -370,6 +465,7 @@ describe('generateAgentHandler @story-2-2', () => {
           latencyMs: 30,
           model: 'mock',
           provider: 'mock',
+          finishReason: 'stop',
         }
       }),
     }
@@ -377,8 +473,8 @@ describe('generateAgentHandler @story-2-2', () => {
     const result = await generateAgentHandler(
       {
         projectId: 'proj-1',
-        chapterTitle: '自动生成模块架构设计',
-        requirements: '支持与外部系统集成',
+        chapterTitle: '自动生成模块流程设计',
+        requirements: '支持任务流转与自动处理',
         enableDiagrams: true,
       },
       { signal: controller.signal, updateProgress, aiProxy }
@@ -392,11 +488,18 @@ describe('generateAgentHandler @story-2-2', () => {
     }
   })
 
-  it('@story-3-4 @p1 should stay on single-pass flow when diagrams are disabled', async () => {
+  it('@story-3-4 @p1 should return result via aiProxy when diagrams are disabled', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
     const aiProxy = {
-      call: vi.fn(),
+      call: vi.fn().mockResolvedValue({
+        content: '项目概述正文内容',
+        usage: { promptTokens: 10, completionTokens: 20 },
+        latencyMs: 100,
+        model: 'mock',
+        provider: 'mock',
+        finishReason: 'stop',
+      }),
     }
 
     const result = await generateAgentHandler(
@@ -409,8 +512,11 @@ describe('generateAgentHandler @story-2-2', () => {
       { signal: controller.signal, updateProgress, aiProxy }
     )
 
-    expect(result).toMatchObject({ kind: 'params' })
-    expect(aiProxy.call).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ kind: 'result' })
+    expect(aiProxy.call).toHaveBeenCalledTimes(1)
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toBe('项目概述正文内容')
+    }
     expect(updateProgress).toHaveBeenCalledWith(0, 'analyzing')
     expect(updateProgress).toHaveBeenCalledWith(10, 'generating-text')
     expect(updateProgress).not.toHaveBeenCalledWith(20, 'validating-text')
@@ -431,6 +537,7 @@ describe('generateAgentHandler @story-2-2', () => {
             latencyMs: 100,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -441,6 +548,7 @@ describe('generateAgentHandler @story-2-2', () => {
             latencyMs: 50,
             model: 'mock',
             provider: 'mock',
+            finishReason: 'stop',
           }
         }
 
@@ -450,6 +558,7 @@ describe('generateAgentHandler @story-2-2', () => {
           latencyMs: 30,
           model: 'mock',
           provider: 'mock',
+          finishReason: 'stop',
         }
       }),
     }
@@ -479,6 +588,90 @@ describe('generateAgentHandler @story-2-2', () => {
     )
 
     expect(result.messages[0].content).toContain('专业技术方案撰写助手')
+  })
+
+  it('should return wrapParams when aiProxy is not provided (path A fallback)', async () => {
+    const controller = new AbortController()
+    const result = await generateAgentHandler(
+      {
+        chapterTitle: '技术方案',
+        requirements: '支持高并发',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress: vi.fn() }
+    )
+
+    expect(result).toMatchObject({ kind: 'params' })
+    const params = unwrapParams(result)
+    expect(params.maxTokens).toBe(16384)
+  })
+
+  it('should auto-continue when finishReason is length', async () => {
+    const controller = new AbortController()
+    const aiProxy = {
+      call: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: '第一部分内容',
+          usage: { promptTokens: 10, completionTokens: 20 },
+          latencyMs: 100,
+          model: 'mock',
+          provider: 'mock',
+          finishReason: 'length',
+        })
+        .mockResolvedValueOnce({
+          content: '第二部分内容（续写完成）',
+          usage: { promptTokens: 30, completionTokens: 25 },
+          latencyMs: 120,
+          model: 'mock',
+          provider: 'mock',
+          finishReason: 'stop',
+        }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        chapterTitle: '技术方案',
+        requirements: '支持高并发',
+        enableDiagrams: false,
+      },
+      { signal: controller.signal, updateProgress: vi.fn(), aiProxy }
+    )
+
+    expect(result).toMatchObject({ kind: 'result' })
+    expect(aiProxy.call).toHaveBeenCalledTimes(2)
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toBe('第一部分内容\n\n第二部分内容（续写完成）')
+      expect(result.value.usage.promptTokens).toBe(40)
+      expect(result.value.usage.completionTokens).toBe(45)
+    }
+  })
+
+  it('should stop continuation after MAX_CONTINUATIONS attempts', async () => {
+    const controller = new AbortController()
+    const aiProxy = {
+      call: vi.fn().mockResolvedValue({
+        content: '内容片段',
+        usage: { promptTokens: 10, completionTokens: 20 },
+        latencyMs: 100,
+        model: 'mock',
+        provider: 'mock',
+        finishReason: 'length',
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        chapterTitle: '技术方案',
+        requirements: '支持高并发',
+        enableDiagrams: false,
+      },
+      { signal: controller.signal, updateProgress: vi.fn(), aiProxy }
+    )
+
+    expect(result).toMatchObject({ kind: 'result' })
+    // MAX_CONTINUATIONS = 3, so total calls = 4 (1 initial + 3 continuations)
+    expect(aiProxy.call).toHaveBeenCalledTimes(4)
   })
 
   describe('@story-5-3 terminology context injection', () => {

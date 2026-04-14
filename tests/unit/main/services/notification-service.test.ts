@@ -72,7 +72,9 @@ describe('notificationService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getAllWindows.mockReturnValue([{ webContents: { send: mockWebContentsSend } }])
+    mocks.getAllWindows.mockReturnValue([
+      { isDestroyed: () => false, webContents: { send: mockWebContentsSend } },
+    ])
   })
 
   describe('notifyDecisionRequested', () => {

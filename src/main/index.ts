@@ -18,7 +18,15 @@ const logger = createLogger('main')
 
 async function ensureDataDirectories(): Promise<void> {
   const dataRoot = join(app.getPath('userData'), 'data')
-  const subdirs = ['db', 'projects', 'config', 'desensitize-mappings', 'logs/ai-trace', 'backups']
+  const subdirs = [
+    'db',
+    'projects',
+    'config',
+    'desensitize-mappings',
+    'logs/ai-trace',
+    'logs/app',
+    'backups',
+  ]
   for (const dir of [dataRoot, ...subdirs.map((s) => join(dataRoot, s))]) {
     await fs.mkdir(dir, { recursive: true })
   }

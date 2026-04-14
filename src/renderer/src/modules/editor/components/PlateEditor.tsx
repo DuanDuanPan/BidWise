@@ -5,11 +5,13 @@ import { editorPlugins } from '@modules/editor/plugins/editorPlugins'
 import { deserializeFromMarkdown, serializeToMarkdown } from '@modules/editor/serializer'
 import { useDocumentStore } from '@renderer/stores'
 import {
+  createContentDigest,
   replaceMarkdownSection,
   extractMarkdownHeadings,
   findMarkdownHeading,
 } from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
+import type { DocumentSaveDebugContext } from '@shared/ipc-types'
 import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
 import { MERMAID_ELEMENT_TYPE } from '@modules/editor/plugins/mermaidPlugin'
 import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
@@ -59,6 +61,83 @@ const plateContentStyle = {
   padding: '24px 0',
 }
 
+function findSuspiciousHeadingLines(markdown: string): string[] {
+  return markdown
+    .split('\n')
+    .flatMap((line, index) => (/^(#{1,4})\s+.*>\s*\S/.test(line) ? [`${index + 1}: ${line}`] : []))
+    .slice(0, 6)
+}
+
+function collectHeadingWindow(
+  markdown: string,
+  locator: ChapterHeadingLocator,
+  label: 'target' | 'next'
+): string[] {
+  const lines = markdown.split('\n')
+  const headings = extractMarkdownHeadings(markdown)
+  const heading = findMarkdownHeading(headings, locator)
+  if (!heading) return []
+
+  const start = Math.max(0, heading.lineIndex - 1)
+  const end = Math.min(lines.length, heading.lineIndex + 4)
+  return [
+    `[${label}] ${locator.level}:${locator.title}:${locator.occurrenceIndex}`,
+    ...lines.slice(start, end).map((line, index) => `${start + index + 1}: ${line}`),
+  ]
+}
+
+function collectSectionWindows(markdown: string, target?: ChapterHeadingLocator): string[] {
+  if (!target) return []
+
+  const headings = extractMarkdownHeadings(markdown)
+  const targetHeading = findMarkdownHeading(headings, target)
+  if (!targetHeading) return []
+
+  const windows = collectHeadingWindow(markdown, target, 'target')
+  const targetIndex = headings.findIndex(
+    (heading) =>
+      heading.lineIndex === targetHeading.lineIndex &&
+      heading.level === targetHeading.level &&
+      heading.occurrenceIndex === targetHeading.occurrenceIndex
+  )
+  const nextHeading = headings[targetIndex + 1]
+  if (!nextHeading) return windows
+
+  return [
+    ...windows,
+    ...collectHeadingWindow(
+      markdown,
+      {
+        title: nextHeading.title,
+        level: nextHeading.level,
+        occurrenceIndex: nextHeading.occurrenceIndex,
+      },
+      'next'
+    ),
+  ]
+}
+
+function buildSaveDebugContext(
+  source: string,
+  markdown: string,
+  target?: ChapterHeadingLocator,
+  extra?: Partial<DocumentSaveDebugContext>
+): DocumentSaveDebugContext {
+  return {
+    source,
+    target: target ?? null,
+    contentDigest: createContentDigest(markdown),
+    contentLength: markdown.length,
+    sectionWindow: collectSectionWindows(markdown, target),
+    suspiciousHeadings: findSuspiciousHeadingLines(markdown),
+    ...extra,
+  }
+}
+
+function emitSaveDebug(context: DocumentSaveDebugContext): void {
+  console.info(`[editor-save-debug] ${context.source}`, context)
+}
+
 export function PlateEditor({
   initialContent,
   projectId,
@@ -98,8 +177,15 @@ export function PlateEditor({
 
   const commitSerializedMarkdown = useCallback((): string => {
     const markdown = serializeToMarkdown(editor)
+    const prevDigest = createContentDigest(latestSerializedMarkdownRef.current)
+    const newDigest = createContentDigest(markdown)
+    console.debug(
+      `[gen-debug:serialize] debounced-serialize prevDigest=${prevDigest}, newDigest=${newDigest}, lenDelta=${markdown.length - latestSerializedMarkdownRef.current.length}, changed=${prevDigest !== newDigest}`
+    )
     latestSerializedMarkdownRef.current = markdown
-    updateContent(markdown, projectId)
+    const debugContext = buildSaveDebugContext('plate:debounced-serialize', markdown)
+    emitSaveDebug(debugContext)
+    updateContent(markdown, projectId, { debugContext })
     return markdown
   }, [editor, projectId, updateContent])
 
@@ -145,7 +231,9 @@ export function PlateEditor({
 
     const markdown = serializeToMarkdown(editor)
     latestSerializedMarkdownRef.current = markdown
-    updateContent(markdown, projectId, { scheduleSave: false })
+    const debugContext = buildSaveDebugContext('plate:flush-sync', markdown)
+    emitSaveDebug(debugContext)
+    updateContent(markdown, projectId, { scheduleSave: false, debugContext })
     return markdown
   }, [clearPendingSerialization, editor, projectId, updateContent])
 
@@ -170,22 +258,61 @@ export function PlateEditor({
       ]
 
       let newMarkdown: string | null = null
-      for (const markdown of markdownCandidates) {
+      let candidateIdx = -1
+      for (let ci = 0; ci < markdownCandidates.length; ci++) {
+        const markdown = markdownCandidates[ci]
         if (!markdown) continue
         newMarkdown = replaceMarkdownSection(markdown, target, markdownContent)
-        if (newMarkdown) break
+        if (newMarkdown) {
+          candidateIdx = ci
+          break
+        }
       }
 
-      if (!newMarkdown) return false
+      if (!newMarkdown) {
+        console.warn(
+          `[gen-debug:replaceSection] "${target.title}" heading not found in any candidate`
+        )
+        return false
+      }
+
+      console.debug(
+        `[gen-debug:replaceSection] "${target.title}" matched candidate=${candidateIdx}, insertLen=${markdownContent.length}, newDocLen=${newMarkdown.length}`
+      )
 
       // Re-set editor and persist
       const tempEditor = createPlateEditor({ plugins: editorPlugins })
       const newNodes = deserializeFromMarkdown(tempEditor, newMarkdown) as Value
       editor.tf.setValue(newNodes)
-      hasAppliedExternalContentRef.current = false
-      latestLoadedMarkdownRef.current = newMarkdown
-      latestSerializedMarkdownRef.current = newMarkdown
-      updateContent(newMarkdown, projectId)
+      // Persist the editor's canonical markdown form so downstream baseline/conflict
+      // detection sees the same content that Plate will later debounce-save.
+      let persistedMarkdown = newMarkdown
+      try {
+        persistedMarkdown = serializeToMarkdown(editor)
+      } catch (error) {
+        console.warn(
+          `[gen-debug:replaceSection] "${target.title}" canonical serialize failed; falling back to pre-serialized markdown`,
+          error
+        )
+      }
+      // The editor already has the updated nodes locally. Mark this content as applied
+      // so the next store-driven prop sync does not hydrate the same markdown again.
+      hasAppliedExternalContentRef.current = true
+      latestLoadedMarkdownRef.current = persistedMarkdown
+      latestSerializedMarkdownRef.current = persistedMarkdown
+      const debugContext = buildSaveDebugContext(
+        'plate:replace-section',
+        persistedMarkdown,
+        target,
+        {
+          note: `insertedContentLength=${markdownContent.length}; persistedContentLength=${persistedMarkdown.length}`,
+          candidateDigests: markdownCandidates
+            .filter((markdown): markdown is string => Boolean(markdown))
+            .map((markdown, index) => `candidate-${index}:${createContentDigest(markdown)}`),
+        }
+      )
+      emitSaveDebug(debugContext)
+      updateContent(persistedMarkdown, projectId, { debugContext })
       return true
     },
     [clearPendingSerialization, editor, projectId, updateContent]

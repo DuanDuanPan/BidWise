@@ -156,11 +156,28 @@ function autoLinkToRequirements(
   }
 }
 
-const MARKED_ITEM_START_RE =
+/** Matches ★ / * items with a dotted clause number, e.g. `*8.2.2.7 自动生成模块` */
+const MARKED_ITEM_NUMBERED_RE =
   /(?:^|\n)\s*(?:\d+[、.．)]\s*)?(?:第[一二三四五六七八九十百0-9]+章\s*)?(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)?\s*[-：:]?\s*([*★])\s*([0-9]+(?:\.[0-9]+)+)\s*([^\n]*)/g
 
-const INLINE_MARKED_ITEM_START_RE =
+/** Matches ★ / * items without a dotted clause number, e.g. `★支持...` or `★（1）支持...` */
+const MARKED_ITEM_BARE_RE =
+  /(?:^|\n)\s*(?:\d+[、.．)]\s*)?(?:第[一二三四五六七八九十百0-9]+章\s*)?(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)?\s*[-：:]?\s*([*★])\s*(?:[（(]\d+[)）]\s*)?([^\n]*)/g
+
+/** Inline variant for section-level scanning — numbered items */
+const INLINE_MARKED_ITEM_NUMBERED_RE =
   /(?:^|[\s（(])(?:\d+[、.．)]\s*)?(?:第[一二三四五六七八九十百0-9]+章\s*)?(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)?\s*[-：:]?\s*([*★])\s*([0-9]+(?:\.[0-9]+)+)\s*/g
+
+/** Inline variant for section-level scanning — bare (no clause number) items */
+const INLINE_MARKED_ITEM_BARE_RE =
+  /(?:^|[\s（(])(?:\d+[、.．)]\s*)?(?:第[一二三四五六七八九十百0-9]+章\s*)?(?:(?:供货|采购|技术)(?:要求|参数)|项目需求)?\s*[-：:]?\s*([*★])\s*(?:[（(]\d+[)）]\s*)?([^\n]*)/g
+
+/**
+ * Lines that mention ★ / * in a descriptive/instructional context rather than marking an actual item.
+ * These are filtered out to avoid false positives.
+ */
+const STAR_NOISE_RE =
+  /(?:加注星号|带[*★]|标注星号|[*★]号(?:指标|项|条款)|[*★][""]|[""][*★]|[*★]或[★*]|[★*]或[*★]|对[*★]号|仔细阅读)/
 
 function expandPageRange(pageStart: number, pageEnd: number): number[] {
   if (!Number.isFinite(pageStart) || !Number.isFinite(pageEnd)) return []
@@ -171,7 +188,10 @@ function expandPageRange(pageStart: number, pageEnd: number): number[] {
 }
 
 function normalizeSearchText(text: string): string {
-  return text.replace(/\s+/g, '').replace(/[“”"'`]/g, '').trim()
+  return text
+    .replace(/\s+/g, '')
+    .replace(/[“”"'`]/g, '')
+    .trim()
 }
 
 function escapeRegExp(text: string): string {
@@ -194,6 +214,7 @@ function sanitizeMarkedExcerpt(excerpt: string): string {
     .replace(/\n+\s*技术支持资料[:：]?\s*$/u, '')
     .replace(/\s*技术支持资料[:：]?\s*$/u, '')
     .replace(/\s*[（(](?:如有遗漏|投标人需将加注星号)[\s\S]*$/u, '')
+    .replace(/^\s*[*★]\s*(?:[（(]\d+[)）]\s*)?/, '')
     .trim()
 }
 
@@ -205,18 +226,26 @@ function summarizeMarkedItem(
 ): string {
   const cleanedHeading = heading
     .replace(/^\s*[-：:]/, '')
+    .replace(/^\s*[（(]\d+[)）]\s*/, '')
     .replace(/[，,。；;：:]+.*$/, '')
     .replace(/\s+/g, ' ')
     .trim()
 
-  const fallback = sourceText
-    .replace(new RegExp(`^[${escapeRegExp(marker)}]\\s*${escapeRegExp(clauseNumber)}\\s*`), '')
+  const strippedSource = clauseNumber
+    ? sourceText.replace(
+        new RegExp(`^[${escapeRegExp(marker)}]\\s*${escapeRegExp(clauseNumber)}\\s*`),
+        ''
+      )
+    : sourceText.replace(new RegExp(`^[${escapeRegExp(marker)}]\\s*(?:[（(]\\d+[)）]\\s*)?`), '')
+
+  const fallback = strippedSource
     .replace(/\s+/g, ' ')
     .replace(/[，,。；;：:]+.*$/, '')
     .trim()
 
   const summary = (cleanedHeading || fallback).slice(0, 36).trim()
-  return `${marker}${clauseNumber}${summary ? ` ${summary}` : ''}`
+  const prefix = clauseNumber ? `${marker}${clauseNumber}` : `${marker}`
+  return `${prefix}${summary ? ` ${summary}` : ''}`
 }
 
 function resolveMarkedItemPages(
@@ -228,9 +257,13 @@ function resolveMarkedItemPages(
 ): number[] {
   const clauseNeedle = clauseNumber.trim()
   const headingNeedle = normalizeSearchText(heading).slice(0, 24)
-  const sourceNeedle = normalizeSearchText(sourceText)
-    .replace(new RegExp(`^[*★]\\s*${escapeRegExp(clauseNumber)}`), '')
-    .slice(0, 36)
+  const strippedSource = clauseNeedle
+    ? normalizeSearchText(sourceText).replace(
+        new RegExp(`^[*★]\\s*${escapeRegExp(clauseNumber)}`),
+        ''
+      )
+    : normalizeSearchText(sourceText).replace(/^[*★]\s*(?:[（(]\d+[)）])?\s*/, '')
+  const sourceNeedle = strippedSource.slice(0, 36)
 
   let bestMatch: { score: number; pages: number[] } | null = null
 
@@ -276,27 +309,69 @@ function materializeExplicitMarkedItem(
   }
 }
 
+interface RawStartMatch {
+  index: number
+  marker: string
+  clauseNumber: string
+  heading: string
+}
+
+/** Collect all ★ / * start positions from raw text using both numbered and bare regexes. */
+function collectStartMatches(normalizedText: string): RawStartMatch[] {
+  const seen = new Set<number>()
+  const results: RawStartMatch[] = []
+
+  // Numbered matches first (higher priority — they capture the clause number)
+  for (const m of normalizedText.matchAll(MARKED_ITEM_NUMBERED_RE)) {
+    if (m.index === undefined) continue
+    seen.add(m.index)
+    results.push({
+      index: m.index,
+      marker: m[1] ?? '*',
+      clauseNumber: m[2]?.trim() ?? '',
+      heading: (m[3] ?? '').trim(),
+    })
+  }
+
+  // Bare matches (no clause number) — skip positions already covered by numbered regex
+  for (const m of normalizedText.matchAll(MARKED_ITEM_BARE_RE)) {
+    if (m.index === undefined || seen.has(m.index)) continue
+    const heading = (m[2] ?? '').trim()
+    // Filter out noise lines that describe star marks rather than being star items
+    if (STAR_NOISE_RE.test(heading)) continue
+    // Require at least some substantive content after the marker
+    if (heading.length < 4) continue
+    seen.add(m.index)
+    results.push({
+      index: m.index,
+      marker: m[1] ?? '*',
+      clauseNumber: '',
+      heading,
+    })
+  }
+
+  results.sort((a, b) => a.index - b.index)
+  return results
+}
+
 function extractMarkedItemsFromRawText(
   rawText: string,
   sections: ParsedTender['sections'],
   totalPages: number
 ): ExplicitMarkedItemMatch[] {
   const normalizedText = rawText.replace(/\r\n?/g, '\n')
-  const starts = Array.from(normalizedText.matchAll(MARKED_ITEM_START_RE))
+  const starts = collectStartMatches(normalizedText)
   const items: ExplicitMarkedItemMatch[] = []
 
   for (let index = 0; index < starts.length; index++) {
     const match = starts[index]
-    if (!match || match.index === undefined) continue
+    if (!match) continue
 
     const nextMatch = starts[index + 1]
     const sliceStart = match.index
     const sliceEnd = nextMatch?.index ?? normalizedText.length
     const sourceText = normalizedText.slice(sliceStart, sliceEnd)
-    const marker = match[1] ?? '*'
-    const clauseNumber = match[2]?.trim()
-    const heading = (match[3] ?? '').trim()
-    if (!clauseNumber) continue
+    const { marker, clauseNumber, heading } = match
 
     const materialized = materializeExplicitMarkedItem(
       marker,
@@ -314,6 +389,40 @@ function extractMarkedItemsFromRawText(
   return items
 }
 
+/** Collect inline start matches from a section's content using both numbered and bare regexes. */
+function collectInlineStartMatches(content: string): RawStartMatch[] {
+  const seen = new Set<number>()
+  const results: RawStartMatch[] = []
+
+  for (const m of content.matchAll(INLINE_MARKED_ITEM_NUMBERED_RE)) {
+    if (m.index === undefined) continue
+    seen.add(m.index)
+    results.push({
+      index: m.index,
+      marker: m[1] ?? '*',
+      clauseNumber: m[2]?.trim() ?? '',
+      heading: '',
+    })
+  }
+
+  for (const m of content.matchAll(INLINE_MARKED_ITEM_BARE_RE)) {
+    if (m.index === undefined || seen.has(m.index)) continue
+    const heading = (m[2] ?? '').trim()
+    if (STAR_NOISE_RE.test(heading)) continue
+    if (heading.length < 4) continue
+    seen.add(m.index)
+    results.push({
+      index: m.index,
+      marker: m[1] ?? '*',
+      clauseNumber: '',
+      heading,
+    })
+  }
+
+  results.sort((a, b) => a.index - b.index)
+  return results
+}
+
 function extractMarkedItemsFromSections(
   sections: ParsedTender['sections'],
   totalPages: number
@@ -321,29 +430,32 @@ function extractMarkedItemsFromSections(
   const items: ExplicitMarkedItemMatch[] = []
 
   for (const section of sections) {
-    const starts = Array.from(section.content.matchAll(INLINE_MARKED_ITEM_START_RE))
+    const starts = collectInlineStartMatches(section.content)
     if (starts.length === 0) continue
 
     for (let index = 0; index < starts.length; index++) {
       const match = starts[index]
-      if (!match || match.index === undefined) continue
+      if (!match) continue
 
       const nextMatch = starts[index + 1]
       const sliceStart = match.index
       const sliceEnd = nextMatch?.index ?? section.content.length
       const sourceText = section.content.slice(sliceStart, sliceEnd)
-      const marker = match[1] ?? '*'
-      const clauseNumber = match[2]?.trim()
-      if (!clauseNumber) continue
+      const { marker, clauseNumber } = match
 
       const normalizedBody = sourceText.replace(/\s+/g, ' ').trim()
-      const heading = normalizedBody
-        .replace(
-          new RegExp(`^[^*★]*[${escapeRegExp(marker)}]\\s*${escapeRegExp(clauseNumber)}\\s*`),
-          ''
-        )
-        .slice(0, 36)
-        .trim()
+      const heading = clauseNumber
+        ? normalizedBody
+            .replace(
+              new RegExp(`^[^*★]*[${escapeRegExp(marker)}]\\s*${escapeRegExp(clauseNumber)}\\s*`),
+              ''
+            )
+            .slice(0, 36)
+            .trim()
+        : normalizedBody
+            .replace(new RegExp(`^[^*★]*[${escapeRegExp(marker)}]\\s*(?:[（(]\\d+[)）]\\s*)?`), '')
+            .slice(0, 36)
+            .trim()
 
       const materialized = materializeExplicitMarkedItem(
         marker,
@@ -374,7 +486,10 @@ function deduplicateRawMandatoryItems<T extends { content?: string; sourceText?:
   })
 }
 
-function choosePreferredRawItem(current: RawMandatoryItem, candidate: RawMandatoryItem): RawMandatoryItem {
+function choosePreferredRawItem(
+  current: RawMandatoryItem,
+  candidate: RawMandatoryItem
+): RawMandatoryItem {
   const currentPageCount = Array.isArray(current.sourcePages) ? current.sourcePages.length : 0
   const candidatePageCount = Array.isArray(candidate.sourcePages) ? candidate.sourcePages.length : 0
 

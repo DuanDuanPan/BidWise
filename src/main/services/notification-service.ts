@@ -10,7 +10,12 @@ function isHumanUser(author: string): boolean {
 
 function broadcastNotification(notification: NotificationRecord): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('notification:new', notification)
+    if (win.isDestroyed()) continue
+    try {
+      win.webContents.send('notification:new', notification)
+    } catch {
+      // Render frame may be disposed during HMR, reload, or window teardown.
+    }
   }
 }
 

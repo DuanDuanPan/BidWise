@@ -89,7 +89,7 @@ export function ExportPreviewModal({
       style={{ top: 20 }}
       closable
       keyboard
-      destroyOnClose={false}
+      destroyOnHidden={false}
       footer={
         <div className="flex justify-end gap-2">
           <Button onClick={onClose} data-testid="back-to-edit-btn">

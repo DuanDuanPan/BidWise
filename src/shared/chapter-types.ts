@@ -62,13 +62,63 @@ export interface SkeletonExpandPlan {
   confirmedAt: string
 }
 
-/** Progress payload for batch sub-chapter generation */
+/** Progress payload for batch sub-chapter generation (legacy single-task batch) */
 export interface SkeletonBatchProgressPayload {
   kind: 'skeleton-batch'
   completedCount: number
   totalCount: number
   completedSections: string[]
   failedSections: Array<{ title: string; error: string }>
+}
+
+/** Per-section status within a progressive batch */
+export type BatchSectionPhase = 'pending' | 'generating' | 'completed' | 'failed'
+
+/** Status of a single section within a progressive batch orchestration */
+export interface BatchSectionStatus {
+  index: number
+  title: string
+  level: number
+  phase: BatchSectionPhase
+  content?: string
+  taskId?: string
+  error?: string
+}
+
+/** Progress payload for progressive batch: one section completed */
+export interface BatchSectionProgressPayload {
+  kind: 'batch-section-complete'
+  batchId: string
+  sectionIndex: number
+  sectionMarkdown: string
+  assembledSnapshot: string
+  completedCount: number
+  totalCount: number
+  /** TaskId of the next sub-chapter task (for progress routing) */
+  nextTaskId?: string
+  /** Index of the next section being generated */
+  nextSectionIndex?: number
+}
+
+/** Progress payload for progressive batch: all sections done */
+export interface BatchCompletePayload {
+  kind: 'batch-complete'
+  batchId: string
+  assembledMarkdown: string
+  completedCount: number
+  totalCount: number
+  failedSections: Array<{ index: number; title: string; error: string }>
+}
+
+/** Progress payload for progressive batch: a section failed */
+export interface BatchSectionFailedPayload {
+  kind: 'batch-section-failed'
+  batchId: string
+  sectionIndex: number
+  sectionTitle: string
+  error: string
+  completedCount: number
+  totalCount: number
 }
 
 /** IPC input for chapter:skeleton-generate */
@@ -96,9 +146,10 @@ export interface BatchGenerateInput {
   sectionId: string
 }
 
-/** IPC output for chapter:batch-generate */
+/** IPC output for chapter:batch-generate (progressive mode returns batchId + first taskId) */
 export interface BatchGenerateOutput {
   taskId: string
+  batchId?: string
 }
 
 export interface ChapterDiagramPatch {
@@ -154,4 +205,10 @@ export interface ChapterGenerationStatus {
   latestDiagramPatch?: ChapterDiagramPatch
   /** Skeleton plan for skeleton-expand flow */
   skeletonPlan?: SkeletonExpandPlan
+  /** Progressive batch orchestration ID */
+  batchId?: string
+  /** Per-section statuses for progressive batch */
+  batchSections?: BatchSectionStatus[]
+  /** Whether the chapter section is locked during batch generation */
+  locked?: boolean
 }

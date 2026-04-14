@@ -163,6 +163,7 @@ class AiProxyService {
         model: response.model,
         provider: config.provider,
         latencyMs,
+        finishReason: response.finishReason,
       }
     } catch (err) {
       const latencyMs = Date.now() - start

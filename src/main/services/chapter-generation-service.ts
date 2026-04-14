@@ -8,7 +8,7 @@ import { createLogger } from '@main/utils/logger'
 import { BidWiseError, ValidationError } from '@main/utils/errors'
 import { resolveProjectDataPath } from '@main/utils/project-paths'
 import { ErrorCode } from '@shared/constants'
-import { agentOrchestrator } from '@main/services/agent-orchestrator'
+import { agentOrchestrator, batchOrchestrationManager } from '@main/services/agent-orchestrator'
 import { documentService } from '@main/services/document-service'
 import { writingStyleService, serializeStyleForPrompt } from '@main/services/writing-style-service'
 import { RequirementRepository } from '@main/db/repositories/requirement-repo'
@@ -25,6 +25,9 @@ import type {
   SkeletonExpandPlan,
   SkeletonGenerateOutput,
   BatchGenerateOutput,
+  BatchSectionProgressPayload,
+  BatchSectionFailedPayload,
+  BatchCompletePayload,
 } from '@shared/chapter-types'
 import {
   createContentDigest,
@@ -32,12 +35,13 @@ import {
   findMarkdownHeading,
   isMarkdownSectionContentEmpty,
 } from '@shared/chapter-markdown'
+import { progressEmitter } from '@main/services/task-queue/progress-emitter'
 import type { MarkdownHeadingInfo } from '@shared/chapter-markdown'
 
 const logger = createLogger('chapter-generation-service')
 
 const CHAPTER_TIMEOUT_MS = 600_000
-const BATCH_CHAPTER_TIMEOUT_MS = 1_200_000
+const _BATCH_CHAPTER_TIMEOUT_MS = 1_200_000
 const MAX_ADJACENT_SUMMARY_LENGTH = 500
 
 type HeadingInfo = MarkdownHeadingInfo
@@ -537,41 +541,221 @@ export const chapterGenerationService = {
     const writingStyleText = serializeStyleForPrompt(writingStyle)
     const documentOutline = buildDocumentOutline(headings, chapter.heading)
 
-    const response = await agentOrchestrator.execute({
-      agentType: 'generate',
-      context: {
-        projectId,
-        chapterTitle: target.title,
-        chapterLevel: target.level,
-        requirements: requirementsText,
-        scoringWeights: scoringWeightsText,
-        writingStyle: writingStyleText,
-        documentOutline,
-        adjacentChaptersBefore: adjacentBefore,
-        adjacentChaptersAfter: adjacentAfter,
-        strategySeed,
-        target,
-        baselineDigest,
-        baselineSectionContent: chapter.contentLines.join('\n'),
-        confirmedSkeleton,
-        mode: 'skeleton-batch',
-        enableDiagrams: false,
-      },
-      options: {
-        timeoutMs: BATCH_CHAPTER_TIMEOUT_MS,
-        maxRetries: 0,
-      },
+    // ── Progressive batch: create orchestration and chain sub-chapter tasks ──
+    const contextBase: Record<string, unknown> = {
+      projectId,
+      chapterTitle: target.title,
+      chapterLevel: target.level,
+      requirements: requirementsText,
+      scoringWeights: scoringWeightsText,
+      writingStyle: writingStyleText,
+      documentOutline,
+      adjacentChaptersBefore: adjacentBefore,
+      adjacentChaptersAfter: adjacentAfter,
+      strategySeed,
+      target,
+      baselineDigest,
+      baselineSectionContent: chapter.contentLines.join('\n'),
+    }
+
+    const orchestration = batchOrchestrationManager.create({
+      projectId,
+      parentTarget: target,
+      skeleton: confirmedSkeleton,
+      sectionId,
+      contextBase,
     })
 
-    // F7: cleanup confirmedSkeletons entry after batch task completes
-    void this._cleanupSkeletonOnCompletion(
-      projectId,
-      sectionId,
-      response.taskId,
-      confirmedSkeleton.confirmedAt
+    const firstSection = batchOrchestrationManager.getFirstSection(orchestration.id)
+    if (!firstSection) {
+      throw new BidWiseError(ErrorCode.NOT_FOUND, '骨架计划中没有子章节')
+    }
+
+    // Dispatch the first sub-chapter task
+    const firstTaskId = await this._dispatchBatchSingleSection(
+      orchestration.id,
+      firstSection.index,
+      firstSection.section,
+      firstSection.previousSections,
+      contextBase
     )
 
-    return { taskId: response.taskId }
+    batchOrchestrationManager.markRunning(orchestration.id, firstSection.index, firstTaskId)
+
+    return { taskId: firstTaskId, batchId: orchestration.id }
+  },
+
+  /** Dispatch a single sub-chapter task within a progressive batch, with chain callback */
+  async _dispatchBatchSingleSection(
+    batchId: string,
+    sectionIndex: number,
+    section: { title: string; level: number; dimensions: string[]; guidanceHint?: string },
+    previousSections: Array<{ title: string; markdown: string }>,
+    contextBase: Record<string, unknown>
+  ): Promise<string> {
+    const response = await agentOrchestrator.executeWithCallback(
+      {
+        agentType: 'generate',
+        context: {
+          ...contextBase,
+          mode: 'skeleton-batch-single',
+          batchId,
+          sectionIndex,
+          section,
+          previousSections,
+        },
+        options: {
+          timeoutMs: CHAPTER_TIMEOUT_MS,
+          maxRetries: 0,
+        },
+      },
+      (taskId, result) => {
+        void this._onBatchSectionDone(batchId, sectionIndex, taskId, result)
+      }
+    )
+
+    return response.taskId
+  },
+
+  /** Callback fired when a single sub-chapter task completes — chains the next one */
+  async _onBatchSectionDone(
+    batchId: string,
+    sectionIndex: number,
+    taskId: string,
+    result: { status: 'completed' | 'failed' | 'cancelled'; content?: string; error?: string }
+  ): Promise<void> {
+    const orch = batchOrchestrationManager.get(batchId)
+    if (!orch) {
+      logger.warn(`_onBatchSectionDone: orchestration not found: ${batchId}`)
+      return
+    }
+
+    if (result.status === 'completed' && result.content) {
+      const advance = batchOrchestrationManager.onSectionComplete(
+        batchId,
+        sectionIndex,
+        result.content
+      )
+
+      if (advance.allDone) {
+        // All sections done — push section-complete then batch-complete
+        const sectionPayload: BatchSectionProgressPayload = {
+          kind: 'batch-section-complete',
+          batchId,
+          sectionIndex,
+          sectionMarkdown: result.content,
+          assembledSnapshot: advance.assembledSnapshot,
+          completedCount: advance.completedCount,
+          totalCount: advance.totalCount,
+        }
+        progressEmitter.emit({
+          taskId,
+          progress: 95,
+          message: 'batch-section-complete',
+          payload: sectionPayload,
+        })
+
+        const completePayload: BatchCompletePayload = {
+          kind: 'batch-complete',
+          batchId,
+          assembledMarkdown: advance.assembledSnapshot,
+          completedCount: advance.completedCount,
+          totalCount: advance.totalCount,
+          failedSections: advance.failedSections,
+        }
+        progressEmitter.emit({
+          taskId,
+          progress: 100,
+          message: 'batch-complete',
+          payload: completePayload,
+        })
+        // Cleanup skeleton metadata
+        void this._cleanupSkeletonAfterBatch(orch)
+        return
+      }
+
+      // Chain: dispatch next section first, then emit with nextTaskId
+      let nextTaskId: string | undefined
+      let nextSectionIndex: number | undefined
+      if (advance.nextSection) {
+        try {
+          nextTaskId = await this._dispatchBatchSingleSection(
+            batchId,
+            advance.nextSection.index,
+            advance.nextSection.section,
+            advance.nextSection.previousSections,
+            orch.contextBase
+          )
+          nextSectionIndex = advance.nextSection.index
+          batchOrchestrationManager.markRunning(batchId, advance.nextSection.index, nextTaskId)
+        } catch (err) {
+          logger.error(`Failed to chain next section after index ${sectionIndex}:`, err)
+        }
+      }
+
+      // Push progressive update to renderer (includes nextTaskId for routing)
+      const sectionPayload: BatchSectionProgressPayload = {
+        kind: 'batch-section-complete',
+        batchId,
+        sectionIndex,
+        sectionMarkdown: result.content,
+        assembledSnapshot: advance.assembledSnapshot,
+        completedCount: advance.completedCount,
+        totalCount: advance.totalCount,
+        nextTaskId,
+        nextSectionIndex,
+      }
+      progressEmitter.emit({
+        taskId,
+        progress: Math.round((advance.completedCount / advance.totalCount) * 100),
+        message: 'batch-section-complete',
+        payload: sectionPayload,
+      })
+    } else {
+      // Failed or cancelled
+      const errorMsg = result.error ?? (result.status === 'cancelled' ? '任务已取消' : '生成失败')
+      const advance = batchOrchestrationManager.onSectionFailed(batchId, sectionIndex, errorMsg)
+
+      const failPayload: BatchSectionFailedPayload = {
+        kind: 'batch-section-failed',
+        batchId,
+        sectionIndex,
+        sectionTitle: orch.sections[sectionIndex]?.section.title ?? '',
+        error: errorMsg,
+        completedCount: advance.completedCount,
+        totalCount: advance.totalCount,
+      }
+      progressEmitter.emit({
+        taskId,
+        progress: Math.round((advance.completedCount / advance.totalCount) * 100),
+        message: 'batch-section-failed',
+        payload: failPayload,
+      })
+    }
+  },
+
+  /** Cleanup skeleton metadata after progressive batch completes */
+  async _cleanupSkeletonAfterBatch(orch: {
+    projectId: string
+    sectionId: string
+    skeleton: SkeletonExpandPlan
+  }): Promise<void> {
+    try {
+      await documentService.updateMetadata(orch.projectId, (current) => {
+        if (!current.confirmedSkeletons) return current
+        const existing = current.confirmedSkeletons[orch.sectionId]
+        if (!existing || existing.confirmedAt !== orch.skeleton.confirmedAt) return current
+        const { [orch.sectionId]: _, ...rest } = current.confirmedSkeletons
+        const hasRemaining = Object.keys(rest).length > 0
+        return {
+          ...current,
+          confirmedSkeletons: hasRemaining ? rest : undefined,
+        }
+      })
+      logger.info(`Cleaned up confirmedSkeletons[${orch.sectionId}] after progressive batch`)
+    } catch (err) {
+      logger.warn(`Failed to cleanup skeleton after batch for ${orch.sectionId}:`, err)
+    }
   },
 
   /** Fire-and-forget: poll task status and remove confirmedSkeletons entry on completion.

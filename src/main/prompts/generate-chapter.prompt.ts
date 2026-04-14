@@ -122,19 +122,25 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 7. 直接输出 Markdown 正文，不要包含章节主标题
 8. 第一行不得重复输出「${context.chapterTitle}」作为 H1/H2/H3/H4 或普通文本，例如不要输出\u201C## ${context.chapterTitle}\u201D
 9. 严格限定在「${context.chapterTitle}」的主题范围内撰写，文档大纲中的其他章节会独立生成，不要在本章节中涉及其他章节的内容
-10. 在正式输出前先自检：是否覆盖了关键需求、是否遗漏必响应条款、是否出现章节越界内容；自检过程不要显式输出`)
+10. 在正式输出前先自检：是否覆盖了关键需求、是否遗漏必响应条款、是否出现章节越界内容；自检过程不要显式输出
+11. 控制篇幅在合理范围内，聚焦核心要点，避免不必要的重复和冗余展开`)
 
     if (diagramsPreferred) {
       sections.push(`## 图表插入要求
 1. 如果本章节存在明显的结构关系、流程关系、分层关系、时序关系或部署关系，请在合适位置插入 1-3 个图表占位符。
 2. 占位符必须严格使用如下格式，不要改写、不要加代码围栏：
    %%DIAGRAM:mermaid:图表标题:图表描述的UTF-8 Base64编码%%
-   或
-   %%DIAGRAM:drawio:图表标题:图表描述的UTF-8 Base64编码%%
 3. 第四段必须是纯 base64 字符串，只能包含 A-Z、a-z、0-9、+、/、=；不要输出 \`base64(...)\` 包装、不要换行、不要加解释文字。
-4. 默认优先使用 mermaid。只有在自由布局明显更合适时才使用 drawio。
-5. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
-6. 占位符应紧跟在相关段落之后，不要集中堆到文末。`)
+4. 所有图表统一使用 Mermaid，根据语义选择合适语法族：
+   - 总体架构：优先使用 C4Context
+   - 技术架构：优先使用 C4Container 或 C4Component
+   - 数据架构、部署/拓扑图、系统集成架构：优先使用 architecture-beta
+   - 业务架构、流程图：优先使用 flowchart
+   - 时序图、状态图、类图：分别使用 sequenceDiagram、stateDiagram-v2、classDiagram
+5. Mermaid 仅使用以下语法族：flowchart、sequenceDiagram、stateDiagram-v2、classDiagram、architecture-beta、C4Context、C4Container、C4Component、C4Deployment；不要输出 draw.io XML、block-beta 或其他图表语法。
+6. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
+7. 占位符应紧跟在相关段落之后，不要集中堆到文末。
+8. 绝对不要直接输出 \`\`\`mermaid 或 \`\`\`xml 代码块。程序只能识别 %%DIAGRAM%% 占位符，直接嵌入的代码块不会被正确渲染。`)
     } else {
       sections.push(`## 图表策略
 本章节以文字说明为主。除非确实无法清楚表达结构关系，否则不要输出任何图表占位符。`)

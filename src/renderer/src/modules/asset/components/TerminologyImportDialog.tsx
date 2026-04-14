@@ -184,7 +184,7 @@ export function TerminologyImportDialog({
           </Space>
         )
       }
-      destroyOnClose
+      destroyOnHidden
     >
       {importResult ? (
         <div style={{ textAlign: 'center', padding: '24px 0' }}>

@@ -17,8 +17,8 @@ const documentHandlerMap: { [C in DocumentChannel]: () => void } = {
   'document:load': () =>
     createIpcHandler('document:load', ({ projectId }) => documentService.load(projectId)),
   'document:save': () =>
-    createIpcHandler('document:save', ({ projectId, content }) =>
-      documentService.save(projectId, content)
+    createIpcHandler('document:save', ({ projectId, content, debugContext, debugTrail }) =>
+      documentService.save(projectId, content, debugContext, debugTrail)
     ),
   'document:get-metadata': () =>
     createIpcHandler('document:get-metadata', ({ projectId }) =>
@@ -30,7 +30,13 @@ export type RegisteredDocumentChannels = DocumentChannel
 
 function handleDocumentSaveSync(event: IpcMainEvent, input: DocumentSaveSyncInput): void {
   try {
-    const data = documentService.saveSync(input.projectId, input.rootPath, input.content)
+    const data = documentService.saveSync(
+      input.projectId,
+      input.rootPath,
+      input.content,
+      input.debugContext,
+      input.debugTrail
+    )
     event.returnValue = { success: true, data } as ApiResponse<DocumentSaveOutput>
   } catch (error) {
     if (error instanceof BidWiseError) {

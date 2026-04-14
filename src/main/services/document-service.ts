@@ -5,6 +5,12 @@ import { readFile, rename, rm, writeFile } from 'fs/promises'
 import { projectService } from '@main/services/project-service'
 import { ErrorCode } from '@shared/constants'
 import {
+  createContentDigest,
+  extractMarkdownHeadings,
+  findMarkdownHeading,
+} from '@shared/chapter-markdown'
+import type { DocumentSaveDebugContext } from '@shared/ipc-types'
+import {
   BidWiseError,
   DocumentNotFoundError,
   DocumentSaveError,
@@ -218,6 +224,54 @@ function readMetadataSync(
   }
 }
 
+function findSuspiciousHeadingLines(markdown: string): string[] {
+  return markdown
+    .split('\n')
+    .flatMap((line, index) => (/^(#{1,4})\s+.*>\s*\S/.test(line) ? [`${index + 1}: ${line}`] : []))
+    .slice(0, 8)
+}
+
+function collectTargetWindow(markdown: string, debugContext?: DocumentSaveDebugContext): string[] {
+  const target = debugContext?.target
+  if (!target) return []
+
+  const lines = markdown.split('\n')
+  const headings = extractMarkdownHeadings(markdown)
+  const targetHeading = findMarkdownHeading(headings, target)
+  if (!targetHeading) return []
+
+  const start = Math.max(0, targetHeading.lineIndex - 1)
+  const end = Math.min(lines.length, targetHeading.lineIndex + 4)
+  return lines.slice(start, end).map((line, index) => `${start + index + 1}: ${line}`)
+}
+
+function summarizeDebugTrail(debugTrail?: DocumentSaveDebugContext[]): string[] {
+  return (debugTrail ?? []).map(
+    (entry) => `${entry.source}:${entry.contentDigest ?? 'no-digest'}:${entry.contentLength ?? 0}`
+  )
+}
+
+function buildSaveDebugPayload(
+  content: string,
+  debugContext?: DocumentSaveDebugContext,
+  debugTrail?: DocumentSaveDebugContext[]
+): Record<string, unknown> {
+  return {
+    source: debugContext?.source ?? 'unknown',
+    note: debugContext?.note,
+    target: debugContext?.target ?? null,
+    contentLength: content.length,
+    contentDigest: createContentDigest(content),
+    upstreamDigest: debugContext?.contentDigest,
+    upstreamSuspiciousHeadings: debugContext?.suspiciousHeadings ?? [],
+    upstreamSectionWindow: debugContext?.sectionWindow ?? [],
+    candidateDigests: debugContext?.candidateDigests ?? [],
+    contentTargetWindow: collectTargetWindow(content, debugContext),
+    suspiciousHeadings: findSuspiciousHeadingLines(content),
+    debugTrail: summarizeDebugTrail(debugTrail),
+  }
+}
+
 async function cleanupTmpFile(tmpPath: string): Promise<void> {
   try {
     await rm(tmpPath, { force: true })
@@ -281,16 +335,28 @@ export const documentService = {
     }
   },
 
-  async save(projectId: string, content: string): Promise<{ lastSavedAt: string }> {
+  async save(
+    projectId: string,
+    content: string,
+    debugContext?: DocumentSaveDebugContext,
+    debugTrail?: DocumentSaveDebugContext[]
+  ): Promise<{ lastSavedAt: string }> {
     const rootPath = await getProjectRootPath(projectId)
     const sequence = beginSave(projectId)
     const { filePath, tmpPath } = getDocumentPaths(rootPath, sequence)
     const lastSavedAt = new Date().toISOString()
+    const debugPayload = buildSaveDebugPayload(content, debugContext, debugTrail)
+
+    logger.info(`proposal.md save requested: ${projectId} seq=${sequence}`, debugPayload)
 
     try {
       await writeFile(tmpPath, content, 'utf-8')
       if (!isLatestSave(projectId, sequence)) {
         await cleanupTmpFile(tmpPath)
+        logger.info(
+          `proposal.md save skipped (superseded): ${projectId} seq=${sequence}`,
+          debugPayload
+        )
         return { lastSavedAt }
       }
       await rename(tmpPath, filePath)
@@ -305,12 +371,19 @@ export const documentService = {
         ...current,
         lastSavedAt,
       }))
+      logger.info(`proposal.md save committed: ${projectId} seq=${sequence}`, debugPayload)
     }
 
     return { lastSavedAt }
   },
 
-  saveSync(projectId: string, rootPath: string, content: string): { lastSavedAt: string } {
+  saveSync(
+    projectId: string,
+    rootPath: string,
+    content: string,
+    debugContext?: DocumentSaveDebugContext,
+    debugTrail?: DocumentSaveDebugContext[]
+  ): { lastSavedAt: string } {
     const validatedRootPath = validateProjectRootPath(projectId, rootPath)
     const sequence = beginSave(projectId)
     const { filePath, metaPath, tmpPath, metaTmpPath } = getDocumentPaths(
@@ -318,11 +391,18 @@ export const documentService = {
       sequence
     )
     const lastSavedAt = new Date().toISOString()
+    const debugPayload = buildSaveDebugPayload(content, debugContext, debugTrail)
+
+    logger.info(`proposal.md sync-save requested: ${projectId} seq=${sequence}`, debugPayload)
 
     try {
       writeFileSync(tmpPath, content, 'utf-8')
       if (!isLatestSave(projectId, sequence)) {
         cleanupTmpFileSync(tmpPath)
+        logger.info(
+          `proposal.md sync-save skipped (superseded): ${projectId} seq=${sequence}`,
+          debugPayload
+        )
         return { lastSavedAt }
       }
       renameSync(tmpPath, filePath)
@@ -340,9 +420,14 @@ export const documentService = {
       writeFileSync(metaTmpPath, JSON.stringify(meta, null, 2), 'utf-8')
       if (!isLatestSave(projectId, sequence)) {
         cleanupTmpFileSync(metaTmpPath)
+        logger.info(
+          `proposal.md sync-save metadata skipped (superseded): ${projectId} seq=${sequence}`,
+          debugPayload
+        )
         return { lastSavedAt }
       }
       renameSync(metaTmpPath, metaPath)
+      logger.info(`proposal.md sync-save committed: ${projectId} seq=${sequence}`, debugPayload)
     } catch (err) {
       logger.error(`proposal.meta.json 同步写入失败: ${projectId}`, err)
       throw new DocumentSaveError(`元数据保存失败: ${(err as Error).message}`, err)

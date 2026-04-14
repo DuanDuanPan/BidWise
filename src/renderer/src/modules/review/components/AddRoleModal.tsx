@@ -63,7 +63,7 @@ export function AddRoleModal({ open, onClose, onAdd }: AddRoleModalProps): React
       confirmLoading={submitting}
       okText="添加"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
       data-testid="add-role-modal"
     >
       <Form form={form} layout="vertical" initialValues={{ intensity: 'medium' }}>

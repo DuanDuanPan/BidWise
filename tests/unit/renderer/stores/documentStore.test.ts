@@ -102,10 +102,12 @@ describe('@story-3-1 documentStore', () => {
       await Promise.resolve()
 
       expect(documentSave).toHaveBeenCalledTimes(1)
-      expect(documentSave).toHaveBeenCalledWith({
-        projectId: 'proj-1',
-        content: '# Final draft',
-      })
+      expect(documentSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 'proj-1',
+          content: '# Final draft',
+        })
+      )
       expect(useDocumentStore.getState().autoSave.dirty).toBe(false)
     })
   })
@@ -192,7 +194,10 @@ describe('@story-3-1 documentStore', () => {
       useDocumentStore.getState().updateContent('# First', 'proj-1')
       await vi.advanceTimersByTimeAsync(1000)
       expect(documentSave).toHaveBeenCalledTimes(1)
-      expect(documentSave).toHaveBeenNthCalledWith(1, { projectId: 'proj-1', content: '# First' })
+      expect(documentSave).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ projectId: 'proj-1', content: '# First' })
+      )
 
       useDocumentStore.getState().updateContent('# Second', 'proj-1')
       await vi.advanceTimersByTimeAsync(1000)
@@ -208,10 +213,13 @@ describe('@story-3-1 documentStore', () => {
       await vi.runAllTimersAsync()
 
       expect(documentSave).toHaveBeenCalledTimes(2)
-      expect(documentSave).toHaveBeenNthCalledWith(2, {
-        projectId: 'proj-1',
-        content: '# Second',
-      })
+      expect(documentSave).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          projectId: 'proj-1',
+          content: '# Second',
+        })
+      )
       expect(useDocumentStore.getState().autoSave.dirty).toBe(false)
     })
   })
@@ -234,11 +242,13 @@ describe('@story-3-1 documentStore', () => {
         .saveDocumentSync('proj-1', '/tmp/projects/proj-1', '# Flushed')
 
       expect(didSave).toBe(true)
-      expect(documentSaveSync).toHaveBeenCalledWith({
-        projectId: 'proj-1',
-        rootPath: '/tmp/projects/proj-1',
-        content: '# Flushed',
-      })
+      expect(documentSaveSync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 'proj-1',
+          rootPath: '/tmp/projects/proj-1',
+          content: '# Flushed',
+        })
+      )
       expect(useDocumentStore.getState().content).toBe('# Flushed')
       expect(useDocumentStore.getState().autoSave.dirty).toBe(false)
     })

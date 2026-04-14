@@ -3,8 +3,12 @@ export const SUPPORTED_MERMAID_TYPE_LABELS = [
   'sequenceDiagram',
   'classDiagram',
   'stateDiagram-v2',
+  'architecture-beta',
   'gantt',
   'C4Context',
+  'C4Container',
+  'C4Component',
+  'C4Deployment',
   'block-beta',
 ] as const
 
@@ -22,8 +26,12 @@ const MERMAID_DECLARATION_PATTERNS: Array<{ label: string; pattern: RegExp }> = 
   { label: 'sequenceDiagram', pattern: /^sequenceDiagram\b/ },
   { label: 'classDiagram', pattern: /^classDiagram\b/ },
   { label: 'stateDiagram-v2', pattern: /^stateDiagram(?:-v2)?\b/ },
+  { label: 'architecture-beta', pattern: /^architecture-beta\b/ },
   { label: 'gantt', pattern: /^gantt\b/ },
   { label: 'C4Context', pattern: /^C4Context\b/ },
+  { label: 'C4Container', pattern: /^C4Container\b/ },
+  { label: 'C4Component', pattern: /^C4Component\b/ },
+  { label: 'C4Deployment', pattern: /^C4Deployment\b/ },
   { label: 'block-beta', pattern: /^block-beta\b/ },
 ]
 

@@ -58,6 +58,7 @@ export interface AiProxyResponse {
   model: string
   provider: string
   latencyMs: number
+  finishReason: string
 }
 
 // ─── Provider configuration ───

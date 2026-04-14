@@ -90,6 +90,7 @@ import type {
   PersistSkeletonOutput,
 } from './template-types'
 import type {
+  ChapterHeadingLocator,
   ChapterGenerateInput,
   ChapterRegenerateInput,
   ChapterGenerateOutput,
@@ -225,6 +226,8 @@ export type CreateProjectInput = {
 export type DocumentSaveInput = {
   projectId: string
   content: string
+  debugContext?: DocumentSaveDebugContext
+  debugTrail?: DocumentSaveDebugContext[]
 }
 
 export type DocumentSaveOutput = {
@@ -233,6 +236,17 @@ export type DocumentSaveOutput = {
 
 export type DocumentSaveSyncInput = DocumentSaveInput & {
   rootPath: string
+}
+
+export type DocumentSaveDebugContext = {
+  source: string
+  note?: string
+  target?: ChapterHeadingLocator | null
+  contentDigest?: string
+  contentLength?: number
+  sectionWindow?: string[]
+  suspiciousHeadings?: string[]
+  candidateDigests?: string[]
 }
 
 export type UpdateProjectInput = Partial<

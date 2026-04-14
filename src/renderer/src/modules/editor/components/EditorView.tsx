@@ -7,12 +7,7 @@ import { useSourceAttributionContext } from '@modules/editor/context/useSourceAt
 import { useAssetImport } from '@modules/asset/hooks/useAssetImport'
 import { AssetImportDialog } from '@modules/asset/components/AssetImportDialog'
 import { PlateEditor } from './PlateEditor'
-import type {
-  ReplaceSectionFn,
-  InsertDrawioFn,
-  InsertMermaidFn,
-  InsertAssetFn,
-} from './PlateEditor'
+import type { ReplaceSectionFn, InsertMermaidFn, InsertAssetFn } from './PlateEditor'
 import { EditorToolbar } from './EditorToolbar'
 import type { CurrentSectionInfo } from '@modules/annotation/hooks/useCurrentSection'
 import {
@@ -41,14 +36,12 @@ export function EditorView({
   const loadDocument = useDocumentStore((s) => s.loadDocument)
   const syncFlushRef = useRef<(() => string) | null>(null)
   const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
-  const insertDrawioRef = useRef<InsertDrawioFn | null>(null)
   const insertMermaidRef = useRef<InsertMermaidFn | null>(null)
   const insertAssetRef = useRef<InsertAssetFn | null>(null)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const consumedStreamRevisionsRef = useRef<Map<string, number>>(new Map())
   const clearedRegenerateKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
-  const [insertDrawioAvailable, setInsertDrawioAvailable] = useState(false)
   const [insertMermaidAvailable, setInsertMermaidAvailable] = useState(false)
   const [hasEditorSelection, setHasEditorSelection] = useState(false)
   const chapterGen = useChapterGenerationContext()
@@ -64,18 +57,9 @@ export function EditorView({
     setReplaceSectionVersion((version) => version + 1)
   }, [])
 
-  const registerInsertDrawio = useCallback((fn: InsertDrawioFn | null): void => {
-    insertDrawioRef.current = fn
-    setInsertDrawioAvailable(fn !== null)
-  }, [])
-
   const registerInsertMermaid = useCallback((fn: InsertMermaidFn | null): void => {
     insertMermaidRef.current = fn
     setInsertMermaidAvailable(fn !== null)
-  }, [])
-
-  const handleInsertDrawio = useCallback(() => {
-    insertDrawioRef.current?.()
   }, [])
 
   const handleInsertMermaid = useCallback(() => {
@@ -204,6 +188,9 @@ export function EditorView({
         status.phase !== 'failed' &&
         status.phase !== 'conflicted'
       ) {
+        console.debug(
+          `[gen-debug:editorEffect] clearing section for regen: "${status.target.title}" phase=${status.phase}`
+        )
         const didClear = replaceSectionRef.current(status.target, '')
         if (didClear) {
           clearedKeys.add(key)
@@ -226,6 +213,9 @@ export function EditorView({
       if (status.latestDiagramPatch) {
         const currentMarkdown = useDocumentStore.getState().content
         const currentSectionContent = extractMarkdownSectionContent(currentMarkdown, status.target)
+        console.debug(
+          `[gen-debug:streamPatch] "${status.target.title}" diagramPatch placeholderId=${status.latestDiagramPatch.placeholderId}, sectionLen=${currentSectionContent.length}`
+        )
         const patchedSection = applyDiagramPatchToSection(
           currentSectionContent,
           status.latestDiagramPatch
@@ -238,6 +228,9 @@ export function EditorView({
           )
         }
       } else {
+        console.debug(
+          `[gen-debug:streamReplace] "${status.target.title}" rev=${revision}, streamedLen=${status.streamedContent.length}`
+        )
         didReplace = replaceSectionRef.current(
           status.target,
           sanitizeGeneratedContent(status.target, status.streamedContent)
@@ -246,6 +239,11 @@ export function EditorView({
 
       if (didReplace) {
         consumedRevisions.set(key, revision)
+        console.debug(
+          `[gen-debug:streamReplace] "${status.target.title}" replaced successfully, advancing baseline`
+        )
+        // Advance conflict-detection baseline so this streaming update is not mistaken for a manual edit
+        chapterGen.advanceBaseline(status.target)
       }
     }
 
@@ -293,8 +291,14 @@ export function EditorView({
         content.length > 0
       ) {
         const generatedContent = sanitizeGeneratedContent(status.target, status.generatedContent)
+        console.debug(
+          `[gen-debug:terminal] "${status.target.title}" phase=completed, replacing section, sanitizedLen=${generatedContent.length}`
+        )
         const didReplace = replaceSectionRef.current(status.target, generatedContent)
         if (!didReplace) {
+          console.warn(
+            `[gen-debug:terminal] "${status.target.title}" replaceSection returned false — heading not found?`
+          )
           consumedKeys.delete(key)
           continue
         }
@@ -309,6 +313,9 @@ export function EditorView({
       }
 
       if (status.phase === 'conflicted' && status.generatedContent) {
+        console.warn(
+          `[gen-debug:terminal] "${status.target.title}" phase=CONFLICTED — showing conflict modal. generatedLen=${status.generatedContent.length}`
+        )
         if (!replaceSectionRef.current || loadedProjectId !== projectId || content.length === 0) {
           consumedKeys.delete(key)
           continue
@@ -396,8 +403,6 @@ export function EditorView({
     <div className="flex h-full flex-col" data-testid="editor-view">
       <EditorToolbar
         projectId={projectId}
-        onInsertDrawio={handleInsertDrawio}
-        insertDrawioDisabled={!insertDrawioAvailable}
         onInsertMermaid={handleInsertMermaid}
         insertMermaidDisabled={!insertMermaidAvailable}
         onImportAsset={handleImportAsset}
@@ -409,7 +414,6 @@ export function EditorView({
           projectId={projectId}
           onSyncFlushReady={registerSyncFlush}
           onReplaceSectionReady={registerReplaceSection}
-          onInsertDrawioReady={registerInsertDrawio}
           onInsertMermaidReady={registerInsertMermaid}
           onInsertAssetReady={registerInsertAsset}
         />
