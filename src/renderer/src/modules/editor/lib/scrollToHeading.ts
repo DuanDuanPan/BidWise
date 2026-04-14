@@ -12,7 +12,9 @@ export function scrollToHeading(
   for (const el of headingElements) {
     if (el.getAttribute('data-heading-text') === target.title) {
       if (matchCount === target.occurrenceIndex) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        // Use non-animated scrolling so chapter jumps do not keep running
+        // after the user immediately starts scrolling or editing elsewhere.
+        el.scrollIntoView({ behavior: 'auto', block: 'start' })
         return
       }
       matchCount++

@@ -10,6 +10,33 @@ import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import type { AgentPostProcessor } from '../orchestrator'
 
 const logger = createLogger('terminology-post-processor')
+const PROTECTED_REGION_RE =
+  /```mermaid[\s\S]*?```|<!--\s*(?:drawio|mermaid):[^>]+-->|%%DIAGRAM:[^%]+%%/g
+
+function protectDiagramRegions(content: string): {
+  protectedContent: string
+  restore: (input: string) => string
+} {
+  const placeholders = new Map<string, string>()
+  let index = 0
+
+  const protectedContent = content.replace(PROTECTED_REGION_RE, (match) => {
+    const token = `\uE100${index++}\uE101`
+    placeholders.set(token, match)
+    return token
+  })
+
+  return {
+    protectedContent,
+    restore: (input: string) => {
+      let restored = input
+      for (const [token, value] of placeholders) {
+        restored = restored.split(token).join(value)
+      }
+      return restored
+    },
+  }
+}
 
 export const terminologyPostProcessor: AgentPostProcessor = async (result, context, signal) => {
   // Only apply to chapter generation mode (not ask-system, not annotation-feedback)
@@ -24,7 +51,11 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
     return result
   }
 
-  const applyResult = terminologyReplacementService.applyReplacements(result.content, entries)
+  const protectedRegions = protectDiagramRegions(result.content)
+  const applyResult = terminologyReplacementService.applyReplacements(
+    protectedRegions.protectedContent,
+    entries
+  )
   if (applyResult.totalReplacements === 0) {
     return result
   }
@@ -81,7 +112,7 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
         }
       }
       // Return replaced content — orchestrator's throwIfAborted() will discard it
-      return { ...result, content: applyResult.content }
+      return { ...result, content: protectedRegions.restore(applyResult.content) }
     }
 
     // AC3: every replaced term must have an annotation — partial failure is an error
@@ -103,6 +134,6 @@ export const terminologyPostProcessor: AgentPostProcessor = async (result, conte
 
   return {
     ...result,
-    content: applyResult.content,
+    content: protectedRegions.restore(applyResult.content),
   }
 }

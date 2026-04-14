@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlateElement, useEditorRef, useSelected } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
 import { DeleteOutlined, EditOutlined, WarningOutlined } from '@ant-design/icons'
-import { Button, Tooltip } from 'antd'
+import { Button, Tooltip, Tag } from 'antd'
 import { useProjectStore } from '@renderer/stores'
 import { DrawioEditor } from './DrawioEditor'
 import type { DrawioElement as DrawioElementType } from '@modules/editor/plugins/drawioPlugin'
@@ -21,7 +21,23 @@ export function DrawioElement(props: PlateElementProps): React.JSX.Element {
   const [loadError, setLoadError] = useState(false)
   const [pngDataUrl, setPngDataUrl] = useState(node.pngDataUrl || '')
   const [xml, setXml] = useState(node.xml || '')
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  )
   const hasAttemptedLoad = useRef(false)
+
+  const xmlPreviewLabels = useCallback((sourceXml: string): string[] => {
+    try {
+      const doc = new DOMParser().parseFromString(sourceXml, 'text/xml')
+      const cells = Array.from(doc.getElementsByTagName('mxCell'))
+      return cells
+        .map((cell) => cell.getAttribute('value')?.trim() ?? '')
+        .filter(Boolean)
+        .slice(0, 6)
+    } catch {
+      return []
+    }
+  }, [])
 
   // Lazy-load asset data when xml/pngDataUrl is missing
   useEffect(() => {
@@ -38,7 +54,7 @@ export function DrawioElement(props: PlateElementProps): React.JSX.Element {
         })
         if (res.success && res.data) {
           setXml(res.data.xml)
-          setPngDataUrl(res.data.pngDataUrl)
+          setPngDataUrl(res.data.pngDataUrl || '')
           setLoadError(false)
           setMode('preview')
         } else {
@@ -49,6 +65,17 @@ export function DrawioElement(props: PlateElementProps): React.JSX.Element {
       }
     })()
   }, [projectId, node.assetFileName, xml, pngDataUrl])
+
+  useEffect(() => {
+    const handleOnline = (): void => setIsOffline(false)
+    const handleOffline = (): void => setIsOffline(true)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const updateNodeData = useCallback(
     (data: Partial<DrawioElementType>) => {
@@ -159,6 +186,26 @@ export function DrawioElement(props: PlateElementProps): React.JSX.Element {
                 className="mx-auto max-w-full"
                 data-testid="drawio-preview-img"
               />
+            ) : xml ? (
+              <div
+                className="flex flex-col gap-3 p-5 text-sm text-gray-500"
+                data-testid="drawio-xml-only-preview"
+              >
+                <div className="flex items-center gap-2 text-orange-500">
+                  <WarningOutlined />
+                  <span>
+                    {isOffline ? '当前离线，暂无法渲染 PNG' : 'PNG 尚未生成，可继续编辑并保存'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {xmlPreviewLabels(xml).map((label, idx) => (
+                    <Tag key={`${label}-${idx}`}>{label}</Tag>
+                  ))}
+                </div>
+                <span className="text-xs text-gray-400">
+                  XML 已保存在本地，双击或点击编辑可继续在 draw.io 中渲染。
+                </span>
+              </div>
             ) : (
               <div className="flex items-center justify-center p-8 text-gray-400">
                 <span>空白图表 — 双击编辑</span>

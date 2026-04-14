@@ -50,8 +50,12 @@ function getStatusIcon(phase: ChapterGenerationPhase | undefined): React.ReactNo
         />
       )
     case 'analyzing':
-    case 'matching-assets':
-    case 'generating':
+    case 'generating-text':
+    case 'validating-text':
+    case 'generating-diagrams':
+    case 'validating-diagrams':
+    case 'composing':
+    case 'validating-coherence':
     case 'annotating-sources':
       return (
         <LoadingOutlined style={{ fontSize: 10, color: 'var(--color-brand)', marginLeft: 4 }} />
@@ -112,12 +116,14 @@ export function DocumentOutlineTree({
   chapterPhases,
 }: DocumentOutlineTreeProps): React.JSX.Element {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set())
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, OutlineNode>()
     buildNodeMap(outline, map)
     return map
   }, [outline])
+  const allKeys = useMemo(() => collectKeys(outline), [outline])
 
   const handleSelect = useCallback(
     (keys: React.Key[]) => {
@@ -131,13 +137,31 @@ export function DocumentOutlineTree({
     },
     [nodeMap, onNodeClick]
   )
+  const handleExpand = useCallback(
+    (keys: React.Key[]) => {
+      const expandedSet = new Set(keys.map(String))
+      const nextCollapsed = new Set<string>()
+
+      for (const key of allKeys) {
+        if (!expandedSet.has(key)) {
+          nextCollapsed.add(key)
+        }
+      }
+
+      setCollapsedKeys(nextCollapsed)
+    },
+    [allKeys]
+  )
 
   const interactive = Boolean(onNodeClick)
   const treeData = useMemo(
     () => toTreeData(outline, interactive, chapterPhases),
     [outline, interactive, chapterPhases]
   )
-  const expandedKeys = useMemo(() => collectKeys(outline), [outline])
+  const expandedKeys = useMemo(
+    () => allKeys.filter((key) => !collapsedKeys.has(key)),
+    [allKeys, collapsedKeys]
+  )
   const activeSelectedKeys = useMemo(
     () => selectedKeys.filter((key) => nodeMap.has(key)),
     [nodeMap, selectedKeys]
@@ -162,6 +186,7 @@ export function DocumentOutlineTree({
       <Tree
         treeData={treeData}
         expandedKeys={expandedKeys}
+        onExpand={handleExpand}
         selectedKeys={interactive ? activeSelectedKeys : []}
         onSelect={interactive ? handleSelect : undefined}
         selectable={interactive}

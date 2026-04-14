@@ -252,6 +252,7 @@ export const IPC_CHANNELS = {
   TASK_LIST: 'task:list',
   TASK_CANCEL: 'task:cancel',
   TASK_GET_STATUS: 'task:get-status',
+  TASK_DELETE: 'task:delete',
   TASK_PROGRESS_EVENT: 'task:progress',
   ANALYSIS_IMPORT_TENDER: 'analysis:import-tender',
   ANALYSIS_GET_TENDER: 'analysis:get-tender',
@@ -375,6 +376,7 @@ export type IpcChannelMap = {
   'task:list': { input: TaskFilter | void; output: TaskRecord[] }
   'task:cancel': { input: string; output: void }
   'task:get-status': { input: { taskId: string }; output: TaskRecord | null }
+  'task:delete': { input: string; output: void }
   'analysis:import-tender': { input: ImportTenderInput; output: ImportTenderResult }
   'analysis:get-tender': { input: GetTenderInput; output: ParsedTender | null }
   'analysis:extract-requirements': { input: ExtractRequirementsInput; output: ExtractionTaskResult }

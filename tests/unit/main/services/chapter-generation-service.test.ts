@@ -159,7 +159,7 @@ describe('@story-3-4 chapterGenerationService', () => {
       expect(request.agentType).toBe('generate')
       expect(request.context.chapterTitle).toBe('系统架构设计')
       expect(request.context.chapterLevel).toBe(2)
-      expect(request.options.timeoutMs).toBe(120_000)
+      expect(request.options.timeoutMs).toBe(300_000)
       expect(request.options.maxRetries).toBe(0)
     })
 
@@ -317,6 +317,24 @@ describe('@story-3-4 chapterGenerationService', () => {
       expect(request.context.baselineDigest).toBeDefined()
       expect(typeof request.context.baselineDigest).toBe('string')
       expect(request.context.baselineDigest.length).toBe(16)
+    })
+
+    it('@p1 should enable diagram flow for diagram-heavy chapters', async () => {
+      const target = { title: '系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.enableDiagrams).toBe(true)
+    })
+
+    it('@p1 should disable diagram flow for text-first chapters', async () => {
+      const target = { title: '项目概述', level: 2 as const, occurrenceIndex: 0 }
+
+      await chapterGenerationService.generateChapter('proj-1', target)
+
+      const request = mockExecute.mock.calls[0][0]
+      expect(request.context.enableDiagrams).toBe(false)
     })
   })
 

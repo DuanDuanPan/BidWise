@@ -92,9 +92,9 @@ describe('@story-3-2 DocumentOutlineTree', () => {
     expect(selected).toBeInTheDocument()
   })
 
-  it('@story-3-4 @p0 renders status icon for generating phase', () => {
+  it('@story-3-4 @p0 renders status icon for generating-text phase', () => {
     const node = makeNode({ key: 'heading-0', title: 'AI Chapter', level: 2, occurrenceIndex: 0 })
-    const chapterPhases = new Map([['2:AI Chapter:0', 'generating' as const]])
+    const chapterPhases = new Map([['2:AI Chapter:0', 'generating-text' as const]])
     render(
       <DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} chapterPhases={chapterPhases} />
     )
@@ -162,5 +162,22 @@ describe('@story-3-2 DocumentOutlineTree', () => {
 
     expect(container.querySelector('.ant-tree-switcher_open')).toBeInTheDocument()
     expect(screen.getByText('Child')).toBeInTheDocument()
+  })
+
+  it('@story-3-2 @p0 allows collapsing nested outline nodes from the tree switcher', () => {
+    const node = makeNode({
+      key: 'heading-0',
+      title: 'Parent',
+      children: [makeNode({ key: 'heading-1', title: 'Child', level: 2 })],
+    })
+    const { container } = render(<DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} />)
+
+    const switcher = container.querySelector('.ant-tree-switcher') as HTMLElement | null
+    expect(switcher).toBeInTheDocument()
+
+    fireEvent.click(switcher!)
+
+    expect(screen.queryByText('Child')).not.toBeInTheDocument()
+    expect(container.querySelector('.ant-tree-switcher_close')).toBeInTheDocument()
   })
 })

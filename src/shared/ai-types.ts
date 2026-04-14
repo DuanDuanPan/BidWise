@@ -137,6 +137,7 @@ export interface TaskProgressEvent {
   taskId: string
   progress: number
   message?: string
+  payload?: unknown
 }
 
 /** Task record persisted in SQLite tasks table */

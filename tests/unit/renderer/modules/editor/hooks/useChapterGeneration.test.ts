@@ -61,6 +61,7 @@ describe('@story-3-4 useChapterGeneration', () => {
         success: true,
         data: [],
       }),
+      taskDelete: vi.fn().mockResolvedValue({ success: true }),
       documentLoad: vi.fn().mockImplementation(async () => ({
         success: true,
         data: { content: mockDocumentContent.current },
@@ -121,12 +122,12 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
 
     act(() => {
-      progressListener?.({ taskId: 'task-gen-1', progress: 25, message: 'matching-assets' })
+      progressListener?.({ taskId: 'task-gen-1', progress: 20, message: 'validating-text' })
     })
 
     const status = result.current.getStatus(mockTarget)
-    expect(status!.phase).toBe('matching-assets')
-    expect(status!.progress).toBe(25)
+    expect(status!.phase).toBe('validating-text')
+    expect(status!.progress).toBe(20)
   })
 
   it('@p0 should fetch result on completion progress event', async () => {
@@ -155,7 +156,7 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
 
     await act(async () => {
-      progressListener?.({ taskId: 'task-gen-1', progress: 100, message: 'generating' })
+      progressListener?.({ taskId: 'task-gen-1', progress: 100, message: 'generating-text' })
     })
 
     await waitFor(() => {
@@ -228,6 +229,36 @@ describe('@story-3-4 useChapterGeneration', () => {
     })
 
     expect(result.current.getStatus(mockTarget)).toBeUndefined()
+  })
+
+  it('@p1 should consume chapter stream payload and refresh streamed content', async () => {
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startGeneration(mockTarget)
+    })
+
+    act(() => {
+      progressListener?.({
+        taskId: 'task-gen-1',
+        progress: 35,
+        message: 'generating-diagrams',
+        payload: {
+          kind: 'chapter-stream',
+          markdown: '正文段落\n\n> [图表生成中] 总体流程 {#diagram-placeholder:ph-1}',
+          patch: {
+            placeholderId: 'ph-1',
+            markdown: '```mermaid\ngraph TD\nA-->B\n```',
+          },
+        },
+      })
+    })
+
+    const status = result.current.getStatus(mockTarget)
+    expect(status!.phase).toBe('generating-diagrams')
+    expect(status!.streamedContent).toContain('图表生成中')
+    expect(status!.latestDiagramPatch?.placeholderId).toBe('ph-1')
+    expect(status!.streamRevision).toBe(1)
   })
 
   it('@p1 should restore active tasks on mount scoped to current project', async () => {

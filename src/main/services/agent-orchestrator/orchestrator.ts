@@ -16,6 +16,23 @@ import type {
 
 const logger = createLogger('agent-orchestrator')
 
+function isAgentResult(result: AiRequestParams | AgentHandlerResult): result is AgentHandlerResult {
+  return typeof result === 'object' && result !== null && 'kind' in result && 'value' in result
+}
+
+function unwrapAiRequestParams(result: AiRequestParams | AgentHandlerResult): AiRequestParams {
+  if (isAgentResult(result)) {
+    if (result.kind === 'params') {
+      return result.value
+    }
+    throw new BidWiseError(
+      ErrorCode.AGENT_EXECUTE,
+      'Agent handler returned a final result where ai params were expected'
+    )
+  }
+  return result
+}
+
 /** AI request parameters returned by agent handlers */
 export interface AiRequestParams {
   messages: AiChatMessage[]
@@ -24,14 +41,21 @@ export interface AiRequestParams {
   temperature?: number
 }
 
-/** Agent handler — builds prompt/params only, does NOT call ai-proxy */
+export type AgentHandlerResult =
+  | { kind: 'params'; value: AiRequestParams }
+  | { kind: 'result'; value: AgentExecuteResult }
+
+type AiProxyLike = Pick<typeof aiProxy, 'call'>
+
+/** Agent handler — may either return prompt params or execute via ai-proxy directly */
 export type AgentHandler = (
   context: Record<string, unknown>,
   options: {
     signal: AbortSignal
-    updateProgress: (progress: number, message?: string) => void
+    updateProgress: (progress: number, message?: string, payload?: unknown) => void
+    aiProxy?: AiProxyLike
   }
-) => Promise<AiRequestParams>
+) => Promise<AiRequestParams | AgentHandlerResult>
 
 /** Optional post-processor applied to AI results after generation */
 export type AgentPostProcessor = (
@@ -65,25 +89,32 @@ export class AgentOrchestrator {
       throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
       try {
-        const params = await handler(ctx.input as Record<string, unknown>, {
+        const handlerResult = await handler(ctx.input as Record<string, unknown>, {
           signal: ctx.signal,
           updateProgress: ctx.updateProgress,
+          aiProxy,
         })
         throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
-        const caller = `${agentType}-agent`
-        const response = await aiProxy.call({
-          ...params,
-          caller,
-          signal: ctx.signal,
-          timeoutMs,
-        })
-        throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
+        let result: AgentExecuteResult
+        if (isAgentResult(handlerResult) && handlerResult.kind === 'result') {
+          result = handlerResult.value
+        } else {
+          const params = unwrapAiRequestParams(handlerResult)
+          const caller = `${agentType}-agent`
+          const response = await aiProxy.call({
+            ...params,
+            caller,
+            signal: ctx.signal,
+            timeoutMs,
+          })
+          throwIfAborted(ctx.signal, `Agent ${agentType} task cancelled`)
 
-        let result: AgentExecuteResult = {
-          content: response.content,
-          usage: response.usage,
-          latencyMs: response.latencyMs,
+          result = {
+            content: response.content,
+            usage: response.usage,
+            latencyMs: response.latencyMs,
+          }
         }
 
         if (postProcessor) {

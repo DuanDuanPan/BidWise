@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ChapterHeadingLocator,
+  ChapterStreamProgressPayload,
   ChapterGenerationPhase,
   ChapterGenerationStatus,
 } from '@shared/chapter-types'
@@ -18,13 +19,31 @@ function locatorKey(locator: ChapterHeadingLocator): string {
 function progressToPhase(progress: number, message?: string): ChapterGenerationPhase {
   if (progress >= 100) return 'completed'
   if (message === 'analyzing') return 'analyzing'
-  if (message === 'matching-assets') return 'matching-assets'
-  if (message === 'generating') return 'generating'
+  if (message === 'generating-text') return 'generating-text'
+  if (message === 'validating-text') return 'validating-text'
+  if (message === 'generating-diagrams') return 'generating-diagrams'
+  if (message === 'validating-diagrams') return 'validating-diagrams'
+  if (message === 'composing') return 'composing'
+  if (message === 'validating-coherence') return 'validating-coherence'
   if (message === 'annotating-sources') return 'annotating-sources'
-  if (progress >= 90) return 'annotating-sources'
-  if (progress >= 50) return 'generating'
-  if (progress >= 25) return 'matching-assets'
+  if (progress >= 90) return 'validating-coherence'
+  if (progress >= 80) return 'composing'
+  if (progress >= 60) return 'validating-diagrams'
+  if (progress >= 35) return 'generating-diagrams'
+  if (progress >= 20) return 'validating-text'
+  if (progress >= 10) return 'generating-text'
   return 'analyzing'
+}
+
+function isChapterStreamPayload(payload: unknown): payload is ChapterStreamProgressPayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'kind' in payload &&
+    (payload as { kind?: unknown }).kind === 'chapter-stream' &&
+    'markdown' in payload &&
+    typeof (payload as { markdown?: unknown }).markdown === 'string'
+  )
 }
 
 function resolveTerminalPhase(params: {
@@ -88,6 +107,25 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       const key = locatorKey(locator)
       const phase = progressToPhase(event.progress, event.message)
       const hasTerminalMessage = event.message === 'failed' || event.message === 'cancelled'
+      const streamPayload = isChapterStreamPayload(event.payload) ? event.payload : null
+
+      if (streamPayload) {
+        updateStatus(key, (prev) => ({
+          ...prev,
+          phase,
+          progress: event.progress,
+          message: event.message,
+          streamedContent: streamPayload.markdown,
+          latestDiagramPatch: streamPayload.patch,
+          streamRevision: (prev.streamRevision ?? 0) + 1,
+          baselineDigest: createContentDigest(streamPayload.markdown),
+          baselineSectionContent: streamPayload.markdown,
+        }))
+
+        if (!hasTerminalMessage && phase !== 'completed') {
+          return
+        }
+      }
 
       if (phase === 'completed' || hasTerminalMessage) {
         // Fetch final result
@@ -142,6 +180,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
         phase,
         progress: event.progress,
         message: event.message,
+        latestDiagramPatch: undefined,
       }))
     })
 
@@ -402,6 +441,8 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
     const taskId = statusesRef.current.get(key)?.taskId
     if (taskId) {
       taskToLocatorRef.current.delete(taskId)
+      // Remove the task from persistent storage so it won't be restored on next app launch
+      void window.api.taskDelete(taskId)
     }
     setStatuses((prev) => {
       const next = new Map(prev)

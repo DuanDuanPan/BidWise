@@ -154,6 +154,24 @@
   }
 }
 
+/* 来源标注：悬停显示标签，静态时仅显示左侧色条 */
+@layer components {
+  .source-aware-paragraph {
+    transition: background-color var(--duration-micro) var(--ease-out);
+  }
+  .source-aware-paragraph:hover > .source-label-anchor {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .source-aware-paragraph,
+    .source-label-anchor {
+      transition: none !important;
+    }
+  }
+}
+
 /* 排版层级 */
 @layer components {
   .text-h1 {

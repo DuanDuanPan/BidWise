@@ -234,6 +234,7 @@ export function deserializeFromMarkdown(
               assetFileName: data.assetFileName,
               source: data.source,
               caption: data.caption,
+              svgPersisted: false,
               children: [{ text: '' }],
             }
           }

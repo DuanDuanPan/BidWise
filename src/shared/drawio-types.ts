@@ -34,7 +34,7 @@ export interface SaveDrawioAssetInput {
   projectId: string
   diagramId: string
   xml: string
-  pngBase64: string
+  pngBase64?: string
   fileName: string
 }
 
@@ -53,7 +53,7 @@ export interface LoadDrawioAssetInput {
 /** IPC 输出：加载 draw.io 资产 */
 export interface LoadDrawioAssetOutput {
   xml: string
-  pngDataUrl: string
+  pngDataUrl?: string
 }
 
 /** IPC 输入：删除 draw.io 资产 */

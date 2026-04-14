@@ -3,6 +3,7 @@ import {
   extractRenderableParagraphs,
   createContentDigest,
   sanitizeGeneratedChapterMarkdown,
+  normalizeGeneratedHeadingLevels,
 } from '@shared/chapter-markdown'
 
 describe('@story-3-5 extractRenderableParagraphs', () => {
@@ -128,5 +129,97 @@ describe('@story-3-5 extractRenderableParagraphs', () => {
     })
 
     expect(result).toBe('### 总体架构\n\n正文内容')
+  })
+})
+
+describe('normalizeGeneratedHeadingLevels', () => {
+  it('@p0 should not modify content when heading levels are already within valid range', () => {
+    const md = '### 子章节一\n\n内容\n\n#### 子子章节\n\n更多内容'
+    const result = normalizeGeneratedHeadingLevels(md, 2)
+    expect(result).toBe(md)
+  })
+
+  it('@p0 should shift H1/H2 headings to H4 when target is H3', () => {
+    const md = '## 设计理念与总体原则\n\n内容\n\n### C/S端架构设计\n\n更多内容'
+    const result = normalizeGeneratedHeadingLevels(md, 3)
+    // offset = (3+1) - 2 = +2; H2→H4, H3→clamp(5,4)=H4
+    expect(result).toBe('#### 设计理念与总体原则\n\n内容\n\n#### C/S端架构设计\n\n更多内容')
+  })
+
+  it('@p0 should shift H1 headings when target is H2', () => {
+    const md = '# 子章节\n\n内容\n\n## 子子章节\n\n更多内容'
+    const result = normalizeGeneratedHeadingLevels(md, 2)
+    // offset = (2+1) - 1 = +2; H1→H3, H2→H4
+    expect(result).toBe('### 子章节\n\n内容\n\n#### 子子章节\n\n更多内容')
+  })
+
+  it('@p0 should clamp all headings to H4 when target is H4', () => {
+    const md = '## 子章节\n\n内容\n\n### 子子章节\n\n更多内容'
+    const result = normalizeGeneratedHeadingLevels(md, 4)
+    // offset = (4+1) - 2 = +3; H2→clamp(5,4)=H4, H3→clamp(6,4)=H4
+    // maxLevel = min(4+2, 4) = 4
+    expect(result).toBe('#### 子章节\n\n内容\n\n#### 子子章节\n\n更多内容')
+  })
+
+  it('@p0 should handle mixed heading levels with correct offset', () => {
+    const md = '# 一级\n\n## 二级\n\n### 三级\n\n内容'
+    const result = normalizeGeneratedHeadingLevels(md, 2)
+    // offset = (2+1) - 1 = +2; H1→H3, H2→H4, H3→clamp(5,4)=H4
+    expect(result).toBe('### 一级\n\n#### 二级\n\n#### 三级\n\n内容')
+  })
+
+  it('@p0 should not modify headings inside fenced code blocks', () => {
+    const md = '## 子章节\n\n```markdown\n# 代码中的标题\n## 另一个\n```\n\n### 正文子节'
+    const result = normalizeGeneratedHeadingLevels(md, 3)
+    // offset = (3+1) - 2 = +2; Only non-fenced headings shift
+    expect(result).toBe(
+      '#### 子章节\n\n```markdown\n# 代码中的标题\n## 另一个\n```\n\n#### 正文子节'
+    )
+  })
+
+  it('@p1 should return content unchanged when there are no headings', () => {
+    const md = '纯文本内容\n\n- 列表项\n- 另一项'
+    const result = normalizeGeneratedHeadingLevels(md, 3)
+    expect(result).toBe(md)
+  })
+
+  it('@p1 should handle empty content', () => {
+    expect(normalizeGeneratedHeadingLevels('', 2)).toBe('')
+  })
+
+  it('@p0 invariant: all headings within allowed range after normalization', () => {
+    // Reproduce the actual bug: H3 target with H1/H2 AI output including 小结
+    const md = [
+      '## 设计理念与总体原则',
+      '内容一',
+      '## 技术架构设计原则',
+      '### C/S端架构设计',
+      '内容二',
+      '## 小结',
+      '总结内容',
+    ].join('\n')
+
+    const result = normalizeGeneratedHeadingLevels(md, 3)
+    const lines = result.split('\n')
+    const headingRe = /^(#{1,4})\s+(.+?)\s*$/
+    for (const line of lines) {
+      const match = headingRe.exec(line)
+      if (match) {
+        const level = match[1].length
+        expect(level).toBeGreaterThanOrEqual(4) // targetLevel + 1 = 4
+        expect(level).toBeLessThanOrEqual(4) // min(targetLevel + 2, 4) = 4
+      }
+    }
+  })
+
+  it('@p0 e2e: sanitize + normalize together should fix AI output with wrong levels', () => {
+    // Simulates actual bug: AI generates H1 title echo + H2 sub-headings for an H3 chapter
+    const aiOutput = '# 架构设计原则\n\n## 设计理念\n\n内容段落\n\n## 技术选型\n\n选型内容'
+    const target = { title: '架构设计原则', level: 3 as const, occurrenceIndex: 0 }
+
+    const deduped = sanitizeGeneratedChapterMarkdown(aiOutput, target)
+    const normalized = normalizeGeneratedHeadingLevels(deduped, target.level)
+
+    expect(normalized).toBe('#### 设计理念\n\n内容段落\n\n#### 技术选型\n\n选型内容')
   })
 })

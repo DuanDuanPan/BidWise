@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockGetActiveEntries = vi.hoisted(() => vi.fn())
 const mockBuildPromptContext = vi.hoisted(() => vi.fn())
+const mockLoggerWarn = vi.hoisted(() => vi.fn())
 
 vi.mock('@main/services/terminology-service', () => ({
   terminologyService: {
@@ -15,8 +16,28 @@ vi.mock('@main/services/terminology-replacement-service', () => ({
   },
 }))
 
+vi.mock('@main/utils/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
+
 const { generateAgentHandler } =
   await import('@main/services/agent-orchestrator/agents/generate-agent')
+
+function unwrapParams(result: Awaited<ReturnType<typeof generateAgentHandler>>): {
+  messages: Array<{ role: string; content: string }>
+  maxTokens?: number
+} {
+  if ('kind' in result) {
+    expect(result.kind).toBe('params')
+    return result.value
+  }
+  return result
+}
 
 describe('generateAgentHandler @story-2-2', () => {
   beforeEach(() => {
@@ -27,9 +48,11 @@ describe('generateAgentHandler @story-2-2', () => {
 
   it('@p1 should return AiRequestParams with messages from generateChapterPrompt', async () => {
     const controller = new AbortController()
-    const result = await generateAgentHandler(
-      { chapterTitle: '技术方案', requirements: '支持高并发' },
-      { signal: controller.signal, updateProgress: vi.fn() }
+    const result = unwrapParams(
+      await generateAgentHandler(
+        { chapterTitle: '技术方案', requirements: '支持高并发' },
+        { signal: controller.signal, updateProgress: vi.fn() }
+      )
     )
 
     expect(result.messages).toHaveLength(2)
@@ -40,14 +63,15 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(result.maxTokens).toBe(8192)
   })
 
-  it('@p1 should not include caller field (orchestrator sets it)', async () => {
+  it('@p1 should return wrapped params without caller field', async () => {
     const controller = new AbortController()
     const result = await generateAgentHandler(
-      { chapterTitle: 'test', requirements: 'test' },
+      { chapterTitle: '技术方案', requirements: '支持高并发' },
       { signal: controller.signal, updateProgress: vi.fn() }
     )
 
-    expect(result).not.toHaveProperty('caller')
+    expect(result).toMatchObject({ kind: 'params' })
+    expect(unwrapParams(result)).not.toHaveProperty('caller')
   })
 
   it('@p1 should throw AbortError when cancelled before prompt generation', async () => {
@@ -62,7 +86,7 @@ describe('generateAgentHandler @story-2-2', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('@story-3-4 @p1 should report progress stages: analyzing → matching-assets → generating', async () => {
+  it('@story-3-4 @p1 should report fallback progress stages: analyzing → generating-text', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
 
@@ -82,21 +106,22 @@ describe('generateAgentHandler @story-2-2', () => {
     )
 
     expect(updateProgress).toHaveBeenCalledWith(0, 'analyzing')
-    expect(updateProgress).toHaveBeenCalledWith(25, 'matching-assets')
-    expect(updateProgress).toHaveBeenCalledWith(50, 'generating')
+    expect(updateProgress).toHaveBeenCalledWith(10, 'generating-text')
   })
 
   it('@story-3-4 @p1 should inject all context fields into prompt', async () => {
     const controller = new AbortController()
-    const result = await generateAgentHandler(
-      {
-        chapterTitle: '安全方案',
-        chapterLevel: 3,
-        requirements: '数据加密',
-        guidanceText: '指导文本',
-        additionalContext: '补充上下文',
-      },
-      { signal: controller.signal, updateProgress: vi.fn() }
+    const result = unwrapParams(
+      await generateAgentHandler(
+        {
+          chapterTitle: '安全方案',
+          chapterLevel: 3,
+          requirements: '数据加密',
+          guidanceText: '指导文本',
+          additionalContext: '补充上下文',
+        },
+        { signal: controller.signal, updateProgress: vi.fn() }
+      )
     )
 
     const userMsg = result.messages[1].content
@@ -107,11 +132,149 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(userMsg).toContain('补充上下文')
   })
 
+  it('@story-3-4 @p1 should execute multi-phase flow when aiProxy is provided', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const aiProxy = {
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content:
+              '正文段落\n\n%%DIAGRAM:mermaid:总体流程:' +
+              Buffer.from('展示系统主要处理流程').toString('base64') +
+              '%%',
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        if (request.caller.startsWith('generate-agent:diagram')) {
+          return {
+            content: 'graph TD\nA[输入] --> B[处理]',
+            usage: { promptTokens: 5, completionTokens: 8 },
+            latencyMs: 50,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        return {
+          content:
+            '{"pass":true,"issues":[{"type":"minor-risk","description":"建议补充边界条件","suggestion":"增加异常流说明"}],"checked_items":["组件覆盖"]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+        }
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '系统架构设计',
+        requirements: '支持高并发',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(result).toMatchObject({ kind: 'result' })
+    expect(aiProxy.call.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(updateProgress).toHaveBeenCalledWith(10, 'generating-text')
+    expect(updateProgress).toHaveBeenCalledWith(20, 'validating-text')
+    expect(updateProgress).toHaveBeenCalledWith(35, 'generating-diagrams')
+    expect(updateProgress).toHaveBeenCalledWith(60, 'validating-diagrams')
+    expect(updateProgress).toHaveBeenCalledWith(80, 'composing', expect.any(Object))
+    expect(updateProgress).toHaveBeenCalledWith(90, 'validating-coherence')
+  })
+
+  it('@story-3-4 @p1 should stay on single-pass flow when diagrams are disabled', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const aiProxy = {
+      call: vi.fn(),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '项目概述',
+        requirements: '支持高并发',
+        enableDiagrams: false,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(result).toMatchObject({ kind: 'params' })
+    expect(aiProxy.call).not.toHaveBeenCalled()
+    expect(updateProgress).toHaveBeenCalledWith(0, 'analyzing')
+    expect(updateProgress).toHaveBeenCalledWith(10, 'generating-text')
+    expect(updateProgress).not.toHaveBeenCalledWith(20, 'validating-text')
+  })
+
+  it('@story-3-4 @p1 should warn when coherence validation returns pass=false', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const aiProxy = {
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content:
+              '正文段落\n\n%%DIAGRAM:mermaid:总体流程:' +
+              Buffer.from('展示系统主要处理流程').toString('base64') +
+              '%%',
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        if (request.caller.startsWith('generate-agent:diagram')) {
+          return {
+            content: 'graph TD\nA[输入] --> B[处理]',
+            usage: { promptTokens: 5, completionTokens: 8 },
+            latencyMs: 50,
+            model: 'mock',
+            provider: 'mock',
+          }
+        }
+
+        return {
+          content: '{"pass":false,"issues":[{"type":"consistency","description":"图文不一致"}]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+        }
+      }),
+    }
+
+    await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '系统架构设计',
+        requirements: '支持高并发',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith('Coherence validation flagged issues', {
+      issues: [{ type: 'consistency', description: '图文不一致' }],
+    })
+  })
+
   it('@story-3-4 @p1 should include system prompt as Professional Proposal Writing Assistant', async () => {
     const controller = new AbortController()
-    const result = await generateAgentHandler(
-      { chapterTitle: 'test', requirements: 'test' },
-      { signal: controller.signal, updateProgress: vi.fn() }
+    const result = unwrapParams(
+      await generateAgentHandler(
+        { chapterTitle: 'test', requirements: 'test' },
+        { signal: controller.signal, updateProgress: vi.fn() }
+      )
     )
 
     expect(result.messages[0].content).toContain('专业技术方案撰写助手')
@@ -138,9 +301,11 @@ describe('generateAgentHandler @story-2-2', () => {
       )
 
       const controller = new AbortController()
-      const result = await generateAgentHandler(
-        { chapterTitle: '技术方案', requirements: '支持高并发' },
-        { signal: controller.signal, updateProgress: vi.fn() }
+      const result = unwrapParams(
+        await generateAgentHandler(
+          { chapterTitle: '技术方案', requirements: '支持高并发' },
+          { signal: controller.signal, updateProgress: vi.fn() }
+        )
       )
 
       expect(mockGetActiveEntries).toHaveBeenCalled()
@@ -154,9 +319,11 @@ describe('generateAgentHandler @story-2-2', () => {
       mockBuildPromptContext.mockReturnValue('')
 
       const controller = new AbortController()
-      const result = await generateAgentHandler(
-        { chapterTitle: '技术方案', requirements: '支持高并发' },
-        { signal: controller.signal, updateProgress: vi.fn() }
+      const result = unwrapParams(
+        await generateAgentHandler(
+          { chapterTitle: '技术方案', requirements: '支持高并发' },
+          { signal: controller.signal, updateProgress: vi.fn() }
+        )
       )
 
       expect(result.messages[1].content).not.toContain('行业术语规范')
@@ -166,15 +333,17 @@ describe('generateAgentHandler @story-2-2', () => {
   describe('ask-system mode', () => {
     it('@story-4-3 @p1 should return ask-system prompt when mode is ask-system', async () => {
       const controller = new AbortController()
-      const result = await generateAgentHandler(
-        {
-          mode: 'ask-system',
-          chapterTitle: '系统架构',
-          chapterLevel: 2,
-          sectionContent: '本章介绍系统整体架构',
-          userQuestion: '这个架构支持水平扩展吗？',
-        },
-        { signal: controller.signal, updateProgress: vi.fn() }
+      const result = unwrapParams(
+        await generateAgentHandler(
+          {
+            mode: 'ask-system',
+            chapterTitle: '系统架构',
+            chapterLevel: 2,
+            sectionContent: '本章介绍系统整体架构',
+            userQuestion: '这个架构支持水平扩展吗？',
+          },
+          { signal: controller.signal, updateProgress: vi.fn() }
+        )
       )
 
       expect(result.messages).toHaveLength(2)
@@ -186,15 +355,17 @@ describe('generateAgentHandler @story-2-2', () => {
 
     it('@story-4-3 @p1 should use ASK_SYSTEM_SYSTEM_PROMPT as system message', async () => {
       const controller = new AbortController()
-      const result = await generateAgentHandler(
-        {
-          mode: 'ask-system',
-          chapterTitle: '技术方案',
-          chapterLevel: 2,
-          sectionContent: '内容',
-          userQuestion: '问题',
-        },
-        { signal: controller.signal, updateProgress: vi.fn() }
+      const result = unwrapParams(
+        await generateAgentHandler(
+          {
+            mode: 'ask-system',
+            chapterTitle: '技术方案',
+            chapterLevel: 2,
+            sectionContent: '内容',
+            userQuestion: '问题',
+          },
+          { signal: controller.signal, updateProgress: vi.fn() }
+        )
       )
 
       expect(result.messages[0].content).toContain('BidWise 标智的方案顾问 AI')
@@ -202,21 +373,23 @@ describe('generateAgentHandler @story-2-2', () => {
 
     it('@story-4-3 @p1 should use maxTokens 2048', async () => {
       const controller = new AbortController()
-      const result = await generateAgentHandler(
-        {
-          mode: 'ask-system',
-          chapterTitle: '技术方案',
-          chapterLevel: 2,
-          sectionContent: '内容',
-          userQuestion: '问题',
-        },
-        { signal: controller.signal, updateProgress: vi.fn() }
+      const result = unwrapParams(
+        await generateAgentHandler(
+          {
+            mode: 'ask-system',
+            chapterTitle: '技术方案',
+            chapterLevel: 2,
+            sectionContent: '内容',
+            userQuestion: '问题',
+          },
+          { signal: controller.signal, updateProgress: vi.fn() }
+        )
       )
 
       expect(result.maxTokens).toBe(2048)
     })
 
-    it('@story-4-3 @p1 should call updateProgress with analyzing and generating', async () => {
+    it('@story-4-3 @p1 should call updateProgress with analyzing and generating-text', async () => {
       const controller = new AbortController()
       const updateProgress = vi.fn()
 
@@ -232,20 +405,22 @@ describe('generateAgentHandler @story-2-2', () => {
       )
 
       expect(updateProgress).toHaveBeenCalledWith(0, 'analyzing')
-      expect(updateProgress).toHaveBeenCalledWith(50, 'generating')
+      expect(updateProgress).toHaveBeenCalledWith(50, 'generating-text')
     })
 
     it('@story-4-3 @p1 should include userQuestion in prompt', async () => {
       const controller = new AbortController()
-      const result = await generateAgentHandler(
-        {
-          mode: 'ask-system',
-          chapterTitle: '安全方案',
-          chapterLevel: 3,
-          sectionContent: '数据加密与访问控制',
-          userQuestion: '是否满足等保三级要求？',
-        },
-        { signal: controller.signal, updateProgress: vi.fn() }
+      const result = unwrapParams(
+        await generateAgentHandler(
+          {
+            mode: 'ask-system',
+            chapterTitle: '安全方案',
+            chapterLevel: 3,
+            sectionContent: '数据加密与访问控制',
+            userQuestion: '是否满足等保三级要求？',
+          },
+          { signal: controller.signal, updateProgress: vi.fn() }
+        )
       )
 
       const userMsg = result.messages[1].content

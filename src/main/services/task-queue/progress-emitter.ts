@@ -12,7 +12,7 @@ export class ProgressEmitter {
     const lastTime = this.lastEmitTimes.get(event.taskId) ?? 0
 
     // Always send terminal progress (100%) — never throttle the final event
-    if (event.progress < 100 && now - lastTime < THROTTLE_MS) {
+    if (event.payload === undefined && event.progress < 100 && now - lastTime < THROTTLE_MS) {
       return
     }
 

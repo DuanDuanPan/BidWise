@@ -16,7 +16,7 @@ describe('@story-3-2 scrollToHeading', () => {
 
     scrollToHeading(container, { title: '系统设计', occurrenceIndex: 0 })
 
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' })
   })
 
   it('@p0 uses occurrenceIndex to resolve duplicate heading titles', () => {
@@ -34,7 +34,7 @@ describe('@story-3-2 scrollToHeading', () => {
     scrollToHeading(container, { title: '项目概述', occurrenceIndex: 1 })
 
     expect(firstScroll).not.toHaveBeenCalled()
-    expect(secondScroll).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(secondScroll).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' })
   })
 
   it('@p1 fails silently when the target heading is missing', () => {

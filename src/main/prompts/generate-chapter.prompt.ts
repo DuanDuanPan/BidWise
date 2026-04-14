@@ -6,9 +6,18 @@
 
 /** Detect compliance matrix / requirement response table chapters */
 const COMPLIANCE_MATRIX_RE = /对照表|响应矩阵|响应表$|符合性说明$|偏离表|compliance\s*matrix/i
+const DIAGRAM_HEAVY_CHAPTER_RE =
+  /架构|技术方案|系统设计|模块设计|部署|拓扑|数据流|流程|接口|集成|实施计划|迁移|安全体系/i
+const DIAGRAM_LIGHT_CHAPTER_RE = /背景|概述|承诺|报价|说明|目标|优势|团队|资质/i
 
 export function isComplianceMatrixChapter(title: string): boolean {
   return COMPLIANCE_MATRIX_RE.test(title)
+}
+
+export function shouldSuggestDiagrams(title: string): boolean {
+  if (isComplianceMatrixChapter(title)) return false
+  if (DIAGRAM_LIGHT_CHAPTER_RE.test(title)) return false
+  return DIAGRAM_HEAVY_CHAPTER_RE.test(title)
 }
 
 export interface GenerateChapterContext {
@@ -31,6 +40,7 @@ export interface GenerateChapterContext {
 export function generateChapterPrompt(context: GenerateChapterContext): string {
   const lang = context.language ?? '中文'
   const isMatrix = isComplianceMatrixChapter(context.chapterTitle)
+  const diagramsPreferred = shouldSuggestDiagrams(context.chapterTitle)
 
   const sections: string[] = []
 
@@ -104,14 +114,30 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 2. 根据章节内容的复杂度和性质选择合适的结构：
    - 如果章节内容简短概括性强（如 建设目标、项目背景、项目概述、服务承诺 等），用1-2段精炼文字即可，不要强行拆分子标题
    - 如果章节内容需要展开详述（如 技术方案、实施计划、安全保障、系统架构 等），可使用子标题划分小节
-   - 子标题层级不得超过 ${maxSubLevel} 级标题（即当前 ${context.chapterLevel} 级标题最深只能再往下拆 2 级）
+   - 子标题必须从 ${context.chapterLevel + 1} 级标题开始，最深不得超过 ${maxSubLevel} 级标题。禁止输出 ${context.chapterLevel} 级或更高级别（数字更小）的标题
 3. 适当使用列表和表格增强可读性
 4. 内容需覆盖招标需求中与本章节相关的要点
 5. 必须回应所有列出的必响应条款
 6. 避免与前后章节内容重复
 7. 直接输出 Markdown 正文，不要包含章节主标题
 8. 第一行不得重复输出「${context.chapterTitle}」作为 H1/H2/H3/H4 或普通文本，例如不要输出\u201C## ${context.chapterTitle}\u201D
-9. 严格限定在「${context.chapterTitle}」的主题范围内撰写，文档大纲中的其他章节会独立生成，不要在本章节中涉及其他章节的内容`)
+9. 严格限定在「${context.chapterTitle}」的主题范围内撰写，文档大纲中的其他章节会独立生成，不要在本章节中涉及其他章节的内容
+10. 在正式输出前先自检：是否覆盖了关键需求、是否遗漏必响应条款、是否出现章节越界内容；自检过程不要显式输出`)
+
+    if (diagramsPreferred) {
+      sections.push(`## 图表插入要求
+1. 如果本章节存在明显的结构关系、流程关系、分层关系、时序关系或部署关系，请在合适位置插入 1-3 个图表占位符。
+2. 占位符必须严格使用如下格式，不要改写、不要加代码围栏：
+   %%DIAGRAM:mermaid:图表标题:base64(图表要表达的内容描述)%%
+   或
+   %%DIAGRAM:drawio:图表标题:base64(图表要表达的内容描述)%%
+3. 默认优先使用 mermaid。只有在自由布局明显更合适时才使用 drawio。
+4. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
+5. 占位符应紧跟在相关段落之后，不要集中堆到文末。`)
+    } else {
+      sections.push(`## 图表策略
+本章节以文字说明为主。除非确实无法清楚表达结构关系，否则不要输出任何图表占位符。`)
+    }
   }
 
   return sections.join('\n\n')

@@ -30,8 +30,10 @@ async function saveDrawioAsset(input: SaveDrawioAssetInput): Promise<SaveDrawioA
   const pngPath = join(assetsDir, pngFileName)
 
   await writeFile(assetPath, input.xml, 'utf-8')
-  const pngBuffer = Buffer.from(input.pngBase64, 'base64')
-  await writeFile(pngPath, pngBuffer)
+  if (input.pngBase64) {
+    const pngBuffer = Buffer.from(input.pngBase64, 'base64')
+    await writeFile(pngPath, pngBuffer)
+  }
 
   logger.info(`Saved drawio asset: ${assetPath}`)
   return { assetPath, pngPath }
@@ -45,9 +47,16 @@ async function loadDrawioAsset(input: LoadDrawioAssetInput): Promise<LoadDrawioA
 
   try {
     const xml = await readFile(assetPath, 'utf-8')
-    const pngBuffer = await readFile(pngPath)
-    const pngDataUrl = `data:image/png;base64,${pngBuffer.toString('base64')}`
-    return { xml, pngDataUrl }
+    try {
+      const pngBuffer = await readFile(pngPath)
+      const pngDataUrl = `data:image/png;base64,${pngBuffer.toString('base64')}`
+      return { xml, pngDataUrl }
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        return { xml }
+      }
+      throw error
+    }
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return null

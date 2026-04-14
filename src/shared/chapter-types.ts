@@ -14,12 +14,27 @@ export interface ChapterHeadingLocator {
 export type ChapterGenerationPhase =
   | 'queued'
   | 'analyzing'
-  | 'matching-assets'
-  | 'generating'
+  | 'generating-text'
+  | 'validating-text'
+  | 'generating-diagrams'
+  | 'validating-diagrams'
+  | 'composing'
+  | 'validating-coherence'
   | 'annotating-sources'
   | 'conflicted'
   | 'completed'
   | 'failed'
+
+export interface ChapterDiagramPatch {
+  placeholderId: string
+  markdown: string
+}
+
+export interface ChapterStreamProgressPayload {
+  kind: 'chapter-stream'
+  markdown: string
+  patch?: ChapterDiagramPatch
+}
 
 /** IPC input for chapter:generate */
 export interface ChapterGenerateInput {
@@ -55,4 +70,10 @@ export interface ChapterGenerationStatus {
   additionalContext?: string
   /** Snapshot of section content at task start, for conflict detection */
   baselineSectionContent?: string
+  /** Latest progressively streamed markdown for this section */
+  streamedContent?: string
+  /** Incremented on each progressive content update */
+  streamRevision?: number
+  /** Latest incremental diagram patch to apply over the streamed section */
+  latestDiagramPatch?: ChapterDiagramPatch
 }

@@ -18,7 +18,7 @@ export interface TaskExecutorContext {
   taskId: string
   input: unknown
   signal: AbortSignal
-  updateProgress: (progress: number, message?: string) => void
+  updateProgress: (progress: number, message?: string, payload?: unknown) => void
   setCheckpoint: (data: unknown) => Promise<void>
   checkpoint?: unknown
 }
@@ -181,7 +181,7 @@ export class TaskQueueService {
         taskId,
         input: parsedInput,
         signal: controller.signal,
-        updateProgress: (progress: number, message?: string) => {
+        updateProgress: (progress: number, message?: string, payload?: unknown) => {
           if (typeof message === 'string' && message.trim().length > 0) {
             lastProgressMessage = message
           }
@@ -189,7 +189,7 @@ export class TaskQueueService {
           this.repo.update(taskId, { progress }).catch((err) => {
             logger.warn(`Failed to persist progress for task ${taskId}`, err)
           })
-          progressEmitter.emit({ taskId, progress, message })
+          progressEmitter.emit({ taskId, progress, message, payload })
         },
         setCheckpoint: async (data: unknown) => {
           await this.repo.update(taskId, { checkpoint: JSON.stringify(data) })
@@ -375,6 +375,12 @@ export class TaskQueueService {
     return taskId
   }
 
+  async delete(taskId: string): Promise<void> {
+    await this.repo.delete(taskId)
+    this.executors.delete(taskId)
+    logger.info(`Task deleted: ${taskId}`)
+  }
+
   async getStatus(taskId: string): Promise<TaskRecord> {
     const task = await this.repo.findById(taskId)
     return tableToRecord(task)
@@ -385,9 +391,14 @@ export class TaskQueueService {
     return tasks.map(tableToRecord)
   }
 
-  async updateProgress(taskId: string, progress: number, message?: string): Promise<void> {
+  async updateProgress(
+    taskId: string,
+    progress: number,
+    message?: string,
+    payload?: unknown
+  ): Promise<void> {
     await this.repo.update(taskId, { progress })
-    progressEmitter.emit({ taskId, progress, message })
+    progressEmitter.emit({ taskId, progress, message, payload })
   }
 
   private _resolveRegisteredExecutor(

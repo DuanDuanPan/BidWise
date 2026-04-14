@@ -149,6 +149,12 @@ export function PlateEditor({
     return markdown
   }, [clearPendingSerialization, editor, projectId, updateContent])
 
+  const suppressSelectionAutoScroll = useCallback((): void => {
+    // Slate restores the previous DOM selection on some click paths and, by default,
+    // scrolls that stale caret back into view. We suppress that auto-scroll and let
+    // explicit chapter navigation plus direct user scrolling control the viewport.
+  }, [])
+
   /**
    * Replace a section's content by locating its heading in the current markdown,
    * splicing in new content, and re-setting the editor value.
@@ -228,6 +234,7 @@ export function PlateEditor({
         assetFileName,
         source: MERMAID_DEFAULT_TEMPLATE,
         caption: '',
+        svgPersisted: false,
         children: [{ text: '' }],
       },
       { at, select: true }
@@ -326,6 +333,7 @@ export function PlateEditor({
         className={plateContentClassName}
         style={plateContentStyle}
         placeholder="开始撰写方案..."
+        scrollSelectionIntoView={suppressSelectionAutoScroll}
         data-testid="plate-editor-content"
       />
     </Plate>

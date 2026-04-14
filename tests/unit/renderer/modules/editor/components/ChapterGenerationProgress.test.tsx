@@ -16,14 +16,14 @@ describe('@story-3-4 ChapterGenerationProgress', () => {
     expect(screen.getByText('分析需求上下文...')).toBeInTheDocument()
   })
 
-  it('@p0 renders progress indicator for matching-assets phase', () => {
-    render(<ChapterGenerationProgress phase="matching-assets" progress={25} />)
-    expect(screen.getByText('匹配资产素材...')).toBeInTheDocument()
+  it('@p0 renders progress indicator for generating-text phase', () => {
+    render(<ChapterGenerationProgress phase="generating-text" progress={10} />)
+    expect(screen.getByText('AI 正在撰写正文...')).toBeInTheDocument()
   })
 
-  it('@p0 renders progress indicator for generating phase', () => {
-    render(<ChapterGenerationProgress phase="generating" progress={50} />)
-    expect(screen.getByText('AI 正在撰写...')).toBeInTheDocument()
+  it('@p0 renders progress indicator for generating-diagrams phase', () => {
+    render(<ChapterGenerationProgress phase="generating-diagrams" progress={50} />)
+    expect(screen.getByText('生成图表中...')).toBeInTheDocument()
   })
 
   it('@p0 renders progress indicator for annotating-sources phase', () => {
@@ -47,7 +47,9 @@ describe('@story-3-4 ChapterGenerationProgress', () => {
   })
 
   it('@p1 renders skeleton loader placeholder', () => {
-    const { container } = render(<ChapterGenerationProgress phase="generating" progress={50} />)
+    const { container } = render(
+      <ChapterGenerationProgress phase="generating-diagrams" progress={50} />
+    )
     expect(container.querySelector('.ant-skeleton')).toBeInTheDocument()
   })
 })

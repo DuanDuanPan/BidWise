@@ -2,9 +2,10 @@ import { Skeleton, Progress } from 'antd'
 import {
   ClockCircleOutlined,
   SearchOutlined,
-  DatabaseOutlined,
   EditOutlined,
+  ApartmentOutlined,
   FileSearchOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
 
@@ -14,8 +15,12 @@ const PHASE_CONFIG: Record<
 > = {
   queued: { icon: <ClockCircleOutlined />, label: '排队中...' },
   analyzing: { icon: <SearchOutlined />, label: '分析需求上下文...' },
-  'matching-assets': { icon: <DatabaseOutlined />, label: '匹配资产素材...' },
-  generating: { icon: <EditOutlined />, label: 'AI 正在撰写...' },
+  'generating-text': { icon: <EditOutlined />, label: 'AI 正在撰写正文...' },
+  'validating-text': { icon: <CheckSquareOutlined />, label: '检查文字质量...' },
+  'generating-diagrams': { icon: <ApartmentOutlined />, label: '生成图表中...' },
+  'validating-diagrams': { icon: <CheckSquareOutlined />, label: '验证图表结构...' },
+  composing: { icon: <EditOutlined />, label: '整合章节内容...' },
+  'validating-coherence': { icon: <FileSearchOutlined />, label: '检查文图一致性...' },
   'annotating-sources': { icon: <FileSearchOutlined />, label: '标注来源...' },
 }
 

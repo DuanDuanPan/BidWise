@@ -9,6 +9,7 @@ const mockDeserialize = vi.fn((_editor: unknown, markdown: string) => [
 ])
 const mockSerialize = vi.fn(() => '# Serialized')
 const mockSetValue = vi.fn()
+let latestPlateContentProps: Record<string, unknown> | null = null
 
 const mockEditor = {
   api: {
@@ -74,9 +75,10 @@ vi.mock('platejs/react', () => ({
   PlateContent: ({
     className,
     ...props
-  }: HTMLAttributes<HTMLDivElement> & { placeholder?: string }) => (
-    <div {...props} className={className} />
-  ),
+  }: HTMLAttributes<HTMLDivElement> & { placeholder?: string }) => {
+    latestPlateContentProps = { className, ...props }
+    return <div {...props} className={className} />
+  },
 }))
 
 describe('@story-3-1 PlateEditor', () => {
@@ -88,6 +90,7 @@ describe('@story-3-1 PlateEditor', () => {
       { type: 'p', children: [{ text: markdown }] },
     ])
     mockSetValue.mockReset()
+    latestPlateContentProps = null
 
     vi.stubGlobal(
       'requestIdleCallback',
@@ -124,6 +127,16 @@ describe('@story-3-1 PlateEditor', () => {
     expect(editorEl.className).toContain('[&_code]:font-mono')
     expect((editorEl as HTMLDivElement).style.fontFamily).toContain('PingFang SC')
     expect((editorEl as HTMLDivElement).style.fontFamily).toContain('Microsoft YaHei')
+  })
+
+  it('@bugfix suppresses Slate selection auto-scroll restoration in the editable surface', () => {
+    render(<PlateEditor initialContent="" projectId="proj-1" />)
+
+    expect(latestPlateContentProps).not.toBeNull()
+    expect(typeof latestPlateContentProps?.scrollSelectionIntoView).toBe('function')
+    expect(() =>
+      (latestPlateContentProps?.scrollSelectionIntoView as (() => void) | undefined)?.()
+    ).not.toThrow()
   })
 
   it('registers a synchronous flush handler', () => {

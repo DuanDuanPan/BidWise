@@ -83,6 +83,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
       source: localSource,
       caption: localCaption,
       lastModified: new Date().toISOString(),
+      svgPersisted: true,
     })
 
     setPreviewSvg(success.svg)
@@ -163,6 +164,21 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
     void renderInitial()
   }, [mode, node.source, node.diagramId])
 
+  useEffect(() => {
+    if (mode !== 'preview' || !previewSvg || node.svgPersisted === true) return
+
+    let cancelled = false
+    void (async () => {
+      await saveAsset(previewSvg)
+      if (cancelled) return
+      updateNodeData({ svgPersisted: true })
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [mode, node.svgPersisted, previewSvg, saveAsset, updateNodeData])
+
   // Click outside detection: collapse editing mode
   useEffect(() => {
     if (mode !== 'editing') return
@@ -176,6 +192,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
             source: localSource,
             caption: localCaption,
             lastModified: new Date().toISOString(),
+            svgPersisted: true,
           })
           setPreviewSvg(success.svg)
           setMode('preview')

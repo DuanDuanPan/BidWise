@@ -345,3 +345,101 @@ export function sanitizeGeneratedChapterMarkdown(
 
   return lines.slice(contentStart).join('\n').trim()
 }
+
+/**
+ * Normalize heading levels in AI-generated markdown so that all sub-headings
+ * fall within [targetLevel + 1, min(targetLevel + 2, 4)].
+ *
+ * When the AI outputs headings at levels higher than the target chapter (e.g. H1/H2
+ * for an H3 chapter), these headings "escape" the section boundary and corrupt the
+ * document hierarchy.  This function shifts all heading levels by a fixed offset and
+ * clamps the result to H4 (the maximum level supported by HEADING_RE).
+ */
+export function normalizeGeneratedHeadingLevels(
+  markdownContent: string,
+  targetLevel: ChapterHeadingLocator['level']
+): string {
+  const expectedMinLevel = targetLevel + 1
+  const maxLevel = Math.min(targetLevel + 2, 4) as 1 | 2 | 3 | 4
+
+  const lines = markdownContent.split('\n')
+  let inFence = false
+  let fenceChar: string | null = null
+  let fenceLen = 0
+
+  // First pass: find the minimum heading level present in the content
+  let actualMinLevel = Infinity
+  for (const line of lines) {
+    const fenceMatch = FENCE_RE.exec(line)
+    if (fenceMatch) {
+      const marker = fenceMatch[2]
+      const char = marker[0]
+      const len = marker.length
+      if (inFence) {
+        if (char === fenceChar && len >= fenceLen) {
+          inFence = false
+          fenceChar = null
+          fenceLen = 0
+        }
+      } else {
+        inFence = true
+        fenceChar = char
+        fenceLen = len
+      }
+      continue
+    }
+    if (inFence) continue
+
+    const match = HEADING_RE.exec(line)
+    if (match) {
+      actualMinLevel = Math.min(actualMinLevel, match[1].length)
+    }
+  }
+
+  // No headings or already within valid range
+  if (actualMinLevel === Infinity || actualMinLevel >= expectedMinLevel) {
+    return markdownContent
+  }
+
+  const offset = expectedMinLevel - actualMinLevel
+
+  console.warn(
+    `[chapter-markdown] Heading level normalization triggered: target=${targetLevel}, actualMin=${actualMinLevel}, offset=+${offset}`
+  )
+
+  // Second pass: shift heading levels
+  inFence = false
+  fenceChar = null
+  fenceLen = 0
+
+  const result = lines.map((line) => {
+    const fenceMatch = FENCE_RE.exec(line)
+    if (fenceMatch) {
+      const marker = fenceMatch[2]
+      const char = marker[0]
+      const len = marker.length
+      if (inFence) {
+        if (char === fenceChar && len >= fenceLen) {
+          inFence = false
+          fenceChar = null
+          fenceLen = 0
+        }
+      } else {
+        inFence = true
+        fenceChar = char
+        fenceLen = len
+      }
+      return line
+    }
+    if (inFence) return line
+
+    const match = HEADING_RE.exec(line)
+    if (!match) return line
+
+    const originalLevel = match[1].length
+    const newLevel = Math.min(originalLevel + offset, maxLevel)
+    return '#'.repeat(newLevel) + ' ' + match[2]
+  })
+
+  return result.join('\n')
+}

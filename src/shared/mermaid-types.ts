@@ -11,6 +11,7 @@ export interface MermaidElementData {
   assetFileName: string
   caption: string
   lastModified?: string
+  svgPersisted?: boolean
 }
 
 /** IPC 输入：保存 Mermaid SVG 资产 */

@@ -18,6 +18,15 @@ const taskHandlerMap: { [C in TaskChannel]: () => void } = {
         throw err
       }
     }),
+  'task:delete': () =>
+    createIpcHandler('task:delete', async (taskId) => {
+      try {
+        await taskQueue.delete(taskId)
+      } catch (err) {
+        if (err instanceof NotFoundError) return
+        throw err
+      }
+    }),
 }
 
 export type RegisteredTaskChannels = TaskChannel

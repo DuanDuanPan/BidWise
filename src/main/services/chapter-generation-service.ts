@@ -15,7 +15,10 @@ import { RequirementRepository } from '@main/db/repositories/requirement-repo'
 import { ScoringModelRepository } from '@main/db/repositories/scoring-model-repo'
 import { MandatoryItemRepository } from '@main/db/repositories/mandatory-item-repo'
 import { TraceabilityLinkRepository } from '@main/db/repositories/traceability-link-repo'
-import { isComplianceMatrixChapter } from '@main/prompts/generate-chapter.prompt'
+import {
+  isComplianceMatrixChapter,
+  shouldSuggestDiagrams,
+} from '@main/prompts/generate-chapter.prompt'
 import type { ChapterHeadingLocator, ChapterGenerateOutput } from '@shared/chapter-types'
 import {
   createContentDigest,
@@ -27,7 +30,7 @@ import type { MarkdownHeadingInfo } from '@shared/chapter-markdown'
 
 const logger = createLogger('chapter-generation-service')
 
-const CHAPTER_TIMEOUT_MS = 120_000
+const CHAPTER_TIMEOUT_MS = 300_000
 const MAX_ADJACENT_SUMMARY_LENGTH = 500
 
 type HeadingInfo = MarkdownHeadingInfo
@@ -319,6 +322,8 @@ export const chapterGenerationService = {
         additionalContext,
         target,
         baselineDigest,
+        baselineSectionContent: chapter.contentLines.join('\n'),
+        enableDiagrams: shouldSuggestDiagrams(target.title),
       },
       options: {
         timeoutMs: CHAPTER_TIMEOUT_MS,

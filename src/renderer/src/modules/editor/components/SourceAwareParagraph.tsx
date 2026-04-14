@@ -81,10 +81,22 @@ function resolveParagraphLookupKey(nodes: unknown[], target: unknown): string | 
   return result
 }
 
+/** Color for the left-border accent by source type */
+const SOURCE_BORDER_COLORS: Record<string, string> = {
+  'asset-library': '#1677FF',
+  'knowledge-base': '#52C41A',
+  'ai-inference': '#FAAD14',
+  'no-source': '#D48806',
+  'user-edited': '#D9D9D9',
+}
+
 /**
  * Paragraph element wrapper that renders source attribution labels
  * and baseline mismatch markers alongside the text content.
  * The labels are driven by SourceAttributionContext, NOT persisted in the Slate AST.
+ *
+ * Design: left-border accent indicates source type at rest.
+ * Full label appears on hover via CSS opacity transition to avoid blocking text.
  */
 export function SourceAwareParagraph(props: PlateElementProps): React.JSX.Element {
   const sourceAttr = useSourceAttributionContext()
@@ -107,24 +119,47 @@ export function SourceAwareParagraph(props: PlateElementProps): React.JSX.Elemen
   }, [sourceAttr, paragraphLookupKey])
 
   const isNoSource = attribution?.sourceType === 'no-source' && !isEdited
+  const hasMismatch = validation != null && !validation.matched
+  const effectiveType = isEdited ? 'user-edited' : attribution?.sourceType
+  const borderColor = effectiveType ? SOURCE_BORDER_COLORS[effectiveType] : undefined
 
   return (
     <PlateElement
       {...props}
+      className={`source-aware-paragraph ${props.className ?? ''}`}
       style={{
         ...props.style,
         position: 'relative',
-        ...(isNoSource ? { backgroundColor: '#FFFBE6' } : {}),
-        ...(validation && !validation.matched
-          ? { borderLeft: '2px solid #FF4D4F', paddingLeft: 8 }
+        // Left accent border for attributed paragraphs (source type color)
+        ...(attribution && !hasMismatch
+          ? { borderLeft: `2px solid ${borderColor}`, paddingLeft: 10 }
           : {}),
+        // Subtle background tint for no-source paragraphs
+        ...(isNoSource ? { backgroundColor: '#FFFBE6' } : {}),
+        // Mismatch state: red border takes priority
+        ...(hasMismatch ? { borderLeft: '2px solid #FF4D4F', paddingLeft: 10 } : {}),
       }}
     >
       {props.children}
       {attribution && (
-        <span style={{ position: 'absolute', right: 0, top: 0 }} contentEditable={false}>
-          <SourceAttributionLabel attribution={attribution} isEdited={isEdited} />
-          {validation && !validation.matched && <BaselineMismatchMarker validation={validation} />}
+        <span
+          className="source-label-anchor"
+          style={{
+            position: 'absolute',
+            right: -4,
+            top: 2,
+            transform: 'translateX(100%)',
+            opacity: 0,
+            transition: 'opacity 0.15s ease-in-out',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+          contentEditable={false}
+        >
+          <span style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center' }}>
+            <SourceAttributionLabel attribution={attribution} isEdited={isEdited} />
+            {hasMismatch && <BaselineMismatchMarker validation={validation} />}
+          </span>
         </span>
       )}
     </PlateElement>

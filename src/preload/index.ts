@@ -64,6 +64,9 @@ const requestApi = {
   taskGetStatus: (input: IpcChannelMap['task:get-status']['input']) =>
     typedInvoke(IPC_CHANNELS.TASK_GET_STATUS, input),
 
+  taskDelete: (taskId: IpcChannelMap['task:delete']['input']) =>
+    typedInvoke(IPC_CHANNELS.TASK_DELETE, taskId),
+
   analysisImportTender: (input: IpcChannelMap['analysis:import-tender']['input']) =>
     typedInvoke(IPC_CHANNELS.ANALYSIS_IMPORT_TENDER, input),
 

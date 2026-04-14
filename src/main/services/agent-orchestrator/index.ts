@@ -1,5 +1,10 @@
 export { AgentOrchestrator } from './orchestrator'
-export type { AgentHandler, AgentPostProcessor, AiRequestParams } from './orchestrator'
+export type {
+  AgentHandler,
+  AgentHandlerResult,
+  AgentPostProcessor,
+  AiRequestParams,
+} from './orchestrator'
 import { AgentOrchestrator } from './orchestrator'
 import { parseAgentHandler } from './agents/parse-agent'
 import { generateAgentHandler } from './agents/generate-agent'

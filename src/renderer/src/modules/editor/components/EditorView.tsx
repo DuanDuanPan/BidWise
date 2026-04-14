@@ -15,7 +15,12 @@ import type {
 } from './PlateEditor'
 import { EditorToolbar } from './EditorToolbar'
 import type { CurrentSectionInfo } from '@modules/annotation/hooks/useCurrentSection'
-import { sanitizeGeneratedChapterMarkdown } from '@shared/chapter-markdown'
+import {
+  sanitizeGeneratedChapterMarkdown,
+  normalizeGeneratedHeadingLevels,
+  extractMarkdownSectionContent,
+} from '@shared/chapter-markdown'
+import type { ChapterDiagramPatch } from '@shared/chapter-types'
 
 interface EditorViewProps {
   projectId: string
@@ -40,6 +45,7 @@ export function EditorView({
   const insertMermaidRef = useRef<InsertMermaidFn | null>(null)
   const insertAssetRef = useRef<InsertAssetFn | null>(null)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
+  const consumedStreamRevisionsRef = useRef<Map<string, number>>(new Map())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const [insertDrawioAvailable, setInsertDrawioAvailable] = useState(false)
   const [insertMermaidAvailable, setInsertMermaidAvailable] = useState(false)
@@ -89,8 +95,26 @@ export function EditorView({
   const { isOpen: importOpen, importContext, openImport, closeImport } = useAssetImport()
 
   const sanitizeGeneratedContent = useCallback(
-    (target: { title: string; level: 1 | 2 | 3 | 4; occurrenceIndex: number }, content: string) =>
-      sanitizeGeneratedChapterMarkdown(content, target),
+    (target: { title: string; level: 1 | 2 | 3 | 4; occurrenceIndex: number }, content: string) => {
+      const deduped = sanitizeGeneratedChapterMarkdown(content, target)
+      return normalizeGeneratedHeadingLevels(deduped, target.level)
+    },
+    []
+  )
+
+  const applyDiagramPatchToSection = useCallback(
+    (sectionContent: string, patch: ChapterDiagramPatch): string | null => {
+      const marker = `{#diagram-placeholder:${patch.placeholderId}}`
+      const lines = sectionContent.split('\n')
+      let replaced = false
+      const nextLines = lines.map((line) => {
+        if (!line.includes(marker)) return line
+        replaced = true
+        return patch.markdown
+      })
+
+      return replaced ? nextLines.join('\n') : null
+    },
     []
   )
 
@@ -160,6 +184,64 @@ export function EditorView({
     // Only run on mount / projectId change, not when sourceAttr ref changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  useEffect(() => {
+    if (!chapterGen || !chapterStatuses || !replaceSectionRef.current) return
+    if (loadedProjectId !== projectId || content.length === 0) return
+
+    const consumedRevisions = consumedStreamRevisionsRef.current
+
+    for (const [key, status] of chapterStatuses) {
+      const revision = status.streamRevision ?? 0
+      if (revision === 0 || !status.streamedContent) {
+        consumedRevisions.delete(key)
+        continue
+      }
+
+      if (consumedRevisions.get(key) === revision) continue
+
+      let didReplace = false
+      if (status.latestDiagramPatch) {
+        const currentMarkdown = useDocumentStore.getState().content
+        const currentSectionContent = extractMarkdownSectionContent(currentMarkdown, status.target)
+        const patchedSection = applyDiagramPatchToSection(
+          currentSectionContent,
+          status.latestDiagramPatch
+        )
+
+        if (patchedSection) {
+          didReplace = replaceSectionRef.current(
+            status.target,
+            sanitizeGeneratedContent(status.target, patchedSection)
+          )
+        }
+      } else {
+        didReplace = replaceSectionRef.current(
+          status.target,
+          sanitizeGeneratedContent(status.target, status.streamedContent)
+        )
+      }
+
+      if (didReplace) {
+        consumedRevisions.set(key, revision)
+      }
+    }
+
+    for (const key of Array.from(consumedRevisions.keys())) {
+      if (!chapterStatuses.has(key)) {
+        consumedRevisions.delete(key)
+      }
+    }
+  }, [
+    applyDiagramPatchToSection,
+    chapterGen,
+    chapterStatuses,
+    content,
+    loadedProjectId,
+    projectId,
+    replaceSectionVersion,
+    sanitizeGeneratedContent,
+  ])
 
   // Watch for completed chapters and inject content into editor
   useEffect(() => {

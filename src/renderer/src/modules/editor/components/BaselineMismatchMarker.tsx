@@ -37,13 +37,18 @@ export function BaselineMismatchMarker({
         style={{
           display: 'inline-flex',
           alignItems: 'center',
+          justifyContent: 'center',
           marginLeft: 4,
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          backgroundColor: 'rgba(255, 77, 79, 0.08)',
           color: '#FF4D4F',
           cursor: 'help',
-          fontSize: 12,
+          fontSize: 11,
         }}
       >
-        <ExclamationCircleOutlined style={{ fontSize: 12 }} />
+        <ExclamationCircleOutlined style={{ fontSize: 11 }} />
       </span>
     </Tooltip>
   )
