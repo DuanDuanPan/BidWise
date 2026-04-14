@@ -130,13 +130,9 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 1. 如果本章节存在明显的结构关系、流程关系、分层关系、时序关系或部署关系，请在合适位置插入 1-3 个图表占位符。
 2. 占位符必须严格使用如下格式，不要改写、不要加代码围栏：
    %%DIAGRAM:mermaid:图表标题:图表描述的UTF-8 Base64编码%%
-3. 第四段必须是纯 base64 字符串，只能包含 A-Z、a-z、0-9、+、/、=；不要输出 \`base64(...)\` 包装、不要换行、不要加解释文字。
-4. 所有图表统一使用 Mermaid，根据语义选择合适语法族：
-   - 总体架构：优先使用 C4Context
-   - 技术架构：优先使用 C4Container 或 C4Component
-   - 数据架构、部署/拓扑图、系统集成架构：优先使用 architecture-beta
-   - 业务架构、流程图：优先使用 flowchart
-   - 时序图、状态图、类图：分别使用 sequenceDiagram、stateDiagram-v2、classDiagram
+   第二段的类型标识必须固定写 mermaid（不要写 C4Container、architecture-beta 等具体语法名）。
+3. 第四段必须是纯 base64 字符串，只能包含 A-Z、a-z、0-9、+、/、=；不要输出 \`base64(...)\` 包装、不要换行、不要加解释文字。不要输出未编码的中文描述。
+4. 所有图表统一使用 Mermaid，后续系统会根据语义自动选择合适语法族（C4Context、C4Container、architecture-beta、flowchart 等），你只需在描述中说明图表意图即可。
 5. Mermaid 仅使用以下语法族：flowchart、sequenceDiagram、stateDiagram-v2、classDiagram、architecture-beta、C4Context、C4Container、C4Component、C4Deployment；不要输出 draw.io XML、block-beta 或其他图表语法。
 6. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
 7. 占位符应紧跟在相关段落之后，不要集中堆到文末。

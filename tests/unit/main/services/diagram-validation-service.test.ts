@@ -129,8 +129,16 @@ describe('diagram-validation-service', () => {
       expect(result.markdownWithSkeletons).toBe('纯文本内容\n\n## 子标题')
     })
 
-    it('@p1 should ignore malformed placeholders', () => {
-      const md = '%%DIAGRAM:unknown:title:abc%%\n%%DIAGRAM:mermaid%%'
+    it('@p1 should normalize non-standard type to mermaid', () => {
+      const md = '%%DIAGRAM:C4Container:系统架构图:abc%%'
+      const result = parseDiagramPlaceholders(md)
+      expect(result.placeholders).toHaveLength(1)
+      expect(result.placeholders[0].type).toBe('mermaid')
+    })
+
+    it('@p1 should ignore truly malformed placeholders', () => {
+      // No title/description fields at all
+      const md = '%%DIAGRAM:mermaid%%'
       const result = parseDiagramPlaceholders(md)
       expect(result.placeholders).toHaveLength(0)
     })

@@ -8,9 +8,11 @@ import {
 
 export type DiagramType = 'mermaid' | 'drawio'
 
-const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM:(mermaid|drawio):([^:\n]+):([\s\S]*?)%%/g
+// Accept any type token so LLM-hallucinated types like "C4Container" are still captured;
+// non-standard types are normalized to 'mermaid' in parseDiagramPlaceholders.
+const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM:([A-Za-z0-9_-]+):([^:\n]+):([\s\S]*?)%%/g
 const BASE64_TEXT_RE = /^[A-Za-z0-9+/]+={0,2}$/
-const DIAGRAM_PLACEHOLDER_LINE_RE = /^%%DIAGRAM:(mermaid|drawio):/
+const DIAGRAM_PLACEHOLDER_LINE_RE = /^%%DIAGRAM:[A-Za-z0-9_-]+:/
 
 export interface DiagramPlaceholder {
   placeholderId: string
@@ -133,12 +135,19 @@ function normalizeDescription(rawDescription: string): string {
   return candidate.replace(/\s+/g, ' ').trim()
 }
 
+function normalizeDiagramType(raw: string): DiagramType {
+  const lower = raw.toLowerCase()
+  if (lower === 'drawio' || lower === 'draw.io') return 'drawio'
+  return 'mermaid' // C4Container, architecture-beta, flowchart, etc. → all mermaid
+}
+
 export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceholders {
   const repairedMarkdown = repairUnclosedDiagramPlaceholders(markdown)
   const placeholders: DiagramPlaceholder[] = []
   const markdownWithSkeletons = repairedMarkdown.replace(
     DIAGRAM_PLACEHOLDER_RE,
-    (_match, type: DiagramType, rawTitle: string, rawDescription: string) => {
+    (_match, rawType: string, rawTitle: string, rawDescription: string) => {
+      const type = normalizeDiagramType(rawType)
       const placeholderId = randomUUID()
       const title = sanitizeTitle(rawTitle)
       const shortId = placeholderId.slice(0, 8)
