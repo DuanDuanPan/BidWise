@@ -55,6 +55,7 @@ describe('@story-3-8 MermaidRenderer', () => {
     expect(mockMermaid.parse).toHaveBeenCalledWith(VALID_SOURCE)
     expect(mockMermaid.render).toHaveBeenCalledWith('mermaid-test-1-1', VALID_SOURCE)
     expect(onSuccess).toHaveBeenCalledWith('<svg>ok</svg>')
+    expect(screen.getByTestId('mermaid-svg-container').className).toContain('min-h-[240px]')
   })
 
   it('shows error message on parse failure', async () => {

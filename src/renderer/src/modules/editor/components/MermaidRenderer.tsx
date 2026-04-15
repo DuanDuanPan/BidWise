@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 import { Spin } from 'antd'
+import { DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME } from './diagramPreview'
 
 mermaid.initialize({
   startOnLoad: false,
@@ -134,12 +135,12 @@ export function MermaidRenderer({
       )}
       <div
         ref={svgContainerRef}
-        className="flex items-center justify-center"
+        className={DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME}
         data-testid="mermaid-svg-container"
       />
       {errorMessage && lastSuccessSvg && (
         <div
-          className="mt-2 opacity-30"
+          className={`${DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME} mt-2 opacity-30`}
           data-testid="mermaid-stale-preview"
           dangerouslySetInnerHTML={{ __html: lastSuccessSvg }}
         />

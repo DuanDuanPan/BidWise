@@ -119,6 +119,7 @@ describe('@story-3-8 MermaidElement', () => {
     expect(screen.getByTestId('mermaid-preview')).toBeDefined()
     expect(screen.getByTestId('mermaid-edit-btn')).toBeDefined()
     expect(screen.getByTestId('mermaid-delete-btn')).toBeDefined()
+    expect(screen.getByTestId('mermaid-preview-svg').className).toContain('min-h-[240px]')
   })
 
   it('switches from preview to editing on edit button click', () => {

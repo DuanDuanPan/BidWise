@@ -70,9 +70,12 @@ describe('@story-3-7 DrawioElement', () => {
       </DrawioElement>
     )
 
+    expect(screen.getByTestId('drawio-preview-frame').className).toContain('min-h-[240px]')
+
     const img = screen.getByTestId('drawio-preview-img') as HTMLImageElement
     expect(img.src).toContain('data:image/png;base64')
     expect(img.alt).toBe('架构图')
+    expect(img.className).toContain('object-contain')
   })
 
   it('renders caption input with correct value', () => {

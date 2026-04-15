@@ -5,6 +5,7 @@ import { DeleteOutlined, EditOutlined, WarningOutlined } from '@ant-design/icons
 import { Button, Tooltip, Tag } from 'antd'
 import { useProjectStore } from '@renderer/stores'
 import { DrawioEditor } from './DrawioEditor'
+import { DIAGRAM_PREVIEW_FRAME_CLASSNAME } from './diagramPreview'
 import type { DrawioElement as DrawioElementType } from '@modules/editor/plugins/drawioPlugin'
 
 type DrawioMode = 'preview' | 'editing'
@@ -180,12 +181,14 @@ export function DrawioElement(props: PlateElementProps): React.JSX.Element {
                 <span>图表资产加载失败</span>
               </div>
             ) : pngDataUrl ? (
-              <img
-                src={pngDataUrl}
-                alt={localCaption || '架构图'}
-                className="mx-auto max-w-full"
-                data-testid="drawio-preview-img"
-              />
+              <div className={DIAGRAM_PREVIEW_FRAME_CLASSNAME} data-testid="drawio-preview-frame">
+                <img
+                  src={pngDataUrl}
+                  alt={localCaption || '架构图'}
+                  className="block max-h-full max-w-full object-contain"
+                  data-testid="drawio-preview-img"
+                />
+              </div>
             ) : xml ? (
               <div
                 className="flex flex-col gap-3 p-5 text-sm text-gray-500"

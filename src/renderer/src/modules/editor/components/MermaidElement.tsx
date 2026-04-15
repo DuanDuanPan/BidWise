@@ -6,6 +6,7 @@ import { App, Button, Tooltip } from 'antd'
 import mermaid from 'mermaid'
 import { useProjectStore } from '@renderer/stores'
 import { MermaidRenderer } from './MermaidRenderer'
+import { DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME } from './diagramPreview'
 import type { MermaidElement as MermaidElementType } from '@modules/editor/plugins/mermaidPlugin'
 import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
 
@@ -260,7 +261,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
             </div>
 
             {/* Live preview area */}
-            <div className="min-h-[100px] bg-white p-3">
+            <div className="bg-white p-3">
               <MermaidRenderer
                 source={localSource}
                 diagramId={node.diagramId}
@@ -290,7 +291,7 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
           >
             {/* SVG preview area */}
             <div
-              className="flex max-h-[400px] items-center justify-center overflow-auto p-4"
+              className={DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME}
               data-testid="mermaid-preview-svg"
               dangerouslySetInnerHTML={{ __html: previewSvg }}
             />
