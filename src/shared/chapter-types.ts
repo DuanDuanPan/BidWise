@@ -72,7 +72,7 @@ export interface SkeletonBatchProgressPayload {
 }
 
 /** Per-section status within a progressive batch */
-export type BatchSectionPhase = 'pending' | 'generating' | 'completed' | 'failed'
+export type BatchSectionPhase = 'pending' | 'generating' | 'completed' | 'failed' | 'retrying'
 
 /** Status of a single section within a progressive batch orchestration */
 export interface BatchSectionStatus {
@@ -83,6 +83,8 @@ export interface BatchSectionStatus {
   content?: string
   taskId?: string
   error?: string
+  retryCount?: number
+  retryInSeconds?: number
 }
 
 /** Progress payload for progressive batch: one section completed */
@@ -108,6 +110,19 @@ export interface BatchCompletePayload {
   completedCount: number
   totalCount: number
   failedSections: Array<{ index: number; title: string; error: string }>
+}
+
+/** Progress payload for progressive batch: a section is retrying after failure */
+export interface BatchSectionRetryingPayload {
+  kind: 'batch-section-retrying'
+  batchId: string
+  sectionIndex: number
+  sectionTitle: string
+  retryCount: number
+  maxRetries: number
+  retryInSeconds: number
+  /** TaskId of the newly dispatched retry task (for progress routing) */
+  newTaskId?: string
 }
 
 /** Progress payload for progressive batch: a section failed */
@@ -150,6 +165,39 @@ export interface BatchGenerateInput {
 export interface BatchGenerateOutput {
   taskId: string
   batchId?: string
+}
+
+/** IPC input for chapter:batch-retry-section */
+export interface BatchRetrySectionInput {
+  projectId: string
+  batchId: string
+  /** Section index to retry. If omitted, service auto-detects first failed section. */
+  sectionIndex?: number
+}
+
+/** IPC output for chapter:batch-retry-section */
+export interface BatchRetrySectionOutput {
+  taskId: string
+  batchId: string
+  sectionIndex: number
+}
+
+/** IPC input for chapter:batch-skip-section */
+export interface BatchSkipSectionInput {
+  projectId: string
+  batchId: string
+  /** Section index to skip. If omitted, service auto-detects first failed section. */
+  sectionIndex?: number
+}
+
+/** IPC output for chapter:batch-skip-section */
+export interface BatchSkipSectionOutput {
+  batchId: string
+  skippedSectionIndex: number
+  nextTaskId?: string
+  nextSectionIndex?: number
+  /** Assembled markdown of all sections so far (for editor snapshot update) */
+  assembledSnapshot?: string
 }
 
 export interface ChapterDiagramPatch {

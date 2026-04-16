@@ -380,3 +380,122 @@ describe('heading visual hierarchy classes', () => {
     expect(heading.className).toContain('text-[#4A5B71]')
   })
 })
+
+describe('@story-3-11 batch failure UI switching', () => {
+  beforeEach(() => {
+    mockContent = '## 系统架构设计\n\n正文段落\n'
+    mockEditorChildren = []
+    mockSourceAttr = {
+      sections: new Map(),
+    }
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('@p0 shows InlineErrorBar when batch-generating phase has error', () => {
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+    mockEditorChildren = [headingElement]
+
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target: { title: '系统架构设计', level: 2, occurrenceIndex: 0 },
+            phase: 'batch-generating',
+            progress: 30,
+            taskId: 'task-1',
+            operationType: 'batch-generate',
+            error: 'LLM timeout',
+            batchSections: [
+              { index: 0, title: '功能设计', level: 3, phase: 'failed', error: 'LLM timeout' },
+              { index: 1, title: '接口设计', level: 3, phase: 'pending' },
+            ],
+          },
+        ],
+      ]),
+      currentProjectId: 'proj-1',
+    }
+
+    render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    expect(screen.getByTestId('chapter-error-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('chapter-retry-btn')).toBeInTheDocument()
+    expect(screen.getByTestId('chapter-skip-btn')).toBeInTheDocument()
+  })
+
+  it('@p0 does not show error bar during batch-generating without error', () => {
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+    mockEditorChildren = [headingElement]
+
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target: { title: '系统架构设计', level: 2, occurrenceIndex: 0 },
+            phase: 'batch-generating',
+            progress: 50,
+            taskId: 'task-1',
+            operationType: 'batch-generate',
+            message: '正在生成子章节 2/3',
+          },
+        ],
+      ]),
+      currentProjectId: 'proj-1',
+    }
+
+    render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    // No error bar when no error
+    expect(screen.queryByTestId('chapter-error-bar')).not.toBeInTheDocument()
+  })
+
+  it('@p0 shows InlineErrorBar for standard failed phase', () => {
+    const headingElement = {
+      type: 'h2',
+      children: [{ text: '系统架构设计' }],
+    }
+    mockEditorChildren = [headingElement]
+
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target: { title: '系统架构设计', level: 2, occurrenceIndex: 0 },
+            phase: 'failed',
+            progress: 0,
+            taskId: 'task-1',
+            error: '生成失败',
+          },
+        ],
+      ]),
+      currentProjectId: 'proj-1',
+    }
+
+    render(
+      <ChapterHeadingElement element={headingElement as never}>
+        <span>系统架构设计</span>
+      </ChapterHeadingElement>
+    )
+
+    expect(screen.getByTestId('chapter-error-bar')).toBeInTheDocument()
+  })
+})

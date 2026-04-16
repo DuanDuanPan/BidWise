@@ -106,7 +106,8 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   const isGenerating = Boolean(
     status && !['completed', 'failed', 'conflicted'].includes(status.phase)
   )
-  const hasFailed = status?.phase === 'failed'
+  const hasFailed =
+    status?.phase === 'failed' || (status?.phase === 'batch-generating' && Boolean(status?.error))
   const sectionState = statusKey && sourceAttr ? sourceAttr.sections.get(statusKey) : undefined
 
   const followUpProgress = useMemo(() => {
@@ -206,6 +207,11 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
     chapterGen.dismissError(locator)
   }, [chapterGen, locator])
 
+  const handleManualEdit = useCallback(() => {
+    if (!chapterGen || !locator) return
+    chapterGen.manualEdit(locator)
+  }, [chapterGen, locator])
+
   // Open skeleton preview when skeleton is ready
   const isSkeletonReady = status?.phase === 'skeleton-ready' && status?.skeletonPlan
 
@@ -286,7 +292,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
           <InlineErrorBar
             error={status.error}
             onRetry={handleRetry}
-            onManualEdit={handleDismiss}
+            onManualEdit={handleManualEdit}
             onSkip={handleDismiss}
           />
         </div>
@@ -359,16 +365,17 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
         </Modal>
       )}
 
-      {(status?.phase === 'batch-generating' || status?.phase === 'batch-composing') && (
-        <div contentEditable={false} className="my-2 px-4">
-          <Progress
-            percent={status.progress}
-            size="small"
-            status="active"
-            format={() => batchProgress ?? `${status.progress}%`}
-          />
-        </div>
-      )}
+      {(status?.phase === 'batch-generating' || status?.phase === 'batch-composing') &&
+        !status?.error && (
+          <div contentEditable={false} className="my-2 px-4">
+            <Progress
+              percent={status.progress}
+              size="small"
+              status="active"
+              format={() => batchProgress ?? `${status.progress}%`}
+            />
+          </div>
+        )}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import type {
   ChapterGenerationStatus,
   SkeletonExpandPlan,
   BatchSectionProgressPayload,
+  BatchSectionRetryingPayload,
   BatchSectionFailedPayload,
   BatchCompletePayload,
   BatchSectionStatus,
@@ -41,6 +42,7 @@ function progressToPhase(progress: number, message?: string): ChapterGenerationP
   if (message === 'batch-generating') return 'batch-generating'
   if (message === 'batch-composing') return 'batch-composing'
   if (message === 'batch-section-complete') return 'batch-generating'
+  if (message === 'batch-section-retrying') return 'batch-generating'
   if (message === 'batch-section-failed') return 'batch-generating'
   if (message === 'batch-complete') return 'completed'
   if (progress >= 90) return 'validating-coherence'
@@ -68,6 +70,14 @@ function isBatchSectionCompletePayload(payload: unknown): payload is BatchSectio
     typeof payload === 'object' &&
     payload !== null &&
     (payload as { kind?: unknown }).kind === 'batch-section-complete'
+  )
+}
+
+function isBatchSectionRetryingPayload(payload: unknown): payload is BatchSectionRetryingPayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as { kind?: unknown }).kind === 'batch-section-retrying'
   )
 }
 
@@ -214,6 +224,8 @@ export interface UseChapterGenerationReturn {
   startBatchGenerate: (target: ChapterHeadingLocator, sectionId: string) => Promise<void>
   retry: (target: ChapterHeadingLocator) => Promise<void>
   dismissError: (target: ChapterHeadingLocator) => void
+  /** Exit batch error state to allow manual editing without skipping the section */
+  manualEdit: (target: ChapterHeadingLocator) => void
   notifySectionCleared: (target: ChapterHeadingLocator) => void
   /** Advance baseline to the current editor section content after a streaming patch is applied */
   advanceBaseline: (target: ChapterHeadingLocator) => void
@@ -301,6 +313,48 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             batchSections: sections,
             streamedContent: p.assembledSnapshot,
             streamRevision: (prev.streamRevision ?? 0) + 1,
+            error: undefined,
+          }
+        })
+        return
+      }
+
+      if (isBatchSectionRetryingPayload(event.payload)) {
+        const p = event.payload
+        // Register newTaskId for progress routing when auto-retry dispatch completes
+        if (p.newTaskId) {
+          taskToLocatorRef.current.set(p.newTaskId, locator)
+          // Old taskId is no longer active — clean up
+          taskToLocatorRef.current.delete(event.taskId)
+        }
+        updateStatus(key, (prev) => {
+          const sections = prev.batchSections ? [...prev.batchSections] : []
+          if (sections[p.sectionIndex]) {
+            sections[p.sectionIndex] = {
+              ...sections[p.sectionIndex],
+              phase: p.newTaskId ? 'generating' : 'retrying',
+              taskId: p.newTaskId ?? sections[p.sectionIndex].taskId,
+              retryCount: p.retryCount,
+              retryInSeconds: p.retryInSeconds,
+              error: undefined,
+            }
+          }
+          return {
+            ...prev,
+            phase: 'batch-generating',
+            progress: event.progress,
+            taskId: p.newTaskId ?? prev.taskId,
+            message: p.newTaskId
+              ? sections.length > 0
+                ? buildBatchStepMessage(
+                    p.sectionIndex,
+                    sections.length,
+                    sections[p.sectionIndex]?.title
+                  )
+                : '正在重试子章节生成'
+              : `正在重试（第 ${p.retryCount}/${p.maxRetries} 次，${p.retryInSeconds}s 后）`,
+            batchSections: sections,
+            error: undefined,
           }
         })
         return
@@ -532,11 +586,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           const operationType: ChapterGenerationStatus['operationType'] =
             inputMode === 'skeleton-generate'
               ? 'skeleton-generate'
-              : inputMode === 'skeleton-batch'
+              : inputMode === 'skeleton-batch' || inputMode === 'skeleton-batch-single'
                 ? 'batch-generate'
                 : input.additionalContext !== undefined
                   ? 'regenerate'
                   : 'generate'
+
+          // Recover batchId for batch-generate tasks so retry/skip IPC works after restore
+          const restoredBatchId =
+            operationType === 'batch-generate' ? (input.batchId as string | undefined) : undefined
 
           // skeleton-generate tasks produce JSON, not markdown — handle separately
           if (operationType === 'skeleton-generate') {
@@ -641,11 +699,16 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
                   generatedContent: status.result.content,
                   baselineDigest,
                   baselineSectionContent,
+                  batchId: restoredBatchId,
                 })
                 continue
               }
 
               if (status.status === 'failed' || status.status === 'cancelled') {
+                // For batch tasks, keep taskId routed so in-flight auto-retry handoff payloads arrive
+                if (operationType === 'batch-generate') {
+                  taskToLocatorRef.current.set(task.id, target)
+                }
                 restoredStatuses.set(key, {
                   target,
                   phase: 'failed',
@@ -657,6 +720,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
                     (status.status === 'cancelled' ? '任务已取消' : '生成失败'),
                   baselineDigest,
                   baselineSectionContent,
+                  batchId: restoredBatchId,
                 })
                 continue
               }
@@ -671,6 +735,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               operationType,
               baselineDigest,
               baselineSectionContent,
+              batchId: restoredBatchId,
             })
             continue
           }
@@ -697,11 +762,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
               generatedContent: status.result.content,
               baselineDigest,
               baselineSectionContent,
+              batchId: restoredBatchId,
             })
             continue
           }
 
           if (status.status === 'failed' || status.status === 'cancelled') {
+            if (operationType === 'batch-generate') {
+              taskToLocatorRef.current.set(task.id, target)
+            }
             restoredStatuses.set(key, {
               target,
               phase: 'failed',
@@ -713,6 +782,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
                 (status.status === 'cancelled' ? '任务已取消' : '生成失败'),
               baselineDigest,
               baselineSectionContent,
+              batchId: restoredBatchId,
             })
           }
         } catch {
@@ -992,22 +1062,194 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       } else if (currentStatus?.operationType === 'skeleton-generate') {
         await startSkeletonGenerate(target)
       } else if (currentStatus?.operationType === 'batch-generate') {
-        // For batch retry, we need the sectionId — derive from target
-        // The sectionId is constructed the same way as locatorKey
-        await startBatchGenerate(target, locatorKey(target))
+        const batchId = currentStatus.batchId
+        if (!batchId) {
+          await startGeneration(target)
+          return
+        }
+        const failedSection = currentStatus.batchSections?.find((s) => s.phase === 'failed')
+        // Call IPC with explicit index if known, or omit to let service auto-detect
+        const res = await window.api.chapterBatchRetrySection({
+          projectId,
+          batchId,
+          sectionIndex: failedSection?.index,
+        })
+        if (res.success) {
+          taskToLocatorRef.current.set(res.data.taskId, target)
+          updateStatus(key, (prev) => {
+            const sections = prev.batchSections ? [...prev.batchSections] : []
+            const idx = res.data.sectionIndex
+            if (sections[idx]) {
+              sections[idx] = {
+                ...sections[idx],
+                phase: 'generating',
+                taskId: res.data.taskId,
+                error: undefined,
+              }
+            }
+            return {
+              ...prev,
+              phase: 'batch-generating',
+              taskId: res.data.taskId,
+              message:
+                sections.length > 0
+                  ? buildBatchStepMessage(idx, sections.length, sections[idx]?.title)
+                  : '正在重试子章节生成',
+              batchSections: sections,
+              error: undefined,
+              locked: true,
+            }
+          })
+        } else {
+          updateStatus(key, (prev) => ({
+            ...prev,
+            error: res.error.message,
+          }))
+        }
       } else {
         await startGeneration(target)
       }
     },
-    [startGeneration, startRegeneration, startSkeletonGenerate, startBatchGenerate]
+    [projectId, updateStatus, startGeneration, startRegeneration, startSkeletonGenerate]
   )
 
-  const dismissError = useCallback((target: ChapterHeadingLocator) => {
+  const dismissError = useCallback(
+    (target: ChapterHeadingLocator) => {
+      const key = locatorKey(target)
+      const currentStatus = statusesRef.current.get(key)
+
+      // In batch mode, "dismiss" means "skip this section and continue"
+      if (currentStatus?.operationType === 'batch-generate' && currentStatus.batchId) {
+        const failedSection = currentStatus.batchSections?.find((s) => s.phase === 'failed')
+        // Call IPC with explicit index if known, or omit to let service auto-detect
+        void window.api
+          .chapterBatchSkipSection({
+            projectId,
+            batchId: currentStatus.batchId,
+            sectionIndex: failedSection?.index,
+          })
+          .then((res) => {
+            if (!res.success) return
+
+            const skippedIdx = res.data.skippedSectionIndex
+            const snapshot = res.data.assembledSnapshot
+
+            if (res.data.nextTaskId) {
+              // Mid-batch: continue chain
+              taskToLocatorRef.current.set(res.data.nextTaskId, target)
+              updateStatus(key, (prev) => {
+                const sections = prev.batchSections ? [...prev.batchSections] : []
+                if (sections[skippedIdx]) {
+                  sections[skippedIdx] = {
+                    ...sections[skippedIdx],
+                    phase: 'completed',
+                    content: '> [已跳过 - 请手动补充]',
+                    error: undefined,
+                  }
+                }
+                if (
+                  res.data.nextSectionIndex !== undefined &&
+                  sections[res.data.nextSectionIndex]
+                ) {
+                  sections[res.data.nextSectionIndex] = {
+                    ...sections[res.data.nextSectionIndex],
+                    phase: 'generating',
+                    taskId: res.data.nextTaskId,
+                  }
+                }
+                const nextTitle =
+                  res.data.nextSectionIndex !== undefined
+                    ? sections[res.data.nextSectionIndex]?.title
+                    : undefined
+                return {
+                  ...prev,
+                  phase: 'batch-generating',
+                  taskId: res.data.nextTaskId ?? prev.taskId,
+                  message:
+                    sections.length > 0
+                      ? buildBatchStepMessage(
+                          res.data.nextSectionIndex ?? 0,
+                          sections.length,
+                          nextTitle
+                        )
+                      : '正在继续生成子章节',
+                  batchSections: sections,
+                  error: undefined,
+                  locked: true,
+                  streamedContent: snapshot ?? prev.streamedContent,
+                  streamRevision: snapshot ? (prev.streamRevision ?? 0) + 1 : prev.streamRevision,
+                }
+              })
+            } else {
+              // Terminal: batch completed after skip
+              updateStatus(key, (prev) => {
+                const sections = prev.batchSections ? [...prev.batchSections] : []
+                if (sections[skippedIdx]) {
+                  sections[skippedIdx] = {
+                    ...sections[skippedIdx],
+                    phase: 'completed',
+                    content: '> [已跳过 - 请手动补充]',
+                    error: undefined,
+                  }
+                }
+                return {
+                  ...prev,
+                  phase: 'completed',
+                  progress: 100,
+                  message: 'batch-complete',
+                  batchSections: sections,
+                  error: undefined,
+                  locked: false,
+                  generatedContent: snapshot ?? prev.streamedContent,
+                  streamedContent: snapshot ?? prev.streamedContent,
+                  streamRevision: snapshot ? (prev.streamRevision ?? 0) + 1 : prev.streamRevision,
+                }
+              })
+              // Refresh annotations
+              void useAnnotationStore.getState().loadAnnotations(projectIdRef.current)
+            }
+          })
+        return
+      }
+
+      // Non-batch: clear the status entirely
+      const taskId = currentStatus?.taskId
+      if (taskId) {
+        taskToLocatorRef.current.delete(taskId)
+        void window.api.taskDelete(taskId)
+      }
+      setStatuses((prev) => {
+        const next = new Map(prev)
+        next.delete(key)
+        return next
+      })
+    },
+    [projectId, updateStatus]
+  )
+
+  const manualEdit = useCallback((target: ChapterHeadingLocator) => {
     const key = locatorKey(target)
-    const taskId = statusesRef.current.get(key)?.taskId
+    const currentStatus = statusesRef.current.get(key)
+
+    if (currentStatus?.operationType === 'batch-generate') {
+      // Exit error state and delete task so re-entry doesn't resurrect it
+      const taskId = currentStatus.taskId
+      if (taskId) {
+        taskToLocatorRef.current.delete(taskId)
+        void window.api.taskDelete(taskId)
+      }
+      setStatuses((prev) => {
+        const next = new Map(prev)
+        next.delete(key)
+        return next
+      })
+      return
+    }
+
+    // Non-batch: same as dismissError (clear status entirely)
+    const taskId = currentStatus?.taskId
     if (taskId) {
       taskToLocatorRef.current.delete(taskId)
-      // Remove the task from persistent storage so it won't be restored on next app launch
       void window.api.taskDelete(taskId)
     }
     setStatuses((prev) => {
@@ -1074,6 +1316,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       startBatchGenerate,
       retry,
       dismissError,
+      manualEdit,
       notifySectionCleared,
       advanceBaseline,
       getStatus,
@@ -1083,6 +1326,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       confirmSkeleton,
       dismissError,
       getStatus,
+      manualEdit,
       notifySectionCleared,
       projectId,
       retry,

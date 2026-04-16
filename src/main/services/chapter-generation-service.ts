@@ -26,6 +26,7 @@ import type {
   SkeletonGenerateOutput,
   BatchGenerateOutput,
   BatchSectionProgressPayload,
+  BatchSectionRetryingPayload,
   BatchSectionFailedPayload,
   BatchCompletePayload,
 } from '@shared/chapter-types'
@@ -670,8 +671,9 @@ export const chapterGenerationService = {
           message: 'batch-complete',
           payload: completePayload,
         })
-        // Cleanup skeleton metadata
+        // Cleanup skeleton metadata and in-memory orchestration
         void this._cleanupSkeletonAfterBatch(orch)
+        batchOrchestrationManager.delete(batchId)
         return
       }
 
@@ -715,23 +717,273 @@ export const chapterGenerationService = {
     } else {
       // Failed or cancelled
       const errorMsg = result.error ?? (result.status === 'cancelled' ? '任务已取消' : '生成失败')
-      const advance = batchOrchestrationManager.onSectionFailed(batchId, sectionIndex, errorMsg)
+      const RETRY_DELAYS = [5, 10, 30] as const
+      const MAX_AUTO_RETRIES = RETRY_DELAYS.length
+      const currentRetryCount = batchOrchestrationManager.getRetryCount(batchId, sectionIndex)
 
-      const failPayload: BatchSectionFailedPayload = {
-        kind: 'batch-section-failed',
+      if (result.status !== 'cancelled' && currentRetryCount < MAX_AUTO_RETRIES) {
+        // Auto-retry with exponential backoff
+        const retryCount = batchOrchestrationManager.incrementRetryCount(batchId, sectionIndex)
+        const delaySeconds = RETRY_DELAYS[retryCount - 1]
+        batchOrchestrationManager.markRetrying(batchId, sectionIndex)
+
+        const retryingPayload: BatchSectionRetryingPayload = {
+          kind: 'batch-section-retrying',
+          batchId,
+          sectionIndex,
+          sectionTitle: orch.sections[sectionIndex]?.section.title ?? '',
+          retryCount,
+          maxRetries: MAX_AUTO_RETRIES,
+          retryInSeconds: delaySeconds,
+        }
+        const advance = batchOrchestrationManager.onSectionFailed(batchId, sectionIndex, errorMsg)
+        // Revert to retrying (onSectionFailed marks as failed, but we want retrying)
+        batchOrchestrationManager.markRetrying(batchId, sectionIndex)
+        progressEmitter.emit({
+          taskId,
+          progress: Math.round((advance.completedCount / advance.totalCount) * 100),
+          message: 'batch-section-retrying',
+          payload: retryingPayload,
+        })
+
+        logger.info(
+          `Auto-retry section ${sectionIndex} (attempt ${retryCount}/${MAX_AUTO_RETRIES}) in ${delaySeconds}s`
+        )
+
+        // Schedule retry after delay
+        const emitRetryFailure = (reason: string): void => {
+          const sectionTitle = orch.sections[sectionIndex]?.section.title ?? ''
+          batchOrchestrationManager.onSectionFailed(batchId, sectionIndex, reason)
+          const failPayload: BatchSectionFailedPayload = {
+            kind: 'batch-section-failed',
+            batchId,
+            sectionIndex,
+            sectionTitle,
+            error: reason,
+            completedCount: orch.sections.filter((s) => s.state === 'completed').length,
+            totalCount: orch.sections.length,
+          }
+          progressEmitter.emit({
+            taskId,
+            progress: Math.round((failPayload.completedCount / failPayload.totalCount) * 100),
+            message: 'batch-section-failed',
+            payload: failPayload,
+          })
+        }
+
+        setTimeout(() => {
+          const retryContext = batchOrchestrationManager.prepareRetry(batchId, sectionIndex)
+          if (!retryContext) {
+            logger.warn(
+              `Auto-retry: prepareRetry returned undefined for batch ${batchId} section ${sectionIndex}`
+            )
+            emitRetryFailure('自动重试失败：无法准备重试上下文')
+            return
+          }
+          void this._dispatchBatchSingleSection(
+            batchId,
+            sectionIndex,
+            retryContext.section,
+            retryContext.previousSections,
+            retryContext.contextBase
+          )
+            .then((newTaskId) => {
+              batchOrchestrationManager.markRunning(batchId, sectionIndex, newTaskId)
+              // Emit retrying payload on OLD taskId (renderer knows it) with newTaskId for routing
+              const handoffPayload: BatchSectionRetryingPayload = {
+                kind: 'batch-section-retrying',
+                batchId,
+                sectionIndex,
+                sectionTitle: orch.sections[sectionIndex]?.section.title ?? '',
+                retryCount,
+                maxRetries: MAX_AUTO_RETRIES,
+                retryInSeconds: 0,
+                newTaskId,
+              }
+              progressEmitter.emit({
+                taskId,
+                progress: Math.round(
+                  (batchOrchestrationManager
+                    .get(batchId)!
+                    .sections.filter((s) => s.state === 'completed').length /
+                    orch.sections.length) *
+                    100
+                ),
+                message: 'batch-section-retrying',
+                payload: handoffPayload,
+              })
+            })
+            .catch((err) => {
+              logger.error(`Auto-retry dispatch failed for section ${sectionIndex}:`, err)
+              emitRetryFailure(`自动重试失败：${err instanceof Error ? err.message : '派发错误'}`)
+            })
+        }, delaySeconds * 1000)
+      } else {
+        // Budget exhausted or cancelled — emit failure
+        const advance = batchOrchestrationManager.onSectionFailed(batchId, sectionIndex, errorMsg)
+
+        const failPayload: BatchSectionFailedPayload = {
+          kind: 'batch-section-failed',
+          batchId,
+          sectionIndex,
+          sectionTitle: orch.sections[sectionIndex]?.section.title ?? '',
+          error: errorMsg,
+          completedCount: advance.completedCount,
+          totalCount: advance.totalCount,
+        }
+        progressEmitter.emit({
+          taskId,
+          progress: Math.round((advance.completedCount / advance.totalCount) * 100),
+          message: 'batch-section-failed',
+          payload: failPayload,
+        })
+      }
+    }
+  },
+
+  /** Retry a single failed section within a batch orchestration */
+  async batchRetrySection(
+    projectId: string,
+    batchId: string,
+    sectionIndex?: number
+  ): Promise<{ taskId: string; batchId: string; sectionIndex: number }> {
+    const orch = batchOrchestrationManager.get(batchId)
+    if (!orch) {
+      throw new ValidationError(`BatchOrchestration not found: ${batchId}`)
+    }
+    if (orch.projectId !== projectId) {
+      throw new ValidationError('Project ID does not match batch orchestration')
+    }
+
+    // Auto-detect first failed section when index not provided
+    const resolvedIndex = sectionIndex ?? orch.sections.find((s) => s.state === 'failed')?.index
+    if (resolvedIndex === undefined) {
+      throw new ValidationError(`No failed section found in batch ${batchId}`)
+    }
+
+    // Reset retry budget for manual retry
+    batchOrchestrationManager.resetRetryCount(batchId, resolvedIndex)
+
+    const retryContext = batchOrchestrationManager.prepareRetry(batchId, resolvedIndex)
+    if (!retryContext) {
+      throw new ValidationError(`Section ${resolvedIndex} not found in batch ${batchId}`)
+    }
+
+    const taskId = await this._dispatchBatchSingleSection(
+      batchId,
+      resolvedIndex,
+      retryContext.section,
+      retryContext.previousSections,
+      retryContext.contextBase
+    )
+    batchOrchestrationManager.markRunning(batchId, resolvedIndex, taskId)
+
+    return { taskId, batchId, sectionIndex: resolvedIndex }
+  },
+
+  /** Skip a failed section, write placeholder content, and continue the chain */
+  async batchSkipSection(
+    projectId: string,
+    batchId: string,
+    sectionIndex?: number
+  ): Promise<{
+    batchId: string
+    skippedSectionIndex: number
+    nextTaskId?: string
+    nextSectionIndex?: number
+    assembledSnapshot?: string
+  }> {
+    const orch = batchOrchestrationManager.get(batchId)
+    if (!orch) {
+      throw new ValidationError(`BatchOrchestration not found: ${batchId}`)
+    }
+    if (orch.projectId !== projectId) {
+      throw new ValidationError('Project ID does not match batch orchestration')
+    }
+
+    // Auto-detect first failed section when index not provided
+    const resolvedIndex = sectionIndex ?? orch.sections.find((s) => s.state === 'failed')?.index
+    if (resolvedIndex === undefined) {
+      throw new ValidationError(`No failed section found in batch ${batchId}`)
+    }
+
+    const placeholderContent = '> [已跳过 - 请手动补充]'
+    // Mark section as completed with placeholder
+    const advance = batchOrchestrationManager.onSectionComplete(
+      batchId,
+      resolvedIndex,
+      placeholderContent
+    )
+
+    if (advance.allDone) {
+      // All sections done — emit batch-complete
+      const completePayload: BatchCompletePayload = {
+        kind: 'batch-complete',
         batchId,
-        sectionIndex,
-        sectionTitle: orch.sections[sectionIndex]?.section.title ?? '',
-        error: errorMsg,
+        assembledMarkdown: advance.assembledSnapshot,
         completedCount: advance.completedCount,
         totalCount: advance.totalCount,
+        failedSections: advance.failedSections,
       }
+      // Use the last known taskId for progress routing
+      const lastTaskId = orch.sections[resolvedIndex]?.taskId ?? ''
       progressEmitter.emit({
-        taskId,
-        progress: Math.round((advance.completedCount / advance.totalCount) * 100),
-        message: 'batch-section-failed',
-        payload: failPayload,
+        taskId: lastTaskId,
+        progress: 100,
+        message: 'batch-complete',
+        payload: completePayload,
       })
+      void this._cleanupSkeletonAfterBatch(orch)
+      batchOrchestrationManager.delete(batchId)
+
+      return {
+        batchId,
+        skippedSectionIndex: resolvedIndex,
+        assembledSnapshot: advance.assembledSnapshot,
+      }
+    }
+
+    // Dispatch next section
+    let nextTaskId: string | undefined
+    let nextSectionIndex: number | undefined
+    if (advance.nextSection) {
+      nextTaskId = await this._dispatchBatchSingleSection(
+        batchId,
+        advance.nextSection.index,
+        advance.nextSection.section,
+        advance.nextSection.previousSections,
+        orch.contextBase
+      )
+      nextSectionIndex = advance.nextSection.index
+      batchOrchestrationManager.markRunning(batchId, advance.nextSection.index, nextTaskId)
+    }
+
+    // Emit section-complete with placeholder content so renderer updates
+    const sectionPayload: BatchSectionProgressPayload = {
+      kind: 'batch-section-complete',
+      batchId,
+      sectionIndex: resolvedIndex,
+      sectionMarkdown: placeholderContent,
+      assembledSnapshot: advance.assembledSnapshot,
+      completedCount: advance.completedCount,
+      totalCount: advance.totalCount,
+      nextTaskId,
+      nextSectionIndex,
+    }
+    const lastTaskId = orch.sections[resolvedIndex]?.taskId ?? ''
+    progressEmitter.emit({
+      taskId: lastTaskId,
+      progress: Math.round((advance.completedCount / advance.totalCount) * 100),
+      message: 'batch-section-complete',
+      payload: sectionPayload,
+    })
+
+    return {
+      batchId,
+      skippedSectionIndex: resolvedIndex,
+      nextTaskId,
+      nextSectionIndex,
+      assembledSnapshot: advance.assembledSnapshot,
     }
   },
 

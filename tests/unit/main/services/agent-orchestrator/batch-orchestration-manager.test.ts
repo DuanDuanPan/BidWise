@@ -262,6 +262,126 @@ describe('BatchOrchestrationManager', () => {
     expect(advance.assembledSnapshot.match(/> \[待生成\]/g)).toHaveLength(2)
   })
 
+  // ── Story 3-11: Retry / Skip / Recovery ──
+
+  it('@story-3-11 @p0 retryCount initializes at 0 for all sections', () => {
+    const skeleton = makeSkeleton([{ title: '功能设计' }, { title: '接口设计' }])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+    expect(orch.sections[0].retryCount).toBe(0)
+    expect(orch.sections[1].retryCount).toBe(0)
+  })
+
+  it('@story-3-11 @p0 incrementRetryCount increments and returns new count', () => {
+    const skeleton = makeSkeleton([{ title: '功能设计' }])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+    expect(manager.getRetryCount(orch.id, 0)).toBe(0)
+    expect(manager.incrementRetryCount(orch.id, 0)).toBe(1)
+    expect(manager.incrementRetryCount(orch.id, 0)).toBe(2)
+    expect(manager.getRetryCount(orch.id, 0)).toBe(2)
+  })
+
+  it('@story-3-11 @p0 resetRetryCount resets count to 0', () => {
+    const skeleton = makeSkeleton([{ title: '功能设计' }])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+    manager.incrementRetryCount(orch.id, 0)
+    manager.incrementRetryCount(orch.id, 0)
+    manager.resetRetryCount(orch.id, 0)
+    expect(manager.getRetryCount(orch.id, 0)).toBe(0)
+  })
+
+  it('@story-3-11 @p0 markRetrying sets state to retrying and clears error', () => {
+    const skeleton = makeSkeleton([{ title: '功能设计' }, { title: '接口设计' }])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+    manager.markRunning(orch.id, 0, 'task-0')
+    manager.onSectionFailed(orch.id, 0, 'timeout error')
+    manager.markRetrying(orch.id, 0)
+
+    const updated = manager.get(orch.id)!
+    expect(updated.sections[0].state).toBe('retrying')
+    expect(updated.sections[0].error).toBeUndefined()
+  })
+
+  it('@story-3-11 @p1 skipSection writes placeholder and advances chain', () => {
+    const skeleton = makeSkeleton([
+      { title: '功能设计' },
+      { title: '接口设计' },
+      { title: '安全设计' },
+    ])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+
+    // Complete first section, fail second
+    manager.markRunning(orch.id, 0, 'task-0')
+    manager.onSectionComplete(orch.id, 0, '功能设计内容')
+    manager.markRunning(orch.id, 1, 'task-1')
+    manager.onSectionFailed(orch.id, 1, 'error')
+
+    // Skip the failed section by marking as completed with placeholder
+    const advance = manager.onSectionComplete(orch.id, 1, '> [已跳过 - 请手动补充]')
+
+    expect(advance.completedCount).toBe(2)
+    expect(advance.nextSection).toBeDefined()
+    expect(advance.nextSection!.index).toBe(2)
+    expect(advance.assembledSnapshot).toContain('> [已跳过 - 请手动补充]')
+  })
+
+  it('@story-3-11 @p1 assembledSnapshot includes skipped placeholder in final assembly', () => {
+    const skeleton = makeSkeleton([{ title: '功能设计' }, { title: '接口设计' }])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+
+    manager.markRunning(orch.id, 0, 'task-0')
+    manager.onSectionComplete(orch.id, 0, '> [已跳过 - 请手动补充]')
+    manager.markRunning(orch.id, 1, 'task-1')
+    const advance = manager.onSectionComplete(orch.id, 1, '接口设计内容')
+
+    expect(advance.allDone).toBe(true)
+    expect(advance.assembledSnapshot).toContain('> [已跳过 - 请手动补充]')
+    expect(advance.assembledSnapshot).toContain('接口设计内容')
+  })
+
+  it('@story-3-11 @p2 getRetryCount returns 0 for nonexistent batch', () => {
+    expect(manager.getRetryCount('nonexistent', 0)).toBe(0)
+  })
+
+  it('@story-3-11 @p2 incrementRetryCount returns 0 for nonexistent batch', () => {
+    expect(manager.incrementRetryCount('nonexistent', 0)).toBe(0)
+  })
+
   it('delete removes the orchestration', () => {
     const skeleton = makeSkeleton([{ title: '功能设计' }])
     const orch = manager.create({

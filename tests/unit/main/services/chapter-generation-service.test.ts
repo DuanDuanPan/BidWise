@@ -4,7 +4,20 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const mockLoad = vi.hoisted(() => vi.fn())
 const mockGetMetadata = vi.hoisted(() => vi.fn())
+const mockUpdateMetadata = vi.hoisted(() => vi.fn())
 const mockExecute = vi.hoisted(() => vi.fn())
+const mockExecuteWithCallback = vi.hoisted(() => vi.fn())
+const mockBatchOrcGet = vi.hoisted(() => vi.fn())
+const mockBatchOrcPrepareRetry = vi.hoisted(() => vi.fn())
+const mockBatchOrcResetRetryCount = vi.hoisted(() => vi.fn())
+const mockBatchOrcMarkRunning = vi.hoisted(() => vi.fn())
+const mockBatchOrcOnSectionComplete = vi.hoisted(() => vi.fn())
+const mockBatchOrcOnSectionFailed = vi.hoisted(() => vi.fn())
+const mockBatchOrcDelete = vi.hoisted(() => vi.fn())
+const mockBatchOrcGetRetryCount = vi.hoisted(() => vi.fn())
+const mockBatchOrcIncrementRetryCount = vi.hoisted(() => vi.fn())
+const mockBatchOrcMarkRetrying = vi.hoisted(() => vi.fn())
+const mockProgressEmit = vi.hoisted(() => vi.fn())
 const mockFindRequirements = vi.hoisted(() => vi.fn())
 const mockFindScoringModel = vi.hoisted(() => vi.fn())
 const mockFindMandatoryItems = vi.hoisted(() => vi.fn())
@@ -21,12 +34,32 @@ vi.mock('@main/services/document-service', () => ({
   documentService: {
     load: (...args: unknown[]) => mockLoad(...args),
     getMetadata: (...args: unknown[]) => mockGetMetadata(...args),
+    updateMetadata: (...args: unknown[]) => mockUpdateMetadata(...args),
   },
 }))
 
 vi.mock('@main/services/agent-orchestrator', () => ({
   agentOrchestrator: {
     execute: (...args: unknown[]) => mockExecute(...args),
+    executeWithCallback: (...args: unknown[]) => mockExecuteWithCallback(...args),
+  },
+  batchOrchestrationManager: {
+    get: (...args: unknown[]) => mockBatchOrcGet(...args),
+    prepareRetry: (...args: unknown[]) => mockBatchOrcPrepareRetry(...args),
+    resetRetryCount: (...args: unknown[]) => mockBatchOrcResetRetryCount(...args),
+    markRunning: (...args: unknown[]) => mockBatchOrcMarkRunning(...args),
+    onSectionComplete: (...args: unknown[]) => mockBatchOrcOnSectionComplete(...args),
+    onSectionFailed: (...args: unknown[]) => mockBatchOrcOnSectionFailed(...args),
+    delete: (...args: unknown[]) => mockBatchOrcDelete(...args),
+    getRetryCount: (...args: unknown[]) => mockBatchOrcGetRetryCount(...args),
+    incrementRetryCount: (...args: unknown[]) => mockBatchOrcIncrementRetryCount(...args),
+    markRetrying: (...args: unknown[]) => mockBatchOrcMarkRetrying(...args),
+  },
+}))
+
+vi.mock('@main/services/task-queue/progress-emitter', () => ({
+  progressEmitter: {
+    emit: (...args: unknown[]) => mockProgressEmit(...args),
   },
 }))
 
@@ -159,7 +192,7 @@ describe('@story-3-4 chapterGenerationService', () => {
       expect(request.agentType).toBe('generate')
       expect(request.context.chapterTitle).toBe('系统架构设计')
       expect(request.context.chapterLevel).toBe(2)
-      expect(request.options.timeoutMs).toBe(300_000)
+      expect(request.options.timeoutMs).toBe(600_000)
       expect(request.options.maxRetries).toBe(0)
     })
 
@@ -548,6 +581,294 @@ describe('@story-3-4 chapterGenerationService', () => {
       const request = mockExecute.mock.calls[0][0]
       expect(request.context.chapterTitle).toBe('系统架构设计')
       expect(request.context.guidanceText).toBe('请设计系统整体架构')
+    })
+  })
+})
+
+describe('@story-3-11 chapterGenerationService — batch retry/skip', () => {
+  const mockOrch = {
+    id: 'batch-1',
+    projectId: 'proj-1',
+    parentTarget: { title: '系统设计', level: 2, occurrenceIndex: 0 },
+    skeleton: {
+      parentTitle: '系统设计',
+      parentLevel: 2,
+      sections: [
+        { title: '功能', level: 3, dimensions: [] },
+        { title: '接口', level: 3, dimensions: [] },
+        { title: '安全', level: 3, dimensions: [] },
+      ],
+      dimensionChecklist: [],
+      confirmedAt: '2026-04-16T00:00:00.000Z',
+    },
+    sectionId: 'sec-1',
+    sections: [
+      {
+        index: 0,
+        section: { title: '功能', level: 3, dimensions: [] },
+        state: 'completed',
+        taskId: 't0',
+        content: '功能内容',
+        retryCount: 0,
+      },
+      {
+        index: 1,
+        section: { title: '接口', level: 3, dimensions: [] },
+        state: 'failed',
+        taskId: 't1',
+        error: 'timeout',
+        retryCount: 3,
+      },
+      {
+        index: 2,
+        section: { title: '安全', level: 3, dimensions: [] },
+        state: 'pending',
+        taskId: null,
+        retryCount: 0,
+      },
+    ],
+    contextBase: { projectId: 'proj-1' },
+    createdAt: '2026-04-16T00:00:00.000Z',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockBatchOrcGet.mockReturnValue(mockOrch)
+    mockExecuteWithCallback.mockResolvedValue({ taskId: 'task-retry-1' })
+  })
+
+  describe('batchRetrySection', () => {
+    it('@p0 should reset retry count and dispatch failed section', async () => {
+      mockBatchOrcPrepareRetry.mockReturnValue({
+        section: { title: '接口', level: 3, dimensions: [] },
+        previousSections: [{ title: '功能', markdown: '功能内容' }],
+        contextBase: { projectId: 'proj-1' },
+      })
+
+      const result = await chapterGenerationService.batchRetrySection('proj-1', 'batch-1', 1)
+
+      expect(result.taskId).toBe('task-retry-1')
+      expect(result.batchId).toBe('batch-1')
+      expect(result.sectionIndex).toBe(1)
+      expect(mockBatchOrcResetRetryCount).toHaveBeenCalledWith('batch-1', 1)
+      expect(mockBatchOrcPrepareRetry).toHaveBeenCalledWith('batch-1', 1)
+      expect(mockBatchOrcMarkRunning).toHaveBeenCalledWith('batch-1', 1, 'task-retry-1')
+    })
+
+    it('@p0 should throw when batch not found', async () => {
+      mockBatchOrcGet.mockReturnValue(undefined)
+
+      await expect(
+        chapterGenerationService.batchRetrySection('proj-1', 'nonexistent', 1)
+      ).rejects.toThrow('BatchOrchestration not found')
+    })
+
+    it('@p0 should throw when project ID mismatches', async () => {
+      await expect(
+        chapterGenerationService.batchRetrySection('wrong-project', 'batch-1', 1)
+      ).rejects.toThrow('Project ID does not match')
+    })
+
+    it('@p1 should throw when section not found in prepareRetry', async () => {
+      mockBatchOrcPrepareRetry.mockReturnValue(undefined)
+
+      await expect(
+        chapterGenerationService.batchRetrySection('proj-1', 'batch-1', 99)
+      ).rejects.toThrow('Section 99 not found')
+    })
+
+    it('@p0 @story-3-11 should auto-detect first failed section when sectionIndex omitted', async () => {
+      mockBatchOrcPrepareRetry.mockReturnValue({
+        section: { title: '接口', level: 3, dimensions: [] },
+        previousSections: [],
+        contextBase: { projectId: 'proj-1' },
+      })
+
+      const result = await chapterGenerationService.batchRetrySection('proj-1', 'batch-1')
+
+      // mockOrch.sections[1] has state: 'failed' → auto-detected index 1
+      expect(result.sectionIndex).toBe(1)
+      expect(mockBatchOrcResetRetryCount).toHaveBeenCalledWith('batch-1', 1)
+      expect(mockBatchOrcPrepareRetry).toHaveBeenCalledWith('batch-1', 1)
+    })
+  })
+
+  describe('batchSkipSection', () => {
+    it('@p0 should write placeholder and continue chain', async () => {
+      mockBatchOrcOnSectionComplete.mockReturnValue({
+        assembledSnapshot: '# mock assembled',
+        completedCount: 2,
+        totalCount: 3,
+        allDone: false,
+        failedSections: [],
+        nextSection: {
+          index: 2,
+          section: { title: '安全', level: 3, dimensions: [] },
+          previousSections: [],
+        },
+      })
+      mockExecuteWithCallback.mockResolvedValue({ taskId: 'task-next-1' })
+
+      const result = await chapterGenerationService.batchSkipSection('proj-1', 'batch-1', 1)
+
+      expect(result.skippedSectionIndex).toBe(1)
+      expect(result.nextTaskId).toBe('task-next-1')
+      expect(result.nextSectionIndex).toBe(2)
+      expect(result.assembledSnapshot).toBe('# mock assembled')
+      expect(mockBatchOrcOnSectionComplete).toHaveBeenCalledWith(
+        'batch-1',
+        1,
+        '> [已跳过 - 请手动补充]'
+      )
+    })
+
+    it('@p0 should complete batch when skipping the last section', async () => {
+      mockBatchOrcOnSectionComplete.mockReturnValue({
+        assembledSnapshot: '# all done',
+        completedCount: 3,
+        totalCount: 3,
+        allDone: true,
+        failedSections: [],
+      })
+
+      const result = await chapterGenerationService.batchSkipSection('proj-1', 'batch-1', 1)
+
+      expect(result.nextTaskId).toBeUndefined()
+      expect(mockBatchOrcDelete).toHaveBeenCalledWith('batch-1')
+      expect(mockProgressEmit).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'batch-complete' })
+      )
+    })
+
+    it('@p0 should throw when batch not found', async () => {
+      mockBatchOrcGet.mockReturnValue(undefined)
+
+      await expect(
+        chapterGenerationService.batchSkipSection('proj-1', 'nonexistent', 1)
+      ).rejects.toThrow('BatchOrchestration not found')
+    })
+  })
+
+  describe('_onBatchSectionDone auto-retry failure fallback', () => {
+    it('@p1 emits batch-section-failed when prepareRetry cannot rebuild context', async () => {
+      vi.useFakeTimers()
+      mockBatchOrcGetRetryCount.mockReturnValue(0)
+      mockBatchOrcIncrementRetryCount.mockReturnValue(1)
+      mockBatchOrcOnSectionFailed.mockReturnValue({
+        assembledSnapshot: '# partial snapshot',
+        completedCount: 1,
+        totalCount: 3,
+        allDone: false,
+        failedSections: [{ index: 1, title: '接口', error: 'timeout' }],
+      })
+      mockBatchOrcPrepareRetry.mockReturnValue(undefined)
+
+      try {
+        await chapterGenerationService._onBatchSectionDone('batch-1', 1, 'task-failed-1', {
+          status: 'failed',
+          error: 'timeout',
+        })
+
+        expect(mockProgressEmit).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({
+            taskId: 'task-failed-1',
+            message: 'batch-section-retrying',
+            payload: expect.objectContaining({
+              kind: 'batch-section-retrying',
+              batchId: 'batch-1',
+              sectionIndex: 1,
+              retryCount: 1,
+              retryInSeconds: 5,
+            }),
+          })
+        )
+
+        await vi.advanceTimersByTimeAsync(5_000)
+
+        expect(mockBatchOrcOnSectionFailed).toHaveBeenNthCalledWith(
+          2,
+          'batch-1',
+          1,
+          '自动重试失败：无法准备重试上下文'
+        )
+        expect(mockProgressEmit).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            taskId: 'task-failed-1',
+            message: 'batch-section-failed',
+            payload: expect.objectContaining({
+              kind: 'batch-section-failed',
+              batchId: 'batch-1',
+              sectionIndex: 1,
+              error: '自动重试失败：无法准备重试上下文',
+            }),
+          })
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('@p1 emits batch-section-failed when auto-retry dispatch throws', async () => {
+      vi.useFakeTimers()
+      mockBatchOrcGetRetryCount.mockReturnValue(0)
+      mockBatchOrcIncrementRetryCount.mockReturnValue(1)
+      mockBatchOrcOnSectionFailed.mockReturnValue({
+        assembledSnapshot: '# partial snapshot',
+        completedCount: 1,
+        totalCount: 3,
+        allDone: false,
+        failedSections: [{ index: 1, title: '接口', error: 'timeout' }],
+      })
+      mockBatchOrcPrepareRetry.mockReturnValue({
+        section: { title: '接口', level: 3, dimensions: [] },
+        previousSections: [{ title: '功能', markdown: '功能内容' }],
+        contextBase: { projectId: 'proj-1' },
+      })
+      const dispatchSpy = vi
+        .spyOn(chapterGenerationService, '_dispatchBatchSingleSection')
+        .mockRejectedValue(new Error('dispatch boom'))
+
+      try {
+        await chapterGenerationService._onBatchSectionDone('batch-1', 1, 'task-failed-2', {
+          status: 'failed',
+          error: 'timeout',
+        })
+
+        await vi.advanceTimersByTimeAsync(5_000)
+
+        expect(dispatchSpy).toHaveBeenCalledWith(
+          'batch-1',
+          1,
+          { title: '接口', level: 3, dimensions: [] },
+          [{ title: '功能', markdown: '功能内容' }],
+          { projectId: 'proj-1' }
+        )
+        expect(mockBatchOrcOnSectionFailed).toHaveBeenNthCalledWith(
+          2,
+          'batch-1',
+          1,
+          '自动重试失败：dispatch boom'
+        )
+        expect(mockProgressEmit).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            taskId: 'task-failed-2',
+            message: 'batch-section-failed',
+            payload: expect.objectContaining({
+              kind: 'batch-section-failed',
+              batchId: 'batch-1',
+              sectionIndex: 1,
+              error: '自动重试失败：dispatch boom',
+            }),
+          })
+        )
+        expect(mockBatchOrcMarkRunning).not.toHaveBeenCalled()
+      } finally {
+        dispatchSpy.mockRestore()
+        vi.useRealTimers()
+      }
     })
   })
 })

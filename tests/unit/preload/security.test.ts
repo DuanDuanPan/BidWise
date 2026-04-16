@@ -121,6 +121,8 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'templateGenerateSkeleton',
       'templatePersistSkeleton',
       'chapterBatchGenerate',
+      'chapterBatchRetrySection',
+      'chapterBatchSkipSection',
       'chapterGenerate',
       'chapterRegenerate',
       'chapterSkeletonConfirm',

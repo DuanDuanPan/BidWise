@@ -99,6 +99,10 @@ import type {
   SkeletonConfirmInput,
   BatchGenerateInput,
   BatchGenerateOutput,
+  BatchRetrySectionInput,
+  BatchRetrySectionOutput,
+  BatchSkipSectionInput,
+  BatchSkipSectionOutput,
 } from './chapter-types'
 import type {
   AnnotationRecord,
@@ -326,6 +330,8 @@ export const IPC_CHANNELS = {
   CHAPTER_SKELETON_GENERATE: 'chapter:skeleton-generate',
   CHAPTER_SKELETON_CONFIRM: 'chapter:skeleton-confirm',
   CHAPTER_BATCH_GENERATE: 'chapter:batch-generate',
+  CHAPTER_BATCH_RETRY_SECTION: 'chapter:batch-retry-section',
+  CHAPTER_BATCH_SKIP_SECTION: 'chapter:batch-skip-section',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
   ANNOTATION_DELETE: 'annotation:delete',
@@ -458,6 +464,8 @@ export type IpcChannelMap = {
   'chapter:skeleton-generate': { input: SkeletonGenerateInput; output: SkeletonGenerateOutput }
   'chapter:skeleton-confirm': { input: SkeletonConfirmInput; output: { success: true } }
   'chapter:batch-generate': { input: BatchGenerateInput; output: BatchGenerateOutput }
+  'chapter:batch-retry-section': { input: BatchRetrySectionInput; output: BatchRetrySectionOutput }
+  'chapter:batch-skip-section': { input: BatchSkipSectionInput; output: BatchSkipSectionOutput }
   'annotation:create': { input: CreateAnnotationInput; output: AnnotationRecord }
   'annotation:update': { input: UpdateAnnotationInput; output: AnnotationRecord }
   'annotation:delete': { input: DeleteAnnotationInput; output: void }

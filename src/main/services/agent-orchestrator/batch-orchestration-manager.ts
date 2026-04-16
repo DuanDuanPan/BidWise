@@ -17,7 +17,7 @@ export interface CompletedSectionSummary {
   markdown: string
 }
 
-export type BatchSectionState = 'pending' | 'running' | 'completed' | 'failed'
+export type BatchSectionState = 'pending' | 'running' | 'completed' | 'failed' | 'retrying'
 
 export interface BatchSectionEntry {
   index: number
@@ -26,6 +26,7 @@ export interface BatchSectionEntry {
   taskId: string | null
   content?: string
   error?: string
+  retryCount: number
 }
 
 export interface BatchOrchestration {
@@ -120,6 +121,7 @@ export class BatchOrchestrationManager {
       section,
       state: 'pending',
       taskId: null,
+      retryCount: 0,
     }))
 
     const orchestration: BatchOrchestration = {
@@ -212,6 +214,44 @@ export class BatchOrchestrationManager {
       totalCount: orch.sections.length,
       allDone,
       failedSections,
+    }
+  }
+
+  /** Mark a section as retrying (waiting for backoff timer) */
+  markRetrying(batchId: string, sectionIndex: number): void {
+    const orch = this.orchestrations.get(batchId)
+    if (!orch) return
+    const entry = orch.sections[sectionIndex]
+    if (entry) {
+      entry.state = 'retrying'
+      entry.error = undefined
+    }
+  }
+
+  /** Get the current retry count for a section */
+  getRetryCount(batchId: string, sectionIndex: number): number {
+    const orch = this.orchestrations.get(batchId)
+    if (!orch) return 0
+    return orch.sections[sectionIndex]?.retryCount ?? 0
+  }
+
+  /** Increment retry count for a section */
+  incrementRetryCount(batchId: string, sectionIndex: number): number {
+    const orch = this.orchestrations.get(batchId)
+    if (!orch) return 0
+    const entry = orch.sections[sectionIndex]
+    if (!entry) return 0
+    entry.retryCount++
+    return entry.retryCount
+  }
+
+  /** Reset retry count for a section (used when user manually retries) */
+  resetRetryCount(batchId: string, sectionIndex: number): void {
+    const orch = this.orchestrations.get(batchId)
+    if (!orch) return
+    const entry = orch.sections[sectionIndex]
+    if (entry) {
+      entry.retryCount = 0
     }
   }
 

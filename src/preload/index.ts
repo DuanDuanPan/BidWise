@@ -196,6 +196,12 @@ const requestApi = {
   chapterBatchGenerate: (input: IpcChannelMap['chapter:batch-generate']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_BATCH_GENERATE, input),
 
+  chapterBatchRetrySection: (input: IpcChannelMap['chapter:batch-retry-section']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_BATCH_RETRY_SECTION, input),
+
+  chapterBatchSkipSection: (input: IpcChannelMap['chapter:batch-skip-section']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_BATCH_SKIP_SECTION, input),
+
   annotationCreate: (input: IpcChannelMap['annotation:create']['input']) =>
     typedInvoke(IPC_CHANNELS.ANNOTATION_CREATE, input),
 

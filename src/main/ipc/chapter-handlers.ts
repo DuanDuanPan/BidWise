@@ -29,6 +29,14 @@ const chapterHandlerMap: { [C in ChapterChannel]: () => void } = {
     createIpcHandler('chapter:batch-generate', (input) =>
       chapterGenerationService.batchGenerate(input.projectId, input.target, input.sectionId)
     ),
+  'chapter:batch-retry-section': () =>
+    createIpcHandler('chapter:batch-retry-section', (input) =>
+      chapterGenerationService.batchRetrySection(input.projectId, input.batchId, input.sectionIndex)
+    ),
+  'chapter:batch-skip-section': () =>
+    createIpcHandler('chapter:batch-skip-section', (input) =>
+      chapterGenerationService.batchSkipSection(input.projectId, input.batchId, input.sectionIndex)
+    ),
 }
 
 export type RegisteredChapterChannels = ChapterChannel
