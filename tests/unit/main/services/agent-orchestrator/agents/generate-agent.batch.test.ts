@@ -29,6 +29,19 @@ vi.mock('@main/services/drawio-asset-service', () => ({
   drawioAssetService: { saveDrawioAsset: vi.fn() },
 }))
 
+const mockGenerateSkillDiagram = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    kind: 'success',
+    markdown: '<!-- ai-diagram:mock -->\n![mock](assets/ai-diagram-mock.svg)',
+    assetFileName: 'ai-diagram-mock.svg',
+    repairAttempts: 0,
+  })
+)
+
+vi.mock('@main/services/skill-diagram-generation-service', () => ({
+  generateSkillDiagram: (...args: unknown[]) => mockGenerateSkillDiagram(...args),
+}))
+
 const { generateAgentHandler } =
   await import('@main/services/agent-orchestrator/agents/generate-agent')
 
@@ -79,6 +92,12 @@ describe('generateAgentHandler skeleton-batch mode', () => {
     vi.clearAllMocks()
     mockGetActiveEntries.mockResolvedValue([])
     mockBuildPromptContext.mockReturnValue('')
+    mockGenerateSkillDiagram.mockReset().mockResolvedValue({
+      kind: 'success',
+      markdown: '<!-- ai-diagram:mock -->\n![mock](assets/ai-diagram-mock.svg)',
+      assetFileName: 'ai-diagram-mock.svg',
+      repairAttempts: 0,
+    })
   })
 
   it('returns assembled markdown with all section headings when all 3 sections succeed', async () => {
@@ -457,16 +476,47 @@ describe('generateAgentHandler skeleton-batch mode', () => {
       expect(result).toMatchObject({ kind: 'result' })
       if (result.kind !== 'result') return
 
-      expect(result.value.content).toContain('<!-- mermaid:')
-      expect(result.value.content).toContain('```mermaid')
-      expect(result.value.content).toContain('A[模块A] --> B[模块B]')
+      expect(result.value.content).toContain('<!-- ai-diagram:')
       expect(result.value.content).not.toContain('%%DIAGRAM:')
-      expect(aiProxy.call).toHaveBeenCalledWith(
-        expect.objectContaining({ caller: 'generate-agent:diagram:mermaid' })
-      )
+      expect(mockGenerateSkillDiagram).toHaveBeenCalledOnce()
       expect(updateProgress).toHaveBeenCalledWith(35, 'generating-diagrams')
       expect(updateProgress).toHaveBeenCalledWith(60, 'validating-diagrams')
       expect(updateProgress).toHaveBeenCalledWith(90, 'validating-coherence')
+    })
+
+    it('normalizes echoed sub-chapter headings to stay below the section level', async () => {
+      const controller = new AbortController()
+      const aiProxy = {
+        call: vi
+          .fn()
+          .mockResolvedValueOnce(
+            makeAiResponse(
+              ['### 核心功能模块总览', '', '### 流量控制类工业APP', '', '内容段落'].join('\n')
+            )
+          ),
+      }
+
+      const result = await generateAgentHandler(
+        {
+          mode: 'skeleton-batch-single',
+          sectionIndex: 0,
+          section: {
+            title: '核心功能模块总览',
+            level: 3,
+            dimensions: ['functional'],
+            guidanceHint: '概述30个工业APP的分类体系及与系统其他模块的关系',
+          },
+          previousSections: [],
+          requirements: '描述30个工业APP的分类体系与模块关系',
+          siblingSectionTitles: ['核心功能模块总览', '流量控制类工业APP功能设计'],
+        },
+        { signal: controller.signal, updateProgress: vi.fn(), aiProxy }
+      )
+
+      expect(result).toMatchObject({ kind: 'result' })
+      if (result.kind !== 'result') return
+
+      expect(result.value.content).toBe('#### 流量控制类工业APP\n\n内容段落')
     })
 
     it('throws BidWiseError when aiProxy is not provided', async () => {

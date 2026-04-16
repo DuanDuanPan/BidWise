@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-17
+last_updated: 2026-04-16
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -70,7 +70,7 @@ development_status:
   2-9-fog-map: done
   epic-2-retrospective: optional
 
-  # ── Epic 3: AI 方案生成与富文本编辑 (8 stories) ──
+  # ── Epic 3: AI 方案生成与富文本编辑 (10 stories) ──
   epic-3: in-progress
   3-1-plate-editor-markdown-serialization: done
   3-2-editor-workspace-doc-outline: done
@@ -81,6 +81,7 @@ development_status:
   3-7-drawio-embedded-editing: done
   3-8-mermaid-diagram-generation: done
   3-9-skill-diagram-editor-integration: review
+  3-10-skill-default-chapter-diagram-generation: review
   epic-3-retrospective: optional
 
   # ── Epic 4: 批注式人机协作 (4 stories) ──

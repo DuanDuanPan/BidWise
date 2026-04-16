@@ -9,15 +9,46 @@ const COMPLIANCE_MATRIX_RE = /对照表|响应矩阵|响应表$|符合性说明$
 const DIAGRAM_HEAVY_CHAPTER_RE =
   /架构|技术方案|系统设计|模块设计|部署|拓扑|数据流|流程|接口|集成|实施计划|迁移|安全体系/i
 const DIAGRAM_LIGHT_CHAPTER_RE = /背景|概述|承诺|报价|说明|目标|优势|团队|资质/i
+const DIAGRAM_RELATION_GUIDANCE_RE =
+  /关系|分类体系|分层|交互|协作|调用|依赖|流转|链路|拓扑|总览|全景|结构图|关系图/i
+const DIAGRAM_DIMENSION_HINTS = new Set(['process-flow', 'interface', 'deployment'])
 
 export function isComplianceMatrixChapter(title: string): boolean {
   return COMPLIANCE_MATRIX_RE.test(title)
 }
 
-export function shouldSuggestDiagrams(title: string): boolean {
+export interface DiagramSuggestionOptions {
+  guidanceText?: string
+  dimensions?: string[]
+}
+
+export function shouldSuggestDiagrams(
+  title: string,
+  options: DiagramSuggestionOptions = {}
+): boolean {
   if (isComplianceMatrixChapter(title)) return false
-  if (DIAGRAM_LIGHT_CHAPTER_RE.test(title)) return false
-  return DIAGRAM_HEAVY_CHAPTER_RE.test(title)
+
+  const guidanceText = options.guidanceText?.trim() ?? ''
+  const combinedText = `${title} ${guidanceText}`.trim()
+  const hasStructuralGuidance = DIAGRAM_RELATION_GUIDANCE_RE.test(combinedText)
+  const hasStructuralDimensions = (options.dimensions ?? []).some((dimension) =>
+    DIAGRAM_DIMENSION_HINTS.has(dimension)
+  )
+
+  if (
+    DIAGRAM_LIGHT_CHAPTER_RE.test(title) &&
+    !DIAGRAM_HEAVY_CHAPTER_RE.test(combinedText) &&
+    !hasStructuralGuidance &&
+    !hasStructuralDimensions
+  ) {
+    return false
+  }
+
+  if (DIAGRAM_HEAVY_CHAPTER_RE.test(combinedText) || hasStructuralGuidance) {
+    return true
+  }
+
+  return hasStructuralDimensions
 }
 
 export interface GenerateChapterContext {
@@ -40,7 +71,9 @@ export interface GenerateChapterContext {
 export function generateChapterPrompt(context: GenerateChapterContext): string {
   const lang = context.language ?? '中文'
   const isMatrix = isComplianceMatrixChapter(context.chapterTitle)
-  const diagramsPreferred = shouldSuggestDiagrams(context.chapterTitle)
+  const diagramsPreferred = shouldSuggestDiagrams(context.chapterTitle, {
+    guidanceText: context.guidanceText,
+  })
 
   const sections: string[] = []
 
@@ -129,11 +162,11 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
       sections.push(`## 图表插入要求
 1. 如果本章节存在明显的结构关系、流程关系、分层关系、时序关系或部署关系，请在合适位置插入 1-3 个图表占位符。
 2. 占位符必须严格使用如下格式，不要改写、不要加代码围栏：
-   %%DIAGRAM:mermaid:图表标题:图表描述的UTF-8 Base64编码%%
-   第二段的类型标识必须固定写 mermaid（不要写 C4Container、architecture-beta 等具体语法名）。
+   %%DIAGRAM:skill:图表标题:图表描述的UTF-8 Base64编码%%
+   第二段的类型标识必须固定写 skill（不要写 mermaid、C4Container、architecture-beta 等具体语法名）。
 3. 第四段必须是纯 base64 字符串，只能包含 A-Z、a-z、0-9、+、/、=；不要输出 \`base64(...)\` 包装、不要换行、不要加解释文字。不要输出未编码的中文描述。
-4. 所有图表统一使用 Mermaid，后续系统会根据语义自动选择合适语法族（C4Context、C4Container、architecture-beta、flowchart 等），你只需在描述中说明图表意图即可。
-5. Mermaid 仅使用以下语法族：flowchart、sequenceDiagram、stateDiagram-v2、classDiagram、architecture-beta、C4Context、C4Container、C4Component、C4Deployment；不要输出 draw.io XML、block-beta 或其他图表语法。
+4. 后续系统会根据语义自动选择合适的图表风格和类型（架构图、流程图、时序图等），你只需在描述中说明图表意图即可。
+5. 图表描述必须具体说明图表包含哪些组件、分组、关系和关键连线约束。例如：描述一个三层架构图时需要说明每层包含哪些组件、层之间的数据流方向和协议。
 6. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
 7. 占位符应紧跟在相关段落之后，不要集中堆到文末。
 8. 绝对不要直接输出 \`\`\`mermaid 或 \`\`\`xml 代码块。程序只能识别 %%DIAGRAM%% 占位符，直接嵌入的代码块不会被正确渲染。`)
@@ -220,6 +253,7 @@ export function generateSkeletonPrompt(context: SkeletonPromptContext): string {
 export interface SubChapterPromptContext extends GenerateChapterContext {
   dimensionFocus: string
   previousSectionsSummary?: string
+  siblingSectionTitles?: string[]
 }
 
 export function generateSubChapterPrompt(context: SubChapterPromptContext): string {
@@ -233,6 +267,18 @@ export function generateSubChapterPrompt(context: SubChapterPromptContext): stri
     extras.push(
       `## 已生成的同级子章节摘要（避免重复，保持衔接）\n${context.previousSectionsSummary}`
     )
+  }
+
+  const siblingSectionTitles = (context.siblingSectionTitles ?? []).filter(
+    (title) => title !== context.chapterTitle
+  )
+  if (siblingSectionTitles.length > 0) {
+    extras.push(`## 同级子章节边界
+你当前正在撰写父章节下的一个独立子章节。以下同级子章节会由系统分别生成：
+- ${siblingSectionTitles.join('\n- ')}
+当前输出只覆盖「${context.chapterTitle}」。
+对于其他同级子章节，只保留与当前主题直接相关的衔接一句，不展开其实现细节、流程、指标、管理要求或验收内容。
+如果继续细分小节，子标题从 ${context.chapterLevel + 1} 级标题开始。不要输出 ${context.chapterLevel} 级标题。`)
   }
 
   return basePrompt + '\n\n' + extras.join('\n\n')

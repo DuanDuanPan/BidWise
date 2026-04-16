@@ -1,4 +1,5 @@
 import type { DiagramPlaceholder, DiagramType } from '@main/services/diagram-validation-service'
+import type { AiDiagramTypeToken, AiDiagramStyleToken } from '@shared/ai-diagram-types'
 
 export type DiagramSemantic =
   | 'overall-architecture'
@@ -24,6 +25,29 @@ export type MermaidDiagramKind =
   | 'C4Component'
   | 'C4Deployment'
 
+export interface SkillTokenMapping {
+  diagramType: AiDiagramTypeToken
+  style: AiDiagramStyleToken
+}
+
+const SEMANTIC_TO_SKILL_TOKEN: Record<DiagramSemantic, SkillTokenMapping> = {
+  'overall-architecture': { diagramType: 'architecture', style: 'flat-icon' },
+  'technical-architecture': { diagramType: 'architecture', style: 'flat-icon' },
+  'business-architecture': { diagramType: 'architecture', style: 'flat-icon' },
+  'integration-architecture': { diagramType: 'architecture', style: 'flat-icon' },
+  'deployment-topology': { diagramType: 'network', style: 'blueprint' },
+  'data-architecture': { diagramType: 'data-flow', style: 'flat-icon' },
+  'process-flow': { diagramType: 'flowchart', style: 'flat-icon' },
+  'sequence-interaction': { diagramType: 'sequence', style: 'flat-icon' },
+  'class-model': { diagramType: 'class', style: 'flat-icon' },
+  'module-dependency': { diagramType: 'class', style: 'flat-icon' },
+  'state-machine': { diagramType: 'flowchart', style: 'flat-icon' },
+}
+
+export function resolveSkillTokens(semantic: DiagramSemantic): SkillTokenMapping {
+  return SEMANTIC_TO_SKILL_TOKEN[semantic]
+}
+
 export interface DiagramIntentInput {
   requestedType: DiagramType
   chapterTitle: string
@@ -44,6 +68,7 @@ export interface ResolvedDiagramPlaceholder extends DiagramPlaceholder {
   requestedType: DiagramType
   semantic: DiagramSemantic
   mermaidDiagramKind?: MermaidDiagramKind
+  skillTokens?: SkillTokenMapping
   routingConfidence: number
   routingReasons: string[]
 }
@@ -60,7 +85,7 @@ interface DiagramIntentRule {
 const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   {
     semantic: 'sequence-interaction',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'sequenceDiagram',
     titlePatterns: [
       { label: '时序图', pattern: /时序图|调用时序|交互时序|sequence/i },
@@ -73,28 +98,28 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   },
   {
     semantic: 'state-machine',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'stateDiagram-v2',
     titlePatterns: [{ label: '状态图', pattern: /状态图|状态流转|生命周期|state/i }],
     descriptionPatterns: [{ label: '状态变化', pattern: /状态变化|状态迁移|生命周期|审核状态/ }],
   },
   {
     semantic: 'class-model',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'classDiagram',
     titlePatterns: [{ label: '类图', pattern: /类图|对象模型|领域模型|class/i }],
     descriptionPatterns: [{ label: '类关系', pattern: /继承|实现|聚合|组合|接口关系|实体关系/ }],
   },
   {
     semantic: 'module-dependency',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'classDiagram',
     titlePatterns: [{ label: '依赖图', pattern: /依赖图|模块依赖|包依赖|引用关系/ }],
     descriptionPatterns: [{ label: '依赖关系', pattern: /依赖关系|引用关系|模块关系|组件依赖/ }],
   },
   {
     semantic: 'deployment-topology',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'architecture-beta',
     titlePatterns: [
       { label: '部署架构', pattern: /部署架构|部署图|环境架构/ },
@@ -106,7 +131,7 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   },
   {
     semantic: 'data-architecture',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'architecture-beta',
     titlePatterns: [{ label: '数据架构', pattern: /数据架构|数据分层|数据流架构|数据资源/ }],
     descriptionPatterns: [
@@ -115,7 +140,7 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   },
   {
     semantic: 'integration-architecture',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'architecture-beta',
     titlePatterns: [
       { label: '集成架构', pattern: /集成架构|系统集成|接口架构|对接关系/ },
@@ -127,7 +152,7 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   },
   {
     semantic: 'overall-architecture',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'flowchart',
     titlePatterns: [
       { label: '总体架构', pattern: /总体架构|系统总体架构|整体架构/ },
@@ -137,7 +162,7 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   },
   {
     semantic: 'technical-architecture',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'flowchart',
     titlePatterns: [
       { label: '技术架构', pattern: /技术架构|组件关系|模块架构|服务架构|应用架构/ },
@@ -149,14 +174,14 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   },
   {
     semantic: 'business-architecture',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'flowchart',
     titlePatterns: [{ label: '业务架构', pattern: /业务架构|业务协同|业务能力|能力架构/ }],
     descriptionPatterns: [{ label: '业务域', pattern: /业务域|业务能力|角色协同|职责分工/ }],
   },
   {
     semantic: 'process-flow',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'flowchart',
     titlePatterns: [{ label: '流程图', pattern: /流程图|流程设计|处理流程|审批流|业务流程/ }],
     descriptionPatterns: [{ label: '步骤流转', pattern: /步骤|阶段|审批|流转|处理链路|闭环/ }],
@@ -169,9 +194,9 @@ function shortId(placeholderId: string): string {
 }
 
 function buildAssetFileName(type: DiagramType, placeholderId: string): string {
-  return type === 'drawio'
-    ? `diagram-${shortId(placeholderId)}.drawio`
-    : `mermaid-${shortId(placeholderId)}.svg`
+  if (type === 'drawio') return `diagram-${shortId(placeholderId)}.drawio`
+  if (type === 'skill') return `ai-diagram-${shortId(placeholderId)}.svg`
+  return `mermaid-${shortId(placeholderId)}.svg`
 }
 
 function collectScore(
@@ -196,7 +221,7 @@ function genericArchitectureFallback(
   if (/部署|拓扑|集群|节点|网络/.test(text)) {
     return {
       semantic: 'deployment-topology',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'architecture-beta',
       confidence: 0.45,
       reasons: ['generic-deployment-fallback'],
@@ -206,7 +231,7 @@ function genericArchitectureFallback(
   if (/数据|数据库|数仓|缓存|消息队列/.test(text)) {
     return {
       semantic: 'data-architecture',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'architecture-beta',
       confidence: 0.45,
       reasons: ['generic-data-architecture-fallback'],
@@ -216,7 +241,7 @@ function genericArchitectureFallback(
   if (/集成|接口|对接|外部系统/.test(text)) {
     return {
       semantic: 'integration-architecture',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'architecture-beta',
       confidence: 0.45,
       reasons: ['generic-integration-fallback'],
@@ -226,7 +251,7 @@ function genericArchitectureFallback(
   if (/架构|分层/.test(text)) {
     return {
       semantic: 'technical-architecture',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'flowchart',
       confidence: 0.45,
       reasons: ['generic-architecture-fallback'],
@@ -279,7 +304,7 @@ export function resolveDiagramIntent(input: DiagramIntentInput): DiagramIntentRe
   if (/时序|交互|请求|响应|消息/.test(fallbackText)) {
     return {
       semantic: 'sequence-interaction',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'sequenceDiagram',
       confidence: 0.4,
       reasons: ['generic-sequence-fallback'],
@@ -289,7 +314,7 @@ export function resolveDiagramIntent(input: DiagramIntentInput): DiagramIntentRe
   if (/状态|生命周期/.test(fallbackText)) {
     return {
       semantic: 'state-machine',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'stateDiagram-v2',
       confidence: 0.4,
       reasons: ['generic-state-fallback'],
@@ -299,7 +324,7 @@ export function resolveDiagramIntent(input: DiagramIntentInput): DiagramIntentRe
   if (/类|对象|依赖|关系/.test(fallbackText)) {
     return {
       semantic: 'class-model',
-      preferredType: 'mermaid',
+      preferredType: 'skill',
       mermaidDiagramKind: 'classDiagram',
       confidence: 0.35,
       reasons: ['generic-class-fallback'],
@@ -308,7 +333,7 @@ export function resolveDiagramIntent(input: DiagramIntentInput): DiagramIntentRe
 
   return {
     semantic: 'process-flow',
-    preferredType: 'mermaid',
+    preferredType: 'skill',
     mermaidDiagramKind: 'flowchart',
     confidence: 0.25,
     reasons: ['requested-type-default'],
@@ -330,6 +355,9 @@ export function resolveDiagramPlaceholder(
     chapterMarkdown: context.chapterMarkdown,
   })
 
+  const skillTokens =
+    resolution.preferredType === 'skill' ? resolveSkillTokens(resolution.semantic) : undefined
+
   return {
     ...placeholder,
     requestedType: placeholder.type,
@@ -337,6 +365,7 @@ export function resolveDiagramPlaceholder(
     assetFileName: buildAssetFileName(resolution.preferredType, placeholder.placeholderId),
     semantic: resolution.semantic,
     mermaidDiagramKind: resolution.mermaidDiagramKind,
+    skillTokens,
     routingConfidence: resolution.confidence,
     routingReasons: resolution.reasons,
   }

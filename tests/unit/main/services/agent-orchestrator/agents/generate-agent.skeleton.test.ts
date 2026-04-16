@@ -36,6 +36,10 @@ vi.mock('@main/services/drawio-asset-service', () => ({
   drawioAssetService: { saveDrawioAsset: vi.fn() },
 }))
 
+vi.mock('@main/services/skill-diagram-generation-service', () => ({
+  generateSkillDiagram: vi.fn(),
+}))
+
 const { generateAgentHandler } =
   await import('@main/services/agent-orchestrator/agents/generate-agent')
 

@@ -10,6 +10,7 @@ vi.mock('@main/services/diagram-runtime/mermaid-runtime-client', () => ({
 
 const {
   buildDiagramFailureMarkdown,
+  buildAiDiagramMarkdown,
   parseDiagramPlaceholders,
   replaceSkeletonWithDiagram,
   removeSkeletonPlaceholder,
@@ -127,6 +128,18 @@ describe('diagram-validation-service', () => {
       const result = parseDiagramPlaceholders('纯文本内容\n\n## 子标题')
       expect(result.placeholders).toHaveLength(0)
       expect(result.markdownWithSkeletons).toBe('纯文本内容\n\n## 子标题')
+    })
+
+    it('@p0 @story-3-10 should parse a skill placeholder and produce ai-diagram asset name', () => {
+      const desc = Buffer.from('展示系统架构分层').toString('base64')
+      const md = `%%DIAGRAM:skill:系统架构图:${desc}%%`
+      const result = parseDiagramPlaceholders(md)
+
+      expect(result.placeholders).toHaveLength(1)
+      expect(result.placeholders[0].type).toBe('skill')
+      expect(result.placeholders[0].title).toBe('系统架构图')
+      expect(result.placeholders[0].description).toBe('展示系统架构分层')
+      expect(result.placeholders[0].assetFileName).toMatch(/^ai-diagram-[a-f0-9]{8}\.svg$/)
     })
 
     it('@p1 should normalize non-standard type to mermaid', () => {
@@ -363,6 +376,22 @@ describe('diagram-validation-service', () => {
     })
   })
 
+  describe('buildAiDiagramMarkdown', () => {
+    it('@p0 @story-3-10 should produce ai-diagram comment + image reference', () => {
+      const result = buildAiDiagramMarkdown({
+        diagramId: 'id-3',
+        assetFileName: 'ai-diagram-abc12345.svg',
+        caption: '系统架构图',
+        prompt: '展示系统架构分层',
+        style: 'flat-icon',
+        diagramType: 'architecture',
+      })
+      expect(result).toContain('<!-- ai-diagram:id-3:ai-diagram-abc12345.svg:')
+      expect(result).toContain(':flat-icon:architecture -->')
+      expect(result).toContain('![系统架构图](assets/ai-diagram-abc12345.svg)')
+    })
+  })
+
   describe('buildDiagramFailureMarkdown', () => {
     it('@p0 should produce a visible failure note instead of silently dropping the diagram', () => {
       const result = buildDiagramFailureMarkdown({
@@ -372,6 +401,16 @@ describe('diagram-validation-service', () => {
       })
 
       expect(result).toBe('> [图表生成失败] 系统集成架构图（mermaid）: Parse error at line 2')
+    })
+
+    it('@p0 @story-3-10 should produce skill type in failure markdown', () => {
+      const result = buildDiagramFailureMarkdown({
+        type: 'skill',
+        caption: '部署拓扑图',
+        error: 'SVG validation failed',
+      })
+
+      expect(result).toBe('> [图表生成失败] 部署拓扑图（skill）: SVG validation failed')
     })
   })
 

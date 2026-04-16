@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   resolveDiagramIntent,
   resolveDiagramPlaceholder,
+  resolveSkillTokens,
 } from '@main/services/diagram-intent-service'
 
 describe('diagram-intent-service', () => {
@@ -15,7 +16,7 @@ describe('diagram-intent-service', () => {
     })
 
     expect(result.semantic).toBe('overall-architecture')
-    expect(result.preferredType).toBe('mermaid')
+    expect(result.preferredType).toBe('skill')
     expect(result.mermaidDiagramKind).toBe('flowchart')
     expect(result.confidence).toBeGreaterThan(0.5)
   })
@@ -30,7 +31,7 @@ describe('diagram-intent-service', () => {
     })
 
     expect(result.semantic).toBe('deployment-topology')
-    expect(result.preferredType).toBe('mermaid')
+    expect(result.preferredType).toBe('skill')
     expect(result.mermaidDiagramKind).toBe('architecture-beta')
   })
 
@@ -44,7 +45,7 @@ describe('diagram-intent-service', () => {
     })
 
     expect(result.semantic).toBe('process-flow')
-    expect(result.preferredType).toBe('mermaid')
+    expect(result.preferredType).toBe('skill')
     expect(result.mermaidDiagramKind).toBe('flowchart')
   })
 
@@ -58,11 +59,11 @@ describe('diagram-intent-service', () => {
     })
 
     expect(result.semantic).toBe('sequence-interaction')
-    expect(result.preferredType).toBe('mermaid')
+    expect(result.preferredType).toBe('skill')
     expect(result.mermaidDiagramKind).toBe('sequenceDiagram')
   })
 
-  it('@p0 should rewrite architecture placeholders to mermaid flowchart assets', () => {
+  it('@p0 should rewrite architecture placeholders to skill assets', () => {
     const result = resolveDiagramPlaceholder(
       {
         placeholderId: '12345678-abcd-efgh-ijkl-1234567890ab',
@@ -78,9 +79,42 @@ describe('diagram-intent-service', () => {
     )
 
     expect(result.requestedType).toBe('drawio')
-    expect(result.type).toBe('mermaid')
-    expect(result.assetFileName).toBe('mermaid-12345678.svg')
+    expect(result.type).toBe('skill')
+    expect(result.assetFileName).toBe('ai-diagram-12345678.svg')
     expect(result.semantic).toBe('technical-architecture')
     expect(result.mermaidDiagramKind).toBe('flowchart')
+    expect(result.skillTokens).toEqual({ diagramType: 'architecture', style: 'flat-icon' })
+  })
+
+  it('@p0 @story-3-10 should resolve skill tokens for all semantic types', () => {
+    expect(resolveSkillTokens('overall-architecture')).toEqual({
+      diagramType: 'architecture',
+      style: 'flat-icon',
+    })
+    expect(resolveSkillTokens('deployment-topology')).toEqual({
+      diagramType: 'network',
+      style: 'blueprint',
+    })
+    expect(resolveSkillTokens('data-architecture')).toEqual({
+      diagramType: 'data-flow',
+      style: 'flat-icon',
+    })
+    expect(resolveSkillTokens('process-flow')).toEqual({
+      diagramType: 'flowchart',
+      style: 'flat-icon',
+    })
+    expect(resolveSkillTokens('sequence-interaction')).toEqual({
+      diagramType: 'sequence',
+      style: 'flat-icon',
+    })
+    expect(resolveSkillTokens('class-model')).toEqual({ diagramType: 'class', style: 'flat-icon' })
+    expect(resolveSkillTokens('module-dependency')).toEqual({
+      diagramType: 'class',
+      style: 'flat-icon',
+    })
+    expect(resolveSkillTokens('state-machine')).toEqual({
+      diagramType: 'flowchart',
+      style: 'flat-icon',
+    })
   })
 })

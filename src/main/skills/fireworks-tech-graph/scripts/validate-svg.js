@@ -11,6 +11,7 @@
 const fs = require('fs')
 const { execSync } = require('child_process')
 const path = require('path')
+const os = require('os')
 
 const RED = '\x1b[0;31m'
 const GREEN = '\x1b[0;32m'
@@ -34,13 +35,18 @@ console.log('----------------------------------------')
 let failures = 0
 const content = fs.readFileSync(svgFile, 'utf-8')
 
+function isCommandNotFound(err) {
+  // Unix shell: exit 127; Windows cmd.exe: exit 9009; Node spawn without shell: ENOENT
+  return err.status === 127 || err.status === 9009 || err.code === 'ENOENT'
+}
+
 // Check 0: XML syntax (via xmllint if available)
 process.stdout.write('Checking XML syntax... ')
 try {
-  execSync(`xmllint --noout "${svgFile}" 2>/dev/null`, { stdio: 'pipe' })
+  execSync(`xmllint --noout "${svgFile}"`, { stdio: 'pipe' })
   console.log(`${GREEN}✓ Pass${NC}`)
 } catch (err) {
-  if (err.status === 127) {
+  if (isCommandNotFound(err)) {
     console.log(`${YELLOW}⚠ Skipped${NC} (xmllint not found)`)
   } else {
     console.log(`${RED}✗ Fail${NC}`)
@@ -139,16 +145,17 @@ if (content.includes('</svg>')) {
 
 // Check 7: rsvg-convert validation
 process.stdout.write('Running rsvg-convert validation... ')
+const rsvgOutPath = path.join(os.tmpdir(), `validate-svg-${process.pid}.png`)
 try {
-  execSync(`rsvg-convert "${svgFile}" -o /tmp/test-output.png 2>/dev/null`, { stdio: 'pipe' })
+  execSync(`rsvg-convert "${svgFile}" -o "${rsvgOutPath}"`, { stdio: 'pipe' })
   console.log(`${GREEN}✓ Pass${NC}`)
   try {
-    fs.unlinkSync('/tmp/test-output.png')
+    fs.unlinkSync(rsvgOutPath)
   } catch {
     /* ignore */
   }
 } catch (err) {
-  if (err.status === 127) {
+  if (isCommandNotFound(err)) {
     console.log(`${YELLOW}⚠ Skipped${NC} (rsvg-convert not found)`)
   } else {
     console.log(`${RED}✗ Fail${NC}`)

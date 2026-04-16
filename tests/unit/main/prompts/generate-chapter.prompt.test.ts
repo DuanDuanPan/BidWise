@@ -5,6 +5,7 @@ import {
   GENERATE_CHAPTER_SYSTEM_PROMPT,
   generateSkeletonPrompt,
   generateSubChapterPrompt,
+  shouldSuggestDiagrams,
 } from '@main/prompts/generate-chapter.prompt'
 import type {
   GenerateChapterContext,
@@ -316,6 +317,39 @@ describe('generateSubChapterPrompt', () => {
     expect(baseIdx).toBeGreaterThanOrEqual(0)
     expect(focusIdx).toBeGreaterThan(baseIdx)
   })
+
+  it('@p0 should include sibling boundary instructions when sibling sections are provided', () => {
+    const prompt = generateSubChapterPrompt({
+      ...baseSubContext,
+      siblingSectionTitles: ['用户管理模块 - 功能设计', '认证模块 - 接口设计', '权限模型设计'],
+    })
+
+    expect(prompt).toContain('同级子章节边界')
+    expect(prompt).toContain('认证模块 - 接口设计')
+    expect(prompt).toContain('权限模型设计')
+    expect(prompt).toContain('只覆盖「用户管理模块 - 功能设计」')
+    expect(prompt).toContain('不要输出 3 级标题')
+  })
+})
+
+describe('shouldSuggestDiagrams', () => {
+  it('@p0 should enable diagrams for summary sub-chapters when guidance mentions structure relations', () => {
+    expect(
+      shouldSuggestDiagrams('核心功能模块总览', {
+        guidanceText: '概述30个工业APP的分类体系及与系统其他模块的关系',
+        dimensions: ['functional'],
+      })
+    ).toBe(true)
+  })
+
+  it('@p1 should keep narrative-only overview chapters text-first when guidance is plain narrative', () => {
+    expect(
+      shouldSuggestDiagrams('项目概述', {
+        guidanceText: '概述项目建设背景与总体目标',
+        dimensions: ['functional'],
+      })
+    ).toBe(false)
+  })
 })
 
 describe('generateChapterPrompt — compliance matrix specialization', () => {
@@ -357,8 +391,21 @@ describe('generateChapterPrompt — compliance matrix specialization', () => {
     expect(prompt).toContain('图表描述的UTF-8 Base64编码')
     expect(prompt).toContain('不要输出 `base64(...)` 包装')
     expect(prompt).not.toContain('%%DIAGRAM:drawio')
-    expect(prompt).toContain('类型标识必须固定写 mermaid')
-    expect(prompt).toContain('系统会根据语义自动选择合适语法族')
+    expect(prompt).toContain('类型标识必须固定写 skill')
+    expect(prompt).toContain('后续系统会根据语义自动选择合适的图表风格和类型')
+  })
+
+  it('@p1 @story-3-10 should use skill as default diagram type in placeholder format', () => {
+    const prompt = generateChapterPrompt({
+      chapterTitle: '系统架构设计',
+      chapterLevel: 2,
+      requirements: '- [technical/high] 支持高并发',
+    })
+
+    expect(prompt).toContain('%%DIAGRAM:skill:')
+    expect(prompt).not.toContain('%%DIAGRAM:mermaid:')
+    expect(prompt).toContain('类型标识必须固定写 skill')
+    expect(prompt).toContain('图表描述必须具体说明图表包含哪些组件、分组、关系和关键连线约束')
   })
 
   it('@p0 should not contain narrative chapter output rules', () => {

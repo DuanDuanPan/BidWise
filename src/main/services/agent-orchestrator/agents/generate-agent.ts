@@ -12,7 +12,15 @@ import type {
   SkeletonPromptContext,
 } from '@main/prompts/generate-chapter.prompt'
 import { extractJsonObject as extractJsonObjectFromLlm } from '@main/utils/llm-json'
-import type { SkeletonExpandPlan, SkeletonExpandSection } from '@shared/chapter-types'
+import type {
+  ChapterHeadingLocator,
+  SkeletonExpandPlan,
+  SkeletonExpandSection,
+} from '@shared/chapter-types'
+import {
+  normalizeGeneratedHeadingLevels,
+  sanitizeGeneratedChapterMarkdown,
+} from '@shared/chapter-markdown'
 import {
   generateDiagramRepairPrompt,
   generateDiagramPrompt,
@@ -51,6 +59,7 @@ import {
   resolveDiagramPlaceholder,
   type ResolvedDiagramPlaceholder,
 } from '@main/services/diagram-intent-service'
+import { generateSkillDiagram } from '@main/services/skill-diagram-generation-service'
 import type { AgentHandler, AgentHandlerResult, AiRequestParams } from '../orchestrator'
 import { createLogger } from '@main/utils/logger'
 import type { AiChatMessage, AiProxyResponse, TokenUsage } from '@shared/ai-types'
@@ -108,6 +117,26 @@ function createEmptyUsage(): TokenUsage {
 function accumulateUsage(target: TokenUsage, response: AiProxyResponse): void {
   target.promptTokens += response.usage.promptTokens
   target.completionTokens += response.usage.completionTokens
+}
+
+function clampHeadingLevel(level: number): ChapterHeadingLocator['level'] {
+  if (level <= 1) return 1
+  if (level === 2) return 2
+  if (level === 3) return 3
+  return 4
+}
+
+function finalizeSubChapterMarkdown(
+  markdownContent: string,
+  section: { title: string; level: number }
+): string {
+  const locator: ChapterHeadingLocator = {
+    title: section.title,
+    level: clampHeadingLevel(section.level),
+    occurrenceIndex: 0,
+  }
+  const deduped = sanitizeGeneratedChapterMarkdown(markdownContent, locator)
+  return normalizeGeneratedHeadingLevels(deduped, locator.level).trim()
 }
 
 async function callWithContinuation(params: {
@@ -381,7 +410,7 @@ function convertDiagramLikeFencesToPlaceholders(text: string): DiagramFenceConve
       const title = extractInlineMermaidTitle(trimmed).replace(/:/g, '-')
       const encoded = Buffer.from(trimmed.slice(0, 800), 'utf-8').toString('base64')
       mermaidCount += 1
-      nextText += `%%DIAGRAM:mermaid:${title}:${encoded}%%`
+      nextText += `%%DIAGRAM:skill:${title}:${encoded}%%`
       continue
     }
 
@@ -390,7 +419,7 @@ function convertDiagramLikeFencesToPlaceholders(text: string): DiagramFenceConve
       const instruction = buildAsciiDiagramInstruction(title, trimmed)
       const encoded = Buffer.from(instruction, 'utf-8').toString('base64')
       asciiCount += 1
-      nextText += `%%DIAGRAM:mermaid:${title}:${encoded}%%`
+      nextText += `%%DIAGRAM:skill:${title}:${encoded}%%`
       continue
     }
 
@@ -462,6 +491,48 @@ async function generateDiagramWithRepair(params: {
   const { aiProxy, signal, usage, projectId, chapterTitle, chapterMarkdown, placeholder } = params
   const diagramDescription = placeholder.description || placeholder.title
 
+  // ─── Skill branch: delegate to skill-diagram-generation-service ───
+  if (placeholder.type === 'skill' && placeholder.skillTokens && projectId) {
+    const skillResult = await generateSkillDiagram({
+      input: {
+        diagramId: placeholder.placeholderId,
+        title: placeholder.title,
+        description: diagramDescription,
+        style: placeholder.skillTokens.style,
+        diagramType: placeholder.skillTokens.diagramType,
+        chapterTitle,
+        chapterMarkdown,
+      },
+      projectId,
+      aiProxy,
+      signal,
+      usage,
+    })
+
+    if (skillResult.kind === 'success') {
+      return {
+        kind: 'success',
+        placeholder,
+        markdown: skillResult.markdown,
+        summary: `${placeholder.title}（skill/${placeholder.skillTokens.diagramType}）: ${diagramDescription}`,
+      }
+    }
+
+    logger.warn('Skill diagram generation failed, returning failure marker', {
+      placeholderId: placeholder.placeholderId,
+      error: skillResult.error,
+      repairAttempts: skillResult.repairAttempts,
+    })
+
+    return {
+      kind: 'failure',
+      placeholder,
+      markdown: skillResult.markdown,
+      error: skillResult.error ?? 'skill diagram generation failed',
+    }
+  }
+
+  // ─── Legacy mermaid / drawio branch ───
   let currentSource = await requestDiagramSource({
     aiProxy,
     signal,
@@ -1011,6 +1082,7 @@ async function handleSkeletonBatch(
         terminologyContext: terminologyContext || undefined,
         dimensionFocus: section.dimensions.join(', '),
         previousSectionsSummary,
+        siblingSectionTitles: confirmedSkeleton.sections.map(({ title }) => title),
       })
 
       const subContent = await callWithContinuation({
@@ -1025,7 +1097,10 @@ async function handleSkeletonBatch(
         usage: totalUsage,
       })
 
-      sectionResults[i] = { kind: 'completed', markdown: subContent.content }
+      sectionResults[i] = {
+        kind: 'completed',
+        markdown: finalizeSubChapterMarkdown(subContent.content, section),
+      }
 
       if (setCheckpoint) {
         await setCheckpoint({ sectionResults, nextIndex: i + 1 })
@@ -1134,6 +1209,7 @@ async function handleSkeletonBatchSingle(
     terminologyContext: terminologyContext || undefined,
     dimensionFocus: (section.dimensions ?? []).join(', '),
     previousSectionsSummary,
+    siblingSectionTitles: (context.siblingSectionTitles as string[] | undefined) ?? undefined,
   })
 
   const textResult = await generateChapterTextContent({
@@ -1151,8 +1227,11 @@ async function handleSkeletonBatchSingle(
   const enableDiagrams =
     typeof context.enableDiagrams === 'boolean'
       ? context.enableDiagrams
-      : shouldSuggestDiagrams(section.title)
-  const finalMarkdown = await runChapterDiagramPipeline({
+      : shouldSuggestDiagrams(section.title, {
+          guidanceText: section.guidanceHint,
+          dimensions: section.dimensions,
+        })
+  const rawMarkdown = await runChapterDiagramPipeline({
     aiProxy,
     signal,
     updateProgress,
@@ -1162,6 +1241,7 @@ async function handleSkeletonBatchSingle(
     textContent: textResult.textContent,
     enableDiagrams,
   })
+  const finalMarkdown = finalizeSubChapterMarkdown(rawMarkdown, section)
 
   logger.info(
     `Skeleton-batch-single completed: section="${section.title}", index=${context.sectionIndex}, contentLen=${finalMarkdown.length}, continuations=${textResult.continuationCount}, enableDiagrams=${enableDiagrams}`

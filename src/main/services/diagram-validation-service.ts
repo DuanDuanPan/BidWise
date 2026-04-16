@@ -6,7 +6,7 @@ import {
   preflightMermaidSource,
 } from '@main/services/diagram-runtime/mermaid-source'
 
-export type DiagramType = 'mermaid' | 'drawio'
+export type DiagramType = 'mermaid' | 'drawio' | 'skill'
 
 // Accept any type token so LLM-hallucinated types like "C4Container" are still captured;
 // non-standard types are normalized to 'mermaid' in parseDiagramPlaceholders.
@@ -45,6 +45,7 @@ function toSkeletonMarker(placeholder: DiagramPlaceholder): string {
 }
 
 function fileNamePrefix(type: DiagramType): string {
+  if (type === 'skill') return 'ai-diagram'
   return type === 'mermaid' ? 'mermaid' : 'diagram'
 }
 
@@ -138,6 +139,7 @@ function normalizeDescription(rawDescription: string): string {
 function normalizeDiagramType(raw: string): DiagramType {
   const lower = raw.toLowerCase()
   if (lower === 'drawio' || lower === 'draw.io') return 'drawio'
+  if (lower === 'skill') return 'skill'
   return 'mermaid' // C4Container, architecture-beta, flowchart, etc. → all mermaid
 }
 
@@ -152,9 +154,9 @@ export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceho
       const title = sanitizeTitle(rawTitle)
       const shortId = placeholderId.slice(0, 8)
       const assetFileName =
-        type === 'mermaid'
-          ? `${fileNamePrefix(type)}-${shortId}.svg`
-          : `${fileNamePrefix(type)}-${shortId}.drawio`
+        type === 'drawio'
+          ? `${fileNamePrefix(type)}-${shortId}.drawio`
+          : `${fileNamePrefix(type)}-${shortId}.svg`
 
       const placeholder: DiagramPlaceholder = {
         placeholderId,
@@ -219,6 +221,20 @@ export function buildDrawioMarkdown(input: {
   const comment = `<!-- drawio:${input.diagramId}:${input.assetFileName} -->`
   const pngFileName = input.assetFileName.replace(/\.drawio$/, '.png')
   return `${comment}\n![${input.caption}](assets/${pngFileName})`
+}
+
+export function buildAiDiagramMarkdown(input: {
+  diagramId: string
+  assetFileName: string
+  caption: string
+  prompt: string
+  style: string
+  diagramType: string
+}): string {
+  const encodedCaption = input.caption ? encodeURIComponent(input.caption) : ''
+  const encodedPrompt = input.prompt ? encodeURIComponent(input.prompt) : ''
+  const comment = `<!-- ai-diagram:${input.diagramId}:${input.assetFileName}:${encodedCaption}:${encodedPrompt}:${input.style}:${input.diagramType} -->`
+  return `${comment}\n![${input.caption}](assets/${input.assetFileName})`
 }
 
 export function buildDiagramFailureMarkdown(input: {

@@ -41,6 +41,20 @@ vi.mock('@main/services/drawio-asset-service', () => ({
   },
 }))
 
+const mockGenerateSkillDiagram = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    kind: 'success',
+    markdown:
+      '<!-- ai-diagram:mock-id:ai-diagram-mock.svg:caption:prompt:flat-icon:architecture -->\n![mock](assets/ai-diagram-mock.svg)',
+    assetFileName: 'ai-diagram-mock.svg',
+    repairAttempts: 0,
+  })
+)
+
+vi.mock('@main/services/skill-diagram-generation-service', () => ({
+  generateSkillDiagram: (...args: unknown[]) => mockGenerateSkillDiagram(...args),
+}))
+
 const { generateAgentHandler } =
   await import('@main/services/agent-orchestrator/agents/generate-agent')
 
@@ -62,6 +76,13 @@ describe('generateAgentHandler @story-2-2', () => {
     mockBuildPromptContext.mockReturnValue('')
     mockMermaidRuntimeValidate.mockReset().mockResolvedValue({ valid: true })
     mockSaveDrawioAsset.mockReset().mockResolvedValue({ assetPath: '/tmp/diagram.drawio' })
+    mockGenerateSkillDiagram.mockReset().mockResolvedValue({
+      kind: 'success',
+      markdown:
+        '<!-- ai-diagram:mock-id:ai-diagram-mock.svg:caption:prompt:flat-icon:architecture -->\n![mock](assets/ai-diagram-mock.svg)',
+      assetFileName: 'ai-diagram-mock.svg',
+      repairAttempts: 0,
+    })
   })
 
   it('@p1 should return AiRequestParams with messages from generateChapterPrompt', async () => {
@@ -203,7 +224,9 @@ describe('generateAgentHandler @story-2-2', () => {
     )
 
     expect(result).toMatchObject({ kind: 'result' })
-    expect(aiProxy.call.mock.calls.length).toBeGreaterThanOrEqual(3)
+    // text call + coherence call = 2 (diagram generation handled by skill mock)
+    expect(aiProxy.call.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(mockGenerateSkillDiagram).toHaveBeenCalledOnce()
     expect(updateProgress).toHaveBeenCalledWith(10, 'generating-text')
     expect(updateProgress).toHaveBeenCalledWith(20, 'validating-text')
     expect(updateProgress).toHaveBeenCalledWith(35, 'generating-diagrams')
@@ -212,7 +235,7 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(updateProgress).toHaveBeenCalledWith(90, 'validating-coherence')
   })
 
-  it('@p0 should reroute architecture placeholders to mermaid C4 when semantic classification requires it', async () => {
+  it('@p0 @story-3-10 should route architecture placeholders to skill diagram service', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
     const aiProxy = {
@@ -225,25 +248,6 @@ describe('generateAgentHandler @story-2-2', () => {
               '%%',
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
-            model: 'mock',
-            provider: 'mock',
-            finishReason: 'stop',
-          }
-        }
-
-        if (request.caller === 'generate-agent:diagram:mermaid') {
-          return {
-            content: [
-              "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
-              'C4Context',
-              'Person(user, "售前工程师", "编写与打磨投标方案")',
-              'System(bidwise, "BidWise", "投标方案工作台")',
-              'System_Ext(model, "模型网关", "Claude / OpenAI 代理")',
-              'Rel(user, bidwise, "使用")',
-              'Rel(bidwise, model, "调用")',
-            ].join('\n'),
-            usage: { promptTokens: 8, completionTokens: 12 },
-            latencyMs: 60,
             model: 'mock',
             provider: 'mock',
             finishReason: 'stop',
@@ -271,26 +275,34 @@ describe('generateAgentHandler @story-2-2', () => {
       { signal: controller.signal, updateProgress, aiProxy }
     )
 
-    expect(aiProxy.call).toHaveBeenCalledWith(
-      expect.objectContaining({ caller: 'generate-agent:diagram:mermaid' })
+    expect(mockGenerateSkillDiagram).toHaveBeenCalledOnce()
+    expect(mockGenerateSkillDiagram).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          title: '系统总体架构图',
+          style: 'flat-icon',
+          diagramType: 'architecture',
+        }),
+        projectId: 'proj-1',
+      })
     )
-    expect(mockSaveDrawioAsset).not.toHaveBeenCalled()
 
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
-      expect(result.value.content).toContain('<!-- mermaid:')
-      expect(result.value.content).toContain('```mermaid')
-      expect(result.value.content).toContain('C4Context')
+      expect(result.value.content).toContain('<!-- ai-diagram:')
       expect(result.value.content).not.toContain('<!-- drawio:')
     }
   })
 
-  it('@p0 should call a dedicated diagram repair prompt with invalid code and validation error', async () => {
+  it('@p0 @story-3-10 should delegate diagram repair to skill service and accept success result', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
-    mockMermaidRuntimeValidate
-      .mockResolvedValueOnce({ valid: false, error: 'Parse error at line 2' })
-      .mockResolvedValueOnce({ valid: true })
+    mockGenerateSkillDiagram.mockResolvedValueOnce({
+      kind: 'success',
+      markdown: '<!-- ai-diagram:repaired -->\n![任务处理流程图](assets/ai-diagram-repaired.svg)',
+      assetFileName: 'ai-diagram-repaired.svg',
+      repairAttempts: 1,
+    })
 
     const aiProxy = {
       call: vi.fn().mockImplementation(async (request: { caller: string }) => {
@@ -302,28 +314,6 @@ describe('generateAgentHandler @story-2-2', () => {
               '%%',
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
-            model: 'mock',
-            provider: 'mock',
-            finishReason: 'stop',
-          }
-        }
-
-        if (request.caller === 'generate-agent:diagram:mermaid') {
-          return {
-            content: 'graph TD\ntitle 任务处理流程图\nA-->B',
-            usage: { promptTokens: 5, completionTokens: 8 },
-            latencyMs: 50,
-            model: 'mock',
-            provider: 'mock',
-            finishReason: 'stop',
-          }
-        }
-
-        if (request.caller === 'generate-agent:diagram-repair:mermaid') {
-          return {
-            content: 'graph TD\nA[提交任务] --> B[完成处理]',
-            usage: { promptTokens: 6, completionTokens: 9 },
-            latencyMs: 55,
             model: 'mock',
             provider: 'mock',
             finishReason: 'stop',
@@ -351,27 +341,23 @@ describe('generateAgentHandler @story-2-2', () => {
       { signal: controller.signal, updateProgress, aiProxy }
     )
 
-    const repairCall = aiProxy.call.mock.calls.find(
-      ([request]: [{ caller: string }]) =>
-        request.caller === 'generate-agent:diagram-repair:mermaid'
-    )?.[0]
-
-    expect(repairCall).toBeDefined()
-    expect(repairCall.messages[1].content).toContain('Parse error at line 2')
-    expect(repairCall.messages[1].content).toContain('graph TD\ntitle 任务处理流程图\nA-->B')
-
+    expect(mockGenerateSkillDiagram).toHaveBeenCalledOnce()
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
-      expect(result.value.content).toContain('```mermaid')
-      expect(result.value.content).toContain('A[提交任务] --> B[完成处理]')
+      expect(result.value.content).toContain('<!-- ai-diagram:repaired -->')
       expect(result.value.content).not.toContain('[图表生成失败]')
     }
   })
 
-  it('@p0 should keep a visible failure marker when diagram generation exhausts retries', async () => {
+  it('@p0 @story-3-10 should keep a visible failure marker when skill diagram generation exhausts retries', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
-    mockMermaidRuntimeValidate.mockResolvedValue({ valid: false, error: 'Parse error at line 2' })
+    mockGenerateSkillDiagram.mockResolvedValueOnce({
+      kind: 'failure',
+      markdown: '> [图表生成失败] 任务处理流程图（skill）: SVG validation failed after 3 attempts',
+      error: 'SVG validation failed after 3 attempts',
+      repairAttempts: 3,
+    })
 
     const aiProxy = {
       call: vi.fn().mockImplementation(async (request: { caller: string }) => {
@@ -383,17 +369,6 @@ describe('generateAgentHandler @story-2-2', () => {
               '%%',
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
-            model: 'mock',
-            provider: 'mock',
-            finishReason: 'stop',
-          }
-        }
-
-        if (request.caller.startsWith('generate-agent:diagram')) {
-          return {
-            content: 'graph TD\ntitle 任务处理流程图\nA-->B',
-            usage: { promptTokens: 5, completionTokens: 8 },
-            latencyMs: 50,
             model: 'mock',
             provider: 'mock',
             finishReason: 'stop',
@@ -423,15 +398,13 @@ describe('generateAgentHandler @story-2-2', () => {
 
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
-      expect(result.value.content).toContain(
-        '[图表生成失败] 任务处理流程图（mermaid）: Parse error at line 2'
-      )
+      expect(result.value.content).toContain('[图表生成失败]')
       expect(result.value.content).not.toContain('图表生成中')
       expect(result.value.content).not.toContain('%%DIAGRAM:')
     }
   })
 
-  it('@story-3-4 @p1 should replace wrapped diagram placeholders instead of leaking raw markers', async () => {
+  it('@story-3-4 @p1 @story-3-10 should replace wrapped diagram placeholders via skill service', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
     const wrappedDesc = Buffer.from('展示自动生成模块与外部系统集成关系').toString('base64')
@@ -442,17 +415,6 @@ describe('generateAgentHandler @story-2-2', () => {
             content: `正文段落\n\n%%DIAGRAM:mermaid:自动生成模块流程图:base64(${wrappedDesc})%%`,
             usage: { promptTokens: 10, completionTokens: 20 },
             latencyMs: 100,
-            model: 'mock',
-            provider: 'mock',
-            finishReason: 'stop',
-          }
-        }
-
-        if (request.caller.startsWith('generate-agent:diagram')) {
-          return {
-            content: 'graph TD\nA[自动生成模块] --> B[外部系统]',
-            usage: { promptTokens: 5, completionTokens: 8 },
-            latencyMs: 50,
             model: 'mock',
             provider: 'mock',
             finishReason: 'stop',
@@ -483,12 +445,11 @@ describe('generateAgentHandler @story-2-2', () => {
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
       expect(result.value.content).not.toContain('%%DIAGRAM:')
-      expect(result.value.content).toContain('<!-- mermaid:')
-      expect(result.value.content).toContain('```mermaid')
+      expect(result.value.content).toContain('<!-- ai-diagram:')
     }
   })
 
-  it('@p0 should convert ASCII diagram fences into Mermaid generation tasks', async () => {
+  it('@p0 @story-3-10 should convert ASCII diagram fences into skill diagram tasks', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()
     const asciiDiagram = [
@@ -507,51 +468,27 @@ describe('generateAgentHandler @story-2-2', () => {
     ].join('\n')
 
     const aiProxy = {
-      call: vi
-        .fn()
-        .mockImplementation(
-          async (request: { caller: string; messages: Array<{ content: string }> }) => {
-            if (request.caller === 'generate-agent:text') {
-              return {
-                content: `### 数据模型设计\n\n${asciiDiagram}`,
-                usage: { promptTokens: 10, completionTokens: 20 },
-                latencyMs: 100,
-                model: 'mock',
-                provider: 'mock',
-                finishReason: 'stop',
-              }
-            }
-
-            if (request.caller === 'generate-agent:diagram:mermaid') {
-              return {
-                content: [
-                  "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
-                  'flowchart TD',
-                  'subgraph LAYERS["数据模型四层架构"]',
-                  'direction TB',
-                  'A[系统数据层] --> B[基础数据层]',
-                  'B --> C[模型数据层]',
-                  'C --> D[应用数据层]',
-                  'end',
-                ].join('\n'),
-                usage: { promptTokens: 6, completionTokens: 12 },
-                latencyMs: 50,
-                model: 'mock',
-                provider: 'mock',
-                finishReason: 'stop',
-              }
-            }
-
-            return {
-              content: '{"pass":true,"issues":[]}',
-              usage: { promptTokens: 3, completionTokens: 5 },
-              latencyMs: 30,
-              model: 'mock',
-              provider: 'mock',
-              finishReason: 'stop',
-            }
+      call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+        if (request.caller === 'generate-agent:text') {
+          return {
+            content: `### 数据模型设计\n\n${asciiDiagram}`,
+            usage: { promptTokens: 10, completionTokens: 20 },
+            latencyMs: 100,
+            model: 'mock',
+            provider: 'mock',
+            finishReason: 'stop',
           }
-        ),
+        }
+
+        return {
+          content: '{"pass":true,"issues":[]}',
+          usage: { promptTokens: 3, completionTokens: 5 },
+          latencyMs: 30,
+          model: 'mock',
+          provider: 'mock',
+          finishReason: 'stop',
+        }
+      }),
     }
 
     const result = await generateAgentHandler(
@@ -564,19 +501,12 @@ describe('generateAgentHandler @story-2-2', () => {
       { signal: controller.signal, updateProgress, aiProxy }
     )
 
-    const diagramCall = aiProxy.call.mock.calls.find(
-      ([request]: [{ caller: string }]) => request.caller === 'generate-agent:diagram:mermaid'
-    )?.[0]
-
-    expect(diagramCall).toBeDefined()
-    expect(diagramCall.messages[1].content).toContain('ASCII 结构图')
-    expect(diagramCall.messages[1].content).toContain('数据模型四层架构')
+    // ASCII diagram was converted to %%DIAGRAM:skill:...%% placeholder, then routed to skill service
+    expect(mockGenerateSkillDiagram).toHaveBeenCalledOnce()
 
     expect(result).toMatchObject({ kind: 'result' })
     if ('kind' in result && result.kind === 'result') {
-      expect(result.value.content).toContain('<!-- mermaid:')
-      expect(result.value.content).toContain('```mermaid')
-      expect(result.value.content).toContain('flowchart TD')
+      expect(result.value.content).toContain('<!-- ai-diagram:')
       expect(result.value.content).not.toContain('┌─────────────────────────────┐')
     }
   })
@@ -666,17 +596,7 @@ describe('generateAgentHandler @story-2-2', () => {
           }
         }
 
-        if (request.caller.startsWith('generate-agent:diagram')) {
-          return {
-            content: 'graph TD\nA[输入] --> B[处理]',
-            usage: { promptTokens: 5, completionTokens: 8 },
-            latencyMs: 50,
-            model: 'mock',
-            provider: 'mock',
-            finishReason: 'stop',
-          }
-        }
-
+        // coherence check
         return {
           content: '{"pass":false,"issues":[{"type":"consistency","description":"图文不一致"}]}',
           usage: { promptTokens: 3, completionTokens: 5 },
