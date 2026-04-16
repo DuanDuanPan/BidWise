@@ -78,9 +78,7 @@ class AiProxyService {
         provider: this.config.provider,
         apiKey,
         defaultModel: this.config.defaultModel ?? getDefaultModel(this.config.provider),
-        ...(this.config.provider === 'openai' && this.config.openaiBaseUrl
-          ? { baseURL: this.config.openaiBaseUrl }
-          : {}),
+        ...(this.config.baseUrl ? { baseURL: this.config.baseUrl } : {}),
       })
     }
     return { provider: this.provider, config: this.config }

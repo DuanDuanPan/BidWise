@@ -69,6 +69,9 @@ export interface AiProxyConfig {
   provider: AiProviderName
   anthropicApiKey?: string
   openaiApiKey?: string
+  /** Shared base URL — applies to whichever provider is active */
+  baseUrl?: string
+  /** @deprecated Use baseUrl. Kept for backwards-compat with existing encrypted configs */
   openaiBaseUrl?: string
   defaultModel?: string
   desensitizeEnabled: boolean
@@ -79,7 +82,7 @@ export interface AiConfigStatus {
   configPath: string
   provider?: AiProviderName
   defaultModel?: string
-  openaiBaseUrl?: string
+  baseUrl?: string
   desensitizeEnabled: boolean
   hasApiKey: boolean
   lastError?: string
@@ -89,7 +92,7 @@ export interface SaveAiProxyConfigInput {
   provider: AiProviderName
   apiKey?: string
   defaultModel?: string
-  openaiBaseUrl?: string
+  baseUrl?: string
   desensitizeEnabled?: boolean
 }
 

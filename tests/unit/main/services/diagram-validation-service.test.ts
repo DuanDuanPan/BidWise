@@ -393,24 +393,40 @@ describe('diagram-validation-service', () => {
   })
 
   describe('buildDiagramFailureMarkdown', () => {
-    it('@p0 should produce a visible failure note instead of silently dropping the diagram', () => {
+    it('@p0 should produce structured comment + visible failure note', () => {
       const result = buildDiagramFailureMarkdown({
         type: 'mermaid',
+        diagramId: 'test-id-1',
+        assetFileName: 'mermaid-test1234.svg',
         caption: '系统集成架构图',
+        description: '描述系统集成架构',
+        style: '',
+        diagramType: 'mermaid',
         error: 'Parse error at line 2',
       })
 
-      expect(result).toBe('> [图表生成失败] 系统集成架构图（mermaid）: Parse error at line 2')
+      expect(result).toContain('<!-- ai-diagram-failed:test-id-1:mermaid-test1234.svg:')
+      expect(result).toContain('> [图表生成失败] 系统集成架构图（mermaid）: Parse error at line 2')
+      // Verify prompt is encoded in comment
+      expect(result).toContain(encodeURIComponent('描述系统集成架构'))
     })
 
-    it('@p0 @story-3-10 should produce skill type in failure markdown', () => {
+    it('@p0 @story-3-10 should produce skill type in failure markdown with full context', () => {
       const result = buildDiagramFailureMarkdown({
         type: 'skill',
+        diagramId: 'test-id-2',
+        assetFileName: 'ai-diagram-test5678.svg',
         caption: '部署拓扑图',
+        description: '展示系统部署拓扑',
+        style: 'flat-icon',
+        diagramType: 'architecture',
         error: 'SVG validation failed',
       })
 
-      expect(result).toBe('> [图表生成失败] 部署拓扑图（skill）: SVG validation failed')
+      expect(result).toContain('<!-- ai-diagram-failed:test-id-2:ai-diagram-test5678.svg:')
+      expect(result).toContain(':flat-icon:architecture:')
+      expect(result).toContain('> [图表生成失败] 部署拓扑图（skill）: SVG validation failed')
+      expect(result).toContain(encodeURIComponent('展示系统部署拓扑'))
     })
   })
 

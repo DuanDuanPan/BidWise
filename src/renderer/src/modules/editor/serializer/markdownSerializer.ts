@@ -49,6 +49,14 @@ const AI_DIAGRAM_IMAGE_RE = /^!\[((?:[^\]\\]|\\.)*)\]\(assets\/(.+?\.svg)\)$/
 const AI_DIAGRAM_PLACEHOLDER_PREFIX = 'AI-DIAGRAM-PH-'
 const AI_DIAGRAM_PLACEHOLDER_SUFFIX = '-END'
 const AI_DIAGRAM_PLACEHOLDER_RE = /AI-DIAGRAM-PH-(\d+)-END/g
+
+// ── AI Diagram Failed Markdown patterns ──
+
+// Format: <!-- ai-diagram-failed:id:file:caption:prompt:style:type:error -->
+const AI_DIAGRAM_FAILED_COMMENT_RE =
+  /^<!-- ai-diagram-failed:([^:]+):([^:]+?)(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?(?::([^:]*))? -->$/
+const AI_DIAGRAM_FAILED_BLOCKQUOTE_RE = /^>\s*\[图表生成失败\]/
+
 const HEADING_LINE_RE = /^(#{1,4})\s+(.+?)\s*$/
 const GUIDANCE_LINE_RE = /^>\s*(.+?)\s*$/
 
@@ -239,6 +247,15 @@ export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
     const encodedPrompt = block.prompt ? encodeURIComponent(block.prompt) : ''
     const styleToken = block.style || ''
     const typeToken = block.diagramType || ''
+
+    // Failed diagram: serialize as ai-diagram-failed comment + blockquote
+    if (block.generationError) {
+      const e = encodeURIComponent
+      const failedComment = `<!-- ai-diagram-failed:${e(block.diagramId)}:${e(block.assetFileName)}:${encodedCaption}:${encodedPrompt}:${e(styleToken)}:${e(typeToken)}:${e(block.generationError)} -->`
+      const blockquote = `> [图表生成失败] ${block.caption || ''}（${typeToken || 'skill'}）: ${block.generationError}`
+      return `${failedComment}\n${blockquote}`
+    }
+
     const comment = `<!-- ai-diagram:${block.diagramId}:${block.assetFileName}:${encodedCaption}:${encodedPrompt}:${styleToken}:${typeToken} -->`
     const image = `![${escapeMarkdownAlt(block.caption || '')}](assets/${block.assetFileName})`
     return `${comment}\n${image}`
@@ -270,6 +287,7 @@ export function deserializeFromMarkdown(
       prompt: string
       style: string
       diagramType: string
+      generationError?: string
     }
   > = new Map()
 
@@ -280,6 +298,44 @@ export function deserializeFromMarkdown(
   let aiDiagramPlaceholderIndex = 0
 
   for (let i = 0; i < lines.length; i++) {
+    // Check ai-diagram-failed comment + blockquote pair
+    const aiDiagramFailedMatch = lines[i].match(AI_DIAGRAM_FAILED_COMMENT_RE)
+    if (aiDiagramFailedMatch) {
+      const safeDecodeOrEmpty = (v: string | undefined): string => {
+        if (!v) return ''
+        try {
+          return decodeURIComponent(v)
+        } catch {
+          return v
+        }
+      }
+      const diagramId = safeDecodeOrEmpty(aiDiagramFailedMatch[1])
+      const assetFileName = safeDecodeOrEmpty(aiDiagramFailedMatch[2])
+      const caption = safeDecodeOrEmpty(aiDiagramFailedMatch[3])
+      const prompt = safeDecodeOrEmpty(aiDiagramFailedMatch[4])
+      const style = safeDecodeOrEmpty(aiDiagramFailedMatch[5])
+      const diagramType = safeDecodeOrEmpty(aiDiagramFailedMatch[6])
+      const generationError = safeDecodeOrEmpty(aiDiagramFailedMatch[7]) || '图表生成失败'
+      aiDiagramDataMap.set(aiDiagramPlaceholderIndex, {
+        diagramId,
+        assetFileName,
+        caption,
+        prompt,
+        style,
+        diagramType,
+        generationError,
+      })
+      processedLines.push(
+        `${AI_DIAGRAM_PLACEHOLDER_PREFIX}${aiDiagramPlaceholderIndex}${AI_DIAGRAM_PLACEHOLDER_SUFFIX}`
+      )
+      aiDiagramPlaceholderIndex++
+      // Skip the following blockquote line if it matches the failure pattern
+      if (i + 1 < lines.length && AI_DIAGRAM_FAILED_BLOCKQUOTE_RE.test(lines[i + 1])) {
+        i++
+      }
+      continue
+    }
+
     // Check ai-diagram comment+image pair
     const aiDiagramCommentMatch = lines[i].match(AI_DIAGRAM_COMMENT_RE)
     if (aiDiagramCommentMatch && i + 1 < lines.length) {
@@ -435,7 +491,7 @@ export function deserializeFromMarkdown(
           const idx = parseInt(aiDiagramMatch[1], 10)
           const data = aiDiagramDataMap.get(idx)
           if (data) {
-            return {
+            const node: Record<string, unknown> = {
               type: AI_DIAGRAM_ELEMENT_TYPE,
               diagramId: data.diagramId,
               assetFileName: data.assetFileName,
@@ -443,9 +499,13 @@ export function deserializeFromMarkdown(
               prompt: data.prompt || '',
               style: (data.style || 'flat-icon') as 'flat-icon',
               diagramType: (data.diagramType || 'architecture') as 'architecture',
-              svgPersisted: true,
+              svgPersisted: !data.generationError,
               children: [{ text: '' }],
             }
+            if (data.generationError) {
+              node.generationError = data.generationError
+            }
+            return node
           }
         }
       }

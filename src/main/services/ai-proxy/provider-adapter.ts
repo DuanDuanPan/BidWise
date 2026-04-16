@@ -110,8 +110,8 @@ export class ClaudeProvider implements AiProvider {
   readonly name = 'claude'
   private client: Anthropic
 
-  constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey })
+  constructor(apiKey: string, baseURL?: string) {
+    this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) })
   }
 
   async chat(request: AiChatRequest, options?: AiProviderCallOptions): Promise<AiChatResponse> {
@@ -222,14 +222,14 @@ export class OpenAiProvider implements AiProvider {
 // ─── Factory ───
 
 const DEFAULT_MODELS: Record<string, string> = {
-  claude: 'claude-sonnet-4-20250514',
+  claude: 'claude-opus-4-6',
   openai: 'gpt-4o',
 }
 
 export function createProvider(config: ProviderConfig): AiProvider {
   switch (config.provider) {
     case 'claude':
-      return new ClaudeProvider(config.apiKey)
+      return new ClaudeProvider(config.apiKey, config.baseURL)
     case 'openai':
       return new OpenAiProvider(config.apiKey, config.baseURL)
     default:
@@ -241,5 +241,5 @@ export function createProvider(config: ProviderConfig): AiProvider {
 }
 
 export function getDefaultModel(provider: string): string {
-  return DEFAULT_MODELS[provider] ?? 'claude-sonnet-4-20250514'
+  return DEFAULT_MODELS[provider] ?? 'claude-opus-4-6'
 }

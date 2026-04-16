@@ -113,6 +113,7 @@ export function EditorView({
           diagramType: result.diagramType,
           svgContent: result.svgContent,
           svgPersisted: true,
+          generationError: undefined,
           lastModified: new Date().toISOString(),
         })
 

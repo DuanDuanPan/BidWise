@@ -134,7 +134,8 @@ export async function getAiProxyConfig(): Promise<AiProxyConfig> {
     provider: config.provider as AiProviderName,
     anthropicApiKey: readOptionalString(config, 'anthropicApiKey'),
     openaiApiKey: readOptionalString(config, 'openaiApiKey'),
-    openaiBaseUrl: readOptionalString(config, 'openaiBaseUrl'),
+    // baseUrl with openaiBaseUrl fallback for backwards-compat
+    baseUrl: readOptionalString(config, 'baseUrl') ?? readOptionalString(config, 'openaiBaseUrl'),
     defaultModel: readOptionalString(config, 'defaultModel'),
     desensitizeEnabled: config.desensitizeEnabled !== false,
   }
@@ -163,7 +164,7 @@ export async function getAiProxyConfigStatus(): Promise<AiConfigStatus> {
       configPath,
       provider: config.provider,
       defaultModel: config.defaultModel,
-      openaiBaseUrl: config.openaiBaseUrl,
+      baseUrl: config.baseUrl,
       desensitizeEnabled: config.desensitizeEnabled,
       hasApiKey: Boolean(apiKey),
     }
@@ -199,7 +200,7 @@ export async function saveAiProxyConfig(input: SaveAiProxyConfigInput): Promise<
     provider,
     anthropicApiKey: provider === 'claude' ? nextApiKey : undefined,
     openaiApiKey: provider === 'openai' ? nextApiKey : undefined,
-    openaiBaseUrl: provider === 'openai' ? normalizeOptionalString(input.openaiBaseUrl) : undefined,
+    baseUrl: normalizeOptionalString(input.baseUrl),
     defaultModel: normalizeOptionalString(input.defaultModel),
     desensitizeEnabled: input.desensitizeEnabled ?? existing?.desensitizeEnabled ?? true,
   }

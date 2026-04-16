@@ -145,7 +145,10 @@ async function runSvgValidator(svgContent: string, skillDirPath: string): Promis
   try {
     await writeFile(tmpPath, svgContent, 'utf-8')
     const scriptPath = join(skillDirPath, 'scripts', 'validate-svg.js')
-    await execFileAsync(process.execPath, [scriptPath, tmpPath], { timeout: 15_000 })
+    await execFileAsync(process.execPath, [scriptPath, tmpPath], {
+      timeout: 15_000,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    })
     return null // success
   } catch (err) {
     const message =
@@ -212,6 +215,7 @@ export async function generateSkillDiagram(params: {
   usage: TokenUsage
 }): Promise<SkillDiagramResult> {
   const { input, projectId, aiProxy, signal, usage } = params
+  const assetFileName = input.assetFileName || `ai-diagram-${input.diagramId.slice(0, 8)}.svg`
   const skill = skillLoader.getSkill(SKILL_NAME)
 
   if (!skill) {
@@ -220,7 +224,12 @@ export async function generateSkillDiagram(params: {
       kind: 'failure',
       markdown: buildDiagramFailureMarkdown({
         type: 'skill',
+        diagramId: input.diagramId,
+        assetFileName: assetFileName,
         caption: input.title,
+        description: input.description,
+        style: input.style,
+        diagramType: input.diagramType,
         error: `Skill "${SKILL_NAME}" 未加载`,
       }),
       error: `Skill "${SKILL_NAME}" not loaded`,
@@ -241,7 +250,6 @@ export async function generateSkillDiagram(params: {
   const userMessage = buildSkillUserMessage(input, references)
   const messages = skillExecutor.buildMessages(expandedPrompt, userMessage, skill)
 
-  const assetFileName = input.assetFileName || `ai-diagram-${input.diagramId.slice(0, 8)}.svg`
   let lastError = ''
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
@@ -329,7 +337,12 @@ export async function generateSkillDiagram(params: {
   // All attempts exhausted
   const failureMarkdown = buildDiagramFailureMarkdown({
     type: 'skill',
+    diagramId: input.diagramId,
+    assetFileName,
     caption: input.title,
+    description: input.description,
+    style: input.style,
+    diagramType: input.diagramType,
     error: lastError || 'skill 图表生成在所有修复轮次后仍然失败',
   })
 

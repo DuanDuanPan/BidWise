@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 
 const APP_USER_DATA_BASENAME = 'bidwise'
 const DEFAULT_MODELS = {
-  claude: 'claude-sonnet-4-20250514',
+  claude: 'claude-opus-4-6',
   openai: 'gpt-4o',
 }
 
@@ -27,7 +27,8 @@ Preferred secrets via environment:
 Optional flags:
   --anthropic-api-key <key>
   --openai-api-key <key>
-  --openai-base-url <url>
+  --base-url <url>              Shared API base URL (applies to active provider)
+  --openai-base-url <url>       Alias for --base-url (backwards compat)
   --desensitize-enabled <true|false>
   --disable-desensitization
   --help
@@ -36,7 +37,7 @@ Environment fallbacks:
   AI_PROVIDER
   AI_DEFAULT_MODEL
   AI_DESENSITIZE_ENABLED
-  OPENAI_BASE_URL`)
+  ANTHROPIC_BASE_URL / OPENAI_BASE_URL`)
 }
 
 function takeValue(argv, index, flag) {
@@ -60,7 +61,7 @@ function parseArgs(argv) {
     defaultModel: process.env.AI_DEFAULT_MODEL,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openaiApiKey: process.env.OPENAI_API_KEY,
-    openaiBaseUrl: process.env.OPENAI_BASE_URL,
+    baseUrl: process.env.ANTHROPIC_BASE_URL ?? process.env.OPENAI_BASE_URL,
     desensitizeEnabled: process.env.AI_DESENSITIZE_ENABLED
       ? parseBoolean(process.env.AI_DESENSITIZE_ENABLED, 'AI_DESENSITIZE_ENABLED')
       : true,
@@ -88,8 +89,9 @@ function parseArgs(argv) {
         options.openaiApiKey = takeValue(argv, index, arg)
         index++
         break
+      case '--base-url':
       case '--openai-base-url':
-        options.openaiBaseUrl = takeValue(argv, index, arg)
+        options.baseUrl = takeValue(argv, index, arg)
         index++
         break
       case '--desensitize-enabled':
@@ -134,9 +136,9 @@ function buildConfig(options) {
   }
 
   const defaultModel = options.defaultModel ?? DEFAULT_MODELS[options.provider]
-  const openaiBaseUrl =
-    typeof options.openaiBaseUrl === 'string' && options.openaiBaseUrl.trim()
-      ? options.openaiBaseUrl.trim()
+  const baseUrl =
+    typeof options.baseUrl === 'string' && options.baseUrl.trim()
+      ? options.baseUrl.trim()
       : undefined
   const config = {
     provider: options.provider,
@@ -144,7 +146,7 @@ function buildConfig(options) {
     desensitizeEnabled: options.desensitizeEnabled,
     ...(options.anthropicApiKey ? { anthropicApiKey: options.anthropicApiKey } : {}),
     ...(options.openaiApiKey ? { openaiApiKey: options.openaiApiKey } : {}),
-    ...(openaiBaseUrl ? { openaiBaseUrl } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
   }
 
   if (options.provider === 'claude' && !config.anthropicApiKey) {

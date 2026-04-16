@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlateElement, useEditorRef, useSelected } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
-import { DeleteOutlined, EditOutlined, FullscreenOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined,
+  EditOutlined,
+  ExclamationCircleOutlined,
+  FullscreenOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import { App, Button, Tooltip } from 'antd'
 import { useProjectStore } from '@renderer/stores'
 import { DiagramFullscreenModal } from './DiagramFullscreenModal'
@@ -207,7 +213,26 @@ export function AiDiagramElement(props: PlateElementProps): React.JSX.Element {
         data-testid="ai-diagram-element"
       >
         <div ref={observerTargetRef} className="bg-gray-50" data-testid="ai-diagram-preview">
-          {assetMissing ? (
+          {node.generationError && !node.svgContent ? (
+            <div
+              className={`${DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME} flex-col gap-2 text-orange-500`}
+              data-testid="ai-diagram-failed"
+            >
+              <ExclamationCircleOutlined className="text-2xl" />
+              <span className="text-sm font-medium">图表生成失败</span>
+              <span className="max-w-md text-center text-xs text-gray-400">
+                {node.generationError}
+              </span>
+              <Button
+                size="small"
+                type="primary"
+                icon={<ReloadOutlined />}
+                onClick={handleRegenerate}
+              >
+                重新生成
+              </Button>
+            </div>
+          ) : assetMissing ? (
             <div
               className={`${DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME} flex-col text-gray-400`}
               data-testid="ai-diagram-missing"

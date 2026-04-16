@@ -239,11 +239,18 @@ export function buildAiDiagramMarkdown(input: {
 
 export function buildDiagramFailureMarkdown(input: {
   type: DiagramType
+  diagramId: string
+  assetFileName: string
   caption: string
+  description: string
+  style: string
+  diagramType: string
   error: string
 }): string {
   const normalizedError = input.error.replace(/\s+/g, ' ').trim()
-  return `> [图表生成失败] ${input.caption}（${input.type}）: ${normalizedError}`
+  const e = encodeURIComponent
+  const comment = `<!-- ai-diagram-failed:${e(input.diagramId)}:${e(input.assetFileName)}:${e(input.caption)}:${e(input.description)}:${e(input.style)}:${e(input.diagramType)}:${e(normalizedError)} -->`
+  return `${comment}\n> [图表生成失败] ${input.caption}（${input.type}）: ${normalizedError}`
 }
 
 export async function validateMermaidDiagram(source: string): Promise<DiagramValidationResult> {

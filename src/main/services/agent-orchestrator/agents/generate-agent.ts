@@ -680,7 +680,12 @@ async function generateDiagramWithRepair(params: {
     placeholder,
     markdown: buildDiagramFailureMarkdown({
       type: placeholder.type,
+      diagramId: placeholder.placeholderId,
+      assetFileName: placeholder.assetFileName,
       caption: placeholder.title,
+      description: diagramDescription,
+      style: placeholder.skillTokens?.style ?? '',
+      diagramType: placeholder.skillTokens?.diagramType ?? placeholder.type,
       error: lastError,
     }),
     error: lastError,

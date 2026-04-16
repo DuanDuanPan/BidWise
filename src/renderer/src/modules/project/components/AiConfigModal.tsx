@@ -13,7 +13,7 @@ interface AiConfigFormValues {
   provider: AiProviderName
   apiKey?: string
   defaultModel?: string
-  openaiBaseUrl?: string
+  baseUrl?: string
   desensitizeEnabled: boolean
 }
 
@@ -28,7 +28,7 @@ function buildInitialValues(status: AiConfigStatus | null): AiConfigFormValues {
     provider: status?.provider ?? 'openai',
     apiKey: '',
     defaultModel: status?.defaultModel ?? '',
-    openaiBaseUrl: status?.openaiBaseUrl ?? '',
+    baseUrl: status?.baseUrl ?? '',
     desensitizeEnabled: status?.desensitizeEnabled ?? true,
   }
 }
@@ -128,8 +128,7 @@ export function AiConfigModal({ open, onClose }: AiConfigModalProps): React.JSX.
         provider: values.provider,
         apiKey: trimOptionalString(values.apiKey),
         defaultModel: trimOptionalString(values.defaultModel),
-        openaiBaseUrl:
-          values.provider === 'openai' ? trimOptionalString(values.openaiBaseUrl) : undefined,
+        baseUrl: trimOptionalString(values.baseUrl),
         desensitizeEnabled: values.desensitizeEnabled,
       })
 
@@ -206,14 +205,17 @@ export function AiConfigModal({ open, onClose }: AiConfigModalProps): React.JSX.
           </Form.Item>
 
           <Form.Item name="defaultModel" label="默认模型">
-            <Input placeholder={provider === 'openai' ? 'gpt-4o' : 'claude-sonnet-4-20250514'} />
+            <Input placeholder={provider === 'openai' ? 'gpt-4o' : 'claude-opus-4-6'} />
           </Form.Item>
 
-          {provider === 'openai' && (
-            <Form.Item name="openaiBaseUrl" label="OpenAI Base URL">
-              <Input placeholder="https://api.openai.com/v1" autoComplete="off" />
-            </Form.Item>
-          )}
+          <Form.Item name="baseUrl" label="API Base URL">
+            <Input
+              placeholder={
+                provider === 'openai' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com'
+              }
+              autoComplete="off"
+            />
+          </Form.Item>
 
           <Form.Item name="desensitizeEnabled" label="发送前脱敏" valuePropName="checked">
             <Switch checkedChildren="开启" unCheckedChildren="关闭" />

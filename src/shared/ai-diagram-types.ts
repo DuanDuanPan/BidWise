@@ -36,6 +36,8 @@ export interface AiDiagramElementData {
   svgContent?: string
   svgPersisted?: boolean
   lastModified?: string
+  /** Present when diagram generation failed; carries last error for UI display + retry */
+  generationError?: string
 }
 
 /** IPC 输入：保存 AI Diagram SVG 资产 */
