@@ -128,7 +128,7 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   {
     semantic: 'overall-architecture',
     preferredType: 'mermaid',
-    mermaidDiagramKind: 'C4Context',
+    mermaidDiagramKind: 'flowchart',
     titlePatterns: [
       { label: '总体架构', pattern: /总体架构|系统总体架构|整体架构/ },
       { label: '分层结构', pattern: /分层结构|逻辑架构/ },
@@ -138,7 +138,7 @@ const DIAGRAM_INTENT_RULES: DiagramIntentRule[] = [
   {
     semantic: 'technical-architecture',
     preferredType: 'mermaid',
-    mermaidDiagramKind: 'C4Container',
+    mermaidDiagramKind: 'flowchart',
     titlePatterns: [
       { label: '技术架构', pattern: /技术架构|组件关系|模块架构|服务架构|应用架构/ },
       { label: '系统架构', pattern: /系统架构(设计)?/ },
@@ -227,7 +227,7 @@ function genericArchitectureFallback(
     return {
       semantic: 'technical-architecture',
       preferredType: 'mermaid',
-      mermaidDiagramKind: 'C4Container',
+      mermaidDiagramKind: 'flowchart',
       confidence: 0.45,
       reasons: ['generic-architecture-fallback'],
     }

@@ -3,6 +3,7 @@ import { ipcMain } from 'electron'
 
 const mockMermaidAssetService = vi.hoisted(() => ({
   saveMermaidAsset: vi.fn(),
+  loadMermaidAsset: vi.fn(),
   deleteMermaidAsset: vi.fn(),
 }))
 
@@ -23,11 +24,15 @@ describe('@story-3-8 registerMermaidHandlers', () => {
     vi.clearAllMocks()
   })
 
-  it('registers all 2 mermaid IPC channels', () => {
+  it('registers all 3 mermaid IPC channels', () => {
     registerMermaidHandlers()
 
     const registeredChannels = (ipcMain.handle as Mock).mock.calls.map((call: unknown[]) => call[0])
-    expect(registeredChannels).toEqual(['mermaid:save-asset', 'mermaid:delete-asset'])
+    expect(registeredChannels).toEqual([
+      'mermaid:save-asset',
+      'mermaid:load-asset',
+      'mermaid:delete-asset',
+    ])
   })
 
   it('dispatches mermaid:save-asset to mermaidAssetService.saveMermaidAsset', async () => {

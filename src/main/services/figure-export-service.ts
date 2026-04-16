@@ -53,7 +53,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 async function convertSvgToPng(svgPath: string, pngPath: string): Promise<void> {
   const svgBuffer = await readFile(svgPath)
-  const pngBuffer = await sharp(svgBuffer, { density: 192 }).png().toBuffer()
+  const pngBuffer = await sharp(svgBuffer, { density: 300 }).png().toBuffer()
   await writeFile(pngPath, pngBuffer)
 }
 

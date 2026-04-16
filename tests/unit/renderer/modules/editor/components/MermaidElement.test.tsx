@@ -46,9 +46,12 @@ const mockMermaidDeleteAsset = vi.fn().mockResolvedValue({ success: true, data: 
 const mockMessageWarning = vi.fn()
 const mockModalConfirm = vi.fn()
 
+const mockMermaidLoadAsset = vi.fn().mockResolvedValue({ success: false, data: null })
+
 Object.defineProperty(window, 'api', {
   value: {
     mermaidSaveAsset: mockMermaidSaveAsset,
+    mermaidLoadAsset: mockMermaidLoadAsset,
     mermaidDeleteAsset: mockMermaidDeleteAsset,
   },
   writable: true,
@@ -68,6 +71,23 @@ vi.mock('antd', async () => {
     },
   }
 })
+
+// Mock IntersectionObserver — fire callback asynchronously so observer variable is assigned
+class MockIntersectionObserver {
+  constructor(callback: IntersectionObserverCallback) {
+    // Defer to microtask so `const observer = new IntersectionObserver(...)` has completed
+    Promise.resolve().then(() =>
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        this as unknown as IntersectionObserver
+      )
+    )
+  }
+  observe = vi.fn()
+  disconnect = vi.fn()
+  unobserve = vi.fn()
+}
+vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
 
 import { MermaidElement } from '@modules/editor/components/MermaidElement'
 
@@ -119,7 +139,8 @@ describe('@story-3-8 MermaidElement', () => {
     expect(screen.getByTestId('mermaid-preview')).toBeDefined()
     expect(screen.getByTestId('mermaid-edit-btn')).toBeDefined()
     expect(screen.getByTestId('mermaid-delete-btn')).toBeDefined()
-    expect(screen.getByTestId('mermaid-preview-svg').className).toContain('min-h-[240px]')
+    // Before initial render completes, the placeholder is shown with the same frame class
+    expect(screen.getByTestId('mermaid-preview-placeholder').className).toContain('min-h-[240px]')
   })
 
   it('switches from preview to editing on edit button click', () => {

@@ -488,6 +488,131 @@ describe('generateAgentHandler @story-2-2', () => {
     }
   })
 
+  it('@p0 should convert ASCII diagram fences into Mermaid generation tasks', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const asciiDiagram = [
+      '```',
+      '数据模型四层架构',
+      '┌─────────────────────────────┐',
+      '│           系统数据层         │',
+      '├─────────────────────────────┤',
+      '│           基础数据层         │',
+      '├─────────────────────────────┤',
+      '│           模型数据层         │',
+      '├─────────────────────────────┤',
+      '│           应用数据层         │',
+      '└─────────────────────────────┘',
+      '```',
+    ].join('\n')
+
+    const aiProxy = {
+      call: vi
+        .fn()
+        .mockImplementation(
+          async (request: { caller: string; messages: Array<{ content: string }> }) => {
+            if (request.caller === 'generate-agent:text') {
+              return {
+                content: `### 数据模型设计\n\n${asciiDiagram}`,
+                usage: { promptTokens: 10, completionTokens: 20 },
+                latencyMs: 100,
+                model: 'mock',
+                provider: 'mock',
+                finishReason: 'stop',
+              }
+            }
+
+            if (request.caller === 'generate-agent:diagram:mermaid') {
+              return {
+                content: [
+                  "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+                  'flowchart TD',
+                  'subgraph LAYERS["数据模型四层架构"]',
+                  'direction TB',
+                  'A[系统数据层] --> B[基础数据层]',
+                  'B --> C[模型数据层]',
+                  'C --> D[应用数据层]',
+                  'end',
+                ].join('\n'),
+                usage: { promptTokens: 6, completionTokens: 12 },
+                latencyMs: 50,
+                model: 'mock',
+                provider: 'mock',
+                finishReason: 'stop',
+              }
+            }
+
+            return {
+              content: '{"pass":true,"issues":[]}',
+              usage: { promptTokens: 3, completionTokens: 5 },
+              latencyMs: 30,
+              model: 'mock',
+              provider: 'mock',
+              finishReason: 'stop',
+            }
+          }
+        ),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        projectId: 'proj-1',
+        chapterTitle: '数据架构设计',
+        requirements: '描述数据模型、数据治理和存储方案',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    const diagramCall = aiProxy.call.mock.calls.find(
+      ([request]: [{ caller: string }]) => request.caller === 'generate-agent:diagram:mermaid'
+    )?.[0]
+
+    expect(diagramCall).toBeDefined()
+    expect(diagramCall.messages[1].content).toContain('ASCII 结构图')
+    expect(diagramCall.messages[1].content).toContain('数据模型四层架构')
+
+    expect(result).toMatchObject({ kind: 'result' })
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toContain('<!-- mermaid:')
+      expect(result.value.content).toContain('```mermaid')
+      expect(result.value.content).toContain('flowchart TD')
+      expect(result.value.content).not.toContain('┌─────────────────────────────┐')
+    }
+  })
+
+  it('@p1 should preserve ordinary fenced code blocks as Markdown code blocks', async () => {
+    const controller = new AbortController()
+    const updateProgress = vi.fn()
+    const aiProxy = {
+      call: vi.fn().mockResolvedValue({
+        content: ['### 数据接口示例', '', '```json', '{"app":"flow-control"}', '```'].join('\n'),
+        usage: { promptTokens: 10, completionTokens: 20 },
+        latencyMs: 100,
+        model: 'mock',
+        provider: 'mock',
+        finishReason: 'stop',
+      }),
+    }
+
+    const result = await generateAgentHandler(
+      {
+        chapterTitle: '数据架构设计',
+        requirements: '描述数据模型、数据治理和存储方案',
+        enableDiagrams: true,
+      },
+      { signal: controller.signal, updateProgress, aiProxy }
+    )
+
+    expect(aiProxy.call).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ kind: 'result' })
+    if ('kind' in result && result.kind === 'result') {
+      expect(result.value.content).toContain('```json')
+      expect(result.value.content).toContain('{"app":"flow-control"}')
+      expect(result.value.content).not.toContain('<!-- mermaid:')
+    }
+  })
+
   it('@story-3-4 @p1 should return result via aiProxy when diagrams are disabled', async () => {
     const controller = new AbortController()
     const updateProgress = vi.fn()

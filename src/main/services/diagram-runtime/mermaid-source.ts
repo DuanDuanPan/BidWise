@@ -1,3 +1,5 @@
+import { fixArchitectureIcons } from '@shared/mermaid-types'
+
 export const SUPPORTED_MERMAID_TYPE_LABELS = [
   'flowchart/graph',
   'sequenceDiagram',
@@ -139,7 +141,7 @@ export function preflightMermaidSource(source: string): {
   }
 
   if (classifyMermaidLine(lines[firstMeaningfulIndex]) === 'declaration') {
-    return { normalizedSource }
+    return { normalizedSource: fixArchitectureIcons(normalizedSource) }
   }
 
   const declaration = findDiagramDeclaration(lines)

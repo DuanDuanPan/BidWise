@@ -25,6 +25,13 @@ extraResources:
       - '**/*'
       - '!**/__pycache__'
       - '!**/*.pyc'
+  # Ship skills as Resources/skills/ so SKILL.md and scripts are available at runtime
+  - from: src/main/skills/
+    to: skills/
+    filter:
+      - '**/*'
+      - '!**/*.test.*'
+      - '!.gitkeep'
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**/*

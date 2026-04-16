@@ -116,6 +116,7 @@ export type AgentType =
   | 'adversarial'
   | 'adversarial-review'
   | 'attack-checklist'
+  | 'skill'
 
 /** Task status state machine */
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'

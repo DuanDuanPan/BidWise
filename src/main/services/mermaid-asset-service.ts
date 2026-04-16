@@ -1,11 +1,13 @@
 import { basename, join } from 'path'
-import { mkdir, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { resolveProjectDataPath } from '@main/utils/project-paths'
 import { createLogger } from '@main/utils/logger'
 import { ValidationError } from '@main/utils/errors'
 import type {
   SaveMermaidAssetInput,
   SaveMermaidAssetOutput,
+  LoadMermaidAssetInput,
+  LoadMermaidAssetOutput,
   DeleteMermaidAssetInput,
 } from '@shared/mermaid-types'
 
@@ -47,6 +49,22 @@ async function saveMermaidAsset(input: SaveMermaidAssetInput): Promise<SaveMerma
   return { assetPath }
 }
 
+async function loadMermaidAsset(
+  input: LoadMermaidAssetInput
+): Promise<LoadMermaidAssetOutput | null> {
+  validateAssetFileName(input.assetFileName)
+  const assetsDir = getAssetsDir(input.projectId)
+  const assetPath = join(assetsDir, input.assetFileName)
+
+  try {
+    const svgContent = await readFile(assetPath, 'utf-8')
+    return { svgContent }
+  } catch {
+    logger.debug(`Mermaid asset not found: ${assetPath}`)
+    return null
+  }
+}
+
 async function deleteMermaidAsset(input: DeleteMermaidAssetInput): Promise<void> {
   validateAssetFileName(input.assetFileName)
   const assetsDir = getAssetsDir(input.projectId)
@@ -58,5 +76,6 @@ async function deleteMermaidAsset(input: DeleteMermaidAssetInput): Promise<void>
 
 export const mermaidAssetService = {
   saveMermaidAsset,
+  loadMermaidAsset,
   deleteMermaidAsset,
 }

@@ -12,6 +12,7 @@ import { taskQueue } from '@main/services/task-queue'
 import { agentOrchestrator } from '@main/services/agent-orchestrator'
 import { createLogger } from '@main/utils/logger'
 import { docxBridgeService } from '@main/services/docx-bridge'
+import { initSkillEngine } from '@main/services/skill-engine'
 import { mermaidRuntimeClient } from '@main/services/diagram-runtime/mermaid-runtime-client'
 
 const logger = createLogger('main')
@@ -77,6 +78,7 @@ app.whenReady().then(async () => {
   await runMigrations()
   // Ensure singleton side effects run before recovered tasks are re-dispatched.
   void agentOrchestrator
+  await initSkillEngine()
   await taskQueue.recoverPendingTasks()
   logger.info('数据库初始化完成')
 

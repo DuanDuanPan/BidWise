@@ -29,6 +29,25 @@ describe('@story-3-4 useChapterGeneration', () => {
   }
 
   const PROJECT_ID = 'proj-1'
+  const mockSkeletonPlan = {
+    parentTitle: '系统架构设计',
+    parentLevel: 2,
+    confirmedAt: '',
+    dimensionChecklist: ['functional', 'interface'],
+    sections: [
+      {
+        title: '总体架构',
+        level: 3,
+        dimensions: ['functional'],
+        guidanceHint: '描述总体架构与边界',
+      },
+      {
+        title: '模块设计',
+        level: 3,
+        dimensions: ['functional', 'interface'],
+      },
+    ],
+  }
 
   beforeEach(() => {
     progressListener = null
@@ -943,5 +962,185 @@ describe('@story-3-4 useChapterGeneration', () => {
     expect(status).toBeDefined()
     expect(status!.taskId).toBe('task-batch-1')
     expect(status!.operationType).toBe('batch-generate')
+  })
+
+  it('@p0 @story-5-4 startBatchGenerate should seed the parent section with confirmed skeleton headings immediately', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterSkeletonGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-skel-1' } }),
+      chapterSkeletonConfirm: vi.fn().mockResolvedValue({ success: true, data: { success: true } }),
+      chapterBatchGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-batch-1', batchId: 'batch-1' } }),
+      agentStatus: vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          taskId: 'task-skel-1',
+          status: 'completed',
+          result: {
+            content: JSON.stringify({ fallback: false, plan: mockSkeletonPlan }),
+          },
+        },
+      }),
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      taskDelete: vi.fn().mockResolvedValue({ success: true }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startSkeletonGenerate(mockTarget)
+    })
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-skel-1', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      expect(result.current.getStatus(mockTarget)?.phase).toBe('skeleton-ready')
+    })
+
+    await act(async () => {
+      await result.current.startBatchGenerate(mockTarget, '2:系统架构设计:0')
+    })
+
+    const status = result.current.getStatus(mockTarget)
+    expect(status).toBeDefined()
+    expect(status!.phase).toBe('batch-generating')
+    expect(status!.operationType).toBe('batch-generate')
+    expect(status!.streamedContent).toContain('### 总体架构')
+    expect(status!.streamedContent).toContain('### 模块设计')
+    expect(status!.streamedContent).toContain('> [待生成]')
+    expect(status!.batchSections).toHaveLength(2)
+    expect(status!.batchSections?.[0]?.phase).toBe('generating')
+    expect(status!.message).toBe('正在生成子章节 1/2：总体架构')
+  })
+
+  it('@p0 @story-5-4 should keep batch phase during child task progress and advance only on batch payloads', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterSkeletonGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-skel-1' } }),
+      chapterSkeletonConfirm: vi.fn().mockResolvedValue({ success: true, data: { success: true } }),
+      chapterBatchGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-batch-1', batchId: 'batch-1' } }),
+      agentStatus: vi.fn().mockImplementation(async (taskId: string) => {
+        if (taskId === 'task-skel-1') {
+          return {
+            success: true,
+            data: {
+              taskId,
+              status: 'completed',
+              result: {
+                content: JSON.stringify({ fallback: false, plan: mockSkeletonPlan }),
+              },
+            },
+          }
+        }
+        return {
+          success: true,
+          data: {
+            taskId,
+            status: 'completed',
+            result: { content: '子章节已完成正文' },
+          },
+        }
+      }),
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      taskDelete: vi.fn().mockResolvedValue({ success: true }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startSkeletonGenerate(mockTarget)
+    })
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-skel-1', progress: 100, message: 'completed' })
+    })
+
+    await waitFor(() => {
+      expect(result.current.getStatus(mockTarget)?.phase).toBe('skeleton-ready')
+    })
+
+    const agentStatusMock = vi.mocked(window.api.agentStatus)
+    agentStatusMock.mockClear()
+
+    await act(async () => {
+      await result.current.startBatchGenerate(mockTarget, '2:系统架构设计:0')
+    })
+
+    const initialSnapshot = result.current.getStatus(mockTarget)?.streamedContent
+
+    await act(async () => {
+      progressListener?.({
+        taskId: 'task-batch-1',
+        progress: 40,
+        message: 'generating-text',
+        payload: {
+          kind: 'chapter-stream',
+          markdown: '子章节流式内容',
+        },
+      })
+    })
+
+    let status = result.current.getStatus(mockTarget)
+    expect(status!.phase).toBe('batch-generating')
+    expect(status!.streamedContent).toBe(initialSnapshot)
+    expect(agentStatusMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      progressListener?.({ taskId: 'task-batch-1', progress: 100, message: 'generating-text' })
+    })
+
+    status = result.current.getStatus(mockTarget)
+    expect(status!.phase).toBe('batch-generating')
+    expect(status!.generatedContent).toBeUndefined()
+    expect(agentStatusMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      progressListener?.({
+        taskId: 'task-batch-1',
+        progress: 50,
+        message: 'batch-section-complete',
+        payload: {
+          kind: 'batch-section-complete',
+          batchId: 'batch-1',
+          sectionIndex: 0,
+          sectionMarkdown: '第一节内容',
+          assembledSnapshot: '### 总体架构\n\n第一节内容',
+          completedCount: 1,
+          totalCount: 2,
+          nextTaskId: 'task-batch-2',
+          nextSectionIndex: 1,
+        },
+      })
+    })
+
+    status = result.current.getStatus(mockTarget)
+    expect(status!.phase).toBe('batch-generating')
+    expect(status!.taskId).toBe('task-batch-2')
+    expect(status!.streamedContent).toBe('### 总体架构\n\n第一节内容')
+    expect(status!.batchSections?.[0]?.phase).toBe('completed')
+    expect(status!.batchSections?.[0]?.content).toBe('第一节内容')
+    expect(status!.batchSections?.[1]?.phase).toBe('generating')
+    expect(status!.message).toBe('正在生成子章节 2/2：模块设计')
   })
 })

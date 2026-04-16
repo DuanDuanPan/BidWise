@@ -137,6 +137,8 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
 6. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
 7. 占位符应紧跟在相关段落之后，不要集中堆到文末。
 8. 绝对不要直接输出 \`\`\`mermaid 或 \`\`\`xml 代码块。程序只能识别 %%DIAGRAM%% 占位符，直接嵌入的代码块不会被正确渲染。`)
+      sections.push(`## 图表输出红线
+任何三反引号代码块中的结构图、ASCII 盒线图、伪图表都会被判定为图表输出失败。图表内容只能通过 %%DIAGRAM%% 占位符交给程序生成。`)
     } else {
       sections.push(`## 图表策略
 本章节以文字说明为主。除非确实无法清楚表达结构关系，否则不要输出任何图表占位符。`)

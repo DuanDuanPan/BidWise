@@ -147,6 +147,8 @@ import type {
 import type {
   SaveMermaidAssetInput,
   SaveMermaidAssetOutput,
+  LoadMermaidAssetInput,
+  LoadMermaidAssetOutput,
   DeleteMermaidAssetInput,
 } from './mermaid-types'
 import type {
@@ -334,6 +336,7 @@ export const IPC_CHANNELS = {
   DOCX_RENDER: 'docx:render',
   DOCX_HEALTH: 'docx:health',
   MERMAID_SAVE_ASSET: 'mermaid:save-asset',
+  MERMAID_LOAD_ASSET: 'mermaid:load-asset',
   MERMAID_DELETE_ASSET: 'mermaid:delete-asset',
   NOTIFICATION_LIST: 'notification:list',
   NOTIFICATION_MARK_READ: 'notification:mark-read',
@@ -468,6 +471,7 @@ export type IpcChannelMap = {
   'docx:render': { input: RenderDocxInput; output: RenderDocxOutput }
   'docx:health': { input: void; output: DocxHealthData }
   'mermaid:save-asset': { input: SaveMermaidAssetInput; output: SaveMermaidAssetOutput }
+  'mermaid:load-asset': { input: LoadMermaidAssetInput; output: LoadMermaidAssetOutput | null }
   'mermaid:delete-asset': { input: DeleteMermaidAssetInput; output: void }
   'notification:list': { input: ListNotificationsInput; output: NotificationRecord[] }
   'notification:mark-read': { input: MarkReadInput; output: NotificationRecord }

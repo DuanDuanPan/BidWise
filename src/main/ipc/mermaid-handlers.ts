@@ -7,6 +7,8 @@ type MermaidChannel = Extract<IpcChannel, `mermaid:${string}`>
 const mermaidHandlerMap: { [C in MermaidChannel]: () => void } = {
   'mermaid:save-asset': () =>
     createIpcHandler('mermaid:save-asset', (input) => mermaidAssetService.saveMermaidAsset(input)),
+  'mermaid:load-asset': () =>
+    createIpcHandler('mermaid:load-asset', (input) => mermaidAssetService.loadMermaidAsset(input)),
   'mermaid:delete-asset': () =>
     createIpcHandler('mermaid:delete-asset', (input) =>
       mermaidAssetService.deleteMermaidAsset(input)

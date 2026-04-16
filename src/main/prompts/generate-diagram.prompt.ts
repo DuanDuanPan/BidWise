@@ -234,6 +234,21 @@ function buildDrawioSemanticHints(semantic?: DiagramSemantic): string {
   }
 }
 
+function getNodeLimit(semantic?: DiagramSemantic): number {
+  switch (semantic) {
+    case 'overall-architecture':
+    case 'technical-architecture':
+    case 'deployment-topology':
+    case 'integration-architecture':
+      return 20
+    case 'data-architecture':
+    case 'business-architecture':
+      return 16
+    default:
+      return 12
+  }
+}
+
 function buildMermaidTypeInstruction(preferredMermaidType?: MermaidDiagramKind): string[] {
   switch (preferredMermaidType) {
     case 'architecture-beta':
@@ -242,7 +257,7 @@ function buildMermaidTypeInstruction(preferredMermaidType?: MermaidDiagramKind):
         '使用 group、service、junction 和边连接资源；突出服务、数据库、队列、网关、外部系统之间的拓扑关系。',
         `### architecture-beta 语法要点（必须严格遵守）
 - group 语法: \`group id["标签"]\`——标签必须用双引号括起来
-- service 语法: \`service id(icon)["标签"] in group_id\`——icon 从 iconify 选择（cloud, database, disk, server, internet 等），标签必须用双引号
+- service 语法: \`service id(icon)["标签"] in group_id\`——icon 只能从以下 6 个内置值中选择：cloud, database, disk, server, internet, blank（禁止使用其他值，如 gateway、storage 等均不支持），标签必须用双引号
 - service 无 icon: \`service id["标签"]\`
 - 边的语法: \`id1:方向 -- 方向:id2\` 或 \`id1:方向 --> 方向:id2\`；方向只能是 T/B/L/R
 - **不存在** database、system 关键字——统一用 service，通过 icon 区分类型
@@ -336,6 +351,52 @@ function buildMermaidSemanticHints(
         '将同一环境或同一边界的资源放入 group，边标签简洁标明协议或数据流。',
       ]
     case 'flowchart':
+      if (semantic === 'overall-architecture') {
+        return [
+          '总体/逻辑架构图必须使用 flowchart TD + 嵌套 subgraph 来表达系统分层和边界。',
+          '用外层 subgraph 表达系统边界（如"系统边界"、"外部系统"），内层 subgraph 表达子系统分组（如"设计计算组"、"数据服务"）。',
+          '用户/角色节点放在最顶层，不在任何 subgraph 内。',
+          '使用 classDef 区分不同类型节点：primary 用于核心模块，external 用于外部系统，neutral 用于辅助组件。',
+          '每个 subgraph 内节点按逻辑流水线纵向排列或按职责横向排列。',
+          '跨 subgraph 的连线用标签标注数据流向或调用方式。',
+          `### 嵌套 subgraph 示例
+\`\`\`
+flowchart TD
+    User([用户])
+
+    subgraph SYS["系统边界"]
+        direction TB
+        subgraph CORE["核心计算组"]
+            direction TB
+            A[设计输入] --> B[设计计算]
+            B --> C[结果生成]
+        end
+        subgraph MODEL["模型服务"]
+            D[基础建模]
+        end
+        C -.->|模型数据| D
+    end
+
+    subgraph EXT["外部系统"]
+        E[CAD平台]
+        F[仿真平台]
+    end
+
+    User -->|操作指令| A
+    D -->|模型导出| E
+    C -->|计算结果| F
+\`\`\``,
+        ]
+      }
+      if (semantic === 'technical-architecture') {
+        return [
+          '技术/系统架构图使用 flowchart TD + 嵌套 subgraph 来表达模块边界、组件关系和依赖方向。',
+          '用 subgraph 按技术层或模块分组（如"应用层"、"服务层"、"数据层"），支持嵌套到 2-3 层。',
+          '使用 classDef 区分组件类型：primary 核心业务、emphasis 编排/调度、database 数据存储、external 外部接口。',
+          '连线标签标注调用方式（IPC、HTTP、消息队列等）。',
+          '重点是组件关系和依赖方向，不要画成时序流程。',
+        ]
+      }
       if (semantic === 'business-architecture') {
         return [
           '业务架构图优先表达业务域、角色分工、关键能力和协作关系。',
@@ -433,7 +494,7 @@ export function generateDiagramPrompt(context: GenerateDiagramPromptContext): st
     `3. ${MERMAID_DECLARATION_ORDER_RULE}`,
     `4. ${MERMAID_DECLARATION_FOLLOWUP_RULE}`,
     `5. 节点标签必须使用章节中出现过的术语，不要发明新模块名。`,
-    `6. 结构保持简洁，不超过 12 个节点。`,
+    `6. 结构保持简洁，不超过 ${getNodeLimit(context.diagramSemantic)} 个节点。`,
     `7. 当图表类型为 flowchart 时，使用 classDef 定义节点样式（参考上方配色方案），用 ::: 语法或 class 语句应用。`,
     `8. 当图表类型为 flowchart 时，根据语义选择合适的节点形状；不要所有节点都用方括号。`,
     `9. 当图表类型为 flowchart 时，使用 subgraph 对逻辑上属于同一层/同一区域的节点分组。`,
@@ -492,9 +553,9 @@ export function generateDiagramRepairPrompt(context: RepairDiagramPromptContext)
     `8. 如果当前图表类型是 sequenceDiagram、stateDiagram-v2 或 classDiagram，请删除不属于该语法族的 flowchart 语法。`,
     `8.1 如果当前图表类型是 architecture-beta，请删除 flowchart、sequenceDiagram、classDiagram 和 C4 语法。`,
     `8.2 如果当前图表类型是 C4Context、C4Container、C4Component 或 C4Deployment，请删除 flowchart、sequenceDiagram、classDiagram 和 architecture-beta 语法。`,
-    `8.3 如果当前图表类型是 architecture-beta，必须遵守：(a) group 标签用双引号 group id["标签"] (b) service 标签用双引号 service id(icon)["标签"] 或 service id["标签"] (c) 边语法为 id:方向 -- 方向:id（方向=T/B/L/R）(d) 不存在 database、system 关键字，统一用 service (e) 不存在 <-> 语法。`,
+    `8.3 如果当前图表类型是 architecture-beta，必须遵守：(a) group 标签用双引号 group id["标签"] (b) service 标签用双引号 service id(icon)["标签"] 或 service id["标签"] (c) 边语法为 id:方向 -- 方向:id（方向=T/B/L/R）(d) 不存在 database、system 关键字，统一用 service (e) 不存在 <-> 语法 (f) icon 只能从 cloud, database, disk, server, internet, blank 中选择，禁止使用其他值。`,
     `9. 不要使用 end 的全小写形式作为节点文本。`,
-    `10. 结构保持简洁，不超过 12 个节点。`,
+    `10. 结构保持简洁，不超过 ${getNodeLimit(context.diagramSemantic)} 个节点。`,
     `11. 修复后自检：(1) 语法能被 mermaid.parse() 通过 (2) 图表类型声明位于 init 之后 (3) 只使用当前图表类型支持的语法。`,
   ].join('\n\n')
 }

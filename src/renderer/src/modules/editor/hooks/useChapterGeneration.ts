@@ -96,6 +96,28 @@ function normalizeComparableGeneratedContent(
   return normalizeGeneratedHeadingLevels(deduped, target.level).trim()
 }
 
+function buildBatchStepMessage(
+  sectionIndex: number,
+  totalCount: number,
+  sectionTitle?: string
+): string {
+  const prefix = `正在生成子章节 ${sectionIndex + 1}/${totalCount}`
+  return sectionTitle ? `${prefix}：${sectionTitle}` : prefix
+}
+
+function buildInitialBatchSnapshot(plan: SkeletonExpandPlan): string {
+  return plan.sections
+    .map((section) => {
+      const lines = [`${'#'.repeat(section.level)} ${section.title}`, '']
+      if (section.guidanceHint?.trim()) {
+        lines.push(`> ${section.guidanceHint.trim()}`, '')
+      }
+      lines.push('> [待生成]')
+      return lines.join('\n')
+    })
+    .join('\n\n')
+}
+
 function resolveTerminalPhase(params: {
   target: ChapterHeadingLocator
   currentDigest: string
@@ -236,6 +258,8 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       const key = locatorKey(locator)
       const phase = progressToPhase(event.progress, event.message)
       const hasTerminalMessage = event.message === 'failed' || event.message === 'cancelled'
+      const currentStatusEntry = statusesRef.current.get(key)
+      const isProgressiveBatch = currentStatusEntry?.operationType === 'batch-generate'
       // ── Progressive batch payloads ──
       if (isBatchSectionCompletePayload(event.payload)) {
         const p = event.payload
@@ -243,6 +267,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
         if (p.nextTaskId) {
           taskToLocatorRef.current.set(p.nextTaskId, locator)
         }
+        taskToLocatorRef.current.delete(event.taskId)
         updateStatus(key, (prev) => {
           const sections = prev.batchSections ? [...prev.batchSections] : []
           if (sections[p.sectionIndex]) {
@@ -264,7 +289,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             ...prev,
             phase: 'batch-generating',
             progress: event.progress,
-            message: event.message,
+            taskId: p.nextTaskId ?? prev.taskId,
+            message:
+              p.nextSectionIndex !== undefined && sections[p.nextSectionIndex]
+                ? buildBatchStepMessage(
+                    p.nextSectionIndex,
+                    sections.length,
+                    sections[p.nextSectionIndex].title
+                  )
+                : '正在组装章节内容',
             batchSections: sections,
             streamedContent: p.assembledSnapshot,
             streamRevision: (prev.streamRevision ?? 0) + 1,
@@ -275,6 +308,7 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
 
       if (isBatchSectionFailedPayload(event.payload)) {
         const p = event.payload
+        taskToLocatorRef.current.delete(event.taskId)
         updateStatus(key, (prev) => {
           const sections = prev.batchSections ? [...prev.batchSections] : []
           if (sections[p.sectionIndex]) {
@@ -288,8 +322,10 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             ...prev,
             phase: 'batch-generating',
             progress: event.progress,
-            message: event.message,
+            message: `子章节生成失败：${p.sectionTitle}`,
             batchSections: sections,
+            error: p.error,
+            locked: false,
           }
         })
         return
@@ -316,6 +352,20 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
 
       const streamPayload = isChapterStreamPayload(event.payload) ? event.payload : null
 
+      if (isProgressiveBatch) {
+        if (streamPayload || phase === 'completed' || hasTerminalMessage) {
+          return
+        }
+
+        updateStatus(key, (prev) => ({
+          ...prev,
+          phase: 'batch-generating',
+          progress: prev.progress,
+          latestDiagramPatch: undefined,
+        }))
+        return
+      }
+
       if (streamPayload) {
         updateStatus(key, (prev) => ({
           ...prev,
@@ -339,7 +389,6 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           const status = res.data
           if (status.status === 'completed' && status.result) {
             // Check if this is a skeleton-generate completion
-            const currentStatusEntry = statusesRef.current.get(key)
             if (currentStatusEntry?.operationType === 'skeleton-generate') {
               try {
                 const parsed = JSON.parse(status.result.content) as {
@@ -882,6 +931,13 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             phase: i === 0 ? 'generating' : 'pending',
           }))
         : []
+      const initialBatchSnapshot = skeletonPlan
+        ? buildInitialBatchSnapshot(skeletonPlan)
+        : undefined
+      const initialBatchMessage =
+        initialBatchSections.length > 0
+          ? buildBatchStepMessage(0, initialBatchSections.length, initialBatchSections[0]?.title)
+          : '正在生成子章节'
 
       setStatuses((prev) => {
         const next = new Map(prev)
@@ -890,12 +946,15 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
           ...(existing ?? { target, taskId: '' }),
           target,
           phase: 'batch-generating',
-          progress: 0,
+          progress: 5,
           taskId: existing?.taskId ?? '',
           operationType: 'batch-generate',
           baselineDigest,
           baselineSectionContent,
+          message: initialBatchMessage,
           batchSections: initialBatchSections,
+          streamedContent: initialBatchSnapshot,
+          streamRevision: initialBatchSnapshot ? (existing?.streamRevision ?? 0) + 1 : 0,
           locked: true,
         })
         return next

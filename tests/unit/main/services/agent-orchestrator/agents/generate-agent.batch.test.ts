@@ -416,6 +416,59 @@ describe('generateAgentHandler skeleton-batch mode', () => {
       expect(aiProxy.call).toHaveBeenCalledTimes(2)
     })
 
+    it('reuses the shared diagram pipeline for sub-chapters', async () => {
+      const controller = new AbortController()
+      const updateProgress = vi.fn()
+      const aiProxy = {
+        call: vi.fn().mockImplementation(async (request: { caller: string }) => {
+          if (request.caller === 'generate-agent:batch-single:0') {
+            return makeAiResponse(
+              '子章节正文\n\n%%DIAGRAM:mermaid:系统总体流程:' +
+                Buffer.from('展示模块之间的总体处理流程').toString('base64') +
+                '%%'
+            )
+          }
+
+          if (request.caller === 'generate-agent:diagram:mermaid') {
+            return makeAiResponse('graph TD\nA[模块A] --> B[模块B]')
+          }
+
+          return makeAiResponse('{"pass":true,"issues":[]}')
+        }),
+      }
+
+      const result = await generateAgentHandler(
+        {
+          mode: 'skeleton-batch-single',
+          projectId: 'proj-1',
+          sectionIndex: 0,
+          section: {
+            title: '系统架构设计',
+            level: 3,
+            dimensions: ['functional', 'interface'],
+            guidanceHint: '覆盖模块协作与处理流程',
+          },
+          previousSections: [],
+          requirements: '描述系统模块关系与处理流程',
+        },
+        { signal: controller.signal, updateProgress, aiProxy }
+      )
+
+      expect(result).toMatchObject({ kind: 'result' })
+      if (result.kind !== 'result') return
+
+      expect(result.value.content).toContain('<!-- mermaid:')
+      expect(result.value.content).toContain('```mermaid')
+      expect(result.value.content).toContain('A[模块A] --> B[模块B]')
+      expect(result.value.content).not.toContain('%%DIAGRAM:')
+      expect(aiProxy.call).toHaveBeenCalledWith(
+        expect.objectContaining({ caller: 'generate-agent:diagram:mermaid' })
+      )
+      expect(updateProgress).toHaveBeenCalledWith(35, 'generating-diagrams')
+      expect(updateProgress).toHaveBeenCalledWith(60, 'validating-diagrams')
+      expect(updateProgress).toHaveBeenCalledWith(90, 'validating-coherence')
+    })
+
     it('throws BidWiseError when aiProxy is not provided', async () => {
       const controller = new AbortController()
 

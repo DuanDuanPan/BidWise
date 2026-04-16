@@ -23,6 +23,7 @@ export default defineConfig(
       '**/_bmad*',
       '**/playwright-report',
       '**/test-results',
+      'src/main/skills/**/scripts/**',
     ],
   },
   tseslint.configs.recommended,

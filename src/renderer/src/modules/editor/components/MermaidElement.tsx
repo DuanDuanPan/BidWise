@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlateElement, useEditorRef, useSelected } from 'platejs/react'
 import type { PlateElementProps } from 'platejs/react'
-import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, FullscreenOutlined } from '@ant-design/icons'
 import { App, Button, Tooltip } from 'antd'
 import mermaid from 'mermaid'
 import { useProjectStore } from '@renderer/stores'
 import { MermaidRenderer } from './MermaidRenderer'
+import { DiagramFullscreenModal } from './DiagramFullscreenModal'
 import { DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME } from './diagramPreview'
 import type { MermaidElement as MermaidElementType } from '@modules/editor/plugins/mermaidPlugin'
-import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
+import { MERMAID_DEFAULT_TEMPLATE, fixArchitectureIcons } from '@shared/mermaid-types'
 
 type MermaidMode = 'editing' | 'preview'
 
@@ -26,11 +27,14 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
   const [localCaption, setLocalCaption] = useState(node.caption || '')
   const [previewSvg, setPreviewSvg] = useState('')
   const [errorLine, setErrorLine] = useState<number | undefined>(undefined)
+  const [fullscreenOpen, setFullscreenOpen] = useState(false)
+  const [isVisible, setIsVisible] = useState(isNewNode)
   // Track the latest successfully rendered source+svg pair
   const lastSuccessRef = useRef<{ source: string; svg: string } | null>(null)
   const initialRenderDone = useRef(false)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const observerTargetRef = useRef<HTMLDivElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -146,16 +150,55 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
     return () => textarea.removeEventListener('scroll', syncScroll)
   }, [mode]) // re-attach when switching to editing mode
 
-  // One-time render on mount for deserialized/restored blocks in preview mode
+  // IntersectionObserver: only render when the element enters the viewport (preview mode only)
+  useEffect(() => {
+    if (mode !== 'preview' || isVisible) return
+    const target = observerTargetRef.current ?? wrapperRef.current
+    if (!target) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [mode, isVisible])
+
+  // One-time render on mount for deserialized/restored blocks in preview mode.
+  // Try loading the persisted SVG file first to avoid expensive mermaid.render().
   useEffect(() => {
     if (initialRenderDone.current) return
-    if (mode !== 'preview' || !node.source) return
+    if (mode !== 'preview' || !node.source || !isVisible) return
     initialRenderDone.current = true
 
     const renderInitial = async (): Promise<void> => {
+      // Try cached SVG from disk first
+      if (node.svgPersisted && projectId && node.assetFileName) {
+        try {
+          const result = await window.api.mermaidLoadAsset({
+            projectId,
+            assetFileName: node.assetFileName,
+          })
+          if (result.success && result.data?.svgContent) {
+            setPreviewSvg(result.data.svgContent)
+            lastSuccessRef.current = { source: node.source, svg: result.data.svgContent }
+            return
+          }
+        } catch {
+          // Fall through to mermaid.render()
+        }
+      }
+
+      // Fallback: render from source (fix invalid architecture-beta icons)
       try {
+        const safeSource = fixArchitectureIcons(node.source)
         const uniqueId = `mermaid-init-${node.diagramId}`
-        const { svg } = await mermaid.render(uniqueId, node.source)
+        const { svg } = await mermaid.render(uniqueId, safeSource)
         setPreviewSvg(svg)
         lastSuccessRef.current = { source: node.source, svg }
       } catch {
@@ -163,7 +206,15 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
       }
     }
     void renderInitial()
-  }, [mode, node.source, node.diagramId])
+  }, [
+    mode,
+    node.source,
+    node.diagramId,
+    node.svgPersisted,
+    node.assetFileName,
+    projectId,
+    isVisible,
+  ])
 
   useEffect(() => {
     if (mode !== 'preview' || !previewSvg || node.svgPersisted === true) return
@@ -285,16 +336,26 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
           </div>
         ) : (
           <div
+            ref={observerTargetRef}
             className="cursor-pointer bg-gray-50"
             onDoubleClick={handleDoubleClick}
             data-testid="mermaid-preview"
           >
-            {/* SVG preview area */}
-            <div
-              className={DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME}
-              data-testid="mermaid-preview-svg"
-              dangerouslySetInnerHTML={{ __html: previewSvg }}
-            />
+            {/* SVG preview area — lazy rendered via IntersectionObserver */}
+            {isVisible && previewSvg ? (
+              <div
+                className={DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME}
+                data-testid="mermaid-preview-svg"
+                dangerouslySetInnerHTML={{ __html: previewSvg }}
+              />
+            ) : (
+              <div
+                className={`${DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME} text-gray-300`}
+                data-testid="mermaid-preview-placeholder"
+              >
+                <span className="text-sm">Mermaid 图表</span>
+              </div>
+            )}
 
             {/* Caption bar with controls */}
             <div className="flex items-center justify-between border-t border-gray-100 px-3 py-1.5">
@@ -308,6 +369,16 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
                 data-testid="mermaid-caption-input"
               />
               <div className="flex gap-1">
+                <Tooltip title="全屏预览">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<FullscreenOutlined />}
+                    onClick={() => setFullscreenOpen(true)}
+                    disabled={!previewSvg}
+                    data-testid="mermaid-fullscreen-btn"
+                  />
+                </Tooltip>
                 <Tooltip title="编辑">
                   <Button
                     type="text"
@@ -332,6 +403,12 @@ export function MermaidElement(props: PlateElementProps): React.JSX.Element {
           </div>
         )}
       </div>
+      <DiagramFullscreenModal
+        open={fullscreenOpen}
+        svgHtml={previewSvg}
+        caption={localCaption}
+        onClose={() => setFullscreenOpen(false)}
+      />
       {children}
     </PlateElement>
   )

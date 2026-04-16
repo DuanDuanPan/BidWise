@@ -303,6 +303,27 @@ describe('diagram-validation-service', () => {
       )
     })
 
+    it('@p0 should auto-fix unsupported architecture-beta icons and forward to runtime', async () => {
+      mockMermaidRuntimeValidate.mockResolvedValueOnce({ valid: true })
+
+      const result = await validateMermaidDiagram(
+        [
+          "%%{init: {'theme':'neutral','themeVariables':{'fontSize':'14px'}}}%%",
+          'architecture-beta',
+          'group infra["基础设施层"]',
+          'service gw(gateway)["安全网关"] in infra',
+          'service db(database)["数据库"] in infra',
+        ].join('\n')
+      )
+
+      expect(result.valid).toBe(true)
+      // Should have forwarded to runtime with gateway replaced by internet
+      expect(mockMermaidRuntimeValidate).toHaveBeenCalledOnce()
+      const passedSource = mockMermaidRuntimeValidate.mock.calls[0][0] as string
+      expect(passedSource).toContain('service gw(internet)')
+      expect(passedSource).not.toContain('gateway')
+    })
+
     it('@p0 should mark runtime bootstrap failures as infrastructure errors', async () => {
       mockMermaidRuntimeValidate.mockRejectedValueOnce(new Error('Mermaid runtime unavailable'))
 

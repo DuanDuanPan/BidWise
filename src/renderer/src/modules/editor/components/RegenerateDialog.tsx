@@ -42,15 +42,17 @@ export function RegenerateDialog({
       <p className="text-caption mb-3" style={{ color: 'var(--color-text-secondary)' }}>
         当前章节内容将被 AI 重新生成的内容替换。你可以补充说明来引导生成方向：
       </p>
-      <TextArea
-        value={context}
-        onChange={(e) => setContext(e.target.value)}
-        placeholder="例如：重点突出我方在智慧城市领域的项目经验，语气更正式..."
-        rows={4}
-        maxLength={2000}
-        showCount
-        data-testid="regenerate-context-input"
-      />
+      <div style={{ marginBottom: 24 }}>
+        <TextArea
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+          placeholder="例如：重点突出我方在智慧城市领域的项目经验，语气更正式..."
+          rows={4}
+          maxLength={2000}
+          showCount
+          data-testid="regenerate-context-input"
+        />
+      </div>
     </Modal>
   )
 }

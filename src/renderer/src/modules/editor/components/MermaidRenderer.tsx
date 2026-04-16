@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 import { Spin } from 'antd'
+import { fixArchitectureIcons } from '@shared/mermaid-types'
 import { DIAGRAM_PREVIEW_SVG_FRAME_CLASSNAME } from './diagramPreview'
 
 mermaid.initialize({
@@ -46,9 +47,10 @@ export function MermaidRenderer({
         return
       }
 
+      const safeSrc = fixArchitectureIcons(src)
       setRendering(true)
       try {
-        await mermaid.parse(src)
+        await mermaid.parse(safeSrc)
       } catch (err: unknown) {
         // Ignore stale renders
         if (token !== renderCounterRef.current) return
@@ -65,7 +67,7 @@ export function MermaidRenderer({
 
       try {
         const uniqueId = `mermaid-${diagramId}-${token}`
-        const { svg } = await mermaid.render(uniqueId, src)
+        const { svg } = await mermaid.render(uniqueId, safeSrc)
 
         // Ignore stale renders after render
         if (token !== renderCounterRef.current) return

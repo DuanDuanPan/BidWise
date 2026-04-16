@@ -19,6 +19,7 @@ import { traceabilityAgentHandler } from './agents/traceability-agent'
 import { adversarialAgentHandler } from './agents/adversarial-agent'
 import { adversarialReviewAgentHandler } from './agents/adversarial-review-agent'
 import { attackChecklistAgentHandler } from './agents/attack-checklist-agent'
+import { skillAgentHandler } from './agents/skill-agent'
 import { terminologyPostProcessor } from './post-processors/terminology-post-processor'
 
 export const agentOrchestrator = new AgentOrchestrator()
@@ -35,3 +36,4 @@ agentOrchestrator.registerAgent('traceability', traceabilityAgentHandler)
 agentOrchestrator.registerAgent('adversarial', adversarialAgentHandler)
 agentOrchestrator.registerAgent('adversarial-review', adversarialReviewAgentHandler)
 agentOrchestrator.registerAgent('attack-checklist', attackChecklistAgentHandler)
+agentOrchestrator.registerAgent('skill', skillAgentHandler)

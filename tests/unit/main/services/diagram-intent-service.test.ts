@@ -5,7 +5,7 @@ import {
 } from '@main/services/diagram-intent-service'
 
 describe('diagram-intent-service', () => {
-  it('@p0 should route overall architecture diagrams to mermaid C4 context', () => {
+  it('@p0 should route overall architecture diagrams to mermaid flowchart', () => {
     const result = resolveDiagramIntent({
       requestedType: 'mermaid',
       chapterTitle: '总体架构设计',
@@ -16,7 +16,7 @@ describe('diagram-intent-service', () => {
 
     expect(result.semantic).toBe('overall-architecture')
     expect(result.preferredType).toBe('mermaid')
-    expect(result.mermaidDiagramKind).toBe('C4Context')
+    expect(result.mermaidDiagramKind).toBe('flowchart')
     expect(result.confidence).toBeGreaterThan(0.5)
   })
 
@@ -62,7 +62,7 @@ describe('diagram-intent-service', () => {
     expect(result.mermaidDiagramKind).toBe('sequenceDiagram')
   })
 
-  it('@p0 should rewrite architecture placeholders to mermaid C4 assets', () => {
+  it('@p0 should rewrite architecture placeholders to mermaid flowchart assets', () => {
     const result = resolveDiagramPlaceholder(
       {
         placeholderId: '12345678-abcd-efgh-ijkl-1234567890ab',
@@ -81,6 +81,6 @@ describe('diagram-intent-service', () => {
     expect(result.type).toBe('mermaid')
     expect(result.assetFileName).toBe('mermaid-12345678.svg')
     expect(result.semantic).toBe('technical-architecture')
-    expect(result.mermaidDiagramKind).toBe('C4Container')
+    expect(result.mermaidDiagramKind).toBe('flowchart')
   })
 })
