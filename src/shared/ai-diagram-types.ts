@@ -67,3 +67,28 @@ export interface DeleteAiDiagramAssetInput {
   projectId: string
   assetFileName: string
 }
+
+/** Agent 输入：通过增强版 skill 链路生成 AI 图表 */
+export interface ExecuteAiDiagramAgentInput {
+  projectId: string
+  diagramId: string
+  assetFileName: string
+  prompt: string
+  title: string
+  style: AiDiagramStyleToken
+  diagramType: AiDiagramTypeToken
+  chapterTitle?: string
+  chapterMarkdown?: string
+}
+
+/** Agent 输出：增强版 skill 图表生成结果 */
+export interface ExecuteAiDiagramAgentOutput {
+  diagramId: string
+  assetFileName: string
+  prompt: string
+  title: string
+  style: AiDiagramStyleToken
+  diagramType: AiDiagramTypeToken
+  svgContent: string
+  repairAttempts: number
+}

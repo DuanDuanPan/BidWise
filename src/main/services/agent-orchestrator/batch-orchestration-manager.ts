@@ -92,8 +92,14 @@ function assembleSnapshot(sections: BatchSectionEntry[]): string {
       parts.push(`${heading}\n\n${entry.content}`)
     } else if (entry.state === 'failed') {
       parts.push(`${heading}\n\n> [生成失败] ${entry.error ?? '未知错误'}`)
+    } else {
+      const placeholderParts = [heading, '']
+      if (entry.section.guidanceHint?.trim()) {
+        placeholderParts.push(`> ${entry.section.guidanceHint.trim()}`, '')
+      }
+      placeholderParts.push('> [待生成]')
+      parts.push(placeholderParts.join('\n'))
     }
-    // pending / running sections are omitted from the snapshot
   }
   return parts.join('\n\n')
 }

@@ -181,11 +181,20 @@ export function AiDiagramElement(props: PlateElementProps): React.JSX.Element {
     aiDiagramCtx?.requestRegenerate({
       diagramId: node.diagramId,
       assetFileName: node.assetFileName,
+      caption: node.caption || '',
       prompt: node.prompt || '',
       style: node.style || 'flat-icon',
       diagramType: node.diagramType || 'architecture',
     })
-  }, [aiDiagramCtx, node.diagramId, node.assetFileName, node.prompt, node.style, node.diagramType])
+  }, [
+    aiDiagramCtx,
+    node.diagramId,
+    node.assetFileName,
+    node.caption,
+    node.prompt,
+    node.style,
+    node.diagramType,
+  ])
 
   return (
     <PlateElement {...props}>

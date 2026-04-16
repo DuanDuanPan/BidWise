@@ -5,6 +5,7 @@ export interface AiDiagramRegenerateRequest {
   /** Existing node's diagramId — presence signals "update" vs "insert" */
   diagramId: string
   assetFileName: string
+  caption: string
   prompt: string
   style: AiDiagramStyleToken
   diagramType: AiDiagramTypeToken

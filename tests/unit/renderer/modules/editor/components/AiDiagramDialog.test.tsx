@@ -8,6 +8,11 @@ vi.mock('platejs/react', () => ({
   })),
 }))
 
+vi.mock('@renderer/stores', () => ({
+  useProjectStore: (selector: (state: { currentProject: { id: string } }) => unknown) =>
+    selector({ currentProject: { id: 'proj-1' } }),
+}))
+
 // Mock extractAndSanitizeAiDiagramSvg
 const mockExtractAndSanitize = vi.fn()
 vi.mock('@modules/editor/utils/aiDiagramSvg', () => ({
@@ -88,11 +93,17 @@ describe('@story-3-9 AiDiagramDialog', () => {
     })
 
     expect(mockAgentExecute).toHaveBeenCalledWith({
-      agentType: 'skill',
+      agentType: 'skill-diagram',
       context: {
-        skillName: 'fireworks-tech-graph',
-        args: 'flat-icon architecture',
-        userMessage: '微服务架构图',
+        projectId: 'proj-1',
+        diagramId: expect.any(String),
+        assetFileName: expect.stringMatching(/^ai-diagram-[a-f0-9]{8}\.svg$/),
+        prompt: '微服务架构图',
+        title: '微服务架构图',
+        style: 'flat-icon',
+        diagramType: 'architecture',
+        chapterTitle: '微服务架构图',
+        chapterMarkdown: '微服务架构图',
       },
     })
   })
@@ -135,6 +146,16 @@ describe('@story-3-9 AiDiagramDialog', () => {
   })
 
   it('calls onSuccess with result when skill completes', async () => {
+    const payload = {
+      diagramId: 'uuid-ai-1',
+      assetFileName: 'ai-diagram-uuidai1.svg',
+      prompt: '数据流图',
+      title: '数据流图',
+      style: 'flat-icon',
+      diagramType: 'architecture',
+      svgContent: '<svg>generated</svg>',
+      repairAttempts: 1,
+    }
     mockAgentExecute.mockResolvedValue({
       success: true,
       data: { taskId: 'task-456' },
@@ -143,7 +164,7 @@ describe('@story-3-9 AiDiagramDialog', () => {
       success: true,
       data: {
         status: 'completed',
-        result: { content: '<svg>generated</svg>' },
+        result: { content: JSON.stringify(payload) },
       },
     })
 
@@ -163,14 +184,27 @@ describe('@story-3-9 AiDiagramDialog', () => {
     })
 
     expect(onSuccess).toHaveBeenCalledWith({
+      diagramId: 'uuid-ai-1',
+      assetFileName: 'ai-diagram-uuidai1.svg',
       svgContent: '<svg>clean</svg>',
       prompt: '数据流图',
+      title: '数据流图',
       style: 'flat-icon',
       diagramType: 'architecture',
     })
   })
 
   it('shows error when SVG extraction fails', async () => {
+    const payload = {
+      diagramId: 'uuid-ai-2',
+      assetFileName: 'ai-diagram-uuidai2.svg',
+      prompt: '图表',
+      title: '图表',
+      style: 'flat-icon',
+      diagramType: 'architecture',
+      svgContent: 'not svg at all',
+      repairAttempts: 0,
+    }
     mockAgentExecute.mockResolvedValue({
       success: true,
       data: { taskId: 'task-789' },
@@ -179,7 +213,7 @@ describe('@story-3-9 AiDiagramDialog', () => {
       success: true,
       data: {
         status: 'completed',
-        result: { content: 'not svg at all' },
+        result: { content: JSON.stringify(payload) },
       },
     })
     mockExtractAndSanitize.mockReturnValue({ ok: false, error: '未找到 SVG' })
@@ -203,6 +237,39 @@ describe('@story-3-9 AiDiagramDialog', () => {
 
     // Verify extractAndSanitize was called with bad content and onSuccess never fired
     expect(mockExtractAndSanitize).toHaveBeenCalledWith('not svg at all')
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('shows error when agent result payload is invalid json', async () => {
+    mockAgentExecute.mockResolvedValue({
+      success: true,
+      data: { taskId: 'task-invalid' },
+    })
+    mockAgentStatus.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'completed',
+        result: { content: 'not-json' },
+      },
+    })
+
+    render(<AiDiagramDialog open={true} onClose={onClose} onSuccess={onSuccess} />)
+
+    const textarea = screen.getByRole('textbox')
+    fireEvent.change(textarea, { target: { value: '图表' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('ai-diagram-generate-btn'))
+    })
+
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    }
+
+    expect(screen.getByTestId('ai-diagram-error')).toBeDefined()
     expect(onSuccess).not.toHaveBeenCalled()
   })
 

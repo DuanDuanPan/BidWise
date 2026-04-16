@@ -228,6 +228,7 @@ describe('@story-3-9 AiDiagramElement', () => {
     expect(mockRequestRegenerate).toHaveBeenCalledWith({
       diagramId: 'uuid-ai-test',
       assetFileName: 'ai-diagram-abc.svg',
+      caption: '',
       prompt: '微服务架构',
       style: 'blueprint',
       diagramType: 'data-flow',

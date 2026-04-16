@@ -24,6 +24,8 @@ export function useCurrentSection(options?: UseCurrentSectionOptions): CurrentSe
   const maxLevel = options?.maxLevel ?? 4
   const [section, setSection] = useState<CurrentSectionInfo | null>(null)
   const lastKeyRef = useRef<string | null>(null)
+  const detectFrameRef = useRef<number | null>(null)
+  const pointerSelectingRef = useRef(false)
 
   const detect = useCallback(() => {
     const container = document.querySelector(
@@ -95,23 +97,56 @@ export function useCurrentSection(options?: UseCurrentSectionOptions): CurrentSe
     // eslint-disable-next-line react-hooks/set-state-in-effect
     detect()
 
-    // Scroll events on editor container
-    if (container) {
-      container.addEventListener('scroll', detect, { passive: true })
+    const scheduleDetect = (): void => {
+      if (detectFrameRef.current !== null) {
+        window.cancelAnimationFrame(detectFrameRef.current)
+      }
+      detectFrameRef.current = window.requestAnimationFrame(() => {
+        detectFrameRef.current = null
+        detect()
+      })
     }
 
-    // Selection and input events for cursor-based detection
-    document.addEventListener('selectionchange', detect)
-    document.addEventListener('keyup', detect)
-    document.addEventListener('mouseup', detect)
+    // Scroll events on editor container
+    if (container) {
+      container.addEventListener('scroll', scheduleDetect, { passive: true })
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      pointerSelectingRef.current = Boolean(
+        container && event.target instanceof Node && container.contains(event.target)
+      )
+    }
+
+    const handlePointerUp = (): void => {
+      const wasPointerSelecting = pointerSelectingRef.current
+      pointerSelectingRef.current = false
+      if (wasPointerSelecting) {
+        scheduleDetect()
+      }
+    }
+
+    const handleSelectionChange = (): void => {
+      if (pointerSelectingRef.current) return
+      scheduleDetect()
+    }
+
+    document.addEventListener('selectionchange', handleSelectionChange)
+    document.addEventListener('keyup', scheduleDetect)
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('pointerup', handlePointerUp, true)
 
     return () => {
-      if (container) {
-        container.removeEventListener('scroll', detect)
+      if (detectFrameRef.current !== null) {
+        window.cancelAnimationFrame(detectFrameRef.current)
       }
-      document.removeEventListener('selectionchange', detect)
-      document.removeEventListener('keyup', detect)
-      document.removeEventListener('mouseup', detect)
+      if (container) {
+        container.removeEventListener('scroll', scheduleDetect)
+      }
+      document.removeEventListener('selectionchange', handleSelectionChange)
+      document.removeEventListener('keyup', scheduleDetect)
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('pointerup', handlePointerUp, true)
     }
   }, [detect])
 

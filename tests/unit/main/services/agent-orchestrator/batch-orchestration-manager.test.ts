@@ -210,7 +210,7 @@ describe('BatchOrchestrationManager', () => {
     expect(updated.sections[1].state).toBe('pending')
   })
 
-  it('assembledSnapshot only includes completed sections', () => {
+  it('assembledSnapshot preserves placeholders for pending sections', () => {
     const skeleton = makeSkeleton([
       { title: '功能设计' },
       { title: '接口设计' },
@@ -234,8 +234,32 @@ describe('BatchOrchestrationManager', () => {
     expect(advance.assembledSnapshot).toContain('功能设计内容')
     expect(advance.assembledSnapshot).toContain('### 接口设计')
     expect(advance.assembledSnapshot).toContain('[生成失败]')
-    // Section 2 (pending) should not be in snapshot
-    expect(advance.assembledSnapshot).not.toContain('安全设计')
+    expect(advance.assembledSnapshot).toContain('### 安全设计')
+    expect(advance.assembledSnapshot).toContain('> [待生成]')
+  })
+
+  it('assembledSnapshot preserves remaining placeholders after the first section completes', () => {
+    const skeleton = makeSkeleton([
+      { title: '功能设计' },
+      { title: '接口设计' },
+      { title: '安全设计' },
+    ])
+    const orch = manager.create({
+      projectId: 'p1',
+      parentTarget: target,
+      skeleton,
+      sectionId: 'sec-1',
+      contextBase: {},
+    })
+
+    manager.markRunning(orch.id, 0, 'task-0')
+    const advance = manager.onSectionComplete(orch.id, 0, '功能设计内容')
+
+    expect(advance.assembledSnapshot).toContain('### 功能设计')
+    expect(advance.assembledSnapshot).toContain('功能设计内容')
+    expect(advance.assembledSnapshot).toContain('### 接口设计')
+    expect(advance.assembledSnapshot).toContain('### 安全设计')
+    expect(advance.assembledSnapshot.match(/> \[待生成\]/g)).toHaveLength(2)
   })
 
   it('delete removes the orchestration', () => {

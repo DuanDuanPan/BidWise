@@ -64,12 +64,14 @@ export interface SkillDiagramInput {
   diagramType: AiDiagramTypeToken
   chapterTitle: string
   chapterMarkdown: string
+  assetFileName?: string
 }
 
 export interface SkillDiagramResult {
   kind: 'success' | 'failure'
   markdown: string
   assetFileName?: string
+  svgContent?: string
   error?: string
   repairAttempts: number
 }
@@ -239,7 +241,7 @@ export async function generateSkillDiagram(params: {
   const userMessage = buildSkillUserMessage(input, references)
   const messages = skillExecutor.buildMessages(expandedPrompt, userMessage, skill)
 
-  const assetFileName = `ai-diagram-${input.diagramId.slice(0, 8)}.svg`
+  const assetFileName = input.assetFileName || `ai-diagram-${input.diagramId.slice(0, 8)}.svg`
   let lastError = ''
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
@@ -314,6 +316,7 @@ export async function generateSkillDiagram(params: {
         kind: 'success',
         markdown,
         assetFileName,
+        svgContent: extraction.svg,
         repairAttempts: attempt,
       }
     } catch (err) {

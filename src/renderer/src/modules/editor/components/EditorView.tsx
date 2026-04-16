@@ -105,59 +105,42 @@ export function EditorView({
 
       if (aiDiagramInitials?.diagramId) {
         // Regenerate: update existing node in place
-        const { diagramId, assetFileName } = aiDiagramInitials
+        const { diagramId, assetFileName: previousAssetFileName } = aiDiagramInitials
         updateAiDiagramRef.current?.(diagramId, {
+          assetFileName: result.assetFileName,
           prompt: result.prompt,
           style: result.style,
           diagramType: result.diagramType,
           svgContent: result.svgContent,
-          svgPersisted: false,
+          svgPersisted: true,
           lastModified: new Date().toISOString(),
         })
 
-        // Best-effort save asset (overwrite existing file)
-        if (currentProjectId) {
+        if (
+          currentProjectId &&
+          previousAssetFileName &&
+          previousAssetFileName !== result.assetFileName
+        ) {
           void window.api
-            .aiDiagramSaveAsset({
+            .aiDiagramDeleteAsset({
               projectId: currentProjectId,
-              diagramId,
-              svgContent: result.svgContent,
-              assetFileName,
+              assetFileName: previousAssetFileName,
             })
             .catch(() => {
-              console.warn('AI diagram 资产保存失败 (best-effort)')
+              console.warn('旧 AI diagram 资产删除失败 (best-effort)')
             })
         }
       } else {
-        // Fresh insert: create new node
-        const shortId = Math.random().toString(36).substring(2, 10)
-        const diagramId = crypto.randomUUID()
-        const assetFileName = `ai-diagram-${shortId}.svg`
-
         insertAiDiagramRef.current?.({
-          diagramId,
-          assetFileName,
+          diagramId: result.diagramId,
+          assetFileName: result.assetFileName,
           caption: '',
           prompt: result.prompt,
           style: result.style,
           diagramType: result.diagramType,
           svgContent: result.svgContent,
-          svgPersisted: false,
+          svgPersisted: true,
         })
-
-        // Best-effort save asset
-        if (currentProjectId) {
-          void window.api
-            .aiDiagramSaveAsset({
-              projectId: currentProjectId,
-              diagramId,
-              svgContent: result.svgContent,
-              assetFileName,
-            })
-            .catch(() => {
-              console.warn('AI diagram 资产保存失败 (best-effort)')
-            })
-        }
       }
 
       setAiDiagramDialogOpen(false)
@@ -570,14 +553,19 @@ export function EditorView({
         </AiDiagramProvider>
       </div>
       <AssetImportDialog open={importOpen} context={importContext} onClose={closeImport} />
-      <AiDiagramDialog
-        open={aiDiagramDialogOpen}
-        onClose={() => setAiDiagramDialogOpen(false)}
-        onSuccess={handleAiDiagramSuccess}
-        initialPrompt={aiDiagramInitials?.prompt}
-        initialStyle={aiDiagramInitials?.style}
-        initialType={aiDiagramInitials?.diagramType}
-      />
+      {aiDiagramDialogOpen ? (
+        <AiDiagramDialog
+          open={aiDiagramDialogOpen}
+          onClose={() => setAiDiagramDialogOpen(false)}
+          onSuccess={handleAiDiagramSuccess}
+          initialPrompt={aiDiagramInitials?.prompt}
+          initialStyle={aiDiagramInitials?.style}
+          initialType={aiDiagramInitials?.diagramType}
+          initialCaption={aiDiagramInitials?.caption}
+          initialDiagramId={aiDiagramInitials?.diagramId}
+          initialAssetFileName={aiDiagramInitials?.assetFileName}
+        />
+      ) : null}
     </div>
   )
 }

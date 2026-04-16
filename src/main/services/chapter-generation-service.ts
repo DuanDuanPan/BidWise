@@ -556,6 +556,7 @@ export const chapterGenerationService = {
       target,
       baselineDigest,
       baselineSectionContent: chapter.contentLines.join('\n'),
+      siblingSectionTitles: confirmedSkeleton.sections.map((section) => section.title),
     }
 
     const orchestration = batchOrchestrationManager.create({

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Input, Modal, Select, Spin } from 'antd'
-import type { AiDiagramStyleToken, AiDiagramTypeToken } from '@shared/ai-diagram-types'
-import type { SkillExecuteContext } from '@main/services/skill-engine/types'
+import { useProjectStore } from '@renderer/stores'
+import type {
+  AiDiagramStyleToken,
+  AiDiagramTypeToken,
+  ExecuteAiDiagramAgentInput,
+  ExecuteAiDiagramAgentOutput,
+} from '@shared/ai-diagram-types'
 import { extractAndSanitizeAiDiagramSvg } from '@modules/editor/utils/aiDiagramSvg'
 
 const { TextArea } = Input
@@ -32,8 +37,11 @@ const TYPE_OPTIONS: { label: string; value: AiDiagramTypeToken }[] = [
 ]
 
 export interface AiDiagramDialogResult {
+  diagramId: string
+  assetFileName: string
   svgContent: string
   prompt: string
+  title: string
   style: AiDiagramStyleToken
   diagramType: AiDiagramTypeToken
 }
@@ -45,6 +53,9 @@ interface AiDiagramDialogProps {
   initialPrompt?: string
   initialStyle?: AiDiagramStyleToken
   initialType?: AiDiagramTypeToken
+  initialCaption?: string
+  initialDiagramId?: string
+  initialAssetFileName?: string
 }
 
 type Phase = 'input' | 'generating' | 'error'
@@ -56,7 +67,11 @@ export function AiDiagramDialog({
   initialPrompt = '',
   initialStyle = 'flat-icon',
   initialType = 'architecture',
+  initialCaption = '',
+  initialDiagramId,
+  initialAssetFileName,
 }: AiDiagramDialogProps): React.JSX.Element {
+  const projectId = useProjectStore((s) => s.currentProject?.id)
   const [prompt, setPrompt] = useState(initialPrompt)
   const [style, setStyle] = useState<AiDiagramStyleToken>(initialStyle)
   const [diagramType, setDiagramType] = useState<AiDiagramTypeToken>(initialType)
@@ -79,12 +94,38 @@ export function AiDiagramDialog({
     setErrorMessage('')
   }, [initialPrompt, initialStyle, initialType])
 
-  const handleAfterOpenChange = useCallback(
-    (isOpen: boolean) => {
-      if (isOpen) resetForm()
-    },
-    [resetForm]
-  )
+  const buildTitle = useCallback((): string => {
+    const caption = initialCaption.trim()
+    if (caption) return caption
+
+    const firstLine = prompt
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0)
+
+    if (!firstLine) return 'AI 图表'
+    return firstLine.length > 40 ? `${firstLine.slice(0, 40).trim()}...` : firstLine
+  }, [initialCaption, prompt])
+
+  const parseResult = useCallback((raw: string): ExecuteAiDiagramAgentOutput | null => {
+    try {
+      const parsed = JSON.parse(raw) as Partial<ExecuteAiDiagramAgentOutput>
+      if (
+        !parsed.diagramId ||
+        !parsed.assetFileName ||
+        !parsed.prompt ||
+        !parsed.title ||
+        !parsed.style ||
+        !parsed.diagramType ||
+        !parsed.svgContent
+      ) {
+        return null
+      }
+      return parsed as ExecuteAiDiagramAgentOutput
+    } catch {
+      return null
+    }
+  }, [])
 
   const cleanup = useCallback(() => {
     if (pollTimerRef.current) {
@@ -110,25 +151,41 @@ export function AiDiagramDialog({
       })
     }
     cleanup()
+    resetForm()
     onClose()
-  }, [phase, cleanup, onClose])
+  }, [phase, cleanup, resetForm, onClose])
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
+    if (!projectId) {
+      setErrorMessage('当前项目未加载，无法生成图表')
+      setPhase('error')
+      return
+    }
 
     setPhase('generating')
     setProgress(0)
-    setProgressMessage('正在启动图表生成...')
+    setProgressMessage('正在启动增强版图表生成...')
     setErrorMessage('')
 
     try {
+      const diagramId = initialDiagramId || crypto.randomUUID()
+      const assetFileName = initialAssetFileName || `ai-diagram-${diagramId.slice(0, 8)}.svg`
+      const title = buildTitle()
+
       const response = await window.api.agentExecute({
-        agentType: 'skill',
+        agentType: 'skill-diagram',
         context: {
-          skillName: 'fireworks-tech-graph',
-          args: `${style} ${diagramType}`,
-          userMessage: prompt.trim(),
-        } satisfies SkillExecuteContext,
+          projectId,
+          diagramId,
+          assetFileName,
+          prompt: prompt.trim(),
+          title,
+          style,
+          diagramType,
+          chapterTitle: title,
+          chapterMarkdown: prompt.trim(),
+        } satisfies ExecuteAiDiagramAgentInput,
       })
 
       if (!response.success) {
@@ -157,7 +214,14 @@ export function AiDiagramDialog({
           if (status.status === 'completed') {
             cleanup()
             const rawResult = status.result?.content ?? ''
-            const svgResult = extractAndSanitizeAiDiagramSvg(rawResult)
+            const parsedResult = parseResult(rawResult)
+            if (!parsedResult) {
+              setErrorMessage('图表生成结果格式无效')
+              setPhase('error')
+              return
+            }
+
+            const svgResult = extractAndSanitizeAiDiagramSvg(parsedResult.svgContent)
 
             if (!svgResult.ok) {
               setErrorMessage(svgResult.error)
@@ -165,11 +229,15 @@ export function AiDiagramDialog({
               return
             }
 
+            resetForm()
             onSuccess({
+              diagramId: parsedResult.diagramId,
+              assetFileName: parsedResult.assetFileName,
               svgContent: svgResult.svg,
-              prompt: prompt.trim(),
-              style,
-              diagramType,
+              prompt: parsedResult.prompt,
+              title: parsedResult.title,
+              style: parsedResult.style,
+              diagramType: parsedResult.diagramType,
             })
           } else if (status.status === 'failed' || status.status === 'cancelled') {
             cleanup()
@@ -184,7 +252,19 @@ export function AiDiagramDialog({
       setErrorMessage('图表生成请求失败，请重试')
       setPhase('error')
     }
-  }, [prompt, style, diagramType, cleanup, onSuccess])
+  }, [
+    prompt,
+    projectId,
+    initialDiagramId,
+    initialAssetFileName,
+    style,
+    diagramType,
+    buildTitle,
+    cleanup,
+    resetForm,
+    onSuccess,
+    parseResult,
+  ])
 
   const handleRetry = useCallback(() => {
     setPhase('input')
@@ -195,7 +275,6 @@ export function AiDiagramDialog({
     <Modal
       open={open}
       onCancel={handleCancel}
-      afterOpenChange={handleAfterOpenChange}
       title="AI 图表生成"
       footer={null}
       width={560}

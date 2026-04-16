@@ -19,6 +19,7 @@ let mockChapterGen: {
   statuses: Map<string, Record<string, unknown>>
   dismissError: typeof mockDismissError
 } | null = null
+let latestToolbarProps: { importAssetDisabled?: boolean } | null = null
 let latestReplaceSectionReady:
   | ((fn: ((target: unknown, markdownContent: string) => boolean) | null) => void)
   | null = null
@@ -61,9 +62,23 @@ vi.mock('@modules/editor/context/useSourceAttributionContext', () => ({
 }))
 
 vi.mock('@modules/editor/components/EditorToolbar', () => ({
-  EditorToolbar: ({ projectId }: { projectId: string }) => (
-    <div data-testid="mock-editor-toolbar">{projectId}</div>
-  ),
+  EditorToolbar: ({
+    projectId,
+    importAssetDisabled,
+  }: {
+    projectId: string
+    importAssetDisabled?: boolean
+  }) => {
+    latestToolbarProps = { importAssetDisabled }
+    return (
+      <div
+        data-testid="mock-editor-toolbar"
+        data-import-disabled={String(Boolean(importAssetDisabled))}
+      >
+        {projectId}
+      </div>
+    )
+  },
 }))
 
 let latestInsertAssetReady:
@@ -86,7 +101,15 @@ vi.mock('@modules/editor/components/PlateEditor', () => ({
   }) => {
     latestReplaceSectionReady = onReplaceSectionReady ?? null
     latestInsertAssetReady = onInsertAssetReady ?? null
-    return <div data-testid="mock-plate-editor">{projectId}</div>
+    return (
+      <div data-testid="mock-plate-editor">
+        {projectId}
+        <div data-testid="plate-editor-content">
+          <p data-testid="mock-editor-paragraph-1">第一段正文第一行，第一段正文第二行。</p>
+          <p data-testid="mock-editor-paragraph-2">第二段正文第一行，第二段正文第二行。</p>
+        </div>
+      </div>
+    )
   },
 }))
 
@@ -117,6 +140,7 @@ describe('@story-3-1 EditorView', () => {
     mockLoadedProjectId = 'proj-1'
     mockChapterGen = null
     mockSourceAttr = null
+    latestToolbarProps = null
     latestReplaceSectionReady = null
     latestInsertAssetReady = null
     mockReplaceSection.mockReset()
@@ -129,6 +153,7 @@ describe('@story-3-1 EditorView', () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -392,5 +417,63 @@ describe('@story-3-1 EditorView', () => {
     mockContent = '# Hello'
     render(<EditorView projectId="proj-1" />)
     expect(screen.getByTestId('mock-asset-import-dialog')).toBeDefined()
+  })
+
+  it('@story-5-2 keeps selection state stable during pointer drag and updates after pointerup', () => {
+    vi.useFakeTimers()
+    mockContent = '# Hello'
+
+    const paragraphOneText = document.createTextNode('')
+    const paragraphTwoText = document.createTextNode('')
+    let selectionText = ''
+
+    const getSelectionSpy = vi.spyOn(window, 'getSelection').mockImplementation(
+      () =>
+        ({
+          toString: () => selectionText,
+          anchorNode: paragraphOneText,
+          focusNode: paragraphTwoText,
+        }) as unknown as Selection
+    )
+
+    render(<EditorView projectId="proj-1" />)
+
+    const paragraphOne = screen.getByTestId('mock-editor-paragraph-1')
+    const paragraphTwo = screen.getByTestId('mock-editor-paragraph-2')
+    paragraphOneText.textContent = paragraphOne.textContent ?? ''
+    paragraphTwoText.textContent = paragraphTwo.textContent ?? ''
+    paragraphOne.appendChild(paragraphOneText)
+    paragraphTwo.appendChild(paragraphTwoText)
+
+    const createPointerEvent = (type: 'pointerdown' | 'pointerup', target: EventTarget): Event => {
+      const EventCtor = window.PointerEvent ?? window.MouseEvent
+      const event = new EventCtor(type, { bubbles: true })
+      Object.defineProperty(event, 'target', { value: target })
+      return event
+    }
+
+    expect(screen.getByTestId('mock-editor-toolbar').dataset.importDisabled).toBe('true')
+    expect(latestToolbarProps?.importAssetDisabled).toBe(true)
+
+    selectionText = '第一段正文第二行。\n第二段正文第一行。'
+
+    act(() => {
+      document.dispatchEvent(createPointerEvent('pointerdown', paragraphOne))
+      document.dispatchEvent(new Event('selectionchange'))
+      vi.advanceTimersByTime(20)
+    })
+
+    expect(screen.getByTestId('mock-editor-toolbar').dataset.importDisabled).toBe('true')
+    expect(latestToolbarProps?.importAssetDisabled).toBe(true)
+
+    act(() => {
+      document.dispatchEvent(createPointerEvent('pointerup', document))
+      vi.runOnlyPendingTimers()
+    })
+
+    expect(screen.getByTestId('mock-editor-toolbar').dataset.importDisabled).toBe('false')
+    expect(latestToolbarProps?.importAssetDisabled).toBe(false)
+
+    getSelectionSpy.mockRestore()
   })
 })
