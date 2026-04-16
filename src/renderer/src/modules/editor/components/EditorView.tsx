@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { App, Skeleton, Alert, Button } from 'antd'
 import { useDocumentStore, useProjectStore } from '@renderer/stores'
 import { useDocument } from '@modules/editor/hooks/useDocument'
@@ -7,7 +7,17 @@ import { useSourceAttributionContext } from '@modules/editor/context/useSourceAt
 import { useAssetImport } from '@modules/asset/hooks/useAssetImport'
 import { AssetImportDialog } from '@modules/asset/components/AssetImportDialog'
 import { PlateEditor } from './PlateEditor'
-import type { ReplaceSectionFn, InsertMermaidFn, InsertAssetFn } from './PlateEditor'
+import type {
+  ReplaceSectionFn,
+  InsertMermaidFn,
+  InsertAiDiagramFn,
+  UpdateAiDiagramFn,
+  InsertAssetFn,
+} from './PlateEditor'
+import { AiDiagramDialog } from './AiDiagramDialog'
+import type { AiDiagramDialogResult } from './AiDiagramDialog'
+import { AiDiagramProvider } from '@modules/editor/context/AiDiagramContext'
+import type { AiDiagramRegenerateRequest } from '@modules/editor/context/AiDiagramContext'
 import { EditorToolbar } from './EditorToolbar'
 import type { CurrentSectionInfo } from '@modules/annotation/hooks/useCurrentSection'
 import {
@@ -37,12 +47,21 @@ export function EditorView({
   const syncFlushRef = useRef<(() => string) | null>(null)
   const replaceSectionRef = useRef<ReplaceSectionFn | null>(null)
   const insertMermaidRef = useRef<InsertMermaidFn | null>(null)
+  const insertAiDiagramRef = useRef<InsertAiDiagramFn | null>(null)
+  const updateAiDiagramRef = useRef<UpdateAiDiagramFn | null>(null)
   const insertAssetRef = useRef<InsertAssetFn | null>(null)
+  const selectionCheckFrameRef = useRef<number | null>(null)
+  const pointerSelectingRef = useRef(false)
   const consumedTerminalKeysRef = useRef<Set<string>>(new Set())
   const consumedStreamRevisionsRef = useRef<Map<string, number>>(new Map())
   const clearedRegenerateKeysRef = useRef<Set<string>>(new Set())
   const [replaceSectionVersion, setReplaceSectionVersion] = useState(0)
   const [insertMermaidAvailable, setInsertMermaidAvailable] = useState(false)
+  const [insertAiDiagramAvailable, setInsertAiDiagramAvailable] = useState(false)
+  const [aiDiagramDialogOpen, setAiDiagramDialogOpen] = useState(false)
+  const [aiDiagramInitials, setAiDiagramInitials] = useState<AiDiagramRegenerateRequest | null>(
+    null
+  )
   const [hasEditorSelection, setHasEditorSelection] = useState(false)
   const chapterGen = useChapterGenerationContext()
   const chapterStatuses = chapterGen?.statuses
@@ -65,6 +84,96 @@ export function EditorView({
   const handleInsertMermaid = useCallback(() => {
     insertMermaidRef.current?.()
   }, [])
+
+  const registerInsertAiDiagram = useCallback((fn: InsertAiDiagramFn | null): void => {
+    insertAiDiagramRef.current = fn
+    setInsertAiDiagramAvailable(fn !== null)
+  }, [])
+
+  const registerUpdateAiDiagram = useCallback((fn: UpdateAiDiagramFn | null): void => {
+    updateAiDiagramRef.current = fn
+  }, [])
+
+  const handleInsertAiDiagram = useCallback(() => {
+    setAiDiagramInitials(null)
+    setAiDiagramDialogOpen(true)
+  }, [])
+
+  const handleAiDiagramSuccess = useCallback(
+    (result: AiDiagramDialogResult) => {
+      const currentProjectId = useProjectStore.getState().currentProject?.id
+
+      if (aiDiagramInitials?.diagramId) {
+        // Regenerate: update existing node in place
+        const { diagramId, assetFileName } = aiDiagramInitials
+        updateAiDiagramRef.current?.(diagramId, {
+          prompt: result.prompt,
+          style: result.style,
+          diagramType: result.diagramType,
+          svgContent: result.svgContent,
+          svgPersisted: false,
+          lastModified: new Date().toISOString(),
+        })
+
+        // Best-effort save asset (overwrite existing file)
+        if (currentProjectId) {
+          void window.api
+            .aiDiagramSaveAsset({
+              projectId: currentProjectId,
+              diagramId,
+              svgContent: result.svgContent,
+              assetFileName,
+            })
+            .catch(() => {
+              console.warn('AI diagram 资产保存失败 (best-effort)')
+            })
+        }
+      } else {
+        // Fresh insert: create new node
+        const shortId = Math.random().toString(36).substring(2, 10)
+        const diagramId = crypto.randomUUID()
+        const assetFileName = `ai-diagram-${shortId}.svg`
+
+        insertAiDiagramRef.current?.({
+          diagramId,
+          assetFileName,
+          caption: '',
+          prompt: result.prompt,
+          style: result.style,
+          diagramType: result.diagramType,
+          svgContent: result.svgContent,
+          svgPersisted: false,
+        })
+
+        // Best-effort save asset
+        if (currentProjectId) {
+          void window.api
+            .aiDiagramSaveAsset({
+              projectId: currentProjectId,
+              diagramId,
+              svgContent: result.svgContent,
+              assetFileName,
+            })
+            .catch(() => {
+              console.warn('AI diagram 资产保存失败 (best-effort)')
+            })
+        }
+      }
+
+      setAiDiagramDialogOpen(false)
+    },
+    [aiDiagramInitials]
+  )
+
+  const handleAiDiagramRegenerate = useCallback((request: AiDiagramRegenerateRequest) => {
+    setAiDiagramInitials(request)
+    setAiDiagramDialogOpen(true)
+  }, [])
+
+  const aiDiagramContextValue = useMemo(
+    () => ({ requestRegenerate: handleAiDiagramRegenerate }),
+    [handleAiDiagramRegenerate]
+  )
 
   const registerInsertAsset = useCallback(
     (fn: InsertAssetFn | null): void => {
@@ -126,6 +235,16 @@ export function EditorView({
 
   // Track whether there's a valid selection inside the editor
   useEffect(() => {
+    const scheduleSelectionCheck = (): void => {
+      if (selectionCheckFrameRef.current !== null) {
+        window.cancelAnimationFrame(selectionCheckFrameRef.current)
+      }
+      selectionCheckFrameRef.current = window.requestAnimationFrame(() => {
+        selectionCheckFrameRef.current = null
+        checkSelection()
+      })
+    }
+
     const checkSelection = (): void => {
       const sel = window.getSelection()
       const text = sel?.toString().trim() ?? ''
@@ -145,11 +264,37 @@ export function EditorView({
         editorContent.contains(sel.focusNode)
       setHasEditorSelection(Boolean(inEditor))
     }
-    document.addEventListener('selectionchange', checkSelection)
-    document.addEventListener('mouseup', checkSelection)
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      const editorContent = document.querySelector('[data-testid="plate-editor-content"]')
+      pointerSelectingRef.current = Boolean(
+        editorContent && event.target instanceof Node && editorContent.contains(event.target)
+      )
+    }
+
+    const handlePointerUp = (): void => {
+      const wasPointerSelecting = pointerSelectingRef.current
+      pointerSelectingRef.current = false
+      if (wasPointerSelecting) {
+        scheduleSelectionCheck()
+      }
+    }
+
+    const handleSelectionChange = (): void => {
+      if (pointerSelectingRef.current) return
+      scheduleSelectionCheck()
+    }
+
+    document.addEventListener('selectionchange', handleSelectionChange)
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('pointerup', handlePointerUp, true)
     return () => {
-      document.removeEventListener('selectionchange', checkSelection)
-      document.removeEventListener('mouseup', checkSelection)
+      if (selectionCheckFrameRef.current !== null) {
+        window.cancelAnimationFrame(selectionCheckFrameRef.current)
+      }
+      document.removeEventListener('selectionchange', handleSelectionChange)
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('pointerup', handlePointerUp, true)
     }
   }, [])
 
@@ -405,20 +550,34 @@ export function EditorView({
         projectId={projectId}
         onInsertMermaid={handleInsertMermaid}
         insertMermaidDisabled={!insertMermaidAvailable}
+        onInsertAiDiagram={handleInsertAiDiagram}
+        insertAiDiagramDisabled={!insertAiDiagramAvailable}
         onImportAsset={handleImportAsset}
         importAssetDisabled={!hasEditorSelection}
       />
       <div className="flex-1 overflow-y-auto" data-editor-scroll-container="true">
-        <PlateEditor
-          initialContent={content}
-          projectId={projectId}
-          onSyncFlushReady={registerSyncFlush}
-          onReplaceSectionReady={registerReplaceSection}
-          onInsertMermaidReady={registerInsertMermaid}
-          onInsertAssetReady={registerInsertAsset}
-        />
+        <AiDiagramProvider value={aiDiagramContextValue}>
+          <PlateEditor
+            initialContent={content}
+            projectId={projectId}
+            onSyncFlushReady={registerSyncFlush}
+            onReplaceSectionReady={registerReplaceSection}
+            onInsertMermaidReady={registerInsertMermaid}
+            onInsertAiDiagramReady={registerInsertAiDiagram}
+            onUpdateAiDiagramReady={registerUpdateAiDiagram}
+            onInsertAssetReady={registerInsertAsset}
+          />
+        </AiDiagramProvider>
       </div>
       <AssetImportDialog open={importOpen} context={importContext} onClose={closeImport} />
+      <AiDiagramDialog
+        open={aiDiagramDialogOpen}
+        onClose={() => setAiDiagramDialogOpen(false)}
+        onSuccess={handleAiDiagramSuccess}
+        initialPrompt={aiDiagramInitials?.prompt}
+        initialStyle={aiDiagramInitials?.style}
+        initialType={aiDiagramInitials?.diagramType}
+      />
     </div>
   )
 }

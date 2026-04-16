@@ -18,6 +18,7 @@ import { registerAssetHandlers } from './asset-handlers'
 import { registerComplianceHandlers } from './compliance-handlers'
 import { registerReviewHandlers } from './review-handlers'
 import { registerTerminologyHandlers } from './terminology-handlers'
+import { registerAiDiagramHandlers } from './ai-diagram-handlers'
 import type { RegisteredProjectChannels } from './project-handlers'
 import type { RegisteredConfigChannels } from './config-handlers'
 import type { RegisteredAgentChannels } from './agent-handlers'
@@ -38,6 +39,7 @@ import type { RegisteredAssetChannels } from './asset-handlers'
 import type { RegisteredComplianceChannels } from './compliance-handlers'
 import type { RegisteredReviewChannels } from './review-handlers'
 import type { RegisteredTerminologyChannels } from './terminology-handlers'
+import type { RegisteredAiDiagramChannels } from './ai-diagram-handlers'
 import type { IpcChannel } from '@shared/ipc-types'
 
 // Compile-time exhaustive check: every IpcChannel must be covered by a handler module.
@@ -64,6 +66,7 @@ type _AllRegistered =
   | RegisteredComplianceChannels
   | RegisteredReviewChannels
   | RegisteredTerminologyChannels
+  | RegisteredAiDiagramChannels
 type _Unregistered = Exclude<IpcChannel, _AllRegistered>
 void (true satisfies [_Unregistered] extends [never] ? true : never)
 
@@ -88,4 +91,5 @@ export function registerIpcHandlers(): void {
   registerComplianceHandlers()
   registerReviewHandlers()
   registerTerminologyHandlers()
+  registerAiDiagramHandlers()
 }

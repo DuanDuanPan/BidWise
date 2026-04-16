@@ -42,6 +42,8 @@ import { DrawioPlugin } from '@modules/editor/plugins/drawioPlugin'
 import { DrawioElement } from '@modules/editor/components/DrawioElement'
 import { MermaidPlugin } from '@modules/editor/plugins/mermaidPlugin'
 import { MermaidElement } from '@modules/editor/components/MermaidElement'
+import { AiDiagramPlugin } from '@modules/editor/plugins/aiDiagramPlugin'
+import { AiDiagramElement } from '@modules/editor/components/AiDiagramElement'
 
 export const editorPlugins = [
   ParagraphPlugin.withComponent(SourceAwareParagraph),
@@ -68,6 +70,7 @@ export const editorPlugins = [
   CodeLinePlugin,
   DrawioPlugin.withComponent(DrawioElement),
   MermaidPlugin.withComponent(MermaidElement),
+  AiDiagramPlugin.withComponent(AiDiagramElement),
   MarkdownPlugin.configure({
     options: {
       remarkPlugins: [remarkGfm],

@@ -1,5 +1,10 @@
 import { Button, Tooltip } from 'antd'
-import { DeploymentUnitOutlined, FunctionOutlined, SaveOutlined } from '@ant-design/icons'
+import {
+  DeploymentUnitOutlined,
+  FunctionOutlined,
+  RobotOutlined,
+  SaveOutlined,
+} from '@ant-design/icons'
 import { WritingStyleSelector } from './WritingStyleSelector'
 
 interface EditorToolbarProps {
@@ -8,6 +13,8 @@ interface EditorToolbarProps {
   insertDrawioDisabled?: boolean
   onInsertMermaid?: () => void
   insertMermaidDisabled?: boolean
+  onInsertAiDiagram?: () => void
+  insertAiDiagramDisabled?: boolean
   onImportAsset?: () => void
   importAssetDisabled?: boolean
 }
@@ -18,6 +25,8 @@ export function EditorToolbar({
   insertDrawioDisabled,
   onInsertMermaid,
   insertMermaidDisabled,
+  onInsertAiDiagram,
+  insertAiDiagramDisabled,
   onImportAsset,
   importAssetDisabled,
 }: EditorToolbarProps): React.JSX.Element {
@@ -54,6 +63,21 @@ export function EditorToolbar({
               data-testid="insert-mermaid-btn"
             >
               插入 Mermaid 图表
+            </Button>
+          </Tooltip>
+        )}
+        {onInsertAiDiagram && (
+          <Tooltip title="AI 图表">
+            <Button
+              type="text"
+              size="small"
+              icon={<RobotOutlined />}
+              disabled={insertAiDiagramDisabled}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onInsertAiDiagram}
+              data-testid="insert-ai-diagram-btn"
+            >
+              AI 图表
             </Button>
           </Tooltip>
         )}

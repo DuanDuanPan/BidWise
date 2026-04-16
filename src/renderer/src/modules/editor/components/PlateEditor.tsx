@@ -15,10 +15,14 @@ import type { DocumentSaveDebugContext } from '@shared/ipc-types'
 import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
 import { MERMAID_ELEMENT_TYPE } from '@modules/editor/plugins/mermaidPlugin'
 import { MERMAID_DEFAULT_TEMPLATE } from '@shared/mermaid-types'
+import { AI_DIAGRAM_ELEMENT_TYPE } from '@modules/editor/plugins/aiDiagramPlugin'
+import type { AiDiagramElementData } from '@shared/ai-diagram-types'
 
 export type ReplaceSectionFn = (target: ChapterHeadingLocator, markdownContent: string) => boolean
 export type InsertDrawioFn = () => void
 export type InsertMermaidFn = () => void
+export type InsertAiDiagramFn = (data: AiDiagramElementData) => void
+export type UpdateAiDiagramFn = (diagramId: string, data: Partial<AiDiagramElementData>) => boolean
 export type InsertAssetFn = (
   content: string,
   options?: { targetSection?: ChapterHeadingLocator | null }
@@ -31,6 +35,8 @@ interface PlateEditorProps {
   onReplaceSectionReady?: (fn: ReplaceSectionFn | null) => void
   onInsertDrawioReady?: (fn: InsertDrawioFn | null) => void
   onInsertMermaidReady?: (fn: InsertMermaidFn | null) => void
+  onInsertAiDiagramReady?: (fn: InsertAiDiagramFn | null) => void
+  onUpdateAiDiagramReady?: (fn: UpdateAiDiagramFn | null) => void
   onInsertAssetReady?: (fn: InsertAssetFn | null) => void
 }
 
@@ -145,6 +151,8 @@ export function PlateEditor({
   onReplaceSectionReady,
   onInsertDrawioReady,
   onInsertMermaidReady,
+  onInsertAiDiagramReady,
+  onUpdateAiDiagramReady,
   onInsertAssetReady,
 }: PlateEditorProps): React.JSX.Element {
   const updateContent = useDocumentStore((s) => s.updateContent)
@@ -368,6 +376,37 @@ export function PlateEditor({
     )
   }, [editor])
 
+  const insertAiDiagram: InsertAiDiagramFn = useCallback(
+    (data: AiDiagramElementData) => {
+      const at = editor.selection ?? lastSelectionRef.current ?? [editor.children.length]
+
+      editor.tf.insertNodes(
+        {
+          type: AI_DIAGRAM_ELEMENT_TYPE,
+          ...data,
+          svgPersisted: false,
+          children: [{ text: '' }],
+        },
+        { at, select: true }
+      )
+    },
+    [editor]
+  )
+
+  const updateAiDiagram: UpdateAiDiagramFn = useCallback(
+    (diagramId: string, data: Partial<AiDiagramElementData>) => {
+      for (let i = 0; i < editor.children.length; i++) {
+        const child = editor.children[i] as Record<string, unknown>
+        if (child.type === AI_DIAGRAM_ELEMENT_TYPE && child.diagramId === diagramId) {
+          editor.tf.setNodes(data, { at: [i] })
+          return true
+        }
+      }
+      return false
+    },
+    [editor]
+  )
+
   const insertAsset: InsertAssetFn = useCallback(
     (assetContent: string, options?: { targetSection?: ChapterHeadingLocator | null }) => {
       // Build paragraph nodes from content (split on double newlines)
@@ -442,6 +481,16 @@ export function PlateEditor({
     onInsertMermaidReady?.(insertMermaid)
     return () => onInsertMermaidReady?.(null)
   }, [insertMermaid, onInsertMermaidReady])
+
+  useEffect(() => {
+    onInsertAiDiagramReady?.(insertAiDiagram)
+    return () => onInsertAiDiagramReady?.(null)
+  }, [insertAiDiagram, onInsertAiDiagramReady])
+
+  useEffect(() => {
+    onUpdateAiDiagramReady?.(updateAiDiagram)
+    return () => onUpdateAiDiagramReady?.(null)
+  }, [updateAiDiagram, onUpdateAiDiagramReady])
 
   useEffect(() => {
     onInsertAssetReady?.(insertAsset)

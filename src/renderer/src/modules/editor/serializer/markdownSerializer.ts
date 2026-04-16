@@ -2,6 +2,8 @@ import { DRAWIO_ELEMENT_TYPE } from '@modules/editor/plugins/drawioPlugin'
 import type { DrawioElement } from '@modules/editor/plugins/drawioPlugin'
 import { MERMAID_ELEMENT_TYPE } from '@modules/editor/plugins/mermaidPlugin'
 import type { MermaidElement } from '@modules/editor/plugins/mermaidPlugin'
+import { AI_DIAGRAM_ELEMENT_TYPE } from '@modules/editor/plugins/aiDiagramPlugin'
+import type { AiDiagramElement } from '@modules/editor/plugins/aiDiagramPlugin'
 
 type EditorWithMarkdownApi = {
   children: unknown[]
@@ -35,6 +37,18 @@ function unescapeMarkdownAlt(text: string): string {
 const MERMAID_PLACEHOLDER_PREFIX = 'MERMAID-PH-'
 const MERMAID_PLACEHOLDER_SUFFIX = '-END'
 const MERMAID_PLACEHOLDER_RE = /MERMAID-PH-(\d+)-END/g
+
+// ── AI Diagram Markdown patterns ──
+
+// Format: <!-- ai-diagram:id:file:caption:prompt:style:type -->
+// Fields 4-6 (prompt/style/type) optional for backward compat
+const AI_DIAGRAM_COMMENT_RE =
+  /^<!-- ai-diagram:([^:]+):([^:]+?)(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?(?::([^:]*))? -->$/
+const AI_DIAGRAM_IMAGE_RE = /^!\[((?:[^\]\\]|\\.)*)\]\(assets\/(.+?\.svg)\)$/
+
+const AI_DIAGRAM_PLACEHOLDER_PREFIX = 'AI-DIAGRAM-PH-'
+const AI_DIAGRAM_PLACEHOLDER_SUFFIX = '-END'
+const AI_DIAGRAM_PLACEHOLDER_RE = /AI-DIAGRAM-PH-(\d+)-END/g
 const HEADING_LINE_RE = /^(#{1,4})\s+(.+?)\s*$/
 const GUIDANCE_LINE_RE = /^>\s*(.+?)\s*$/
 
@@ -138,9 +152,10 @@ function repairMergedGuidanceHeadings(
 
 /** 将当前编辑器内容序列化为 Markdown */
 export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
-  // 1. Collect drawio & mermaid elements and replace them with placeholder text nodes
+  // 1. Collect drawio, mermaid & ai-diagram elements and replace them with placeholder text nodes
   const drawioBlocks: DrawioElement[] = []
   const mermaidBlocks: MermaidElement[] = []
+  const aiDiagramBlocks: AiDiagramElement[] = []
   const patchedChildren: unknown[] = []
 
   for (const node of editor.children) {
@@ -159,13 +174,24 @@ export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
         type: 'p',
         children: [{ text: `${MERMAID_PLACEHOLDER_PREFIX}${index}${MERMAID_PLACEHOLDER_SUFFIX}` }],
       })
+    } else if (n.type === AI_DIAGRAM_ELEMENT_TYPE) {
+      const index = aiDiagramBlocks.length
+      aiDiagramBlocks.push(n as unknown as AiDiagramElement)
+      patchedChildren.push({
+        type: 'p',
+        children: [
+          {
+            text: `${AI_DIAGRAM_PLACEHOLDER_PREFIX}${index}${AI_DIAGRAM_PLACEHOLDER_SUFFIX}`,
+          },
+        ],
+      })
     } else {
       patchedChildren.push(node)
     }
   }
 
   // If no special blocks, just serialize normally
-  if (drawioBlocks.length === 0 && mermaidBlocks.length === 0) {
+  if (drawioBlocks.length === 0 && mermaidBlocks.length === 0 && aiDiagramBlocks.length === 0) {
     return editor.api.markdown.serialize()
   }
 
@@ -203,6 +229,21 @@ export function serializeToMarkdown(editor: EditorWithMarkdownApi): string {
     return `${comment}\n\`\`\`mermaid\n${block.source}\n\`\`\``
   })
 
+  // 5. Replace ai-diagram placeholders
+  markdown = markdown.replace(AI_DIAGRAM_PLACEHOLDER_RE, (_match, indexStr: string) => {
+    const index = parseInt(indexStr, 10)
+    const block = aiDiagramBlocks[index]
+    if (!block) return ''
+
+    const encodedCaption = block.caption ? encodeURIComponent(block.caption) : ''
+    const encodedPrompt = block.prompt ? encodeURIComponent(block.prompt) : ''
+    const styleToken = block.style || ''
+    const typeToken = block.diagramType || ''
+    const comment = `<!-- ai-diagram:${block.diagramId}:${block.assetFileName}:${encodedCaption}:${encodedPrompt}:${styleToken}:${typeToken} -->`
+    const image = `![${escapeMarkdownAlt(block.caption || '')}](assets/${block.assetFileName})`
+    return `${comment}\n${image}`
+  })
+
   return markdown
 }
 
@@ -213,20 +254,68 @@ export function deserializeFromMarkdown(
 ): unknown[] {
   const guidancePairs = collectGuidanceHeadingPairs(markdown)
 
-  // 1. Pre-process: extract drawio & mermaid blocks and replace with placeholders
+  // 1. Pre-process: extract drawio, mermaid & ai-diagram blocks and replace with placeholders
   const drawioDataMap: Map<number, { diagramId: string; assetFileName: string; caption: string }> =
     new Map()
   const mermaidDataMap: Map<
     number,
     { diagramId: string; assetFileName: string; source: string; caption: string }
   > = new Map()
+  const aiDiagramDataMap: Map<
+    number,
+    {
+      diagramId: string
+      assetFileName: string
+      caption: string
+      prompt: string
+      style: string
+      diagramType: string
+    }
+  > = new Map()
 
   const lines = markdown.split('\n')
   const processedLines: string[] = []
   let drawioPlaceholderIndex = 0
   let mermaidPlaceholderIndex = 0
+  let aiDiagramPlaceholderIndex = 0
 
   for (let i = 0; i < lines.length; i++) {
+    // Check ai-diagram comment+image pair
+    const aiDiagramCommentMatch = lines[i].match(AI_DIAGRAM_COMMENT_RE)
+    if (aiDiagramCommentMatch && i + 1 < lines.length) {
+      const imageMatch = lines[i + 1].match(AI_DIAGRAM_IMAGE_RE)
+      if (imageMatch) {
+        const diagramId = aiDiagramCommentMatch[1]
+        const assetFileName = aiDiagramCommentMatch[2]
+        const safeDecodeOrEmpty = (v: string | undefined): string => {
+          if (!v) return ''
+          try {
+            return decodeURIComponent(v)
+          } catch {
+            return v
+          }
+        }
+        const caption = safeDecodeOrEmpty(aiDiagramCommentMatch[3])
+        const prompt = safeDecodeOrEmpty(aiDiagramCommentMatch[4])
+        const style = aiDiagramCommentMatch[5] ?? ''
+        const diagramType = aiDiagramCommentMatch[6] ?? ''
+        aiDiagramDataMap.set(aiDiagramPlaceholderIndex, {
+          diagramId,
+          assetFileName,
+          caption,
+          prompt,
+          style,
+          diagramType,
+        })
+        processedLines.push(
+          `${AI_DIAGRAM_PLACEHOLDER_PREFIX}${aiDiagramPlaceholderIndex}${AI_DIAGRAM_PLACEHOLDER_SUFFIX}`
+        )
+        aiDiagramPlaceholderIndex++
+        i++ // Skip the image line
+        continue
+      }
+    }
+
     // Check drawio comment+image pair
     const drawioCommentMatch = lines[i].match(DRAWIO_COMMENT_RE)
     if (drawioCommentMatch && i + 1 < lines.length) {
@@ -298,7 +387,7 @@ export function deserializeFromMarkdown(
   }
 
   // If no special blocks found, deserialize normally
-  if (drawioDataMap.size === 0 && mermaidDataMap.size === 0) {
+  if (drawioDataMap.size === 0 && mermaidDataMap.size === 0 && aiDiagramDataMap.size === 0) {
     return repairMergedGuidanceHeadings(editor.api.markdown.deserialize(markdown), guidancePairs)
   }
 
@@ -337,6 +426,24 @@ export function deserializeFromMarkdown(
               source: data.source,
               caption: data.caption,
               svgPersisted: false,
+              children: [{ text: '' }],
+            }
+          }
+        }
+        const aiDiagramMatch = child.text.match(/AI-DIAGRAM-PH-(\d+)-END/)
+        if (aiDiagramMatch) {
+          const idx = parseInt(aiDiagramMatch[1], 10)
+          const data = aiDiagramDataMap.get(idx)
+          if (data) {
+            return {
+              type: AI_DIAGRAM_ELEMENT_TYPE,
+              diagramId: data.diagramId,
+              assetFileName: data.assetFileName,
+              caption: data.caption,
+              prompt: data.prompt || '',
+              style: (data.style || 'flat-icon') as 'flat-icon',
+              diagramType: (data.diagramType || 'architecture') as 'architecture',
+              svgPersisted: true,
               children: [{ text: '' }],
             }
           }

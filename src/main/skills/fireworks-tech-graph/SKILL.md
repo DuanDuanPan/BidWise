@@ -6,9 +6,24 @@ description: >-
   SVG+PNG. Trigger on: "画图" "帮我画" "生成图" "做个图" "架构图" "流程图"
   "可视化一下" "出图" "generate diagram" "draw diagram" "visualize" or any
   system/flow description the user wants illustrated.
+arguments: [$style, $diagramType]
 ---
 
 # Fireworks Tech Graph
+
+**Visual style:** $style
+**Diagram type:** $diagramType
+
+## Output Contract (STRICT)
+
+You MUST return ONLY a single, complete `<svg>...</svg>` document. Do NOT include:
+
+- Markdown code fences (no ` ```svg ` or ` ``` `)
+- Explanatory text before or after the SVG
+- File paths or shell commands
+- Multiple SVG documents
+
+The response must start with `<svg` (after optional whitespace) and end with `</svg>`.
 
 Generate production-quality SVG technical diagrams exported as PNG via `rsvg-convert`.
 

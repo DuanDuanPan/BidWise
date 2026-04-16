@@ -59,6 +59,93 @@ describe('@story-3-8 EditorToolbar mermaid integration', () => {
   })
 })
 
+describe('@story-3-9 EditorToolbar AI diagram button', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('renders AI diagram button when onInsertAiDiagram is provided', () => {
+    render(
+      <EditorToolbar
+        projectId="proj-1"
+        onInsertAiDiagram={vi.fn()}
+        insertAiDiagramDisabled={false}
+      />
+    )
+
+    const btn = screen
+      .getByTestId('editor-toolbar')
+      .querySelector('[data-testid="insert-ai-diagram-btn"]')
+    expect(btn).not.toBeNull()
+  })
+
+  it('does not render AI diagram button when onInsertAiDiagram is undefined', () => {
+    render(<EditorToolbar projectId="proj-1" />)
+
+    const btn = screen
+      .getByTestId('editor-toolbar')
+      .querySelector('[data-testid="insert-ai-diagram-btn"]')
+    expect(btn).toBeNull()
+  })
+
+  it('calls onInsertAiDiagram when button is clicked', () => {
+    const onInsertAiDiagram = vi.fn()
+    render(
+      <EditorToolbar
+        projectId="proj-1"
+        onInsertAiDiagram={onInsertAiDiagram}
+        insertAiDiagramDisabled={false}
+      />
+    )
+
+    const btn = screen
+      .getByTestId('editor-toolbar')
+      .querySelector('[data-testid="insert-ai-diagram-btn"]') as HTMLButtonElement
+    fireEvent.click(btn)
+
+    expect(onInsertAiDiagram).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables button when insertAiDiagramDisabled is true', () => {
+    render(
+      <EditorToolbar
+        projectId="proj-1"
+        onInsertAiDiagram={vi.fn()}
+        insertAiDiagramDisabled={true}
+      />
+    )
+
+    const btn = screen
+      .getByTestId('editor-toolbar')
+      .querySelector('[data-testid="insert-ai-diagram-btn"]') as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+  })
+
+  it('positions AI diagram button between Mermaid and asset import', () => {
+    render(
+      <EditorToolbar
+        projectId="proj-1"
+        onInsertMermaid={vi.fn()}
+        onInsertAiDiagram={vi.fn()}
+        onImportAsset={vi.fn()}
+      />
+    )
+
+    const toolbar = screen.getByTestId('editor-toolbar')
+    const buttons = toolbar.querySelectorAll('button')
+    const testIds = Array.from(buttons)
+      .map((b) => b.getAttribute('data-testid'))
+      .filter(Boolean)
+
+    const mermaidIdx = testIds.indexOf('insert-mermaid-btn')
+    const aiIdx = testIds.indexOf('insert-ai-diagram-btn')
+    const assetIdx = testIds.indexOf('import-asset-btn')
+
+    expect(mermaidIdx).toBeLessThan(aiIdx)
+    expect(aiIdx).toBeLessThan(assetIdx)
+  })
+})
+
 describe('@story-5-2 EditorToolbar asset import integration', () => {
   afterEach(() => {
     cleanup()

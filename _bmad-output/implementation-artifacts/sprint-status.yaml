@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-12
+last_updated: 2026-04-17
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -80,6 +80,7 @@ development_status:
   3-6-writing-style-template: done
   3-7-drawio-embedded-editing: done
   3-8-mermaid-diagram-generation: done
+  3-9-skill-diagram-editor-integration: review
   epic-3-retrospective: optional
 
   # ── Epic 4: 批注式人机协作 (4 stories) ──

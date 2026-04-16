@@ -8,6 +8,13 @@ const MERMAID_COMMENT_RE = /^<!--\s*mermaid:([^:]+):([^:>]+?)(?::([^>]*?))?\s*--
 // draw.io comment: <!-- drawio:{diagramId}:{assetFileName} -->
 const DRAWIO_COMMENT_RE = /^<!--\s*drawio:([^:]+):([^>]+?)\s*-->\s*$/
 
+// AI diagram comment: <!-- ai-diagram:id:file:caption[:prompt:style:type] -->
+const AI_DIAGRAM_COMMENT_RE =
+  /^<!--\s*ai-diagram:([^:]+):([^:>]+?)(?::([^:]*))?(?::(?:[^>]*?))?\s*-->\s*$/
+
+// SVG image reference: ![caption](assets/xxx.svg)
+const SVG_IMAGE_REF_RE = /^!\[((?:[^\]\\]|\\.)*)\]\(assets\/(.+?\.svg)\)\s*$/
+
 // Standard image reference: ![caption](path) — allows \] escapes in alt text
 const IMAGE_REF_RE = /^!\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)\s*$/
 
@@ -150,6 +157,61 @@ async function preprocessMarkdownForExport(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         warnings.push(`Mermaid SVG 转 PNG 失败: assets/${assetFileName}: ${msg}`)
+        result.push(`[图片未导出: ${pngRelPath}]`)
+      }
+      continue
+    }
+
+    // Check for AI diagram comment
+    const aiDiagramMatch = AI_DIAGRAM_COMMENT_RE.exec(line)
+    if (aiDiagramMatch) {
+      const assetFileName = aiDiagramMatch[2]
+
+      if (!isValidAssetFileName(assetFileName)) {
+        warnings.push(`AI diagram 资产文件名非法 (路径遍历): ${assetFileName}`)
+        result.push(`[图片未导出: ${assetFileName}]`)
+        i++
+        // Skip the companion image reference
+        if (i < lines.length && SVG_IMAGE_REF_RE.test(lines[i])) {
+          i++
+        }
+        continue
+      }
+
+      const encodedCaption = aiDiagramMatch[3] ?? ''
+      let caption = ''
+      if (encodedCaption) {
+        const decoded = safeDecodeURIComponent(encodedCaption)
+        caption = decoded.value
+        if (decoded.error) {
+          warnings.push(decoded.error)
+        }
+      }
+      const assetBase = assetBaseName(assetFileName, '.svg')
+      const pngRelPath = `assets/${assetBase}.png`
+      const svgAbsPath = join(projectPath, 'assets', assetFileName)
+      const pngAbsPath = join(projectPath, 'assets', `${assetBase}.png`)
+
+      // Skip the comment line
+      i++
+
+      // Skip the companion SVG image reference
+      if (i < lines.length && SVG_IMAGE_REF_RE.test(lines[i])) {
+        i++
+      }
+
+      // Attempt SVG -> PNG conversion
+      try {
+        if (!(await fileExists(svgAbsPath))) {
+          warnings.push(`AI diagram SVG 文件不存在: assets/${assetFileName}`)
+          result.push(`[图片未导出: ${pngRelPath}]`)
+          continue
+        }
+        await convertSvgToPng(svgAbsPath, pngAbsPath)
+        result.push(`![${escapeMarkdownAlt(caption)}](${pngRelPath})`)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        warnings.push(`AI diagram SVG 转 PNG 失败: assets/${assetFileName}: ${msg}`)
         result.push(`[图片未导出: ${pngRelPath}]`)
       }
       continue

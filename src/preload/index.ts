@@ -350,6 +350,15 @@ const requestApi = {
     typedInvoke(IPC_CHANNELS.TERMINOLOGY_BATCH_CREATE, input),
 
   terminologyExport: () => typedInvoke(IPC_CHANNELS.TERMINOLOGY_EXPORT),
+
+  aiDiagramSaveAsset: (input: IpcChannelMap['ai-diagram:save-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.AI_DIAGRAM_SAVE_ASSET, input),
+
+  aiDiagramLoadAsset: (input: IpcChannelMap['ai-diagram:load-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.AI_DIAGRAM_LOAD_ASSET, input),
+
+  aiDiagramDeleteAsset: (input: IpcChannelMap['ai-diagram:delete-asset']['input']) =>
+    typedInvoke(IPC_CHANNELS.AI_DIAGRAM_DELETE_ASSET, input),
 } satisfies PreloadApi
 
 // Event listener methods — single-direction push from main → renderer

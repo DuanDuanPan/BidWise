@@ -204,6 +204,51 @@ describe('@story-8-4 figureExportService.preprocessMarkdownForExport', () => {
     expect(result.warnings).toHaveLength(0)
   })
 
+  // ── AI Diagram export preprocessing ──
+
+  it('converts AI diagram SVG to PNG and replaces with image ref', async () => {
+    const markdown = [
+      '# Title',
+      `<!-- ai-diagram:aid1:ai-diagram-x.svg:${encodeURIComponent('系统图')}:prompt:flat-icon:architecture -->`,
+      '![系统图](assets/ai-diagram-x.svg)',
+      'Some text',
+    ].join('\n')
+
+    mockAccess.mockResolvedValue(undefined) // SVG exists
+    mockReadFile.mockResolvedValue(Buffer.from('<svg></svg>'))
+    mockSharpToBuffer.mockResolvedValue(Buffer.from('PNG'))
+    mockWriteFile.mockResolvedValue(undefined)
+
+    const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
+
+    expect(result.processedMarkdown).toContain('![系统图](assets/ai-diagram-x.png)')
+    expect(result.processedMarkdown).not.toContain('.svg)')
+    expect(result.processedMarkdown).toContain('# Title')
+    expect(result.processedMarkdown).toContain('Some text')
+    expect(result.warnings).toHaveLength(0)
+  })
+
+  it('handles AI diagram SVG missing — placeholder + warning', async () => {
+    const markdown = ['<!-- ai-diagram:aid1:missing.svg -->', '![](assets/missing.svg)'].join('\n')
+
+    mockAccess.mockRejectedValue(new Error('ENOENT'))
+
+    const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
+
+    expect(result.processedMarkdown).toContain('[图片未导出: assets/missing.png]')
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('AI diagram SVG 文件不存在')
+  })
+
+  it('rejects AI diagram with path traversal filename', async () => {
+    const markdown = ['<!-- ai-diagram:aid1:../evil.svg -->', '![](assets/../evil.svg)'].join('\n')
+
+    const result = await figureExportService.preprocessMarkdownForExport(markdown, '/project')
+
+    expect(result.processedMarkdown).toContain('[图片未导出: ../evil.svg]')
+    expect(result.warnings[0]).toContain('非法')
+  })
+
   it('handles mixed document — draw.io + Mermaid + regular images', async () => {
     const markdown = [
       '# Chapter 1',

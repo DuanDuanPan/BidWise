@@ -65,6 +65,37 @@ describe('Skill Engine Integration — fireworks-tech-graph', () => {
     expect(skill!.body).toContain('validate-svg.js')
   })
 
+  it('should expose style and diagramType arguments for AI diagram integration', async () => {
+    await loader.loadAll()
+    const skill = loader.getSkill('fireworks-tech-graph')
+    expect(skill).toBeDefined()
+
+    // Story 3.9: SKILL.md must declare arguments: [$style, $diagramType]
+    expect(skill!.frontmatter.arguments).toBeDefined()
+    expect(skill!.frontmatter.arguments).toContain('$style')
+    expect(skill!.frontmatter.arguments).toContain('$diagramType')
+  })
+
+  it('should have raw-SVG-only output contract in body', async () => {
+    await loader.loadAll()
+    const skill = loader.getSkill('fireworks-tech-graph')
+    expect(skill).toBeDefined()
+
+    // Story 3.9: Body must reference output contract for SVG-only output
+    expect(skill!.body).toContain('Output Contract')
+    expect(skill!.body).toContain('<svg')
+  })
+
+  it('should consume $style and $diagramType in body', async () => {
+    await loader.loadAll()
+    const skill = loader.getSkill('fireworks-tech-graph')
+    expect(skill).toBeDefined()
+
+    // skill-executor only replaces placeholders that are actually referenced in body
+    expect(skill!.body).toContain('$style')
+    expect(skill!.body).toContain('$diagramType')
+  })
+
   it('should list skills correctly', async () => {
     await loader.loadAll()
     const list = loader.listSkills()

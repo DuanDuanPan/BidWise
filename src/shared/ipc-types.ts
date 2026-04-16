@@ -176,6 +176,13 @@ import type {
   BatchCreateResult,
   TerminologyExportOutput,
 } from './terminology-types'
+import type {
+  SaveAiDiagramAssetInput,
+  SaveAiDiagramAssetOutput,
+  LoadAiDiagramAssetInput,
+  LoadAiDiagramAssetOutput,
+  DeleteAiDiagramAssetInput,
+} from './ai-diagram-types'
 
 export type SuccessResponse<T> = {
   success: true
@@ -372,6 +379,9 @@ export const IPC_CHANNELS = {
   TERMINOLOGY_DELETE: 'terminology:delete',
   TERMINOLOGY_BATCH_CREATE: 'terminology:batch-create',
   TERMINOLOGY_EXPORT: 'terminology:export',
+  AI_DIAGRAM_SAVE_ASSET: 'ai-diagram:save-asset',
+  AI_DIAGRAM_LOAD_ASSET: 'ai-diagram:load-asset',
+  AI_DIAGRAM_DELETE_ASSET: 'ai-diagram:delete-asset',
 } as const
 
 /** Filter for task:list queries */
@@ -515,6 +525,12 @@ export type IpcChannelMap = {
   'terminology:delete': { input: { id: string }; output: void }
   'terminology:batch-create': { input: BatchCreateTerminologyInput; output: BatchCreateResult }
   'terminology:export': { input: void; output: TerminologyExportOutput }
+  'ai-diagram:save-asset': { input: SaveAiDiagramAssetInput; output: SaveAiDiagramAssetOutput }
+  'ai-diagram:load-asset': {
+    input: LoadAiDiagramAssetInput
+    output: LoadAiDiagramAssetOutput | null
+  }
+  'ai-diagram:delete-asset': { input: DeleteAiDiagramAssetInput; output: void }
 }
 
 // --- IPC Event Payload Map: 单向推送事件通道类型映射 ---
