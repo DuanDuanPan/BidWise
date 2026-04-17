@@ -337,6 +337,97 @@ describe('skill-diagram-generation-service @story-3-10', () => {
     )
   })
 
+  // ─── Domain context injection (industrial APP bias fix) ────────────────
+
+  it('@p0 should inject chapter markdown into the skill user message when it differs from the description', async () => {
+    const input = {
+      ...makeInput(),
+      description: '功能架构总览图',
+      chapterMarkdown: '本项目立足于液压控制元件数字化设计，构建四层架构，支撑 30 个定制化工业 APP',
+    }
+
+    await generateSkillDiagram({
+      input,
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    const userMessage = mockSkillExecutorBuildMessages.mock.calls[0]?.[1] as string
+    expect(userMessage).toContain('章节正文')
+    expect(userMessage).toContain('液压控制元件数字化设计')
+    expect(userMessage).toContain('不要生成通用 SaaS 模板')
+  })
+
+  it('@p1 should not duplicate chapter body when it equals the description', async () => {
+    const body = '系统采用三层架构，包括前端、API 网关和微服务'
+    const input = {
+      ...makeInput(),
+      description: body,
+      chapterMarkdown: body,
+    }
+
+    await generateSkillDiagram({
+      input,
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    const userMessage = mockSkillExecutorBuildMessages.mock.calls[0]?.[1] as string
+    // description line already contains the body; no duplicate 章节正文 block
+    expect(userMessage).not.toContain('**章节正文')
+  })
+
+  it('@p0 should include project context block when projectContext is provided', async () => {
+    const input = {
+      ...makeInput(),
+      projectContext: {
+        name: '液压控制元件数字化设计平台',
+        industry: '工业软件',
+        customerName: '某航天集团',
+      },
+    }
+
+    await generateSkillDiagram({
+      input,
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    const userMessage = mockSkillExecutorBuildMessages.mock.calls[0]?.[1] as string
+    expect(userMessage).toContain('项目上下文')
+    expect(userMessage).toContain('液压控制元件数字化设计平台')
+    expect(userMessage).toContain('工业软件')
+    expect(userMessage).toContain('某航天集团')
+  })
+
+  it('@p1 should truncate chapter markdown when it exceeds 4000 chars', async () => {
+    const longBody = '液压'.repeat(3000) // 6000 chars, all distinct from description
+    const input = {
+      ...makeInput(),
+      description: '功能架构图',
+      chapterMarkdown: longBody,
+    }
+
+    await generateSkillDiagram({
+      input,
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    const userMessage = mockSkillExecutorBuildMessages.mock.calls[0]?.[1] as string
+    expect(userMessage).toContain('正文已截断')
+    // 4000-char cap + truncation notice; total must be far below the 6000-char body
+    expect(userMessage.length).toBeLessThan(longBody.length)
+  })
+
   it('@p1 should clamp oversized frontmatter maxTokens to the 32768 safe ceiling', async () => {
     const skill = makeSkill()
     skill.frontmatter.maxTokens = 65536

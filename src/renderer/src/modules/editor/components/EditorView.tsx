@@ -178,6 +178,23 @@ export function EditorView({
   const currentProjectName = useProjectStore(
     (s) => s.projects.find((p) => p.id === projectId)?.name ?? null
   )
+  const currentProjectRecord = useProjectStore((s) =>
+    s.currentProject?.id === projectId ? s.currentProject : null
+  )
+  const aiDiagramProjectContext = useMemo(
+    () => ({
+      name: currentProjectRecord?.name ?? currentProjectName,
+      industry: currentProjectRecord?.industry ?? null,
+      customerName: currentProjectRecord?.customerName ?? null,
+    }),
+    [currentProjectRecord, currentProjectName]
+  )
+  const aiDiagramChapterMarkdown = useMemo(() => {
+    if (!currentSection?.locator) return undefined
+    if (!content) return undefined
+    const body = extractMarkdownSectionContent(content, currentSection.locator)
+    return body?.trim() || undefined
+  }, [content, currentSection])
   const { isOpen: importOpen, importContext, openImport, closeImport } = useAssetImport()
 
   const sanitizeGeneratedContent = useCallback(
@@ -658,6 +675,9 @@ export function EditorView({
           initialCaption={aiDiagramInitials?.caption}
           initialDiagramId={aiDiagramInitials?.diagramId}
           initialAssetFileName={aiDiagramInitials?.assetFileName}
+          chapterMarkdown={aiDiagramChapterMarkdown}
+          chapterTitle={currentSection?.label}
+          projectContext={aiDiagramProjectContext}
         />
       ) : null}
     </div>

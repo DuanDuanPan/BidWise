@@ -24,7 +24,11 @@ import {
   buildAiDiagramMarkdown,
   buildDiagramFailureMarkdown,
 } from '@main/services/diagram-validation-service'
-import type { AiDiagramStyleToken, AiDiagramTypeToken } from '@shared/ai-diagram-types'
+import type {
+  AiDiagramProjectContext,
+  AiDiagramStyleToken,
+  AiDiagramTypeToken,
+} from '@shared/ai-diagram-types'
 import type { AiChatMessage, AiProxyResponse, TokenUsage } from '@shared/ai-types'
 
 const logger = createLogger('skill-diagram-generation-service')
@@ -87,7 +91,16 @@ export interface SkillDiagramInput {
   chapterTitle: string
   chapterMarkdown: string
   assetFileName?: string
+  projectContext?: AiDiagramProjectContext
 }
+
+/**
+ * Upper bound for章节正文 injected into skill user message.
+ * Keeps prompt bounded while still leaving enough domain vocabulary for the
+ * model to anchor on (observed: 3-4k chars carry enough术语 for a typical
+ * section without blowing output budget).
+ */
+const CHAPTER_CONTEXT_MAX_CHARS = 4000
 
 export interface SkillDiagramResult {
   kind: 'success' | 'failure'
@@ -433,16 +446,52 @@ export async function generateSkillDiagram(params: {
   }
 }
 
+function buildProjectContextBlock(ctx?: AiDiagramProjectContext): string | null {
+  if (!ctx) return null
+  const lines: string[] = []
+  if (ctx.name) lines.push(`- 项目名称：${ctx.name}`)
+  if (ctx.industry) lines.push(`- 所属行业：${ctx.industry}`)
+  if (ctx.customerName) lines.push(`- 甲方客户：${ctx.customerName}`)
+  if (lines.length === 0) return null
+  return ['**项目上下文：**', ...lines].join('\n')
+}
+
+function truncateChapterMarkdown(markdown: string): string {
+  const trimmed = markdown.trim()
+  if (trimmed.length <= CHAPTER_CONTEXT_MAX_CHARS) return trimmed
+  return `${trimmed.slice(0, CHAPTER_CONTEXT_MAX_CHARS)}\n...（正文已截断，仅截取前 ${CHAPTER_CONTEXT_MAX_CHARS} 字用于生成图表）`
+}
+
 function buildSkillUserMessage(input: SkillDiagramInput, references: string): string {
   const parts: string[] = []
 
   parts.push(`请为以下章节生成一个 ${input.diagramType} 类型的技术图表。`)
   parts.push(``)
+
+  const projectBlock = buildProjectContextBlock(input.projectContext)
+  if (projectBlock) {
+    parts.push(projectBlock)
+    parts.push(``)
+  }
+
   parts.push(`**章节标题：** ${input.chapterTitle}`)
   parts.push(`**图表标题：** ${input.title}`)
   parts.push(`**图表描述：** ${input.description}`)
   parts.push(`**风格：** ${input.style}`)
   parts.push(`**类型：** ${input.diagramType}`)
+
+  // Inject章节正文 so the model sees domain terminology and does not fall
+  // back to a generic SaaS template (marketing / order / CRM). Skip when the
+  // body is just a duplicate of the short description.
+  const chapterBody = input.chapterMarkdown?.trim() ?? ''
+  const descriptionBody = input.description.trim()
+  if (chapterBody && chapterBody !== descriptionBody) {
+    parts.push(``)
+    parts.push(
+      '**章节正文（所有模块名、术语必须来自此处，不要生成通用 SaaS 模板，如「营销/订单/客户/报表」这类与领域无关的模块）：**'
+    )
+    parts.push(truncateChapterMarkdown(chapterBody))
+  }
 
   if (references) {
     parts.push(``)

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Input, Modal, Select, Spin } from 'antd'
 import { useProjectStore } from '@renderer/stores'
 import type {
+  AiDiagramProjectContext,
   AiDiagramStyleToken,
   AiDiagramTypeToken,
   ExecuteAiDiagramAgentInput,
@@ -56,6 +57,12 @@ interface AiDiagramDialogProps {
   initialCaption?: string
   initialDiagramId?: string
   initialAssetFileName?: string
+  /** 当前章节正文——让 AI 看到行业术语而非退回通用 SaaS 模板 */
+  chapterMarkdown?: string
+  /** 当前章节标题 */
+  chapterTitle?: string
+  /** 项目上下文（行业/客户/项目名） */
+  projectContext?: AiDiagramProjectContext
 }
 
 type Phase = 'input' | 'generating' | 'error'
@@ -70,6 +77,9 @@ export function AiDiagramDialog({
   initialCaption = '',
   initialDiagramId,
   initialAssetFileName,
+  chapterMarkdown,
+  chapterTitle,
+  projectContext,
 }: AiDiagramDialogProps): React.JSX.Element {
   const projectId = useProjectStore((s) => s.currentProject?.id)
   const [prompt, setPrompt] = useState(initialPrompt)
@@ -173,6 +183,9 @@ export function AiDiagramDialog({
       const assetFileName = initialAssetFileName || `ai-diagram-${diagramId.slice(0, 8)}.svg`
       const title = buildTitle()
 
+      const effectiveChapterMarkdown = chapterMarkdown?.trim() || prompt.trim()
+      const effectiveChapterTitle = chapterTitle?.trim() || title
+
       const response = await window.api.agentExecute({
         agentType: 'skill-diagram',
         context: {
@@ -183,8 +196,9 @@ export function AiDiagramDialog({
           title,
           style,
           diagramType,
-          chapterTitle: title,
-          chapterMarkdown: prompt.trim(),
+          chapterTitle: effectiveChapterTitle,
+          chapterMarkdown: effectiveChapterMarkdown,
+          projectContext,
         } satisfies ExecuteAiDiagramAgentInput,
       })
 
@@ -264,6 +278,9 @@ export function AiDiagramDialog({
     resetForm,
     onSuccess,
     parseResult,
+    chapterMarkdown,
+    chapterTitle,
+    projectContext,
   ])
 
   const handleRetry = useCallback(() => {

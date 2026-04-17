@@ -64,6 +64,7 @@ export const skillDiagramAgentHandler: AgentHandler = async (
       chapterTitle: ctx.chapterTitle || ctx.title,
       chapterMarkdown: ctx.chapterMarkdown || sanitizedDescription,
       assetFileName: ctx.assetFileName,
+      projectContext: ctx.projectContext,
     },
     projectId: ctx.projectId,
     aiProxy,

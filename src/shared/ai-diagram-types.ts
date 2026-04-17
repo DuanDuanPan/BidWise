@@ -70,6 +70,13 @@ export interface DeleteAiDiagramAssetInput {
   assetFileName: string
 }
 
+/** 投标项目上下文——喂给 skill 以避免模型退回通用 SaaS 模板 */
+export interface AiDiagramProjectContext {
+  name?: string | null
+  industry?: string | null
+  customerName?: string | null
+}
+
 /** Agent 输入：通过增强版 skill 链路生成 AI 图表 */
 export interface ExecuteAiDiagramAgentInput {
   projectId: string
@@ -81,6 +88,7 @@ export interface ExecuteAiDiagramAgentInput {
   diagramType: AiDiagramTypeToken
   chapterTitle?: string
   chapterMarkdown?: string
+  projectContext?: AiDiagramProjectContext
 }
 
 /** Agent 输出：增强版 skill 图表生成结果 */
