@@ -7,7 +7,7 @@ description: >-
   "可视化一下" "出图" "generate diagram" "draw diagram" "visualize" or any
   system/flow description the user wants illustrated.
 arguments: [$style, $diagramType]
-max-tokens: 65536
+max-tokens: 32768
 ---
 
 # Fireworks Tech Graph

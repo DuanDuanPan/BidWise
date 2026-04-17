@@ -58,12 +58,13 @@ const SKILL_NAME = 'fireworks-tech-graph'
 // for a 65k-token SVG at normal streaming rates (~120 tokens/s).
 const AI_CALL_TIMEOUT_MS = 600_000
 
-// Output-cap escalation: double maxTokens each time truncation is detected,
-// up to 128k (what Claude Sonnet 4.6 / Opus 4.7 / Gemini 3 Pro all support).
-// Baseline 65536 leaves headroom for dense architecture diagrams without
-// paying for unused quota on simple flowcharts.
-const DEFAULT_MAX_TOKENS = 65536
-const MAX_TOKENS_CEILING = 131072
+// Output-cap escalation: keep skill-diagram within the verified safe output
+// budget for the current OpenAI-compatible Gemini route. The local proxy
+// rejects `max_tokens=65536` with 400 INVALID_ARGUMENT, while 32768 succeeds.
+// 32k still leaves ample headroom for the diagrams observed in production, and
+// the truncation loop can retry once when a skill frontmatter asks for 16k.
+const DEFAULT_MAX_TOKENS = 32768
+const MAX_TOKENS_CEILING = 32768
 const TRUNCATION_DETECTION_SLACK = 64
 
 // Map style token → actual reference filename (must match files in references/)

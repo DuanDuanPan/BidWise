@@ -233,7 +233,7 @@ describe('skill-diagram-generation-service @story-3-10', () => {
     }
   }
 
-  it('@p0 should request 65536 maxTokens by default when frontmatter omits it', async () => {
+  it('@p0 should request 32768 maxTokens by default when frontmatter omits it', async () => {
     const skill = makeSkill()
     delete (skill.frontmatter as { maxTokens?: number }).maxTokens
     mockSkillLoaderGetSkill.mockReturnValue(skill)
@@ -246,7 +246,7 @@ describe('skill-diagram-generation-service @story-3-10', () => {
       usage: { promptTokens: 0, completionTokens: 0 },
     })
 
-    expect(mockAiProxy.call).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 65536 }))
+    expect(mockAiProxy.call).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 32768 }))
   })
 
   it('@p0 should double maxTokens after finishReason=length truncation', async () => {
@@ -337,17 +337,17 @@ describe('skill-diagram-generation-service @story-3-10', () => {
     )
   })
 
-  it('@p1 should cap maxTokens at 131072 ceiling', async () => {
+  it('@p1 should clamp oversized frontmatter maxTokens to the 32768 safe ceiling', async () => {
     const skill = makeSkill()
     skill.frontmatter.maxTokens = 65536
     mockSkillLoaderGetSkill.mockReturnValue(skill)
 
-    // Truncate 3 consecutive times: 65536 → 131072 (ceiling) → 131072 → 131072
+    // Truncate 4 consecutive times: ceiling stays at 32768 for every attempt.
     mockAiProxy.call
-      .mockResolvedValueOnce(makeTruncatedResponse(65530, 'length'))
-      .mockResolvedValueOnce(makeTruncatedResponse(131070, 'length'))
-      .mockResolvedValueOnce(makeTruncatedResponse(131070, 'length'))
-      .mockResolvedValueOnce(makeTruncatedResponse(131070, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(32764, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(32764, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(32764, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(32764, 'length'))
 
     const result = await generateSkillDiagram({
       input: makeInput(),
@@ -360,19 +360,19 @@ describe('skill-diagram-generation-service @story-3-10', () => {
     expect(result.kind).toBe('failure')
     expect(mockAiProxy.call).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ maxTokens: 65536 })
+      expect.objectContaining({ maxTokens: 32768 })
     )
     expect(mockAiProxy.call).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ maxTokens: 131072 })
+      expect.objectContaining({ maxTokens: 32768 })
     )
     expect(mockAiProxy.call).toHaveBeenNthCalledWith(
       3,
-      expect.objectContaining({ maxTokens: 131072 })
+      expect.objectContaining({ maxTokens: 32768 })
     )
     expect(mockAiProxy.call).toHaveBeenNthCalledWith(
       4,
-      expect.objectContaining({ maxTokens: 131072 })
+      expect.objectContaining({ maxTokens: 32768 })
     )
   })
 })
