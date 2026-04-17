@@ -275,11 +275,14 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       // ── Progressive batch payloads ──
       if (isBatchSectionCompletePayload(event.payload)) {
         const p = event.payload
-        // Register next sub-task's taskId for progress routing
+        // Register next sub-task's taskId for progress routing.
+        // Only retire the current taskId when a successor exists; on the final
+        // section the same taskId is reused by the trailing batch-complete
+        // event, whose handler performs the cleanup.
         if (p.nextTaskId) {
           taskToLocatorRef.current.set(p.nextTaskId, locator)
+          taskToLocatorRef.current.delete(event.taskId)
         }
-        taskToLocatorRef.current.delete(event.taskId)
         updateStatus(key, (prev) => {
           const sections = prev.batchSections ? [...prev.batchSections] : []
           if (sections[p.sectionIndex]) {

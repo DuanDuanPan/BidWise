@@ -17,6 +17,12 @@ vi.mock('@renderer/stores', () => ({
   ),
 }))
 
+vi.mock('@renderer/stores/annotationStore', () => ({
+  useAnnotationStore: {
+    getState: () => ({ loadAnnotations: vi.fn().mockResolvedValue(undefined) }),
+  },
+}))
+
 describe('@story-3-4 useChapterGeneration', () => {
   let progressListener:
     | ((event: { taskId: string; progress: number; message?: string }) => void)
@@ -1142,6 +1148,124 @@ describe('@story-3-4 useChapterGeneration', () => {
     expect(status!.batchSections?.[0]?.content).toBe('第一节内容')
     expect(status!.batchSections?.[1]?.phase).toBe('generating')
     expect(status!.message).toBe('正在生成子章节 2/2：模块设计')
+  })
+
+  it('@p0 @regression should finalize phase=completed when batch-complete reuses the final section taskId', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      chapterSkeletonGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-skel-1' } }),
+      chapterSkeletonConfirm: vi.fn().mockResolvedValue({ success: true, data: { success: true } }),
+      chapterBatchGenerate: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { taskId: 'task-batch-1', batchId: 'batch-1' } }),
+      agentStatus: vi.fn().mockImplementation(async (taskId: string) => {
+        if (taskId === 'task-skel-1') {
+          return {
+            success: true,
+            data: {
+              taskId,
+              status: 'completed',
+              result: {
+                content: JSON.stringify({ fallback: false, plan: mockSkeletonPlan }),
+              },
+            },
+          }
+        }
+        return {
+          success: true,
+          data: { taskId, status: 'completed', result: { content: '子章节已完成正文' } },
+        }
+      }),
+      onTaskProgress: vi.fn().mockImplementation((callback) => {
+        progressListener = callback
+        return () => {
+          progressListener = null
+        }
+      }),
+      taskList: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      taskDelete: vi.fn().mockResolvedValue({ success: true }),
+    })
+
+    const { result } = renderHook(() => useChapterGeneration(PROJECT_ID))
+
+    await act(async () => {
+      await result.current.startSkeletonGenerate(mockTarget)
+    })
+    await act(async () => {
+      progressListener?.({ taskId: 'task-skel-1', progress: 100, message: 'completed' })
+    })
+    await waitFor(() => {
+      expect(result.current.getStatus(mockTarget)?.phase).toBe('skeleton-ready')
+    })
+
+    await act(async () => {
+      await result.current.startBatchGenerate(mockTarget, '2:系统架构设计:0')
+    })
+
+    // First section done, chains to task-batch-2
+    await act(async () => {
+      progressListener?.({
+        taskId: 'task-batch-1',
+        progress: 50,
+        message: 'batch-section-complete',
+        payload: {
+          kind: 'batch-section-complete',
+          batchId: 'batch-1',
+          sectionIndex: 0,
+          sectionMarkdown: '第一节内容',
+          assembledSnapshot: '### 总体架构\n\n第一节内容',
+          completedCount: 1,
+          totalCount: 2,
+          nextTaskId: 'task-batch-2',
+          nextSectionIndex: 1,
+        },
+      })
+    })
+
+    // Final section done — backend emits batch-section-complete without nextTaskId,
+    // then batch-complete reusing the SAME taskId.
+    await act(async () => {
+      progressListener?.({
+        taskId: 'task-batch-2',
+        progress: 95,
+        message: 'batch-section-complete',
+        payload: {
+          kind: 'batch-section-complete',
+          batchId: 'batch-1',
+          sectionIndex: 1,
+          sectionMarkdown: '第二节内容',
+          assembledSnapshot: '### 总体架构\n\n第一节内容\n\n### 模块设计\n\n第二节内容',
+          completedCount: 2,
+          totalCount: 2,
+        },
+      })
+    })
+
+    await act(async () => {
+      progressListener?.({
+        taskId: 'task-batch-2',
+        progress: 100,
+        message: 'batch-complete',
+        payload: {
+          kind: 'batch-complete',
+          batchId: 'batch-1',
+          assembledMarkdown: '### 总体架构\n\n第一节内容\n\n### 模块设计\n\n第二节内容',
+          completedCount: 2,
+          totalCount: 2,
+          failedSections: [],
+        },
+      })
+    })
+
+    const status = result.current.getStatus(mockTarget)
+    expect(status!.phase).toBe('completed')
+    expect(status!.progress).toBe(100)
+    expect(status!.locked).toBe(false)
+    expect(status!.generatedContent).toBe(
+      '### 总体架构\n\n第一节内容\n\n### 模块设计\n\n第二节内容'
+    )
   })
 })
 
