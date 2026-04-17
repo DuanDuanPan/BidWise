@@ -17,6 +17,36 @@ export interface TokenUsage {
   completionTokens: number
 }
 
+// ─── Stream termination ───
+
+/**
+ * Classification of how a streamed provider response actually ended. Provider
+ * adapters must set this regardless of upstream field naming so business code
+ * (retry, budget escalation, error surface) can behave consistently across
+ * Claude / OpenAI / Gemini / DeepSeek / MiniMax and thinking vs non-thinking
+ * models.
+ */
+export type StreamTerminationKind =
+  | 'completed' // Model finished naturally (stop / end_turn / tool_use)
+  | 'truncated' // Model hit max_tokens / length cap (content may be partial or empty)
+  | 'aborted' // Stream was aborted (idle timeout, upstream cancel, network)
+  | 'incomplete' // Stream ended with no finish_reason / unknown server state
+
+export interface StreamTermination {
+  kind: StreamTerminationKind
+  /** Raw finish_reason / stop_reason from provider, null if absent */
+  finishReason: string | null
+  /** For kind='aborted': what triggered the abort */
+  abortCause?: 'idle-timeout' | 'upstream-cancel' | 'network'
+  /**
+   * Diagnostic only: bytes of `reasoning_content` (thinking tokens) observed
+   * during the stream. Never used as `content`; thinking text is model scratch
+   * space, not the answer. Non-zero here with an empty `content` typically
+   * signals the model is still thinking or ran out of budget in thought.
+   */
+  reasoningChars?: number
+}
+
 // ─── Provider-level types ───
 
 /** Unified request sent to a provider adapter */
@@ -33,6 +63,7 @@ export interface AiChatResponse {
   usage: TokenUsage
   model: string
   finishReason: string
+  termination: StreamTermination
 }
 
 // ─── Proxy-level types ───
@@ -59,6 +90,7 @@ export interface AiProxyResponse {
   provider: string
   latencyMs: number
   finishReason: string
+  termination: StreamTermination
 }
 
 // ─── Provider configuration ───
@@ -121,6 +153,7 @@ export type AgentType =
   | 'attack-checklist'
   | 'skill'
   | 'skill-diagram'
+  | 'chapter-summary'
 
 /** Task status state machine */
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -190,6 +223,10 @@ export interface AgentExecuteResult {
   content: string
   usage: TokenUsage
   latencyMs: number
+  /** Provider reported by ai-proxy when the handler uses the default AI path (Story 3.12). */
+  provider?: string
+  /** Model id reported by the provider response (Story 3.12). */
+  model?: string
 }
 
 /** Agent status query response */

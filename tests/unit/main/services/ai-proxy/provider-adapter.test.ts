@@ -8,10 +8,55 @@ const mockCompletionsCreate = vi.fn()
 const mockAnthropicConstructor = vi.fn()
 const mockOpenAIConstructor = vi.fn()
 
+// Streaming providers need mocks shaped like real streams:
+//   - Claude: stream(body, opts) → { on, finalMessage }
+//   - OpenAI: chat.completions.create(body, opts) → async iterable of chunks
+// Route both through the existing mockCreate / mockCompletionsCreate so test
+// setups using mockResolvedValue / mockRejectedValue keep working.
+async function toOpenAiStream(value: unknown): Promise<AsyncIterable<Record<string, unknown>>> {
+  if (
+    value &&
+    typeof (value as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === 'function'
+  ) {
+    return value as AsyncIterable<Record<string, unknown>>
+  }
+  const v = value as {
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
+    model?: string
+  }
+  const choice = v?.choices?.[0]
+  const content = choice?.message?.content
+  const finishReason = choice?.finish_reason ?? null
+  const chunks: Array<Record<string, unknown>> = []
+  if (typeof content === 'string' && content.length > 0) {
+    chunks.push({
+      model: v?.model,
+      choices: [{ delta: { content }, finish_reason: null }],
+    })
+  }
+  chunks.push({
+    model: v?.model,
+    choices: [{ delta: {}, finish_reason: finishReason }],
+    ...(v?.usage ? { usage: v.usage } : {}),
+  })
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const c of chunks) yield c
+    },
+  }
+}
+
 vi.mock('@anthropic-ai/sdk', () => {
   return {
     default: class MockAnthropic {
-      messages = { create: mockCreate }
+      messages = {
+        create: mockCreate,
+        stream: (body: unknown, opts: unknown) => ({
+          on: () => undefined,
+          finalMessage: () => mockCreate(body, opts),
+        }),
+      }
 
       constructor(options: unknown) {
         mockAnthropicConstructor(options)
@@ -23,7 +68,14 @@ vi.mock('@anthropic-ai/sdk', () => {
 vi.mock('openai', () => {
   return {
     default: class MockOpenAI {
-      chat = { completions: { create: mockCompletionsCreate } }
+      chat = {
+        completions: {
+          create: async (body: unknown, opts: unknown) => {
+            const result = await mockCompletionsCreate(body, opts)
+            return toOpenAiStream(result)
+          },
+        },
+      }
 
       constructor(options: unknown) {
         mockOpenAIConstructor(options)
@@ -71,7 +123,9 @@ describe('provider-adapter', () => {
           model: 'claude-sonnet-4-20250514',
           max_tokens: 1024,
         }),
-        {} // No default timeout — upstream controls via options.timeoutMs
+        // No explicit timeout — upstream controls via options.timeoutMs.
+        // signal is always present (internal linked controller for idle watchdog).
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       )
 
       expect(response.content).toBe('AI response')
@@ -144,8 +198,9 @@ describe('provider-adapter', () => {
           ],
           model: 'gpt-4o',
           max_tokens: 1024,
+          stream: true,
         }),
-        {} // No default timeout — upstream controls via options.timeoutMs
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       )
 
       expect(response.content).toBe('OpenAI response')
@@ -271,15 +326,26 @@ describe('provider-adapter', () => {
   })
 
   describe('signal/timeoutMs propagation', () => {
-    it('ClaudeProvider passes timeoutMs and signal to SDK call', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'ok' }],
-        usage: { input_tokens: 10, output_tokens: 5 },
-        model: 'claude-sonnet-4-20250514',
-        stop_reason: 'end_turn',
+    // Providers now always pass an internal linked AbortSignal to the SDK so
+    // the idle watchdog can abort streams without racing the caller's signal.
+    // Tests verify: (a) upstream aborts observed mid-flight propagate, and
+    // (b) timeoutMs passes through verbatim while signal is always present.
+    it('ClaudeProvider passes timeoutMs and forwards upstream aborts to SDK signal', async () => {
+      let capturedSdkSignal: AbortSignal | undefined
+      mockCreate.mockImplementation((_body, opts) => {
+        capturedSdkSignal = opts?.signal
+        // Abort upstream BEFORE chat finalMessage resolves, so the link is still
+        // active (post-resolution cleanup removes the forwarder).
+        upstreamController.abort(new Error('caller cancel'))
+        return Promise.resolve({
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+          model: 'claude-sonnet-4-20250514',
+          stop_reason: 'end_turn',
+        })
       })
 
-      const controller = new AbortController()
+      const upstreamController = new AbortController()
       const provider = new ClaudeProvider('key')
       await provider.chat(
         {
@@ -287,16 +353,16 @@ describe('provider-adapter', () => {
           model: 'claude-sonnet-4-20250514',
           maxTokens: 1024,
         },
-        { signal: controller.signal, timeoutMs: 60000 }
+        { signal: upstreamController.signal, timeoutMs: 60000 }
       )
 
       const sdkOptions = mockCreate.mock.calls[0][1]
-      expect(sdkOptions).toEqual(
-        expect.objectContaining({ timeout: 60000, signal: controller.signal })
-      )
+      expect(sdkOptions.timeout).toBe(60000)
+      expect(capturedSdkSignal).toBeInstanceOf(AbortSignal)
+      expect(capturedSdkSignal?.aborted).toBe(true)
     })
 
-    it('ClaudeProvider omits timeout/signal from SDK options when not provided', async () => {
+    it('ClaudeProvider still supplies a signal and no timeout when neither is provided', async () => {
       mockCreate.mockResolvedValue({
         content: [{ type: 'text', text: 'ok' }],
         usage: { input_tokens: 10, output_tokens: 5 },
@@ -312,19 +378,23 @@ describe('provider-adapter', () => {
       })
 
       const sdkOptions = mockCreate.mock.calls[0][1]
-      expect(sdkOptions).toEqual({})
+      expect(sdkOptions.signal).toBeInstanceOf(AbortSignal)
       expect(sdkOptions).not.toHaveProperty('timeout')
-      expect(sdkOptions).not.toHaveProperty('signal')
     })
 
-    it('OpenAiProvider passes timeoutMs and signal to SDK call', async () => {
-      mockCompletionsCreate.mockResolvedValue({
-        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 10, completion_tokens: 5 },
-        model: 'gpt-4o',
+    it('OpenAiProvider passes timeoutMs and forwards upstream aborts to SDK signal', async () => {
+      let capturedSdkSignal: AbortSignal | undefined
+      const upstreamController = new AbortController()
+      mockCompletionsCreate.mockImplementation((_body, opts) => {
+        capturedSdkSignal = opts?.signal
+        upstreamController.abort(new Error('caller cancel'))
+        return Promise.resolve({
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+          model: 'gpt-4o',
+        })
       })
 
-      const controller = new AbortController()
       const provider = new OpenAiProvider('key')
       await provider.chat(
         {
@@ -332,16 +402,16 @@ describe('provider-adapter', () => {
           model: 'gpt-4o',
           maxTokens: 1024,
         },
-        { signal: controller.signal, timeoutMs: 120000 }
+        { signal: upstreamController.signal, timeoutMs: 120000 }
       )
 
       const sdkOptions = mockCompletionsCreate.mock.calls[0][1]
-      expect(sdkOptions).toEqual(
-        expect.objectContaining({ timeout: 120000, signal: controller.signal })
-      )
+      expect(sdkOptions.timeout).toBe(120000)
+      expect(capturedSdkSignal).toBeInstanceOf(AbortSignal)
+      expect(capturedSdkSignal?.aborted).toBe(true)
     })
 
-    it('OpenAiProvider omits timeout/signal from SDK options when not provided', async () => {
+    it('OpenAiProvider still supplies a signal and no timeout when neither is provided', async () => {
       mockCompletionsCreate.mockResolvedValue({
         choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
         usage: { prompt_tokens: 10, completion_tokens: 5 },
@@ -356,9 +426,8 @@ describe('provider-adapter', () => {
       })
 
       const sdkOptions = mockCompletionsCreate.mock.calls[0][1]
-      expect(sdkOptions).toEqual({})
+      expect(sdkOptions.signal).toBeInstanceOf(AbortSignal)
       expect(sdkOptions).not.toHaveProperty('timeout')
-      expect(sdkOptions).not.toHaveProperty('signal')
     })
   })
 
@@ -529,5 +598,199 @@ describe('provider-adapter', () => {
 
       expect(mockCompletionsCreate).toHaveBeenCalledTimes(4)
     }, 30000)
+  })
+
+  // ─── Stream termination classification ───
+  //
+  // Regression suite for the "No closing </svg>" failure mode observed with
+  // gemini-3.1-pro-preview: the stream emitted only `reasoning_content` until
+  // idle timeout fired, then a legacy fallback promoted thinking text into
+  // `content`, producing prose that mentioned `<svg` with no closing tag.
+  // The new contract: reasoning is NEVER used as answer, and the four
+  // termination states (completed / truncated / aborted / incomplete) let the
+  // business layer pick the correct retry strategy.
+  describe('stream termination classification', () => {
+    function chunkStream(
+      chunks: Array<Record<string, unknown>>
+    ): AsyncIterable<Record<string, unknown>> {
+      return {
+        async *[Symbol.asyncIterator]() {
+          for (const c of chunks) yield c
+        },
+      }
+    }
+
+    it('OpenAiProvider: returns completed termination on normal stop', async () => {
+      mockCompletionsCreate.mockResolvedValue(
+        chunkStream([
+          { model: 'gpt-4o', choices: [{ delta: { content: 'hello' }, finish_reason: null }] },
+          {
+            model: 'gpt-4o',
+            choices: [{ delta: {}, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          },
+        ])
+      )
+
+      const provider = new OpenAiProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'x' }],
+        model: 'gpt-4o',
+        maxTokens: 1024,
+      })
+
+      expect(res.content).toBe('hello')
+      expect(res.termination.kind).toBe('completed')
+      expect(res.termination.finishReason).toBe('stop')
+    })
+
+    it('OpenAiProvider: returns truncated termination on finish_reason=length without retrying', async () => {
+      mockCompletionsCreate.mockResolvedValue(
+        chunkStream([
+          { model: 'gpt-4o', choices: [{ delta: { content: 'partial' }, finish_reason: null }] },
+          {
+            model: 'gpt-4o',
+            choices: [{ delta: {}, finish_reason: 'length' }],
+            usage: { prompt_tokens: 10, completion_tokens: 1024 },
+          },
+        ])
+      )
+
+      const provider = new OpenAiProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'x' }],
+        model: 'gpt-4o',
+        maxTokens: 1024,
+      })
+
+      expect(res.content).toBe('partial')
+      expect(res.termination.kind).toBe('truncated')
+      expect(res.termination.finishReason).toBe('length')
+      // Adapter must NOT retry a truncation — business layer escalates budget.
+      expect(mockCompletionsCreate).toHaveBeenCalledTimes(1)
+    })
+
+    it('OpenAiProvider: reasoning_content is NEVER promoted to content', async () => {
+      // Simulates gemini-3.1-pro-preview dumping thinking tokens while never
+      // emitting real content, then closing with finish_reason=stop.
+      // Old code turned reasoning into answer (→ "No closing </svg>" crash).
+      // New code must treat this as empty content + completed → retry 4×.
+      mockCompletionsCreate.mockResolvedValue(
+        chunkStream([
+          {
+            model: 'gemini-3.1-pro-preview',
+            choices: [
+              {
+                delta: { reasoning_content: 'I will draft an <svg> flowchart...' },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            model: 'gemini-3.1-pro-preview',
+            choices: [
+              {
+                delta: { reasoning_content: 'First the nodes, then the edges.' },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            model: 'gemini-3.1-pro-preview',
+            choices: [{ delta: {}, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 100, completion_tokens: 0 },
+          },
+        ])
+      )
+
+      const provider = new OpenAiProvider('key')
+      try {
+        await provider.chat({
+          messages: [{ role: 'user', content: 'draw' }],
+          model: 'gemini-3.1-pro-preview',
+          maxTokens: 1024,
+        })
+        expect.fail('should have thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(AiProxyError)
+        // Error surface must reveal the reasoning-only state so operators can
+        // diagnose without re-reading jsonl traces.
+        expect((err as Error).message).toMatch(/reasoningChars=\d+/)
+        expect((err as Error).message).not.toContain('<svg>')
+      }
+      // withRetry burns 4 attempts on retryable empty content.
+      expect(mockCompletionsCreate).toHaveBeenCalledTimes(4)
+    }, 30000)
+
+    it('OpenAiProvider: reasoning_content delta counts toward reasoningChars', async () => {
+      mockCompletionsCreate.mockResolvedValue(
+        chunkStream([
+          {
+            model: 'gpt-x',
+            choices: [{ delta: { reasoning_content: 'thinking' }, finish_reason: null }],
+          },
+          {
+            model: 'gpt-x',
+            choices: [{ delta: { content: 'answer' }, finish_reason: null }],
+          },
+          {
+            model: 'gpt-x',
+            choices: [{ delta: {}, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 5, completion_tokens: 3 },
+          },
+        ])
+      )
+
+      const provider = new OpenAiProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'x' }],
+        model: 'gpt-x',
+        maxTokens: 512,
+      })
+
+      expect(res.content).toBe('answer')
+      expect(res.termination.kind).toBe('completed')
+      expect(res.termination.reasoningChars).toBe('thinking'.length)
+    })
+
+    it('ClaudeProvider: returns truncated termination on stop_reason=max_tokens', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'partial body' }],
+        usage: { input_tokens: 100, output_tokens: 1024 },
+        model: 'claude-opus-4-6',
+        stop_reason: 'max_tokens',
+      })
+
+      const provider = new ClaudeProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'x' }],
+        model: 'claude-opus-4-6',
+        maxTokens: 1024,
+      })
+
+      expect(res.content).toBe('partial body')
+      expect(res.termination.kind).toBe('truncated')
+      expect(res.termination.finishReason).toBe('max_tokens')
+      expect(mockCreate).toHaveBeenCalledTimes(1)
+    })
+
+    it('ClaudeProvider: returns completed termination with end_turn', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: 'done' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        model: 'claude-opus-4-6',
+        stop_reason: 'end_turn',
+      })
+
+      const provider = new ClaudeProvider('key')
+      const res = await provider.chat({
+        messages: [{ role: 'user', content: 'x' }],
+        model: 'claude-opus-4-6',
+        maxTokens: 1024,
+      })
+
+      expect(res.termination.kind).toBe('completed')
+      expect(res.termination.finishReason).toBe('end_turn')
+    })
   })
 })

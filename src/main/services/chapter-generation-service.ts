@@ -34,15 +34,29 @@ import {
   createContentDigest,
   extractMarkdownHeadings,
   findMarkdownHeading,
+  getMarkdownDirectSectionBodyByHeading,
+  isMarkdownDirectBodyEmpty,
   isMarkdownSectionContentEmpty,
 } from '@shared/chapter-markdown'
+import { chapterSummaryStore } from '@main/services/chapter-summary-store'
+import { createChapterLocatorKey } from '@shared/chapter-locator-key'
+import { headingTreeDistance } from '@main/utils/heading-tree-distance'
+import {
+  CHAPTER_SUMMARY_FALLBACK_LENGTH,
+  CHAPTER_SUMMARY_TOP_N,
+  type GeneratedChapterSummary,
+  type GeneratedChaptersContext,
+} from '@shared/chapter-summary-types'
 import { progressEmitter } from '@main/services/task-queue/progress-emitter'
+import { taskQueue } from '@main/services/task-queue'
 import type { MarkdownHeadingInfo } from '@shared/chapter-markdown'
 
 const logger = createLogger('chapter-generation-service')
 
-const CHAPTER_TIMEOUT_MS = 600_000
-const _BATCH_CHAPTER_TIMEOUT_MS = 1_200_000
+// Chapter task budget covers prose generation + up to ~4 skill diagrams, each
+// of which may burn several minutes streaming large SVGs. 30 min leaves room
+// for repair loops without starving later diagrams after an early slow one.
+const CHAPTER_TIMEOUT_MS = 1_800_000
 const MAX_ADJACENT_SUMMARY_LENGTH = 500
 
 type HeadingInfo = MarkdownHeadingInfo
@@ -113,6 +127,157 @@ function summarizeChapter(slice: ChapterSlice): string {
   return content.length > MAX_ADJACENT_SUMMARY_LENGTH
     ? content.slice(0, MAX_ADJACENT_SUMMARY_LENGTH) + '…'
     : content
+}
+
+function truncateForFallback(body: string, max: number): string {
+  const trimmed = body.trim()
+  if (trimmed.length <= max) return trimmed
+  return trimmed.slice(0, max) + '…'
+}
+
+/**
+ * Build the four-group global summary context for a chapter generation
+ * (Story 3.12 AC4). Enumerates all headings whose direct body is non-empty,
+ * hydrates each via lineHash-matched cache or 500-char direct-body fallback,
+ * ranks by LCA tree distance, and groups as ancestors / siblings / descendants
+ * / others.
+ */
+async function buildGeneratedChaptersContext(
+  projectId: string,
+  markdown: string,
+  headings: HeadingInfo[],
+  targetHeading: HeadingInfo
+): Promise<GeneratedChaptersContext | undefined> {
+  const lines = markdown.split('\n')
+  const sidecarEntries = await chapterSummaryStore.list(projectId)
+  const sidecarByKey = new Map<string, (typeof sidecarEntries)[number]>()
+  for (const entry of sidecarEntries) {
+    sidecarByKey.set(`${entry.headingKey}#${entry.occurrenceIndex}`, entry)
+  }
+
+  type Candidate = {
+    summary: GeneratedChapterSummary
+    relation: HeadingRelationLike
+    order: number
+  }
+  const candidates: Candidate[] = []
+
+  for (let idx = 0; idx < headings.length; idx++) {
+    const candidate = headings[idx]
+    if (candidate.lineIndex === targetHeading.lineIndex) continue
+
+    const directBody = getMarkdownDirectSectionBodyByHeading(lines, headings, candidate)
+    if (isMarkdownDirectBodyEmpty(directBody)) continue
+
+    const locator = {
+      title: candidate.title,
+      level: candidate.level,
+      occurrenceIndex: candidate.occurrenceIndex,
+    }
+    const headingKey = createChapterLocatorKey(locator)
+    const cached = sidecarByKey.get(`${headingKey}#${candidate.occurrenceIndex}`)
+    const currentHash = createContentDigest(directBody)
+
+    let summaryText: string
+    let source: 'cache' | 'fallback'
+    if (cached && cached.lineHash === currentHash && cached.summary.length > 0) {
+      summaryText = cached.summary
+      source = 'cache'
+    } else {
+      summaryText = truncateForFallback(directBody, CHAPTER_SUMMARY_FALLBACK_LENGTH)
+      source = 'fallback'
+    }
+
+    const { distance, relation } = headingTreeDistance(headings, targetHeading, candidate)
+
+    candidates.push({
+      summary: {
+        headingKey,
+        headingTitle: candidate.title,
+        headingLevel: candidate.level,
+        occurrenceIndex: candidate.occurrenceIndex,
+        distance,
+        source,
+        summary: summaryText,
+      },
+      relation,
+      order: idx,
+    })
+  }
+
+  if (candidates.length === 0) return undefined
+
+  candidates.sort((a, b) => {
+    if (a.summary.distance !== b.summary.distance) return a.summary.distance - b.summary.distance
+    return a.order - b.order
+  })
+
+  const topN = candidates.slice(0, CHAPTER_SUMMARY_TOP_N)
+
+  const context: GeneratedChaptersContext = {
+    ancestors: [],
+    siblings: [],
+    descendants: [],
+    others: [],
+  }
+  for (const entry of topN) {
+    switch (entry.relation) {
+      case 'ancestor':
+        context.ancestors.push(entry.summary)
+        break
+      case 'sibling':
+        context.siblings.push(entry.summary)
+        break
+      case 'descendant':
+        context.descendants.push(entry.summary)
+        break
+      default:
+        context.others.push(entry.summary)
+        break
+    }
+  }
+
+  return context
+}
+
+type HeadingRelationLike = 'ancestor' | 'sibling' | 'descendant' | 'other'
+
+/**
+ * Build `generatedChaptersContext` for a batch sub-chapter that has not yet
+ * been written into the document. The sub-chapter is inserted synthetically
+ * as the first child of `parentHeading` so that LCA-based grouping (父级 / 同级 /
+ * 子章节 / 其他) reflects the sub-chapter's position, not the parent's.
+ */
+async function buildSubchapterGeneratedContext(
+  projectId: string,
+  parentMarkdown: string,
+  parentHeadings: HeadingInfo[],
+  parentHeading: HeadingInfo,
+  subchapter: { title: string; level: number }
+): Promise<GeneratedChaptersContext | undefined> {
+  const parentIdx = parentHeadings.findIndex((h) => h.lineIndex === parentHeading.lineIndex)
+  if (parentIdx < 0) {
+    return buildGeneratedChaptersContext(projectId, parentMarkdown, parentHeadings, parentHeading)
+  }
+
+  const synthetic: HeadingInfo = {
+    rawTitle: subchapter.title,
+    title: subchapter.title,
+    level: subchapter.level as HeadingInfo['level'],
+    // Synthetic lineIndex lands immediately after the parent heading; no real
+    // line in parentMarkdown corresponds to it, and buildGeneratedChaptersContext
+    // skips it as `targetHeading` (self) before any line-based body extraction.
+    lineIndex: parentHeading.lineIndex + 1,
+    occurrenceIndex: 0,
+  }
+
+  const syntheticHeadings: HeadingInfo[] = [
+    ...parentHeadings.slice(0, parentIdx + 1),
+    synthetic,
+    ...parentHeadings.slice(parentIdx + 1),
+  ]
+
+  return buildGeneratedChaptersContext(projectId, parentMarkdown, syntheticHeadings, synthetic)
 }
 
 /** Build a readable document outline from headings, marking the current chapter */
@@ -315,6 +480,14 @@ export const chapterGenerationService = {
     // Build document outline for scope awareness
     const documentOutline = buildDocumentOutline(headings, chapter.heading)
 
+    // Story 3.12: build global four-group summary context (top-N by tree distance)
+    const generatedChaptersContext = await buildGeneratedChaptersContext(
+      projectId,
+      lines.join('\n'),
+      headings,
+      chapter.heading
+    )
+
     // Dispatch to agent-orchestrator
     const response = await agentOrchestrator.execute({
       agentType: 'generate',
@@ -330,12 +503,15 @@ export const chapterGenerationService = {
         documentOutline,
         adjacentChaptersBefore: adjacentBefore,
         adjacentChaptersAfter: adjacentAfter,
+        generatedChaptersContext,
         strategySeed,
         additionalContext,
         target,
         baselineDigest,
         baselineSectionContent: chapter.contentLines.join('\n'),
-        enableDiagrams: shouldSuggestDiagrams(target.title),
+        enableDiagrams: shouldSuggestDiagrams(target.title, {
+          guidanceText: guidanceText || undefined,
+        }),
       },
       options: {
         timeoutMs: CHAPTER_TIMEOUT_MS,
@@ -543,6 +719,11 @@ export const chapterGenerationService = {
     const documentOutline = buildDocumentOutline(headings, chapter.heading)
 
     // ── Progressive batch: create orchestration and chain sub-chapter tasks ──
+    // Story 3.12: generatedChaptersContext is rebuilt PER SUB-CHAPTER inside
+    // `_dispatchBatchSingleSection` so that LCA-based 父级/同级/子章节/其他 labels
+    // reflect the dispatched sub-chapter's tree position, not the parent's.
+    // The parent markdown + heading list is stashed under internal keys so
+    // dispatches can reconstruct a synthetic heading for each sub-section.
     const contextBase: Record<string, unknown> = {
       projectId,
       chapterTitle: target.title,
@@ -558,6 +739,9 @@ export const chapterGenerationService = {
       baselineDigest,
       baselineSectionContent: chapter.contentLines.join('\n'),
       siblingSectionTitles: confirmedSkeleton.sections.map((section) => section.title),
+      _batchParentMarkdown: markdown,
+      _batchParentHeadings: headings,
+      _batchParentHeading: chapter.heading,
     }
 
     const orchestration = batchOrchestrationManager.create({
@@ -595,11 +779,37 @@ export const chapterGenerationService = {
     previousSections: Array<{ title: string; markdown: string }>,
     contextBase: Record<string, unknown>
   ): Promise<string> {
+    // Rebuild `generatedChaptersContext` relative to THIS sub-chapter. Using
+    // the parent-anchored context would mislabel parent's siblings as 同级
+    // and push the sub-chapter's true ancestors out of the 父级 group.
+    const projectIdForCtx = contextBase.projectId as string | undefined
+    const parentMarkdown = contextBase._batchParentMarkdown as string | undefined
+    const parentHeadings = contextBase._batchParentHeadings as HeadingInfo[] | undefined
+    const parentHeading = contextBase._batchParentHeading as HeadingInfo | undefined
+
+    let perSectionContext: GeneratedChaptersContext | undefined
+    if (projectIdForCtx && parentMarkdown && parentHeadings && parentHeading) {
+      try {
+        perSectionContext = await buildSubchapterGeneratedContext(
+          projectIdForCtx,
+          parentMarkdown,
+          parentHeadings,
+          parentHeading,
+          { title: section.title, level: section.level }
+        )
+      } catch (err) {
+        logger.warn(
+          `buildSubchapterGeneratedContext failed for "${section.title}"; falling back to parent-anchored context: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+
     const response = await agentOrchestrator.executeWithCallback(
       {
         agentType: 'generate',
         context: {
           ...contextBase,
+          generatedChaptersContext: perSectionContext,
           mode: 'skeleton-batch-single',
           batchId,
           sectionIndex,
@@ -638,6 +848,12 @@ export const chapterGenerationService = {
         sectionIndex,
         result.content
       )
+
+      // Story 3.12: sub-chapter summary extraction is triggered by the
+      // renderer AFTER batch-complete + document save lands — doing it here
+      // would (a) summarise a document that has not yet been written, and
+      // (b) fabricate occurrenceIndex: 0 regardless of duplicate-title
+      // siblings within the batch.
 
       if (advance.allDone) {
         // All sections done — push section-complete then batch-complete
@@ -908,6 +1124,18 @@ export const chapterGenerationService = {
     }
 
     const placeholderContent = '> [已跳过 - 请手动补充]'
+
+    // Delete the skipped section's failed task from the queue so it does not
+    // rehydrate as a stale error on next app launch.
+    const skippedTaskId = orch.sections[resolvedIndex]?.taskId
+    if (skippedTaskId) {
+      try {
+        await taskQueue.delete(skippedTaskId)
+      } catch (err) {
+        logger.warn(`Failed to delete skipped section task ${skippedTaskId}:`, err)
+      }
+    }
+
     // Mark section as completed with placeholder
     const advance = batchOrchestrationManager.onSectionComplete(
       batchId,
@@ -916,6 +1144,16 @@ export const chapterGenerationService = {
     )
 
     if (advance.allDone) {
+      // Terminal: purge every remaining section taskId so restart shows a clean slate.
+      for (const section of orch.sections) {
+        if (!section.taskId || section.taskId === skippedTaskId) continue
+        try {
+          await taskQueue.delete(section.taskId)
+        } catch (err) {
+          logger.warn(`Failed to delete batch section task ${section.taskId}:`, err)
+        }
+      }
+
       // All sections done — emit batch-complete
       const completePayload: BatchCompletePayload = {
         kind: 'batch-complete',

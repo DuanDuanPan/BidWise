@@ -93,6 +93,7 @@ function makeAiResponse(content: string) {
     model: 'mock',
     provider: 'mock',
     finishReason: 'stop',
+    termination: { kind: 'completed' as const, finishReason: 'stop' },
   }
 }
 
@@ -210,5 +211,168 @@ describe('skill-diagram-generation-service @story-3-10', () => {
     })
 
     expect(mockSaveAiDiagramAsset).not.toHaveBeenCalled()
+  })
+
+  // ─── Truncation escalation (output-cap handling) ────────────────────────
+
+  function makeTruncatedResponse(
+    completionTokens: number,
+    finishReason: 'length' | 'stop' = 'length'
+  ): ReturnType<typeof makeAiResponse> {
+    return {
+      content: '<svg><g><path d="M0 0 L10 10"/>',
+      usage: { promptTokens: 100, completionTokens },
+      latencyMs: 500,
+      model: 'mock',
+      provider: 'mock',
+      finishReason,
+      termination: {
+        kind: finishReason === 'length' ? ('truncated' as const) : ('completed' as const),
+        finishReason,
+      },
+    }
+  }
+
+  it('@p0 should request 65536 maxTokens by default when frontmatter omits it', async () => {
+    const skill = makeSkill()
+    delete (skill.frontmatter as { maxTokens?: number }).maxTokens
+    mockSkillLoaderGetSkill.mockReturnValue(skill)
+
+    await generateSkillDiagram({
+      input: makeInput(),
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    expect(mockAiProxy.call).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 65536 }))
+  })
+
+  it('@p0 should double maxTokens after finishReason=length truncation', async () => {
+    const skill = makeSkill()
+    skill.frontmatter.maxTokens = 16384
+    mockSkillLoaderGetSkill.mockReturnValue(skill)
+
+    mockAiProxy.call
+      .mockResolvedValueOnce(makeTruncatedResponse(16380, 'length'))
+      .mockResolvedValueOnce(makeAiResponse(VALID_SVG))
+
+    const result = await generateSkillDiagram({
+      input: makeInput(),
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    expect(result.kind).toBe('success')
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ maxTokens: 16384 })
+    )
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ maxTokens: 32768 })
+    )
+  })
+
+  it('@p0 should detect truncation via near-cap output even if finishReason is stop', async () => {
+    const skill = makeSkill()
+    skill.frontmatter.maxTokens = 16384
+    mockSkillLoaderGetSkill.mockReturnValue(skill)
+
+    // finishReason='stop' but output is at the cap — still truncation
+    mockAiProxy.call
+      .mockResolvedValueOnce(makeTruncatedResponse(16384, 'stop'))
+      .mockResolvedValueOnce(makeAiResponse(VALID_SVG))
+
+    const result = await generateSkillDiagram({
+      input: makeInput(),
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    expect(result.kind).toBe('success')
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ maxTokens: 32768 })
+    )
+  })
+
+  it('@p0 should re-send original messages (not repair prompt) after truncation', async () => {
+    const skill = makeSkill()
+    skill.frontmatter.maxTokens = 16384
+    mockSkillLoaderGetSkill.mockReturnValue(skill)
+
+    const ORIGINAL_MESSAGES = [
+      { role: 'system' as const, content: 'system prompt' },
+      { role: 'user' as const, content: 'user prompt' },
+    ]
+    mockSkillExecutorBuildMessages.mockReturnValue(ORIGINAL_MESSAGES)
+
+    mockAiProxy.call
+      .mockResolvedValueOnce(makeTruncatedResponse(16380, 'length'))
+      .mockResolvedValueOnce(makeAiResponse(VALID_SVG))
+
+    await generateSkillDiagram({
+      input: makeInput(),
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    // Call 2 (after truncation) should use ORIGINAL messages verbatim — not
+    // wrapped in validation-repair boilerplate that would confuse the model
+    // into "fixing" structural errors that don't exist.
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        messages: ORIGINAL_MESSAGES,
+        caller: 'skill-diagram:escalate:1',
+      })
+    )
+  })
+
+  it('@p1 should cap maxTokens at 131072 ceiling', async () => {
+    const skill = makeSkill()
+    skill.frontmatter.maxTokens = 65536
+    mockSkillLoaderGetSkill.mockReturnValue(skill)
+
+    // Truncate 3 consecutive times: 65536 → 131072 (ceiling) → 131072 → 131072
+    mockAiProxy.call
+      .mockResolvedValueOnce(makeTruncatedResponse(65530, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(131070, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(131070, 'length'))
+      .mockResolvedValueOnce(makeTruncatedResponse(131070, 'length'))
+
+    const result = await generateSkillDiagram({
+      input: makeInput(),
+      projectId: 'proj-1',
+      aiProxy: mockAiProxy,
+      signal: new AbortController().signal,
+      usage: { promptTokens: 0, completionTokens: 0 },
+    })
+
+    expect(result.kind).toBe('failure')
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ maxTokens: 65536 })
+    )
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ maxTokens: 131072 })
+    )
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ maxTokens: 131072 })
+    )
+    expect(mockAiProxy.call).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({ maxTokens: 131072 })
+    )
   })
 })

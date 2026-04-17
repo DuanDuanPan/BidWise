@@ -218,6 +218,56 @@ export function extractMarkdownSectionContent(
   return getMarkdownSection(markdown, locator)?.contentLines.join('\n') ?? ''
 }
 
+/**
+ * "直属正文" — lines belonging to a heading but EXCLUDING any nested sub-headings
+ * (and their bodies). Stops at the first subsequent heading of any level.
+ *
+ * Used by chapter-summary cache (Story 3.12) for digest, fallback summary, and
+ * the empty-direct-body filter in global summary context construction.
+ */
+export function getMarkdownDirectSectionBody(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): string {
+  const lines = markdown.split('\n')
+  const headings = extractMarkdownHeadings(markdown)
+  const heading = findMarkdownHeading(headings, locator)
+  if (!heading) return ''
+
+  let endLineIndex = lines.length
+  for (const candidate of headings) {
+    if (candidate.lineIndex > heading.lineIndex) {
+      endLineIndex = candidate.lineIndex
+      break
+    }
+  }
+  return lines.slice(heading.lineIndex + 1, endLineIndex).join('\n')
+}
+
+/**
+ * Same as `getMarkdownDirectSectionBody` but works directly on a pre-extracted
+ * heading list — avoids re-parsing the markdown when callers already hold the
+ * heading set (e.g. during global summary context construction).
+ */
+export function getMarkdownDirectSectionBodyByHeading(
+  lines: string[],
+  headings: MarkdownHeadingInfo[],
+  heading: MarkdownHeadingInfo
+): string {
+  let endLineIndex = lines.length
+  for (const candidate of headings) {
+    if (candidate.lineIndex > heading.lineIndex) {
+      endLineIndex = candidate.lineIndex
+      break
+    }
+  }
+  return lines.slice(heading.lineIndex + 1, endLineIndex).join('\n')
+}
+
+export function isMarkdownDirectBodyEmpty(body: string): boolean {
+  return isMarkdownSectionContentEmpty(body.split('\n'))
+}
+
 export function isMarkdownSectionContentEmpty(contentLines: string[]): boolean {
   for (const line of contentLines) {
     const trimmed = line.trim()

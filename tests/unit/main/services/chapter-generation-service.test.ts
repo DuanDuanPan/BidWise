@@ -18,11 +18,14 @@ const mockBatchOrcGetRetryCount = vi.hoisted(() => vi.fn())
 const mockBatchOrcIncrementRetryCount = vi.hoisted(() => vi.fn())
 const mockBatchOrcMarkRetrying = vi.hoisted(() => vi.fn())
 const mockProgressEmit = vi.hoisted(() => vi.fn())
+const mockTaskQueueDelete = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockFindRequirements = vi.hoisted(() => vi.fn())
 const mockFindScoringModel = vi.hoisted(() => vi.fn())
 const mockFindMandatoryItems = vi.hoisted(() => vi.fn())
 const mockFindBySection = vi.hoisted(() => vi.fn())
 const mockGetProjectWritingStyle = vi.hoisted(() => vi.fn())
+const mockChapterSummaryList = vi.hoisted(() => vi.fn())
+const mockChapterSummaryEnqueue = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   app: {
@@ -63,6 +66,12 @@ vi.mock('@main/services/task-queue/progress-emitter', () => ({
   },
 }))
 
+vi.mock('@main/services/task-queue', () => ({
+  taskQueue: {
+    delete: (...args: unknown[]) => mockTaskQueueDelete(...args),
+  },
+}))
+
 vi.mock('@main/db/repositories/requirement-repo', () => ({
   RequirementRepository: class {
     findByProject = mockFindRequirements
@@ -92,6 +101,18 @@ vi.mock('@main/services/writing-style-service', () => ({
     getProjectWritingStyle: (...args: unknown[]) => mockGetProjectWritingStyle(...args),
   },
   serializeStyleForPrompt: (style: { name: string }) => `文风：${style.name}`,
+}))
+
+vi.mock('@main/services/chapter-summary-store', () => ({
+  chapterSummaryStore: {
+    list: (...args: unknown[]) => mockChapterSummaryList(...args),
+  },
+}))
+
+vi.mock('@main/services/chapter-summary-service', () => ({
+  chapterSummaryService: {
+    enqueueExtraction: (...args: unknown[]) => mockChapterSummaryEnqueue(...args),
+  },
 }))
 
 vi.mock('fs/promises', () => ({
@@ -177,6 +198,8 @@ describe('@story-3-4 chapterGenerationService', () => {
       sentencePatterns: [],
       source: 'built-in',
     })
+    mockChapterSummaryList.mockResolvedValue([])
+    mockChapterSummaryEnqueue.mockResolvedValue({ taskId: 'task-sum-stub' })
     mockExecute.mockResolvedValue({ taskId: 'task-gen-1' })
   })
 
@@ -192,7 +215,7 @@ describe('@story-3-4 chapterGenerationService', () => {
       expect(request.agentType).toBe('generate')
       expect(request.context.chapterTitle).toBe('系统架构设计')
       expect(request.context.chapterLevel).toBe(2)
-      expect(request.options.timeoutMs).toBe(600_000)
+      expect(request.options.timeoutMs).toBe(1_800_000)
       expect(request.options.maxRetries).toBe(0)
     })
 
@@ -720,6 +743,8 @@ describe('@story-3-11 chapterGenerationService — batch retry/skip', () => {
         1,
         '> [已跳过 - 请手动补充]'
       )
+      // Skipped section's failed task must be purged so stale error does not rehydrate on relaunch
+      expect(mockTaskQueueDelete).toHaveBeenCalledWith('t1')
     })
 
     it('@p0 should complete batch when skipping the last section', async () => {
@@ -735,6 +760,9 @@ describe('@story-3-11 chapterGenerationService — batch retry/skip', () => {
 
       expect(result.nextTaskId).toBeUndefined()
       expect(mockBatchOrcDelete).toHaveBeenCalledWith('batch-1')
+      // Terminal skip purges every section taskId so restart starts clean
+      expect(mockTaskQueueDelete).toHaveBeenCalledWith('t1')
+      expect(mockTaskQueueDelete).toHaveBeenCalledWith('t0')
       expect(mockProgressEmit).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'batch-complete' })
       )
@@ -870,5 +898,213 @@ describe('@story-3-11 chapterGenerationService — batch retry/skip', () => {
         vi.useRealTimers()
       }
     })
+  })
+})
+
+// ── Story 3.12: global summary context wiring ──────────────────────────────
+
+const MULTI_CHAPTER_MD = `# 投标技术方案
+
+## 1 项目概述
+
+本项目旨在为客户提供数字化平台解决方案。
+
+## 2 系统架构设计
+
+> 请设计系统整体架构
+
+### 2.1 总体设计
+
+分层架构：接入层 / 服务层 / 数据层。
+
+### 2.2 数据流
+
+数据从采集到消费的全链路。
+
+## 3 实施计划
+
+第一阶段：需求调研
+第二阶段：系统开发
+
+## 5 部署方案
+
+采用 Kubernetes 多集群部署。
+`
+
+describe('@story-3-12 chapterGenerationService — generatedChaptersContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockLoad.mockResolvedValue({ content: MULTI_CHAPTER_MD })
+    mockGetMetadata.mockResolvedValue({ sectionIndex: [] })
+    mockFindRequirements.mockResolvedValue([])
+    mockFindScoringModel.mockResolvedValue(null)
+    mockFindMandatoryItems.mockResolvedValue([])
+    mockFindBySection.mockResolvedValue([])
+    mockGetProjectWritingStyle.mockResolvedValue({
+      id: 'general',
+      name: '通用文风',
+      toneGuidance: '专业、清晰',
+      vocabularyRules: [],
+      forbiddenWords: [],
+      sentencePatterns: [],
+      source: 'built-in',
+    })
+    mockChapterSummaryList.mockResolvedValue([])
+    mockChapterSummaryEnqueue.mockResolvedValue({ taskId: 'task-sum-stub' })
+    mockExecute.mockResolvedValue({ taskId: 'task-gen-1' })
+  })
+
+  it('@p0 injects four-group context ordered by tree distance', async () => {
+    const target = { title: '2 系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+    await chapterGenerationService.regenerateChapter('proj-1', target, '')
+
+    const request = mockExecute.mock.calls[0][0]
+    const ctx = request.context.generatedChaptersContext
+    expect(ctx).toBeDefined()
+    // Descendants: 2.1 and 2.2 (level 3 under target)
+    expect(ctx.descendants.map((s: { headingTitle: string }) => s.headingTitle)).toEqual(
+      expect.arrayContaining(['2.1 总体设计', '2.2 数据流'])
+    )
+    // Siblings: 1 项目概述 / 3 实施计划 / 5 部署方案
+    expect(ctx.siblings.map((s: { headingTitle: string }) => s.headingTitle)).toEqual(
+      expect.arrayContaining(['1 项目概述', '3 实施计划', '5 部署方案'])
+    )
+    // No ancestors beyond root
+    expect(ctx.ancestors.length).toBeLessThanOrEqual(1)
+  })
+
+  it('@p0 hydrates from cache when lineHash matches', async () => {
+    // Pre-populate sidecar with a summary matching the current direct body of "1 项目概述".
+    const { createContentDigest } = await import('@shared/chapter-markdown')
+    const directBody1 = '\n本项目旨在为客户提供数字化平台解决方案。\n'
+    const entry = {
+      headingKey: '2:1 项目概述:0',
+      headingTitle: '1 项目概述',
+      headingLevel: 2 as const,
+      occurrenceIndex: 0,
+      lineHash: createContentDigest(directBody1),
+      summary: '{"key_commitments":["平台承诺"]}',
+      generatedAt: '2026-04-17T10:00:00.000Z',
+      provider: 'claude',
+      model: 'claude-opus-4-7',
+    }
+    mockChapterSummaryList.mockResolvedValue([entry])
+
+    const target = { title: '2 系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+    await chapterGenerationService.regenerateChapter('proj-1', target, '')
+
+    const request = mockExecute.mock.calls[0][0]
+    const ctx = request.context.generatedChaptersContext
+    const overview = [...ctx.siblings, ...ctx.descendants, ...ctx.ancestors, ...ctx.others].find(
+      (s: { headingTitle: string }) => s.headingTitle === '1 项目概述'
+    )
+    expect(overview).toBeDefined()
+    expect(overview.source).toBe('cache')
+    expect(overview.summary).toContain('key_commitments')
+  })
+
+  it('@p0 falls back to direct-body truncation on hash mismatch', async () => {
+    const entry = {
+      headingKey: '2:1 项目概述:0',
+      headingTitle: '1 项目概述',
+      headingLevel: 2 as const,
+      occurrenceIndex: 0,
+      lineHash: 'stale-hash',
+      summary: 'cached but stale',
+      generatedAt: '2026-04-17T10:00:00.000Z',
+      provider: 'claude',
+      model: 'claude-opus-4-7',
+    }
+    mockChapterSummaryList.mockResolvedValue([entry])
+
+    const target = { title: '2 系统架构设计', level: 2 as const, occurrenceIndex: 0 }
+    await chapterGenerationService.regenerateChapter('proj-1', target, '')
+
+    const ctx = mockExecute.mock.calls[0][0].context.generatedChaptersContext
+    const overview = ctx.siblings.find(
+      (s: { headingTitle: string }) => s.headingTitle === '1 项目概述'
+    )
+    expect(overview.source).toBe('fallback')
+    expect(overview.summary).toContain('本项目旨在')
+  })
+
+  it('@p0 caps top-N at 8 candidates by distance', async () => {
+    const longMd = [
+      '# root',
+      ...Array.from({ length: 20 }, (_, i) => `## ch${i}\n\ncontent ${i}`),
+    ].join('\n\n')
+    mockLoad.mockResolvedValue({ content: longMd })
+
+    const target = { title: 'ch5', level: 2 as const, occurrenceIndex: 0 }
+    // target chapter already has content — regenerateChapter skips empty-check
+    await chapterGenerationService.regenerateChapter('proj-1', target, '')
+
+    const ctx = mockExecute.mock.calls[0][0].context.generatedChaptersContext
+    const total =
+      ctx.ancestors.length + ctx.siblings.length + ctx.descendants.length + ctx.others.length
+    expect(total).toBe(8)
+  })
+
+  it('@p1 returns undefined when all other chapters have empty direct bodies', async () => {
+    mockLoad.mockResolvedValue({
+      content: '# root\n\n## only target\n\n> guidance only, no body\n',
+    })
+
+    const target = { title: 'only target', level: 2 as const, occurrenceIndex: 0 }
+    await chapterGenerationService.generateChapter('proj-1', target)
+
+    const ctx = mockExecute.mock.calls[0][0].context.generatedChaptersContext
+    expect(ctx).toBeUndefined()
+  })
+})
+
+// ── Story 3.12: batch sub-chapter summary trigger ──────────────────────────
+
+describe('@story-3-12 _onBatchSectionDone does NOT enqueue sub-chapter summary from main', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockChapterSummaryEnqueue.mockResolvedValue({ taskId: 'task-sum-stub' })
+  })
+
+  it('@p0 leaves summary extraction to the renderer (post-save snapshot has correct occurrenceIndex)', async () => {
+    // Main-process enqueue was removed because the document is not yet
+    // written at this point — the renderer fires enqueueExtraction after the
+    // batch-complete replaceSection lands, using the post-save document to
+    // resolve the true occurrenceIndex for duplicate-title siblings.
+    mockBatchOrcGet.mockReturnValue({
+      id: 'batch-1',
+      projectId: 'proj-1',
+      sections: [
+        {
+          index: 0,
+          section: { title: '子章节A', level: 3, dimensions: [] },
+          state: 'running',
+        },
+      ],
+      contextBase: {},
+    })
+    mockBatchOrcOnSectionComplete.mockReturnValue({
+      allDone: true,
+      assembledSnapshot: '',
+      completedCount: 1,
+      totalCount: 1,
+      failedSections: [],
+    })
+
+    await (
+      chapterGenerationService as unknown as {
+        _onBatchSectionDone: (
+          batchId: string,
+          idx: number,
+          taskId: string,
+          result: { status: 'completed'; content: string }
+        ) => Promise<void>
+      }
+    )._onBatchSectionDone('batch-1', 0, 'task-x', {
+      status: 'completed',
+      content: 'body',
+    })
+
+    expect(mockChapterSummaryEnqueue).not.toHaveBeenCalled()
   })
 })

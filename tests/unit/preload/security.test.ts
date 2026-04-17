@@ -127,6 +127,7 @@ describe('preload security isolation (AC-2, AC-5)', () => {
       'chapterRegenerate',
       'chapterSkeletonConfirm',
       'chapterSkeletonGenerate',
+      'chapterSummaryExtract',
       'annotationCreate',
       'annotationUpdate',
       'annotationDelete',

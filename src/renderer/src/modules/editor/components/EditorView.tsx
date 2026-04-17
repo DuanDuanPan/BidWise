@@ -24,8 +24,16 @@ import {
   sanitizeGeneratedChapterMarkdown,
   normalizeGeneratedHeadingLevels,
   extractMarkdownSectionContent,
+  extractMarkdownHeadings,
+  findMarkdownHeading,
+  getMarkdownDirectSectionBody,
+  isMarkdownDirectBodyEmpty,
 } from '@shared/chapter-markdown'
-import type { ChapterDiagramPatch } from '@shared/chapter-types'
+import type {
+  ChapterDiagramPatch,
+  ChapterHeadingLocator,
+  BatchSectionStatus,
+} from '@shared/chapter-types'
 
 interface EditorViewProps {
   projectId: string
@@ -299,6 +307,81 @@ export function EditorView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
+  const triggerSummaryExtraction = useCallback(
+    (
+      parentTarget: ChapterHeadingLocator,
+      operationType: string | undefined,
+      batchSections: BatchSectionStatus[] | undefined
+    ): void => {
+      const markdownSnapshot = useDocumentStore.getState().content
+      if (!markdownSnapshot) return
+
+      const fire = (locator: ChapterHeadingLocator): void => {
+        // Pre-extract directBody in the renderer so only the chapter-sized
+        // body crosses IPC and lands in tasks.input — a whole-document
+        // snapshot would accumulate as SQLite bloat across every refresh.
+        const directBody = getMarkdownDirectSectionBody(markdownSnapshot, locator)
+        // Symmetric with the read-side filter (chapter-generation-service
+        // `buildGeneratedChaptersContext` skips empty-direct-body headings):
+        // a cache entry whose body is blank, guidance-only (`> ...`), or the
+        // skip placeholder never contributes to any prompt — summarising it
+        // burns tokens, a queue slot, and a sidecar row for nothing.
+        if (isMarkdownDirectBodyEmpty(directBody)) return
+        void window.api.chapterSummaryExtract({ projectId, locator, directBody }).catch(() => {
+          /* best-effort — summary cache failures must not block generation */
+        })
+      }
+
+      fire(parentTarget)
+
+      if (operationType !== 'batch-generate') return
+
+      // Batch path: fan out exactly over the skeleton plan's completed
+      // sections. Iterating every descendant heading instead would also hit
+      // sub-sub-headings that appeared inside each generated child — those
+      // are summarised via their containing batch section, not individually,
+      // and running an AI summary per nested heading multiplies queue depth
+      // and token cost far beyond what the batch actually produced.
+      const completedSections = (batchSections ?? []).filter((s) => s.phase === 'completed')
+      if (completedSections.length === 0) return
+
+      const headings = extractMarkdownHeadings(markdownSnapshot)
+      const parent = findMarkdownHeading(headings, parentTarget)
+      if (!parent) return
+      const parentIdx = headings.findIndex((h) => h.lineIndex === parent.lineIndex)
+      if (parentIdx < 0) return
+
+      // Headings physically between the parent and the next same-or-shallower
+      // sibling. Skeleton-matched scanning is restricted to this window so
+      // later chapters cannot be mis-claimed as batch children.
+      let parentEndIdx = headings.length
+      for (let i = parentIdx + 1; i < headings.length; i++) {
+        if (headings[i].level <= parent.level) {
+          parentEndIdx = i
+          break
+        }
+      }
+
+      const consumed = new Set<number>()
+      for (const section of completedSections) {
+        for (let i = parentIdx + 1; i < parentEndIdx; i++) {
+          if (consumed.has(i)) continue
+          const inner = headings[i]
+          if (inner.level !== section.level) continue
+          if (inner.title !== section.title) continue
+          consumed.add(i)
+          fire({
+            title: inner.title,
+            level: inner.level,
+            occurrenceIndex: inner.occurrenceIndex,
+          })
+          break
+        }
+      }
+    },
+    [projectId]
+  )
+
   useEffect(() => {
     if (!chapterGen || !chapterStatuses || !replaceSectionRef.current) return
     if (loadedProjectId !== projectId || content.length === 0) return
@@ -437,6 +520,12 @@ export function EditorView({
           void sourceAttr.triggerAttribution(status.target, generatedContent)
           void sourceAttr.triggerBaselineValidation(status.target, generatedContent)
         }
+        // Story 3.12: fire-and-forget chapter-summary cache refresh.
+        // Pre-extracting directBody in the renderer decouples extraction from
+        // the 1s autosave debounce (disk may still hold the pre-edit document)
+        // while keeping the queue payload chapter-sized instead of
+        // whole-document.
+        triggerSummaryExtraction(status.target, status.operationType, status.batchSections)
         chapterGen.dismissError(status.target)
         continue
       }
@@ -476,6 +565,9 @@ export function EditorView({
               void sourceAttr.triggerAttribution(status.target, generatedContent)
               void sourceAttr.triggerBaselineValidation(status.target, generatedContent)
             }
+            // Story 3.12: conflict-replace path refreshes summary cache too,
+            // using the freshly-applied document snapshot (see note above).
+            triggerSummaryExtraction(status.target, status.operationType, status.batchSections)
             chapterGen.dismissError(status.target)
           },
           onCancel: () => {
@@ -501,6 +593,7 @@ export function EditorView({
     replaceSectionVersion,
     sanitizeGeneratedContent,
     sourceAttr,
+    triggerSummaryExtraction,
   ])
 
   if (loading) {

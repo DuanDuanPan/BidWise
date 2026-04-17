@@ -25,29 +25,37 @@ let latestReplaceSectionReady:
   | null = null
 let mockSourceAttr: Record<string, unknown> | null = null
 
-vi.mock('@renderer/stores', () => ({
-  useDocumentStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      loading: mockLoading,
-      error: mockError,
-      content: mockContent,
-      loadedProjectId: mockLoadedProjectId,
-      loadDocument: mockLoadDocument,
-      autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
-      updateContent: vi.fn(),
-      saveDocument: vi.fn(),
-      resetDocument: vi.fn(),
-    })
-  ),
-  useProjectStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      projects: [],
-      currentProject: null,
-      loading: false,
-      error: null,
-    })
-  ),
-}))
+const buildDocumentStoreSnapshot = (): Record<string, unknown> => ({
+  loading: mockLoading,
+  error: mockError,
+  content: mockContent,
+  loadedProjectId: mockLoadedProjectId,
+  loadDocument: mockLoadDocument,
+  autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+  updateContent: vi.fn(),
+  saveDocument: vi.fn(),
+  resetDocument: vi.fn(),
+})
+
+vi.mock('@renderer/stores', () => {
+  const hook = vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
+    selector(buildDocumentStoreSnapshot())
+  ) as unknown as ((selector: (s: Record<string, unknown>) => unknown) => unknown) & {
+    getState: () => Record<string, unknown>
+  }
+  hook.getState = () => buildDocumentStoreSnapshot()
+  return {
+    useDocumentStore: hook,
+    useProjectStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
+      selector({
+        projects: [],
+        currentProject: null,
+        loading: false,
+        error: null,
+      })
+    ),
+  }
+})
 
 vi.mock('@modules/editor/hooks/useDocument', () => ({
   useDocument: vi.fn(),
@@ -127,6 +135,15 @@ vi.mock('@modules/asset/components/AssetImportDialog', () => ({
     <div data-testid="mock-asset-import-dialog">{open ? 'open' : 'closed'}</div>
   ),
 }))
+
+// Story 3.12: stub window.api for fire-and-forget chapter-summary trigger
+const mockChapterSummaryExtract = vi
+  .fn<(input: unknown) => Promise<{ success: true; data: { taskId: string } }>>()
+  .mockResolvedValue({ success: true, data: { taskId: 'task-sum-stub' } })
+// Safe to overwrite — EditorView only reads `chapterSummaryExtract` from this stub.
+;(window as unknown as { api: { chapterSummaryExtract: typeof mockChapterSummaryExtract } }).api = {
+  chapterSummaryExtract: mockChapterSummaryExtract,
+}
 
 describe('@story-3-1 EditorView', () => {
   beforeEach(() => {
@@ -231,6 +248,279 @@ describe('@story-3-1 EditorView', () => {
       expect(mockReplaceSection).toHaveBeenCalledWith(target, 'AI 生成内容')
       expect(mockDismissError).toHaveBeenCalledWith(target)
     })
+  })
+
+  it('@story-3-12 fires chapter-summary extraction with pre-extracted directBody', async () => {
+    mockChapterSummaryExtract.mockClear()
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    mockContent = '## 系统架构设计\n\n本章承诺 99.99% SLA。\n'
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: 'AI 生成内容',
+            progress: 100,
+            taskId: 'task-sum-ev',
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      expect(mockChapterSummaryExtract).toHaveBeenCalledTimes(1)
+    })
+    const [call] = mockChapterSummaryExtract.mock.calls[0] as [
+      {
+        projectId: string
+        locator: { title: string; level: number; occurrenceIndex: number }
+        directBody: string
+      },
+    ]
+    expect(call.projectId).toBe('proj-1')
+    expect(call.locator).toEqual(target)
+    expect(call.directBody).toContain('99.99% SLA')
+    // Regression guard: must NOT ship a whole-document snapshot into the
+    // persisted task row.
+    expect(call).not.toHaveProperty('markdownSnapshot')
+    expect(call.directBody.length).toBeLessThan(mockContent.length)
+  })
+
+  it('@story-3-12 batch completion fans out extraction only across skeleton-planned sections with real occurrenceIndex', async () => {
+    mockChapterSummaryExtract.mockClear()
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    // Two skeleton sections share a title, and each generated body contains
+    // a nested level-4 sub-section. The old fan-out would have fired for
+    // the nested L4 headings too, multiplying queue depth. The skeleton-plan-
+    // driven fan-out must fire exactly once per completed batch section, and
+    // the sidecar key (headingKey, occurrenceIndex) must land on distinct
+    // rows for the duplicate-title siblings.
+    //
+    // The parent chapter's own directBody is guidance-only (the content is
+    // carried by the children), so the empty-body guard must skip the parent
+    // IPC — summarising an empty-direct-body heading burns tokens for a
+    // cache row no reader path will ever consume.
+    mockContent = [
+      '## 系统架构设计',
+      '',
+      '> 请设计系统整体架构',
+      '',
+      '### 模块',
+      '',
+      '模块 A 内容。',
+      '',
+      '#### 模块 A 深层小节',
+      '',
+      '深层小节不应该被单独摘要。',
+      '',
+      '### 模块',
+      '',
+      '模块 B 内容。',
+      '',
+      '#### 模块 B 深层小节',
+      '',
+      '深层小节也不应该被单独摘要。',
+      '',
+    ].join('\n')
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: 'assembled',
+            progress: 100,
+            taskId: 'task-batch-done',
+            operationType: 'batch-generate',
+            batchSections: [
+              { index: 0, title: '模块', level: 3, phase: 'completed' },
+              { index: 1, title: '模块', level: 3, phase: 'completed' },
+            ],
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      // Exactly 2 skeleton-planned sections. Parent (guidance-only) and the
+      // four nested L4 headings MUST NOT produce additional tasks.
+      expect(mockChapterSummaryExtract).toHaveBeenCalledTimes(2)
+    })
+    const calls = mockChapterSummaryExtract.mock.calls.map((c) => c[0]) as Array<{
+      projectId: string
+      locator: { title: string; level: number; occurrenceIndex: number }
+      directBody: string
+    }>
+    expect(calls[0].locator).toEqual({ title: '模块', level: 3, occurrenceIndex: 0 })
+    expect(calls[1].locator).toEqual({ title: '模块', level: 3, occurrenceIndex: 1 })
+    // directBody is the "直属正文" for each section — nested L4 sub-sections
+    // must be excluded from the body sent to the agent.
+    expect(calls[0].directBody).toContain('模块 A 内容')
+    expect(calls[0].directBody).not.toContain('深层小节')
+    expect(calls[1].directBody).toContain('模块 B 内容')
+    expect(calls[1].directBody).not.toContain('深层小节')
+    // Regression guard: full-document snapshot must never reach IPC.
+    for (const call of calls) {
+      expect(call).not.toHaveProperty('markdownSnapshot')
+    }
+  })
+
+  it('@story-3-12 batch completion skips fan-out for failed skeleton sections', async () => {
+    mockChapterSummaryExtract.mockClear()
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    mockContent = [
+      '## 系统架构设计',
+      '',
+      '> 请设计系统整体架构',
+      '',
+      '### 模块 A',
+      '',
+      '模块 A 内容。',
+      '',
+      '### 模块 B',
+      '',
+      '> [生成失败]',
+      '',
+    ].join('\n')
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: 'assembled',
+            progress: 100,
+            taskId: 'task-batch-partial',
+            operationType: 'batch-generate',
+            batchSections: [
+              { index: 0, title: '模块 A', level: 3, phase: 'completed' },
+              { index: 1, title: '模块 B', level: 3, phase: 'failed', error: 'boom' },
+            ],
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      // Only 模块 A fires: parent is guidance-only, 模块 B is phase:'failed'.
+      expect(mockChapterSummaryExtract).toHaveBeenCalledTimes(1)
+    })
+    const calls = mockChapterSummaryExtract.mock.calls.map((c) => c[0]) as Array<{
+      locator: { title: string }
+    }>
+    expect(calls.map((c) => c.locator.title)).toEqual(['模块 A'])
+  })
+
+  it('@story-3-12 batch completion does NOT fire summary for skipped-section placeholder', async () => {
+    // After the batch-skip flow, the skipped section is rewritten to
+    // phase: 'completed' with a `> [已跳过 - 请手动补充]` placeholder. That
+    // placeholder matches GUIDANCE_RE and is treated as empty-direct-body by
+    // the read-side context builder, so summarising it is wasted work.
+    mockChapterSummaryExtract.mockClear()
+    const target = { title: '系统架构设计', level: 2, occurrenceIndex: 0 }
+    mockContent = [
+      '## 系统架构设计',
+      '',
+      '> 请设计系统整体架构',
+      '',
+      '### 模块 A',
+      '',
+      '模块 A 内容。',
+      '',
+      '### 模块 B',
+      '',
+      '> [已跳过 - 请手动补充]',
+      '',
+    ].join('\n')
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:系统架构设计:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: 'assembled',
+            progress: 100,
+            taskId: 'task-batch-skipped',
+            operationType: 'batch-generate',
+            batchSections: [
+              { index: 0, title: '模块 A', level: 3, phase: 'completed' },
+              // Skip-flow rewrites to phase: 'completed' with placeholder.
+              { index: 1, title: '模块 B', level: 3, phase: 'completed' },
+            ],
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      // Only 模块 A fires; 模块 B's body is a skip placeholder.
+      expect(mockChapterSummaryExtract).toHaveBeenCalledTimes(1)
+    })
+    const [call] = mockChapterSummaryExtract.mock.calls[0] as [{ locator: { title: string } }]
+    expect(call.locator.title).toBe('模块 A')
+  })
+
+  it('@story-3-12 single-chapter completion skips summary IPC when directBody is guidance-only', async () => {
+    // Defensive guard symmetric with read-side filter: an AI call that
+    // produced only a guidance blockquote contributes nothing to future
+    // prompts, so don't burn tokens / queue slot / sidecar row for it.
+    mockChapterSummaryExtract.mockClear()
+    const target = { title: '空章节', level: 2, occurrenceIndex: 0 }
+    mockContent = ['## 空章节', '', '> 请补充本章内容', ''].join('\n')
+    mockChapterGen = {
+      statuses: new Map([
+        [
+          '2:空章节:0',
+          {
+            target,
+            phase: 'completed',
+            generatedContent: 'noop',
+            progress: 100,
+            taskId: 'task-empty',
+          },
+        ],
+      ]),
+      dismissError: mockDismissError,
+    }
+
+    render(<EditorView projectId="proj-1" />)
+    act(() => {
+      latestReplaceSectionReady?.(mockReplaceSection)
+    })
+
+    await waitFor(() => {
+      expect(mockDismissError).toHaveBeenCalledWith(target)
+    })
+    expect(mockChapterSummaryExtract).not.toHaveBeenCalled()
   })
 
   it('@story-3-4 strips a duplicated chapter heading before replacing editor content', async () => {

@@ -11,6 +11,7 @@ import type {
   GenerateChapterContext,
   SkeletonPromptContext,
 } from '@main/prompts/generate-chapter.prompt'
+import type { GeneratedChaptersContext } from '@shared/chapter-summary-types'
 import { extractJsonObject as extractJsonObjectFromLlm } from '@main/utils/llm-json'
 import type {
   ChapterHeadingLocator,
@@ -163,7 +164,9 @@ async function callWithContinuation(params: {
     accumulateUsage(usage, response)
     parts.push(response.content.trim())
 
-    if (response.finishReason !== 'length') break
+    const isTruncated =
+      response.termination?.kind === 'truncated' || response.finishReason === 'length'
+    if (!isTruncated) break
 
     // 续写：追加 assistant + user 消息对，然后循环继续
     logger.info(
@@ -767,11 +770,7 @@ async function runChapterDiagramPipeline(params: {
     `Diagram placeholders parsed: "${chapterTitle}", count=${parsed.placeholders.length}, skeletonLen=${currentMarkdown.length}`
   )
 
-  if (
-    parsed.placeholders.length === 0 &&
-    shouldSuggestDiagrams(chapterTitle) &&
-    diagramFenceGuard.diagramLikeCount > 0
-  ) {
+  if (parsed.placeholders.length === 0 && diagramFenceGuard.diagramLikeCount > 0) {
     const failureMarkdown = '> [图表生成失败] 已检测到结构化图块，但未能转换为合法图表占位符。'
     currentMarkdown = `${currentMarkdown}\n\n${failureMarkdown}`.trim()
   }
@@ -1083,6 +1082,9 @@ async function handleSkeletonBatch(
         documentOutline: context.documentOutline as string | undefined,
         adjacentChaptersBefore: context.adjacentChaptersBefore as string | undefined,
         adjacentChaptersAfter: context.adjacentChaptersAfter as string | undefined,
+        generatedChaptersContext: context.generatedChaptersContext as
+          | GeneratedChaptersContext
+          | undefined,
         strategySeed: context.strategySeed as string | undefined,
         terminologyContext: terminologyContext || undefined,
         dimensionFocus: section.dimensions.join(', '),
@@ -1210,6 +1212,9 @@ async function handleSkeletonBatchSingle(
     documentOutline: context.documentOutline as string | undefined,
     adjacentChaptersBefore: context.adjacentChaptersBefore as string | undefined,
     adjacentChaptersAfter: context.adjacentChaptersAfter as string | undefined,
+    generatedChaptersContext: context.generatedChaptersContext as
+      | GeneratedChaptersContext
+      | undefined,
     strategySeed: context.strategySeed as string | undefined,
     terminologyContext: terminologyContext || undefined,
     dimensionFocus: (section.dimensions ?? []).join(', '),
@@ -1333,6 +1338,9 @@ async function handleChapterGeneration(
     documentOutline: context.documentOutline as string | undefined,
     adjacentChaptersBefore: context.adjacentChaptersBefore as string | undefined,
     adjacentChaptersAfter: context.adjacentChaptersAfter as string | undefined,
+    generatedChaptersContext: context.generatedChaptersContext as
+      | GeneratedChaptersContext
+      | undefined,
     strategySeed: context.strategySeed as string | undefined,
     additionalContext: context.additionalContext as string | undefined,
     terminologyContext: terminologyContext || undefined,

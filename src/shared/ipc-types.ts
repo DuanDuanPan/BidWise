@@ -105,6 +105,10 @@ import type {
   BatchSkipSectionOutput,
 } from './chapter-types'
 import type {
+  ChapterSummaryExtractInput,
+  ChapterSummaryExtractOutput,
+} from './chapter-summary-types'
+import type {
   AnnotationRecord,
   CreateAnnotationInput,
   UpdateAnnotationInput,
@@ -332,6 +336,7 @@ export const IPC_CHANNELS = {
   CHAPTER_BATCH_GENERATE: 'chapter:batch-generate',
   CHAPTER_BATCH_RETRY_SECTION: 'chapter:batch-retry-section',
   CHAPTER_BATCH_SKIP_SECTION: 'chapter:batch-skip-section',
+  CHAPTER_SUMMARY_EXTRACT: 'chapter-summary:extract',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
   ANNOTATION_DELETE: 'annotation:delete',
@@ -466,6 +471,10 @@ export type IpcChannelMap = {
   'chapter:batch-generate': { input: BatchGenerateInput; output: BatchGenerateOutput }
   'chapter:batch-retry-section': { input: BatchRetrySectionInput; output: BatchRetrySectionOutput }
   'chapter:batch-skip-section': { input: BatchSkipSectionInput; output: BatchSkipSectionOutput }
+  'chapter-summary:extract': {
+    input: ChapterSummaryExtractInput
+    output: ChapterSummaryExtractOutput
+  }
   'annotation:create': { input: CreateAnnotationInput; output: AnnotationRecord }
   'annotation:update': { input: UpdateAnnotationInput; output: AnnotationRecord }
   'annotation:delete': { input: DeleteAnnotationInput; output: void }

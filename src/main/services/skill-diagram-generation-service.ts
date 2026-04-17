@@ -32,18 +32,39 @@ const logger = createLogger('skill-diagram-generation-service')
 function execFileAsync(
   cmd: string,
   args: string[],
-  opts?: { timeout?: number }
+  opts?: { timeout?: number; env?: NodeJS.ProcessEnv }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFileCb(cmd, args, opts ?? {}, (err, stdout, stderr) => {
-      if (err) reject(err)
-      else resolve({ stdout: stdout?.toString() ?? '', stderr: stderr?.toString() ?? '' })
+      const stdoutStr = stdout?.toString() ?? ''
+      const stderrStr = stderr?.toString() ?? ''
+      if (err) {
+        const enriched = err as Error & { stdout?: string; stderr?: string }
+        enriched.stdout = stdoutStr
+        enriched.stderr = stderrStr
+        reject(enriched)
+        return
+      }
+      resolve({ stdout: stdoutStr, stderr: stderrStr })
     })
   })
 }
 
 const MAX_REPAIR_ATTEMPTS = 3
 const SKILL_NAME = 'fireworks-tech-graph'
+
+// Per-attempt AI call budget. 4 attempts × 10 min = 40 min theoretical max,
+// but outer chapter task (30 min) cuts sooner. 10 min per attempt is enough
+// for a 65k-token SVG at normal streaming rates (~120 tokens/s).
+const AI_CALL_TIMEOUT_MS = 600_000
+
+// Output-cap escalation: double maxTokens each time truncation is detected,
+// up to 128k (what Claude Sonnet 4.6 / Opus 4.7 / Gemini 3 Pro all support).
+// Baseline 65536 leaves headroom for dense architecture diagrams without
+// paying for unused quota on simple flowcharts.
+const DEFAULT_MAX_TOKENS = 65536
+const MAX_TOKENS_CEILING = 131072
+const TRUNCATION_DETECTION_SLACK = 64
 
 // Map style token → actual reference filename (must match files in references/)
 const STYLE_TO_REFERENCE_FILE: Record<AiDiagramStyleToken, string> = {
@@ -82,6 +103,7 @@ interface AiProxy {
     signal: AbortSignal
     maxTokens: number
     messages: AiChatMessage[]
+    timeoutMs?: number
   }): Promise<AiProxyResponse>
 }
 
@@ -151,11 +173,20 @@ async function runSvgValidator(svgContent: string, skillDirPath: string): Promis
     })
     return null // success
   } catch (err) {
-    const message =
-      err instanceof Error
-        ? (err as Error & { stderr?: string }).stderr || err.message
-        : String(err)
-    return message
+    // validate-svg.js writes failure details (tag balance, marker refs, arrow
+    // collisions, rsvg-convert output) to stdout, then exits non-zero. Capture
+    // stdout + stderr so the repair prompt and logs show the real reason.
+    const e = err as Error & { stdout?: string; stderr?: string; code?: number | string }
+    // eslint-disable-next-line no-control-regex
+    const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '').trim()
+    const stdout = stripAnsi(e.stdout ?? '')
+    const stderr = stripAnsi(e.stderr ?? '')
+    const failureLines = stdout
+      .split('\n')
+      .filter((line) => /✗|Fail|Error|Missing marker/i.test(line))
+      .join(' | ')
+    const details = failureLines || stdout || stderr || e.message
+    return details.slice(0, 800)
   } finally {
     try {
       await unlink(tmpPath)
@@ -251,26 +282,73 @@ export async function generateSkillDiagram(params: {
   const messages = skillExecutor.buildMessages(expandedPrompt, userMessage, skill)
 
   let lastError = ''
+  const baseMaxTokens = skill.frontmatter.maxTokens ?? DEFAULT_MAX_TOKENS
+  let truncationCount = 0
+  // Track whether the previous iteration terminated due to output-cap truncation.
+  // Truncation means the model generated a valid SVG that ran out of tokens, not
+  // that the SVG had validation errors — so the next attempt should re-issue the
+  // original messages with a larger budget, NOT the validation-repair prompt which
+  // would mislead the model into "fixing" non-existent structural errors.
+  let lastWasTruncation = false
 
   for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
     throwIfAborted(signal, 'Skill diagram generation cancelled')
 
-    const isRepair = attempt > 0
-    const caller = isRepair ? `skill-diagram:repair:${attempt}` : 'skill-diagram:generate'
+    const isValidationRepair = attempt > 0 && !lastWasTruncation
+    const caller =
+      !isValidationRepair && attempt > 0
+        ? `skill-diagram:escalate:${attempt}`
+        : isValidationRepair
+          ? `skill-diagram:repair:${attempt}`
+          : 'skill-diagram:generate'
 
-    const currentMessages: AiChatMessage[] = isRepair
+    const currentMessages: AiChatMessage[] = isValidationRepair
       ? buildRepairMessages(messages, lastError, input)
       : messages
+
+    const currentMaxTokens = Math.min(baseMaxTokens * 2 ** truncationCount, MAX_TOKENS_CEILING)
 
     try {
       const response = await aiProxy.call({
         caller,
         signal,
-        maxTokens: skill.frontmatter.maxTokens ?? 16384,
+        maxTokens: currentMaxTokens,
         messages: currentMessages,
+        timeoutMs: AI_CALL_TIMEOUT_MS,
       })
       usage.promptTokens += response.usage.promptTokens
       usage.completionTokens += response.usage.completionTokens
+
+      // Detect output-cap truncation before extraction so escalation is not
+      // masked as a "missing </svg>" parser error, which would otherwise
+      // burn repair attempts at the same maxTokens and fail deterministically.
+      //
+      // Primary signal is termination.kind='truncated' (adapter-normalized,
+      // covers length / max_tokens across providers). hitCap is a fallback
+      // for backends that forget to set finish_reason but still exhaust the
+      // budget.
+      const outputTokens = response.usage.completionTokens
+      const hitCap = outputTokens >= currentMaxTokens - TRUNCATION_DETECTION_SLACK
+      const terminationKind = response.termination?.kind
+      const truncated =
+        terminationKind === 'truncated' || response.finishReason === 'length' || hitCap
+
+      if (truncated) {
+        lastError = `Output truncated at ${outputTokens} tokens (cap ${currentMaxTokens}, finishReason=${response.finishReason ?? 'unknown'}, termination=${terminationKind ?? 'unknown'}).`
+        lastWasTruncation = true
+        logger.warn(`SVG output truncated (attempt ${attempt + 1})`, {
+          finishReason: response.finishReason,
+          termination: terminationKind ?? 'unknown',
+          outputTokens,
+          currentMaxTokens,
+        })
+        if (currentMaxTokens < MAX_TOKENS_CEILING) {
+          truncationCount += 1
+        }
+        continue
+      }
+
+      lastWasTruncation = false
 
       // Extract SVG
       const extraction = extractFirstSvg(response.content)

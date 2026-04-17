@@ -124,6 +124,8 @@ export class AgentOrchestrator {
             content: response.content,
             usage: response.usage,
             latencyMs: response.latencyMs,
+            provider: response.provider,
+            model: response.model,
           }
         }
 

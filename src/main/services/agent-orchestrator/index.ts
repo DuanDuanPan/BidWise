@@ -21,7 +21,9 @@ import { adversarialReviewAgentHandler } from './agents/adversarial-review-agent
 import { attackChecklistAgentHandler } from './agents/attack-checklist-agent'
 import { skillAgentHandler } from './agents/skill-agent'
 import { skillDiagramAgentHandler } from './agents/skill-diagram-agent'
+import { chapterSummaryAgentHandler } from './agents/chapter-summary-agent'
 import { terminologyPostProcessor } from './post-processors/terminology-post-processor'
+import { chapterSummaryPostProcessor } from './post-processors/chapter-summary-post-processor'
 
 export const agentOrchestrator = new AgentOrchestrator()
 
@@ -39,3 +41,8 @@ agentOrchestrator.registerAgent('adversarial-review', adversarialReviewAgentHand
 agentOrchestrator.registerAgent('attack-checklist', attackChecklistAgentHandler)
 agentOrchestrator.registerAgent('skill', skillAgentHandler)
 agentOrchestrator.registerAgent('skill-diagram', skillDiagramAgentHandler)
+agentOrchestrator.registerAgent(
+  'chapter-summary',
+  chapterSummaryAgentHandler,
+  chapterSummaryPostProcessor
+)

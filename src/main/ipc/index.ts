@@ -6,6 +6,7 @@ import { registerAnalysisHandlers } from './analysis-handlers'
 import { registerDocumentHandlers } from './document-handlers'
 import { registerTemplateHandlers } from './template-handlers'
 import { registerChapterHandlers } from './chapter-handlers'
+import { registerChapterSummaryHandlers } from './chapter-summary-handlers'
 import { registerAnnotationHandlers } from './annotation-handlers'
 import { registerSourceAttributionHandlers } from './source-attribution-handlers'
 import { registerWritingStyleHandlers } from './writing-style-handlers'
@@ -27,6 +28,7 @@ import type { RegisteredAnalysisChannels } from './analysis-handlers'
 import type { RegisteredDocumentChannels } from './document-handlers'
 import type { RegisteredTemplateChannels } from './template-handlers'
 import type { RegisteredChapterChannels } from './chapter-handlers'
+import type { RegisteredChapterSummaryChannels } from './chapter-summary-handlers'
 import type { RegisteredAnnotationChannels } from './annotation-handlers'
 import type { RegisteredSourceAttributionChannels } from './source-attribution-handlers'
 import type { RegisteredWritingStyleChannels } from './writing-style-handlers'
@@ -54,6 +56,7 @@ type _AllRegistered =
   | RegisteredDocumentChannels
   | RegisteredTemplateChannels
   | RegisteredChapterChannels
+  | RegisteredChapterSummaryChannels
   | RegisteredAnnotationChannels
   | RegisteredSourceAttributionChannels
   | RegisteredWritingStyleChannels
@@ -79,6 +82,7 @@ export function registerIpcHandlers(): void {
   registerDocumentHandlers()
   registerTemplateHandlers()
   registerChapterHandlers()
+  registerChapterSummaryHandlers()
   registerAnnotationHandlers()
   registerSourceAttributionHandlers()
   registerWritingStyleHandlers()

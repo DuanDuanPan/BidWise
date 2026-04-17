@@ -26,7 +26,7 @@ import type {
 const logger = createLogger('scoring-extractor')
 
 const POLL_INTERVAL_MS = 1_000
-const EXTRACTION_TIMEOUT_MS = 10 * 60 * 1_000
+const EXTRACTION_TIMEOUT_MS = 20 * 60 * 1_000
 
 /** Extract JSON from a string that may be wrapped in markdown code fences */
 function extractJsonFromResponse(text: string): string {
@@ -174,9 +174,12 @@ export class ScoringExtractor {
     }
 
     // Enqueue outer task
+    // maxRetries: 0 — extraction is long-running (20 min); retrying on failure
+    // would silently re-run the full AI call. Surface errors immediately.
     const taskId = await taskQueue.enqueue({
       category: 'import',
       input: { projectId, rootPath: project.rootPath },
+      maxRetries: 0,
     })
 
     // Fire-and-forget execution
@@ -186,104 +189,113 @@ export class ScoringExtractor {
     const certaintyRepo = this.certaintyRepo
     const rootPath = project.rootPath
     taskQueue
-      .execute(taskId, async (ctx: TaskExecutorContext) => {
-        ctx.updateProgress(5, '正在构建提示词...')
+      .execute(
+        taskId,
+        async (ctx: TaskExecutorContext) => {
+          ctx.updateProgress(5, '正在构建提示词...')
 
-        // Step 1: Call agent orchestrator
-        ctx.updateProgress(10, '正在调用 AI 分析招标文件...')
-        const agentResponse = await agentOrchestrator.execute({
-          agentType: 'extract',
-          context: {
-            sections: tender.sections,
-            rawText: tender.rawText,
-            totalPages: tender.totalPages,
-            hasScannedContent: tender.hasScannedContent,
-          },
-        })
+          // Step 1: Call agent orchestrator
+          ctx.updateProgress(10, '正在调用 AI 分析招标文件...')
+          const agentResponse = await agentOrchestrator.execute({
+            agentType: 'extract',
+            context: {
+              sections: tender.sections,
+              rawText: tender.rawText,
+              totalPages: tender.totalPages,
+              hasScannedContent: tender.hasScannedContent,
+            },
+            options: { timeoutMs: EXTRACTION_TIMEOUT_MS },
+          })
 
-        // Step 2: Poll for agent completion
-        const innerTaskId = agentResponse.taskId
-        let agentResult: string | undefined
-        const pollingStartedAt = Date.now()
+          // Step 2: Poll for agent completion
+          const innerTaskId = agentResponse.taskId
+          let agentResult: string | undefined
+          const pollingStartedAt = Date.now()
 
-        while (true) {
-          if (Date.now() - pollingStartedAt >= EXTRACTION_TIMEOUT_MS) {
-            throw new BidWiseError(
-              ErrorCode.EXTRACTION_FAILED,
-              'AI 抽取超时（超过 10 分钟），请重试'
-            )
+          while (true) {
+            if (Date.now() - pollingStartedAt >= EXTRACTION_TIMEOUT_MS) {
+              throw new BidWiseError(
+                ErrorCode.EXTRACTION_FAILED,
+                'AI 抽取超时（超过 20 分钟），请重试'
+              )
+            }
+
+            const status = await agentOrchestrator.getAgentStatus(innerTaskId)
+
+            if (status.status === 'completed') {
+              agentResult = status.result?.content
+              break
+            }
+
+            if (status.status === 'failed') {
+              throw new BidWiseError(
+                ErrorCode.EXTRACTION_FAILED,
+                `AI 抽取失败: ${status.error?.message ?? '未知错误'}`
+              )
+            }
+
+            if (status.status === 'cancelled') {
+              throw new BidWiseError(ErrorCode.TASK_CANCELLED, 'AI 抽取任务已取消')
+            }
+
+            // Report polling progress (20% → 80%)
+            const progressPct = Math.min(20 + status.progress * 0.6, 80)
+            ctx.updateProgress(progressPct, '正在调用 AI 分析招标文件...')
+
+            await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
           }
 
-          const status = await agentOrchestrator.getAgentStatus(innerTaskId)
-
-          if (status.status === 'completed') {
-            agentResult = status.result?.content
-            break
+          if (!agentResult) {
+            throw new BidWiseError(ErrorCode.EXTRACTION_FAILED, 'AI 返回结果为空')
           }
 
-          if (status.status === 'failed') {
-            throw new BidWiseError(
-              ErrorCode.EXTRACTION_FAILED,
-              `AI 抽取失败: ${status.error?.message ?? '未知错误'}`
-            )
+          // Step 3: Parse LLM response
+          ctx.updateProgress(85, 'AI 返回结果，正在解析和持久化...')
+          const result = parseExtractionResponse(agentResult, projectId)
+
+          // Step 4: Clean old data and persist
+          // Clear fog-map data before re-extracting requirements (Story 2.9 regression guard)
+          await certaintyRepo.deleteByProject(projectId)
+          const fogMapPath = path.join(rootPath, 'tender', 'fog-map.json')
+          await fs.rm(fogMapPath, { force: true }).catch(() => {})
+
+          // Clear mandatory item links before deleting requirements to prevent dangling references
+          await mandatoryItemRepo.clearLinkedRequirements(projectId)
+
+          // Always rewrite the snapshot so older drifted files self-heal even when DB is empty.
+          const mandatoryItems = await mandatoryItemRepo.findByProject(projectId)
+          const mandatorySnapshot: MandatoryItemsSnapshot = {
+            projectId,
+            items: mandatoryItems,
+            detectedAt: new Date().toISOString(),
           }
+          const mandatorySnapshotPath = path.join(rootPath, 'tender', 'mandatory-items.json')
+          await fs.writeFile(
+            mandatorySnapshotPath,
+            JSON.stringify(mandatorySnapshot, null, 2),
+            'utf-8'
+          )
 
-          if (status.status === 'cancelled') {
-            throw new BidWiseError(ErrorCode.TASK_CANCELLED, 'AI 抽取任务已取消')
-          }
+          await requirementRepo.deleteByProject(projectId)
+          await requirementRepo.create(projectId, result.requirements)
+          await scoringModelRepo.upsert(result.scoringModel)
 
-          // Report polling progress (20% → 80%)
-          const progressPct = Math.min(20 + status.progress * 0.6, 80)
-          ctx.updateProgress(progressPct, '正在调用 AI 分析招标文件...')
+          // Step 5: Write scoring-model.json to project directory
+          const scoringModelPath = path.join(rootPath, 'tender', 'scoring-model.json')
+          await fs.writeFile(
+            scoringModelPath,
+            JSON.stringify(result.scoringModel, null, 2),
+            'utf-8'
+          )
 
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-        }
-
-        if (!agentResult) {
-          throw new BidWiseError(ErrorCode.EXTRACTION_FAILED, 'AI 返回结果为空')
-        }
-
-        // Step 3: Parse LLM response
-        ctx.updateProgress(85, 'AI 返回结果，正在解析和持久化...')
-        const result = parseExtractionResponse(agentResult, projectId)
-
-        // Step 4: Clean old data and persist
-        // Clear fog-map data before re-extracting requirements (Story 2.9 regression guard)
-        await certaintyRepo.deleteByProject(projectId)
-        const fogMapPath = path.join(rootPath, 'tender', 'fog-map.json')
-        await fs.rm(fogMapPath, { force: true }).catch(() => {})
-
-        // Clear mandatory item links before deleting requirements to prevent dangling references
-        await mandatoryItemRepo.clearLinkedRequirements(projectId)
-
-        // Always rewrite the snapshot so older drifted files self-heal even when DB is empty.
-        const mandatoryItems = await mandatoryItemRepo.findByProject(projectId)
-        const mandatorySnapshot: MandatoryItemsSnapshot = {
-          projectId,
-          items: mandatoryItems,
-          detectedAt: new Date().toISOString(),
-        }
-        const mandatorySnapshotPath = path.join(rootPath, 'tender', 'mandatory-items.json')
-        await fs.writeFile(
-          mandatorySnapshotPath,
-          JSON.stringify(mandatorySnapshot, null, 2),
-          'utf-8'
-        )
-
-        await requirementRepo.deleteByProject(projectId)
-        await requirementRepo.create(projectId, result.requirements)
-        await scoringModelRepo.upsert(result.scoringModel)
-
-        // Step 5: Write scoring-model.json to project directory
-        const scoringModelPath = path.join(rootPath, 'tender', 'scoring-model.json')
-        await fs.writeFile(scoringModelPath, JSON.stringify(result.scoringModel, null, 2), 'utf-8')
-
-        ctx.updateProgress(100, '抽取完成')
-        logger.info(
-          `Extraction complete for project ${projectId}: ${result.requirements.length} requirements, ${result.scoringModel.criteria.length} criteria`
-        )
-        return result
-      })
+          ctx.updateProgress(100, '抽取完成')
+          logger.info(
+            `Extraction complete for project ${projectId}: ${result.requirements.length} requirements, ${result.scoringModel.criteria.length} criteria`
+          )
+          return result
+        },
+        { timeoutMs: EXTRACTION_TIMEOUT_MS + 60_000 }
+      )
       .catch((err) => {
         logger.error(`Extraction task failed: ${taskId}`, err)
       })

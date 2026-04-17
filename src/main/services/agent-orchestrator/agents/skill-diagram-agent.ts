@@ -3,6 +3,7 @@ import { ErrorCode } from '@shared/constants'
 import { createLogger } from '@main/utils/logger'
 import { throwIfAborted } from '@main/utils/abort'
 import { generateSkillDiagram } from '@main/services/skill-diagram-generation-service'
+import { sanitizeDiagramDescription } from '@main/services/diagram-validation-service'
 import type {
   ExecuteAiDiagramAgentInput,
   ExecuteAiDiagramAgentOutput,
@@ -43,15 +44,25 @@ export const skillDiagramAgentHandler: AgentHandler = async (
   updateProgress(10, '准备增强版图表生成...')
   throwIfAborted(signal, 'Skill diagram agent cancelled')
 
+  const sanitizedDescription = sanitizeDiagramDescription(ctx.prompt ?? '', ctx.title)
+  if (sanitizedDescription !== ctx.prompt) {
+    logger.warn('Replaced malformed diagram description with fallback before generation', {
+      diagramId: ctx.diagramId,
+      title: ctx.title,
+      originalPromptLen: (ctx.prompt ?? '').length,
+      sanitizedPromptLen: sanitizedDescription.length,
+    })
+  }
+
   const result = await generateSkillDiagram({
     input: {
       diagramId: ctx.diagramId,
       title: ctx.title,
-      description: ctx.prompt,
+      description: sanitizedDescription,
       style: ctx.style,
       diagramType: ctx.diagramType,
       chapterTitle: ctx.chapterTitle || ctx.title,
-      chapterMarkdown: ctx.chapterMarkdown || ctx.prompt,
+      chapterMarkdown: ctx.chapterMarkdown || sanitizedDescription,
       assetFileName: ctx.assetFileName,
     },
     projectId: ctx.projectId,

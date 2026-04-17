@@ -124,6 +124,7 @@ class AiProxyService {
         {
           signal: request.signal,
           timeoutMs: request.timeoutMs,
+          caller: request.caller,
         }
       )
 
@@ -152,7 +153,7 @@ class AiProxyService {
       }
 
       logger.info(
-        `AI call completed: caller=${request.caller} provider=${config.provider} model=${response.model} latency=${latencyMs}ms tokens=${response.usage.promptTokens}+${response.usage.completionTokens}`
+        `AI call completed: caller=${request.caller} provider=${config.provider} model=${response.model} latency=${latencyMs}ms tokens=${response.usage.promptTokens}+${response.usage.completionTokens} finishReason=${response.finishReason}`
       )
 
       return {
@@ -162,6 +163,7 @@ class AiProxyService {
         provider: config.provider,
         latencyMs,
         finishReason: response.finishReason,
+        termination: response.termination,
       }
     } catch (err) {
       const latencyMs = Date.now() - start

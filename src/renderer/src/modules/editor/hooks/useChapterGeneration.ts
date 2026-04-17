@@ -1118,6 +1118,26 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
       const key = locatorKey(target)
       const currentStatus = statusesRef.current.get(key)
 
+      // Local fallback when the backend batch orchestration is gone (e.g. after
+      // an app restart rehydrated a failed batch status from SQLite). Without
+      // this, a failed skip IPC leaves the stale task + error on every launch.
+      const purgeBatchLocally = (): void => {
+        const taskIds = new Set<string>()
+        if (currentStatus?.taskId) taskIds.add(currentStatus.taskId)
+        for (const section of currentStatus?.batchSections ?? []) {
+          if (section.taskId) taskIds.add(section.taskId)
+        }
+        for (const taskId of taskIds) {
+          taskToLocatorRef.current.delete(taskId)
+          void window.api.taskDelete(taskId)
+        }
+        setStatuses((prev) => {
+          const next = new Map(prev)
+          next.delete(key)
+          return next
+        })
+      }
+
       // In batch mode, "dismiss" means "skip this section and continue"
       if (currentStatus?.operationType === 'batch-generate' && currentStatus.batchId) {
         const failedSection = currentStatus.batchSections?.find((s) => s.phase === 'failed')
@@ -1129,7 +1149,11 @@ export function useChapterGeneration(projectId: string): UseChapterGenerationRet
             sectionIndex: failedSection?.index,
           })
           .then((res) => {
-            if (!res.success) return
+            if (!res.success) {
+              // Orchestration lost (post-restart) — purge tasks so error does not persist
+              purgeBatchLocally()
+              return
+            }
 
             const skippedIdx = res.data.skippedSectionIndex
             const snapshot = res.data.assembledSnapshot

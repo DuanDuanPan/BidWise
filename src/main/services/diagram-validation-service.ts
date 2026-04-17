@@ -115,6 +115,18 @@ function repairUnclosedDiagramPlaceholders(markdown: string): string {
   return repairedMarkdown
 }
 
+/**
+ * Clean a diagram description that may have been persisted in a malformed state
+ * (e.g. truncated base64 from an earlier LLM failure stored in a failure marker).
+ * Decodes recoverable base64, otherwise falls back to the provided fallback
+ * (typically the diagram title) so downstream prompts get a meaningful description.
+ */
+export function sanitizeDiagramDescription(raw: string, fallback: string): string {
+  const normalized = normalizeDescription(raw ?? '')
+  if (normalized) return normalized
+  return (fallback ?? '').trim()
+}
+
 function normalizeDescription(rawDescription: string): string {
   const trimmed = rawDescription.trim()
   const wrapped = trimmed.match(/^base64\(([\s\S]*)\)$/i)
@@ -131,6 +143,16 @@ function normalizeDescription(rawDescription: string): string {
     if (decodedSuffix) {
       return prefix || decodedSuffix
     }
+  }
+
+  // Reject raw-base64-looking strings that failed to decode cleanly —
+  // typically truncated base64 from LLM output (e.g. split across a
+  // continuation boundary). Returning the raw b64 would send gibberish
+  // to downstream diagram prompts and burn repair retries. Drop it so
+  // the caller can fall back to the diagram title.
+  const collapsed = candidate.replace(/\s+/g, '')
+  if (collapsed.length >= 24 && BASE64_TEXT_RE.test(collapsed)) {
+    return ''
   }
 
   return candidate.replace(/\s+/g, ' ').trim()
@@ -158,11 +180,12 @@ export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceho
           ? `${fileNamePrefix(type)}-${shortId}.drawio`
           : `${fileNamePrefix(type)}-${shortId}.svg`
 
+      const normalizedDescription = normalizeDescription(rawDescription)
       const placeholder: DiagramPlaceholder = {
         placeholderId,
         type,
         title,
-        description: normalizeDescription(rawDescription),
+        description: normalizedDescription || title,
         assetFileName,
       }
       placeholders.push(placeholder)

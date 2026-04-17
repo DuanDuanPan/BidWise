@@ -3,6 +3,7 @@
  * Injects rich context: chapter title, requirements, scoring weights,
  * mandatory items, adjacent chapter summaries, guidance text, and optional strategy seed.
  */
+import type { GeneratedChaptersContext } from '@shared/chapter-summary-types'
 
 /** Detect compliance matrix / requirement response table chapters */
 const COMPLIANCE_MATRIX_RE = /对照表|响应矩阵|响应表$|符合性说明$|偏离表|compliance\s*matrix/i
@@ -62,10 +63,31 @@ export interface GenerateChapterContext {
   documentOutline?: string
   adjacentChaptersBefore?: string
   adjacentChaptersAfter?: string
+  /** Story 3.12: four-group global summary context. Optional — empty for first-round generation. */
+  generatedChaptersContext?: GeneratedChaptersContext
   strategySeed?: string
   additionalContext?: string
   terminologyContext?: string
   language?: string
+}
+
+function renderGroupSummaries(summaries: GeneratedChaptersContext['ancestors']): string {
+  return summaries
+    .map(
+      (s) =>
+        `- **${s.headingTitle}** (L${s.headingLevel}, d=${s.distance}, ${s.source}): ${s.summary}`
+    )
+    .join('\n')
+}
+
+function hasGeneratedChaptersContext(ctx: GeneratedChaptersContext | undefined): boolean {
+  if (!ctx) return false
+  return (
+    ctx.ancestors.length > 0 ||
+    ctx.siblings.length > 0 ||
+    ctx.descendants.length > 0 ||
+    ctx.others.length > 0
+  )
 }
 
 export function generateChapterPrompt(context: GenerateChapterContext): string {
@@ -108,12 +130,31 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
     )
   }
 
-  if (context.adjacentChaptersBefore) {
-    sections.push(`## 前序章节摘要（避免重复）\n${context.adjacentChaptersBefore}`)
-  }
+  const useGlobalContext = hasGeneratedChaptersContext(context.generatedChaptersContext)
 
-  if (context.adjacentChaptersAfter) {
-    sections.push(`## 后续章节摘要（避免前置）\n${context.adjacentChaptersAfter}`)
+  if (useGlobalContext && context.generatedChaptersContext) {
+    const { ancestors, siblings, descendants, others } = context.generatedChaptersContext
+    if (ancestors.length > 0) {
+      sections.push(`## 父级章节摘要（当前章节是其细化）\n${renderGroupSummaries(ancestors)}`)
+    }
+    if (siblings.length > 0) {
+      sections.push(
+        `## 已生成同级章节摘要（术语 / 数字 / 承诺对齐）\n${renderGroupSummaries(siblings)}`
+      )
+    }
+    if (descendants.length > 0) {
+      sections.push(`## 已生成子章节摘要（供上位概括）\n${renderGroupSummaries(descendants)}`)
+    }
+    if (others.length > 0) {
+      sections.push(`## 其他已生成章节摘要（仅供全局一致性参考）\n${renderGroupSummaries(others)}`)
+    }
+  } else {
+    if (context.adjacentChaptersBefore) {
+      sections.push(`## 前序章节摘要（避免重复）\n${context.adjacentChaptersBefore}`)
+    }
+    if (context.adjacentChaptersAfter) {
+      sections.push(`## 后续章节摘要（避免前置）\n${context.adjacentChaptersAfter}`)
+    }
   }
 
   if (context.strategySeed) {
@@ -161,15 +202,16 @@ export function generateChapterPrompt(context: GenerateChapterContext): string {
     if (diagramsPreferred) {
       sections.push(`## 图表插入要求
 1. 如果本章节存在明显的结构关系、流程关系、分层关系、时序关系或部署关系，请在合适位置插入 1-3 个图表占位符。
-2. 占位符必须严格使用如下格式，不要改写、不要加代码围栏：
-   %%DIAGRAM:skill:图表标题:图表描述的UTF-8 Base64编码%%
+2. 占位符必须严格使用如下格式，单独成行，不要改写、不要加代码围栏：
+   %%DIAGRAM:skill:图表标题:图表描述%%
    第二段的类型标识必须固定写 skill（不要写 mermaid、C4Container、architecture-beta 等具体语法名）。
-3. 第四段必须是纯 base64 字符串，只能包含 A-Z、a-z、0-9、+、/、=；不要输出 \`base64(...)\` 包装、不要换行、不要加解释文字。不要输出未编码的中文描述。
-4. 后续系统会根据语义自动选择合适的图表风格和类型（架构图、流程图、时序图等），你只需在描述中说明图表意图即可。
-5. 图表描述必须具体说明图表包含哪些组件、分组、关系和关键连线约束。例如：描述一个三层架构图时需要说明每层包含哪些组件、层之间的数据流方向和协议。
-6. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
-7. 占位符应紧跟在相关段落之后，不要集中堆到文末。
-8. 绝对不要直接输出 \`\`\`mermaid 或 \`\`\`xml 代码块。程序只能识别 %%DIAGRAM%% 占位符，直接嵌入的代码块不会被正确渲染。`)
+3. 第四段为图表描述的中文自然语言文本，直接用中文写清描述，禁止使用 base64、URL 编码、引号转义等编码方式；描述中不得出现 \`%%\`、换行、反引号围栏，冒号请使用中文全角「：」。
+4. 整个占位符必须写在同一行内，以 \`%%DIAGRAM:\` 开头，以 \`%%\` 结尾，中间不能换行；如果描述较长请浓缩在一行内写完。
+5. 后续系统会根据语义自动选择合适的图表风格和类型（架构图、流程图、时序图等），你只需在描述中说明图表意图即可。
+6. 图表描述必须具体说明图表包含哪些组件、分组、关系和关键连线约束。例如：描述一个三层架构图时需要说明每层包含哪些组件、层之间的数据流方向和协议。
+7. 图表标题必须简洁清晰，图表描述必须具体到组件/阶段/数据流，不要写抽象词。
+8. 占位符应紧跟在相关段落之后，不要集中堆到文末。
+9. 绝对不要直接输出 \`\`\`mermaid 或 \`\`\`xml 代码块。程序只能识别 %%DIAGRAM%% 占位符，直接嵌入的代码块不会被正确渲染。`)
       sections.push(`## 图表输出红线
 任何三反引号代码块中的结构图、ASCII 盒线图、伪图表都会被判定为图表输出失败。图表内容只能通过 %%DIAGRAM%% 占位符交给程序生成。`)
     } else {

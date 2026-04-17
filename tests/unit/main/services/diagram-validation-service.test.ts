@@ -155,6 +155,20 @@ describe('diagram-validation-service', () => {
       const result = parseDiagramPlaceholders(md)
       expect(result.placeholders).toHaveLength(0)
     })
+
+    it('@p0 should fall back to title when description is truncated base64', () => {
+      // Simulate LLM-emitted base64 truncated mid-UTF-8 (drops the last Chinese byte).
+      const fullBytes = Buffer.from('展示自动生成模块的集成链路架构图', 'utf-8')
+      const truncatedBytes = fullBytes.subarray(0, fullBytes.length - 1)
+      const truncatedBase64 = truncatedBytes.toString('base64').replace(/=+$/, '')
+      const md = `%%DIAGRAM:skill:自动生成模块集成链路架构:${truncatedBase64}%%`
+
+      const result = parseDiagramPlaceholders(md)
+
+      expect(result.placeholders).toHaveLength(1)
+      expect(result.placeholders[0].description).toBe('自动生成模块集成链路架构')
+      expect(result.placeholders[0].description).not.toMatch(/^[A-Za-z0-9+/=]+$/)
+    })
   })
 
   describe('replaceSkeletonWithDiagram', () => {

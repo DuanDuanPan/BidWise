@@ -381,15 +381,16 @@ describe('generateChapterPrompt — compliance matrix specialization', () => {
     expect(prompt).toContain('不要展开详细')
   })
 
-  it('@p1 should require pure base64 diagram placeholders for diagram-heavy chapters', () => {
+  it('@p1 should require plain-text single-line diagram placeholders for diagram-heavy chapters', () => {
     const prompt = generateChapterPrompt({
       chapterTitle: '系统架构设计',
       chapterLevel: 2,
       requirements: '- [technical/high] 支持高并发',
     })
 
-    expect(prompt).toContain('图表描述的UTF-8 Base64编码')
-    expect(prompt).toContain('不要输出 `base64(...)` 包装')
+    expect(prompt).toContain('%%DIAGRAM:skill:图表标题:图表描述%%')
+    expect(prompt).toContain('禁止使用 base64、URL 编码')
+    expect(prompt).toContain('整个占位符必须写在同一行内')
     expect(prompt).not.toContain('%%DIAGRAM:drawio')
     expect(prompt).toContain('类型标识必须固定写 skill')
     expect(prompt).toContain('后续系统会根据语义自动选择合适的图表风格和类型')
@@ -438,5 +439,154 @@ describe('generateChapterPrompt — compliance matrix specialization', () => {
     const prompt = generateChapterPrompt(variantContext)
     expect(prompt).toContain('需求响应对照索引表')
     expect(prompt).not.toContain('逐项响应招标文件中的需求条目')
+  })
+})
+
+describe('@story-3-12 generatedChaptersContext four-group rendering', () => {
+  const baseContext: GenerateChapterContext = {
+    chapterTitle: '系统架构',
+    chapterLevel: 2,
+    requirements: '- req a',
+  }
+
+  it('@p0 renders ancestors / siblings / descendants / others when all groups populated', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      generatedChaptersContext: {
+        ancestors: [
+          {
+            headingKey: '1:Proposal:0',
+            headingTitle: 'Proposal',
+            headingLevel: 1,
+            occurrenceIndex: 0,
+            distance: 1,
+            source: 'cache',
+            summary: '{"key_commitments":["提供总包"]}',
+          },
+        ],
+        siblings: [
+          {
+            headingKey: '2:部署方案:0',
+            headingTitle: '部署方案',
+            headingLevel: 2,
+            occurrenceIndex: 0,
+            distance: 2,
+            source: 'cache',
+            summary: '{"numbers":[{"label":"工期","value":"180天"}]}',
+          },
+        ],
+        descendants: [
+          {
+            headingKey: '3:总体设计:0',
+            headingTitle: '总体设计',
+            headingLevel: 3,
+            occurrenceIndex: 0,
+            distance: 1,
+            source: 'fallback',
+            summary: '子章节直属正文截断内容…',
+          },
+        ],
+        others: [
+          {
+            headingKey: '2:项目概述:0',
+            headingTitle: '项目概述',
+            headingLevel: 2,
+            occurrenceIndex: 0,
+            distance: 3,
+            source: 'cache',
+            summary: '项目背景摘要',
+          },
+        ],
+      },
+    })
+
+    expect(prompt).toContain('父级章节摘要（当前章节是其细化）')
+    expect(prompt).toContain('已生成同级章节摘要（术语 / 数字 / 承诺对齐）')
+    expect(prompt).toContain('已生成子章节摘要（供上位概括）')
+    expect(prompt).toContain('其他已生成章节摘要（仅供全局一致性参考）')
+    expect(prompt).toContain('Proposal')
+    expect(prompt).toContain('部署方案')
+    expect(prompt).toContain('总体设计')
+    expect(prompt).toContain('项目概述')
+    // Global context takes over from adjacent legacy fields entirely.
+    expect(prompt).not.toContain('前序章节摘要（避免重复）')
+    expect(prompt).not.toContain('后续章节摘要（避免前置）')
+  })
+
+  it('@p0 omits empty groups while keeping the populated ones', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      generatedChaptersContext: {
+        ancestors: [],
+        siblings: [
+          {
+            headingKey: '2:部署方案:0',
+            headingTitle: '部署方案',
+            headingLevel: 2,
+            occurrenceIndex: 0,
+            distance: 2,
+            source: 'cache',
+            summary: 'sib',
+          },
+        ],
+        descendants: [],
+        others: [],
+      },
+    })
+    expect(prompt).toContain('已生成同级章节摘要')
+    expect(prompt).not.toContain('父级章节摘要')
+    expect(prompt).not.toContain('已生成子章节摘要')
+    expect(prompt).not.toContain('其他已生成章节摘要')
+  })
+
+  it('@p0 falls back to legacy adjacent fields when global context is empty', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      generatedChaptersContext: {
+        ancestors: [],
+        siblings: [],
+        descendants: [],
+        others: [],
+      },
+      adjacentChaptersBefore: '**项目概述**: 本项目旨在...',
+      adjacentChaptersAfter: '**实施计划**: 第一阶段...',
+    })
+    expect(prompt).toContain('前序章节摘要（避免重复）')
+    expect(prompt).toContain('后续章节摘要（避免前置）')
+    expect(prompt).not.toContain('父级章节摘要')
+    expect(prompt).not.toContain('已生成同级章节摘要')
+  })
+
+  it('@p1 continues to use adjacent fields when generatedChaptersContext is undefined', () => {
+    const prompt = generateChapterPrompt({
+      ...baseContext,
+      adjacentChaptersBefore: '**A**: body',
+    })
+    expect(prompt).toContain('前序章节摘要')
+  })
+
+  it('@p1 sub-chapter prompt inherits four-group context from base context', () => {
+    const subPrompt = generateSubChapterPrompt({
+      ...baseContext,
+      dimensionFocus: 'functional',
+      generatedChaptersContext: {
+        ancestors: [
+          {
+            headingKey: '1:Proposal:0',
+            headingTitle: 'Proposal',
+            headingLevel: 1,
+            occurrenceIndex: 0,
+            distance: 1,
+            source: 'cache',
+            summary: '承诺',
+          },
+        ],
+        siblings: [],
+        descendants: [],
+        others: [],
+      },
+    })
+    expect(subPrompt).toContain('父级章节摘要（当前章节是其细化）')
+    expect(subPrompt).toContain('Proposal')
   })
 })

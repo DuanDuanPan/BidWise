@@ -202,6 +202,9 @@ const requestApi = {
   chapterBatchSkipSection: (input: IpcChannelMap['chapter:batch-skip-section']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_BATCH_SKIP_SECTION, input),
 
+  chapterSummaryExtract: (input: IpcChannelMap['chapter-summary:extract']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_SUMMARY_EXTRACT, input),
+
   annotationCreate: (input: IpcChannelMap['annotation:create']['input']) =>
     typedInvoke(IPC_CHANNELS.ANNOTATION_CREATE, input),
 

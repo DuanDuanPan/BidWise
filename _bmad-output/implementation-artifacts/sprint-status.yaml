@@ -83,6 +83,7 @@ development_status:
   3-9-skill-diagram-editor-integration: review
   3-10-skill-default-chapter-diagram-generation: review
   3-11-batch-subchapter-retry-recovery: review
+  3-12-chapter-summary-cache: review
   epic-3-retrospective: optional
 
   # ── Epic 4: 批注式人机协作 (4 stories) ──
@@ -93,7 +94,7 @@ development_status:
   4-4-pending-decision-cross-role-notification: done
   epic-4-retrospective: optional
 
-  # ── Epic 5: 资产与知识管理 (6 stories) ──
+  # ── Epic 5: 资产与知识管理 (12 stories) ──
   epic-5: in-progress
   5-1-asset-search-tag-management: done
   5-2-asset-recommendation-one-click-import: done
@@ -101,6 +102,13 @@ development_status:
   5-4-batch-import-cold-start: backlog
   5-5-capability-baseline-import: backlog
   5-6-template-registration-wizard: backlog
+  # KG/RAG 升级路线 (Beta+,本地化向量+轻图谱)
+  5-7-enabler-kg-rag-poc: ready-for-dev
+  5-8-enabler-sqlite-vec-embedding-sidecar: backlog
+  5-9-enabler-hybrid-retrieval: backlog
+  5-10-enabler-graph-schema-tools: backlog
+  5-11-rag-chapter-generation-injection: backlog
+  5-12-recommendation-v2-graph-aware: backlog
   epic-5-retrospective: optional
 
   # ── Epic 6: 成本评估与 GAP 模拟 (4 stories) ──

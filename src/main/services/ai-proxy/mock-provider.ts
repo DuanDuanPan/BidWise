@@ -76,6 +76,7 @@ export class MockAiProvider implements AiProvider {
       usage: { promptTokens: 500, completionTokens: 300 },
       model: 'mock-e2e-model',
       finishReason: 'end_turn',
+      termination: { kind: 'completed', finishReason: 'end_turn' },
     }
   }
 
