@@ -82,6 +82,48 @@ describe('@story-3-1 documentStore', () => {
       expect(state.autoSave.dirty).toBe(true)
     })
 
+    it('blocks catastrophic shrink: 2000-char doc → 2-byte empty-editor is rejected', () => {
+      useDocumentStore.setState({
+        content: '# Real doc\n' + 'a'.repeat(2000),
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+
+      useDocumentStore.getState().updateContent('\u200B\n', 'proj-1', {
+        debugContext: { source: 'plate:debounced-serialize' },
+      })
+
+      const state = useDocumentStore.getState()
+      expect(state.content).toContain('Real doc')
+      expect(state.autoSave.dirty).toBe(false)
+    })
+
+    it('allows legitimate shrink within safety ratio (not catastrophic)', () => {
+      useDocumentStore.setState({
+        content: '# Real doc\n' + 'a'.repeat(200),
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+
+      const shrunk = '# Real doc\n' + 'a'.repeat(100)
+      useDocumentStore.getState().updateContent(shrunk, 'proj-1', {
+        debugContext: { source: 'plate:debounced-serialize' },
+      })
+
+      expect(useDocumentStore.getState().content).toBe(shrunk)
+    })
+
+    it('allows shrink when prior content is short (bootstrap scenario)', () => {
+      useDocumentStore.setState({
+        content: '# short\n',
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+
+      useDocumentStore.getState().updateContent('\u200B\n', 'proj-1', {
+        debugContext: { source: 'plate:debounced-serialize' },
+      })
+
+      expect(useDocumentStore.getState().content).toBe('\u200B\n')
+    })
+
     it('debounces auto-save for 1 second and only persists the latest edit', async () => {
       vi.useFakeTimers()
 

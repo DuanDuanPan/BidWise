@@ -25,6 +25,44 @@ const metadataLock = new Map<string, Promise<unknown>>()
 const DOCUMENT_VERSION = 1
 const METADATA_VERSION = '1.0'
 
+// Shrink guard: U+200B + \n is Plate's empty-editor canonical serialization (2 bytes).
+// If existing file has meaningful content and new payload is near-empty, reject the write.
+const SHRINK_GUARD_MIN_EXISTING_CHARS = 100
+const SHRINK_GUARD_RATIO = 0.1
+
+function meaningfulLength(text: string | undefined | null): number {
+  if (!text) return 0
+  return text.replace(/[\u200B\s]/g, '').length
+}
+
+type ShrinkGuardVerdict = {
+  block: boolean
+  reason: string
+  existingMeaningful: number
+  newMeaningful: number
+}
+
+function evaluateShrinkGuard(existing: string, next: string): ShrinkGuardVerdict {
+  const existingMeaningful = meaningfulLength(existing)
+  const newMeaningful = meaningfulLength(next)
+  if (existingMeaningful < SHRINK_GUARD_MIN_EXISTING_CHARS) {
+    return { block: false, reason: 'below-min', existingMeaningful, newMeaningful }
+  }
+  if (newMeaningful >= existingMeaningful * SHRINK_GUARD_RATIO) {
+    return { block: false, reason: 'within-ratio', existingMeaningful, newMeaningful }
+  }
+  return {
+    block: true,
+    reason: `catastrophic shrink ${existingMeaningful} → ${newMeaningful}`,
+    existingMeaningful,
+    newMeaningful,
+  }
+}
+
+function getBackupPath(filePath: string): string {
+  return `${filePath}.prev.bak`
+}
+
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error
 }
@@ -349,6 +387,26 @@ export const documentService = {
 
     logger.info(`proposal.md save requested: ${projectId} seq=${sequence}`, debugPayload)
 
+    let existingContent = ''
+    try {
+      existingContent = await readFile(filePath, 'utf-8')
+    } catch (err) {
+      if (!hasErrorCode(err, 'ENOENT')) {
+        logger.warn(`proposal.md 预读失败 (shrink-guard跳过): ${projectId}`, err)
+      }
+    }
+
+    const verdict = evaluateShrinkGuard(existingContent, content)
+    if (verdict.block) {
+      logger.error(
+        `proposal.md save refused (shrink-guard): ${projectId} seq=${sequence} existing=${verdict.existingMeaningful} new=${verdict.newMeaningful}`,
+        debugPayload
+      )
+      throw new DocumentSaveError(
+        `保存被拒：内容从 ${verdict.existingMeaningful} 字符骤降至 ${verdict.newMeaningful} 字符，疑似空编辑器误覆盖`
+      )
+    }
+
     try {
       await writeFile(tmpPath, content, 'utf-8')
       if (!isLatestSave(projectId, sequence)) {
@@ -358,6 +416,13 @@ export const documentService = {
           debugPayload
         )
         return { lastSavedAt }
+      }
+      if (existingContent) {
+        try {
+          await writeFile(getBackupPath(filePath), existingContent, 'utf-8')
+        } catch (backupErr) {
+          logger.warn(`proposal.md 备份写入失败 (不阻断保存): ${projectId}`, backupErr)
+        }
       }
       await rename(tmpPath, filePath)
     } catch (err) {
@@ -395,6 +460,26 @@ export const documentService = {
 
     logger.info(`proposal.md sync-save requested: ${projectId} seq=${sequence}`, debugPayload)
 
+    let existingContent = ''
+    try {
+      existingContent = readFileSync(filePath, 'utf-8')
+    } catch (err) {
+      if (!hasErrorCode(err, 'ENOENT')) {
+        logger.warn(`proposal.md sync 预读失败 (shrink-guard跳过): ${projectId}`, err)
+      }
+    }
+
+    const verdict = evaluateShrinkGuard(existingContent, content)
+    if (verdict.block) {
+      logger.error(
+        `proposal.md sync-save refused (shrink-guard): ${projectId} seq=${sequence} existing=${verdict.existingMeaningful} new=${verdict.newMeaningful}`,
+        debugPayload
+      )
+      throw new DocumentSaveError(
+        `保存被拒：内容从 ${verdict.existingMeaningful} 字符骤降至 ${verdict.newMeaningful} 字符，疑似空编辑器误覆盖`
+      )
+    }
+
     try {
       writeFileSync(tmpPath, content, 'utf-8')
       if (!isLatestSave(projectId, sequence)) {
@@ -404,6 +489,13 @@ export const documentService = {
           debugPayload
         )
         return { lastSavedAt }
+      }
+      if (existingContent) {
+        try {
+          writeFileSync(getBackupPath(filePath), existingContent, 'utf-8')
+        } catch (backupErr) {
+          logger.warn(`proposal.md sync 备份写入失败 (不阻断保存): ${projectId}`, backupErr)
+        }
       }
       renameSync(tmpPath, filePath)
     } catch (err) {

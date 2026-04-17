@@ -167,6 +167,7 @@ describe('documentService @story-3-1', () => {
     })
 
     it('throws DocumentSaveError when proposal.md write fails', async () => {
+      mockReadFile.mockRejectedValue(createErrnoError('ENOENT'))
       mockWriteFile.mockRejectedValue(new Error('disk full'))
 
       await expect(documentService.save('proj-1', '# Content')).rejects.toThrow(DocumentSaveError)
@@ -178,6 +179,85 @@ describe('documentService @story-3-1', () => {
       mockRename.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('meta disk full'))
 
       await expect(documentService.save('proj-1', '# Content')).rejects.toThrow(DocumentSaveError)
+    })
+
+    it('refuses catastrophic shrink: blocks 14KB → 2-byte empty-editor overwrite', async () => {
+      const largeExisting = '# Chapter\n' + 'a'.repeat(14000)
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.md')) {
+          return Promise.resolve(largeExisting)
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      // Plate empty-editor payload: U+200B + LF
+      await expect(documentService.save('proj-1', '\u200B\n')).rejects.toThrow(DocumentSaveError)
+      expect(mockWriteFile).not.toHaveBeenCalled()
+      expect(mockRename).not.toHaveBeenCalled()
+    })
+
+    it('allows legitimate shrink within safety ratio', async () => {
+      const existing = '# Title\n' + 'a'.repeat(200)
+      const shrunk = '# Title\n' + 'a'.repeat(100)
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.md')) {
+          return Promise.resolve(existing)
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      await expect(documentService.save('proj-1', shrunk)).resolves.toBeDefined()
+    })
+
+    it('writes .prev.bak backup of existing content before overwrite', async () => {
+      const existing = '# Old\n' + 'x'.repeat(300)
+      const next = '# New\n' + 'y'.repeat(300)
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.md')) {
+          return Promise.resolve(existing)
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      await documentService.save('proj-1', next)
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('proposal.md.prev.bak'),
+        existing,
+        'utf-8'
+      )
+    })
+
+    it('does not write backup when there is no existing file', async () => {
+      mockReadFile.mockRejectedValue(createErrnoError('ENOENT'))
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      await documentService.save('proj-1', '# Fresh\n' + 'a'.repeat(200))
+
+      const backupCalls = mockWriteFile.mock.calls.filter((c) =>
+        String(c[0]).includes('proposal.md.prev.bak')
+      )
+      expect(backupCalls).toHaveLength(0)
+    })
+
+    it('skips shrink-guard when existing file is short (new document bootstrap)', async () => {
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.md')) {
+          return Promise.resolve('# short\n')
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      await expect(documentService.save('proj-1', '\u200B\n')).resolves.toBeDefined()
     })
   })
 
@@ -213,6 +293,37 @@ describe('documentService @story-3-1', () => {
         2,
         expect.stringContaining('.proposal.meta.json.tmp'),
         expect.stringContaining('proposal.meta.json')
+      )
+    })
+
+    it('saveSync refuses catastrophic shrink: blocks 14KB → 2-byte overwrite', () => {
+      const largeExisting = '# Chapter\n' + 'a'.repeat(14000)
+      mockReadFileSync.mockReturnValue(largeExisting)
+
+      expect(() => documentService.saveSync('proj-1', projectRootPath, '\u200B\n')).toThrow(
+        DocumentSaveError
+      )
+      expect(mockWriteFileSync).not.toHaveBeenCalled()
+      expect(mockRenameSync).not.toHaveBeenCalled()
+    })
+
+    it('saveSync writes .prev.bak backup before overwrite', () => {
+      const existing = '# Old\n' + 'x'.repeat(300)
+      const next = '# New\n' + 'y'.repeat(300)
+      mockReadFileSync
+        .mockReturnValueOnce(existing) // pre-read for guard
+        .mockImplementation(() => {
+          throw createErrnoError('ENOENT') // meta readMetadataSync
+        })
+      mockWriteFileSync.mockReturnValue(undefined)
+      mockRenameSync.mockReturnValue(undefined)
+
+      documentService.saveSync('proj-1', projectRootPath, next)
+
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('proposal.md.prev.bak'),
+        existing,
+        'utf-8'
       )
     })
 
@@ -436,7 +547,12 @@ describe('documentService @story-3-1', () => {
         scores: [],
         lastSavedAt: '2026-03-21T10:00:00.000Z',
       }
-      mockReadFile.mockResolvedValue(JSON.stringify(existingMeta))
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.meta.json')) {
+          return Promise.resolve(JSON.stringify(existingMeta))
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
       mockWriteFile.mockResolvedValue(undefined)
       mockRename.mockResolvedValue(undefined)
 

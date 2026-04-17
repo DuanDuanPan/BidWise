@@ -33,6 +33,17 @@ const defaultAutoSave: AutoSaveState = {
 }
 const AUTO_SAVE_DELAY_MS = 1000
 
+// Shrink guard mirrors main-process check: reject store updates that would
+// collapse a non-trivial document into an (effectively) empty one. This is
+// the first-line defense against Plate's empty-editor state leaking into
+// autosave via a stale handleValueChange tick.
+const SHRINK_GUARD_MIN_EXISTING_CHARS = 100
+const SHRINK_GUARD_RATIO = 0.1
+
+function meaningfulLength(text: string): number {
+  return text.replace(/[\u200B\s]/g, '').length
+}
+
 export const useDocumentStore = create<DocumentStore>((set, get) => {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
   let saveQueuedWhileSaving = false
@@ -120,11 +131,26 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
     },
 
     updateContent: (content: string, projectId: string, options?: UpdateContentOptions) => {
-      recordDebugContext(options?.debugContext)
-      latestDocumentVersion += 1
       const prevContent = get().content
       const contentChanged = prevContent !== content
       const source = options?.debugContext?.source ?? 'unknown'
+
+      const prevMeaningful = meaningfulLength(prevContent)
+      const newMeaningful = meaningfulLength(content)
+      const catastrophicShrink =
+        prevMeaningful >= SHRINK_GUARD_MIN_EXISTING_CHARS &&
+        newMeaningful < prevMeaningful * SHRINK_GUARD_RATIO
+
+      if (catastrophicShrink) {
+        console.warn(
+          `[gen-debug:updateContent] BLOCKED catastrophic shrink source=${source}, prev=${prevMeaningful}, new=${newMeaningful}`,
+          { debugContext: options?.debugContext }
+        )
+        return
+      }
+
+      recordDebugContext(options?.debugContext)
+      latestDocumentVersion += 1
       console.debug(
         `[gen-debug:updateContent] source=${source}, changed=${contentChanged}, lenDelta=${content.length - prevContent.length}, scheduleSave=${options?.scheduleSave !== false}`
       )

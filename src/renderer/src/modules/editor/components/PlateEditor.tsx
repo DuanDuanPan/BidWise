@@ -209,10 +209,18 @@ export function PlateEditor({
       return
     }
 
+    const prevLen = latestSerializedMarkdownRef.current.length
+    const nextLen = initialContent.length
+    if (hasAppliedExternalContentRef.current && prevLen > 200 && nextLen < 10) {
+      console.warn(
+        `[plate-editor] external setValue shrink: prevLen=${prevLen}, nextLen=${nextLen}, projectId=${projectId}`
+      )
+    }
+
     editor.tf.setValue(initialNodes)
     hasAppliedExternalContentRef.current = true
     latestSerializedMarkdownRef.current = initialContent
-  }, [editor, initialContent, initialNodes])
+  }, [editor, initialContent, initialNodes, projectId])
 
   const handleValueChange = useCallback(
     ({ value: _value }: { editor: unknown; value: Value }) => {
