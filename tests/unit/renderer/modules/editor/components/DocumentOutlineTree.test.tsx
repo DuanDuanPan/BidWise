@@ -164,6 +164,54 @@ describe('@story-3-2 DocumentOutlineTree', () => {
     expect(screen.getByText('Child')).toBeInTheDocument()
   })
 
+  it('@story-11-3 @p0 root has tabIndex=0 + brand focus outline when structureKeymap is enabled', () => {
+    const node = makeNode({ key: 'heading-0', title: '焦点根' })
+    render(
+      <DocumentOutlineTree
+        outline={[node]}
+        onNodeClick={vi.fn()}
+        structureKeymap={{
+          projectId: 'p',
+          sectionIdByNodeKey: { 'heading-0': 'sid-0' },
+        }}
+      />
+    )
+    const root = screen.getByTestId('outline-tree')
+    expect(root).toHaveAttribute('tabIndex', '0')
+    expect(root.className).toMatch(/outline/)
+  })
+
+  it('@story-11-3 @p0 root is non-focusable when structureKeymap is disabled', () => {
+    const node = makeNode({ key: 'heading-0', title: '只读' })
+    render(<DocumentOutlineTree outline={[node]} onNodeClick={vi.fn()} />)
+    const root = screen.getByTestId('outline-tree')
+    expect(root).toHaveAttribute('tabIndex', '-1')
+  })
+
+  it('@story-11-3 @p1 click selects + drives chapterStructureStore.focusNode', async () => {
+    const { useChapterStructureStore } = await import('@renderer/stores/chapterStructureStore')
+    useChapterStructureStore.setState({
+      focusedNodeKey: null,
+      editingNodeKey: null,
+      lockedNodeKeys: {},
+      pendingDeleteByNodeKey: {},
+      sectionIdByNodeKey: {},
+    })
+    const node = makeNode({ key: 'heading-0', title: '点击我' })
+    render(
+      <DocumentOutlineTree
+        outline={[node]}
+        onNodeClick={vi.fn()}
+        structureKeymap={{
+          projectId: 'p',
+          sectionIdByNodeKey: { 'heading-0': 'sid-0' },
+        }}
+      />
+    )
+    fireEvent.click(screen.getByText('点击我'))
+    expect(useChapterStructureStore.getState().focusedNodeKey).toBe('heading-0')
+  })
+
   it('@story-3-2 @p0 allows collapsing nested outline nodes from the tree switcher', () => {
     const node = makeNode({
       key: 'heading-0',

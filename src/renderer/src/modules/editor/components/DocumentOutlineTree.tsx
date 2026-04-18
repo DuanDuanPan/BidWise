@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tree, Tooltip } from 'antd'
 import {
   FileTextOutlined,
@@ -10,6 +10,8 @@ import {
 import type { DataNode } from 'antd/es/tree'
 import type { OutlineNode } from '@modules/editor/hooks/useDocumentOutline'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
+import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
+import { useStructureKeymap } from '@modules/editor/hooks/useStructureKeymap'
 
 const MAX_TITLE_LEN = 30
 
@@ -18,6 +20,15 @@ interface DocumentOutlineTreeProps {
   onNodeClick?: (node: OutlineNode) => void
   /** Map of "level:title:occurrenceIndex" → phase for status icon decoration */
   chapterPhases?: Map<string, ChapterGenerationPhase>
+  /**
+   * Story 11.3: when set, structural shortcuts (Enter / Tab / Shift+Tab /
+   * Delete / F2 / Esc / arrows) bind to the tree root and dispatch to the
+   * canonical `chapter-structure-service` mutations.
+   */
+  structureKeymap?: {
+    projectId: string
+    sectionIdByNodeKey: Record<string, string>
+  }
 }
 
 function collectKeys(nodes: OutlineNode[]): string[] {
@@ -114,9 +125,14 @@ export function DocumentOutlineTree({
   outline,
   onNodeClick,
   chapterPhases,
+  structureKeymap,
 }: DocumentOutlineTreeProps): React.JSX.Element {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set())
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const focusedNodeKey = useChapterStructureStore((s) => s.focusedNodeKey)
+  const focusNode = useChapterStructureStore((s) => s.focusNode)
+  const registerSectionIds = useChapterStructureStore((s) => s.registerSectionIds)
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, OutlineNode>()
@@ -132,11 +148,35 @@ export function DocumentOutlineTree({
       const node = nodeMap.get(key)
       if (node) {
         setSelectedKeys([key])
+        if (structureKeymap) focusNode(key)
         onNodeClick(node)
       }
     },
-    [nodeMap, onNodeClick]
+    [nodeMap, onNodeClick, structureKeymap, focusNode]
   )
+
+  // Story 11.3: register the bridge from outline keys (heading-N) to canonical
+  // sectionIds so requestSoftDelete + IPC mutations can resolve identity.
+  useEffect(() => {
+    if (!structureKeymap) return
+    registerSectionIds(structureKeymap.sectionIdByNodeKey)
+  }, [structureKeymap, registerSectionIds])
+
+  useStructureKeymap({
+    panelRef: rootRef,
+    projectId: structureKeymap?.projectId ?? null,
+    outline,
+    onNavigateToNode: (node) => onNodeClick?.(node),
+    sectionIdByNodeKey: structureKeymap?.sectionIdByNodeKey ?? {},
+    disabled: !structureKeymap,
+  })
+
+  // Mirror Story 11.2 focused state into Tree's selectedKeys so Tab/arrow nav
+  // immediately updates the visual selection without a click round-trip.
+  const effectiveSelectedKeys = useMemo(() => {
+    if (structureKeymap && focusedNodeKey) return [focusedNodeKey]
+    return selectedKeys
+  }, [structureKeymap, focusedNodeKey, selectedKeys])
   const handleExpand = useCallback(
     (keys: React.Key[]) => {
       const expandedSet = new Set(keys.map(String))
@@ -163,8 +203,8 @@ export function DocumentOutlineTree({
     [allKeys, collapsedKeys]
   )
   const activeSelectedKeys = useMemo(
-    () => selectedKeys.filter((key) => nodeMap.has(key)),
-    [nodeMap, selectedKeys]
+    () => effectiveSelectedKeys.filter((key) => nodeMap.has(key)),
+    [nodeMap, effectiveSelectedKeys]
   )
 
   if (outline.length === 0) {
@@ -182,7 +222,16 @@ export function DocumentOutlineTree({
   }
 
   return (
-    <div className="h-full px-2 py-1" aria-label="文档大纲树" data-testid="outline-tree">
+    <div
+      ref={rootRef}
+      className={
+        'focus:outline-brand h-full px-2 py-1 focus:rounded-sm focus:outline-2 focus-visible:outline-2 ' +
+        '[outline-color:var(--color-brand)] focus-visible:[outline-color:var(--color-brand)]'
+      }
+      tabIndex={structureKeymap ? 0 : -1}
+      aria-label="文档大纲树"
+      data-testid="outline-tree"
+    >
       <Tree
         treeData={treeData}
         expandedKeys={expandedKeys}

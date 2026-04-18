@@ -7,12 +7,25 @@
  * mutations. For the 11.1 foundation, only read operations are exposed so
  * later stories can layer mutation semantics on a stable contract.
  */
+import { randomUUID } from 'crypto'
 import { documentService } from '@main/services/document-service'
-import { NotFoundError, ValidationError } from '@main/utils/errors'
+import { BidWiseError, NotFoundError, ValidationError } from '@main/utils/errors'
+import { ErrorCode } from '@shared/constants'
 import { createLogger } from '@main/utils/logger'
-import { buildChapterTree, deriveSectionPath } from '@shared/chapter-identity'
-import { extractMarkdownHeadings, findMarkdownHeading } from '@shared/chapter-markdown'
-import type { ChapterTreeNode } from '@shared/chapter-types'
+import {
+  buildChapterTree,
+  deriveSectionPath,
+  normalizeSiblingOrder,
+} from '@shared/chapter-identity'
+import {
+  DEFAULT_NEW_SECTION_TITLE,
+  extractMarkdownHeadings,
+  findMarkdownHeading,
+  indentSectionSubtree,
+  insertSiblingAfterSection,
+  outdentSectionSubtree,
+} from '@shared/chapter-markdown'
+import type { ChapterHeadingLocator, ChapterTreeNode } from '@shared/chapter-types'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
 
 const logger = createLogger('chapter-structure-service')
@@ -143,4 +156,319 @@ export const chapterStructureService = {
     }
     return nextEntry
   },
+
+  /**
+   * Insert a new sibling after the target section's subtree (Story 11.3).
+   * Default title is `新章节`. Returns a snapshot with the committed markdown,
+   * updated sectionIndex, and the new entry's sectionId.
+   */
+  async insertSibling(
+    projectId: string,
+    sectionId: string,
+    title: string = DEFAULT_NEW_SECTION_TITLE
+  ): Promise<StructureMutationSnapshot> {
+    const trimmed = title.trim() || DEFAULT_NEW_SECTION_TITLE
+    return applyStructureMutation(projectId, sectionId, 'insertSibling', {
+      markdownFn: (markdown, locator) => {
+        const outcome = insertSiblingAfterSection(markdown, locator, trimmed)
+        if (!outcome.ok) throw new NotFoundError(`sectionId 不在 markdown 中: ${sectionId}`)
+        return outcome.result
+      },
+      treeFn: (tree, target) => {
+        const parentId = target.parentSectionId
+        const newId = randomUUID()
+        const newNode: ChapterTreeNode = {
+          sectionId: newId,
+          parentSectionId: parentId,
+          order: target.order + 1,
+          title: trimmed,
+          level: target.level,
+          occurrenceIndex: 0,
+          headingLocator: {
+            title: trimmed,
+            level: target.level,
+            occurrenceIndex: 0,
+          },
+          children: [],
+        }
+        const siblings = findSiblingContainer(tree, parentId)
+        const idx = siblings.findIndex((n) => n.sectionId === target.sectionId)
+        siblings.splice(idx + 1, 0, newNode)
+        return { createdSectionId: newId, affectedSectionId: newId }
+      },
+    })
+  },
+
+  /** Indent target subtree under the previous sibling (Story 11.3 AC1 Tab). */
+  async indent(projectId: string, sectionId: string): Promise<StructureMutationSnapshot> {
+    return applyStructureMutation(projectId, sectionId, 'indent', {
+      markdownFn: (markdown, locator) => {
+        const outcome = indentSectionSubtree(markdown, locator)
+        if (!outcome.ok) {
+          throw new StructureBoundaryError(
+            outcome.reason === 'no-previous-sibling'
+              ? '没有前一个同级兄弟'
+              : outcome.reason === 'max-depth'
+                ? '子树深度超过最大限制 (H4)'
+                : '无法缩进',
+            outcome.reason
+          )
+        }
+        return outcome.result
+      },
+      treeFn: (tree, target) => {
+        const siblings = findSiblingContainer(tree, target.parentSectionId)
+        const idx = siblings.findIndex((n) => n.sectionId === target.sectionId)
+        if (idx <= 0) throw new StructureBoundaryError('没有前一个同级兄弟', 'no-previous-sibling')
+        const [node] = siblings.splice(idx, 1)
+        const newParent = siblings[idx - 1]
+        // Shift level for node + descendants.
+        shiftNodeLevels(node, 1)
+        node.parentSectionId = newParent.sectionId
+        node.order = newParent.children.length
+        newParent.children.push(node)
+        return { affectedSectionId: node.sectionId }
+      },
+    })
+  },
+
+  /** Outdent target subtree to its grandparent (Story 11.3 AC1 Shift+Tab). */
+  async outdent(projectId: string, sectionId: string): Promise<StructureMutationSnapshot> {
+    return applyStructureMutation(projectId, sectionId, 'outdent', {
+      markdownFn: (markdown, locator) => {
+        const outcome = outdentSectionSubtree(markdown, locator)
+        if (!outcome.ok) {
+          throw new StructureBoundaryError(
+            outcome.reason === 'already-top-level'
+              ? '已经是顶层节点'
+              : outcome.reason === 'max-depth' || outcome.reason === 'min-depth'
+                ? '子树深度越界'
+                : '无法反缩进',
+            outcome.reason
+          )
+        }
+        return outcome.result
+      },
+      treeFn: (tree, target) => {
+        if (!target.parentSectionId) {
+          throw new StructureBoundaryError('已经是顶层节点', 'already-top-level')
+        }
+        const parentNode = findNodeById(tree, target.parentSectionId)
+        if (!parentNode) throw new NotFoundError('父节点丢失')
+        // Container that holds `parentNode` itself as a sibling — i.e. the
+        // grandparent's children (or tree roots when no grandparent exists).
+        const grandContainer = findSiblingContainer(tree, parentNode.parentSectionId)
+        const parentIdx = grandContainer.findIndex((n) => n.sectionId === parentNode.sectionId)
+        if (parentIdx < 0) throw new NotFoundError('父节点丢失')
+
+        // Remove target from current parent.
+        const targetIdx = parentNode.children.findIndex((n) => n.sectionId === target.sectionId)
+        const [node] = parentNode.children.splice(targetIdx, 1)
+        shiftNodeLevels(node, -1)
+        node.parentSectionId = parentNode.parentSectionId
+        // Insert right after former parent.
+        grandContainer.splice(parentIdx + 1, 0, node)
+        return { affectedSectionId: node.sectionId }
+      },
+    })
+  },
+}
+
+// ─── Story 11.3 mutation internals ──────────────────────────────────────────
+
+export interface StructureMutationSnapshot {
+  markdown: string
+  sectionIndex: ProposalSectionIndexEntry[]
+  affectedSectionId: string
+  focusLocator: ChapterHeadingLocator
+  createdSectionId?: string
+}
+
+export class StructureBoundaryError extends BidWiseError {
+  constructor(
+    message: string,
+    public readonly reason:
+      | 'no-previous-sibling'
+      | 'already-top-level'
+      | 'max-depth'
+      | 'min-depth'
+      | 'not-found'
+  ) {
+    super(ErrorCode.STRUCTURE_BOUNDARY, message)
+    this.name = 'StructureBoundaryError'
+  }
+}
+
+interface MutationHandlers {
+  markdownFn: (
+    markdown: string,
+    locator: ChapterHeadingLocator
+  ) => {
+    markdown: string
+    affectedLineIndex: number
+    affectedLevel: ChapterHeadingLocator['level']
+  }
+  treeFn: (
+    tree: ChapterTreeNode[],
+    target: ProposalSectionIndexEntry
+  ) => { affectedSectionId: string; createdSectionId?: string }
+}
+
+async function applyStructureMutation(
+  projectId: string,
+  sectionId: string,
+  opLabel: 'insertSibling' | 'indent' | 'outdent',
+  handlers: MutationHandlers
+): Promise<StructureMutationSnapshot> {
+  const doc = await documentService.load(projectId)
+  const meta = await documentService.getMetadata(projectId)
+  const originalIndex = meta.sectionIndex ?? []
+  const target = originalIndex.find((e) => e.sectionId === sectionId)
+  if (!target) {
+    throw new NotFoundError(`sectionId 不存在: ${sectionId}`)
+  }
+
+  // Step 1 — compute next markdown in memory.
+  const mdResult = handlers.markdownFn(doc.content, target.headingLocator)
+  const nextMarkdown = mdResult.markdown
+
+  // Step 2 — mutate tree in memory.
+  const tree = buildChapterTree(originalIndex)
+  const treeResult = handlers.treeFn(tree, target)
+
+  // Step 3 — re-derive flat sectionIndex from (mutatedTree + newMarkdown).
+  const nextIndex = rebuildSectionIndex(nextMarkdown, tree, originalIndex)
+
+  // Step 4 — commit metadata first, then markdown. Roll back on markdown failure.
+  const previousSectionIndex = originalIndex
+  const updatedMeta = await documentService.updateMetadata(projectId, (current) => ({
+    ...current,
+    sectionIndex: nextIndex,
+  }))
+
+  try {
+    await documentService.save(projectId, nextMarkdown)
+  } catch (saveErr) {
+    try {
+      await documentService.updateMetadata(projectId, (current) => ({
+        ...current,
+        sectionIndex: previousSectionIndex,
+      }))
+    } catch (rollbackErr) {
+      logger.error(
+        `${opLabel} rollback failed: project=${projectId} sectionId=${sectionId} — metadata/markdown out of sync`,
+        rollbackErr
+      )
+    }
+    throw saveErr
+  }
+
+  const committedIndex = updatedMeta.sectionIndex ?? []
+  const affected = committedIndex.find((e) => e.sectionId === treeResult.affectedSectionId)
+  if (!affected) {
+    throw new NotFoundError(`${opLabel} 后 sectionId 丢失: ${treeResult.affectedSectionId}`)
+  }
+  return {
+    markdown: nextMarkdown,
+    sectionIndex: committedIndex,
+    affectedSectionId: treeResult.affectedSectionId,
+    focusLocator: affected.headingLocator,
+    createdSectionId: treeResult.createdSectionId,
+  }
+}
+
+function findSiblingContainer(
+  tree: ChapterTreeNode[],
+  parentSectionId: string | undefined
+): ChapterTreeNode[] {
+  if (!parentSectionId) return tree
+  const stack = [...tree]
+  while (stack.length > 0) {
+    const n = stack.shift()!
+    if (n.sectionId === parentSectionId) return n.children
+    stack.push(...n.children)
+  }
+  throw new NotFoundError(`父节点不存在: ${parentSectionId}`)
+}
+
+function findNodeById(tree: ChapterTreeNode[], sectionId: string): ChapterTreeNode | null {
+  const stack = [...tree]
+  while (stack.length > 0) {
+    const n = stack.shift()!
+    if (n.sectionId === sectionId) return n
+    stack.push(...n.children)
+  }
+  return null
+}
+
+function shiftNodeLevels(node: ChapterTreeNode, delta: number): void {
+  const stack: ChapterTreeNode[] = [node]
+  while (stack.length > 0) {
+    const n = stack.pop()!
+    const nextLevel = (n.level + delta) as ChapterHeadingLocator['level']
+    n.level = nextLevel
+    n.headingLocator = { ...n.headingLocator, level: nextLevel }
+    stack.push(...n.children)
+  }
+}
+
+/**
+ * Re-derive a flat `sectionIndex` from (mutatedTree + postMutationMarkdown).
+ *
+ * Strategy: a pre-order walk of the tree produces nodes in the same order the
+ * markdown headings appear, so we can pair them by position and recompute
+ * `occurrenceIndex` from the live markdown. Raw title fields on the tree nodes
+ * win when they already exist (respect `updateTitle` edits); otherwise we fall
+ * back to the parsed heading title.
+ */
+function rebuildSectionIndex(
+  nextMarkdown: string,
+  tree: ChapterTreeNode[],
+  original: ReadonlyArray<ProposalSectionIndexEntry>
+): ProposalSectionIndexEntry[] {
+  const headings = extractMarkdownHeadings(nextMarkdown)
+  const preorder: ChapterTreeNode[] = []
+  const walk = (nodes: ChapterTreeNode[]): void => {
+    for (const n of nodes) {
+      preorder.push(n)
+      walk(n.children)
+    }
+  }
+  walk(tree)
+
+  if (preorder.length !== headings.length) {
+    throw new Error(
+      `structure mutation: heading count mismatch tree=${preorder.length} markdown=${headings.length}`
+    )
+  }
+
+  const byId = new Map(original.map((e) => [e.sectionId, e]))
+  const flat: ProposalSectionIndexEntry[] = []
+  const emit = (nodes: ChapterTreeNode[], parentSectionId: string | undefined): void => {
+    nodes.forEach((node, order) => {
+      const preorderIndex = preorder.indexOf(node)
+      const h = headings[preorderIndex]
+      const previous = byId.get(node.sectionId)
+      const title = previous?.title ?? node.title ?? h.title
+      flat.push({
+        sectionId: node.sectionId,
+        templateSectionKey: previous?.templateSectionKey ?? node.templateSectionKey,
+        title,
+        level: h.level,
+        parentSectionId,
+        order,
+        occurrenceIndex: h.occurrenceIndex,
+        headingLocator: {
+          title: h.title,
+          level: h.level,
+          occurrenceIndex: h.occurrenceIndex,
+        },
+        weightPercent: previous?.weightPercent,
+        isKeyFocus: previous?.isKeyFocus,
+      })
+      emit(node.children, node.sectionId)
+    })
+  }
+  emit(tree, undefined)
+  return normalizeSiblingOrder(flat)
 }

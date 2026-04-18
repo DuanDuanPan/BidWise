@@ -242,6 +242,15 @@ export type CreateProjectInput = {
   proposalType?: string
 }
 
+/** Story 11.3 structure mutation snapshot returned by chapter-structure:* mutations. */
+export interface StructureMutationSnapshotDto {
+  markdown: string
+  sectionIndex: ProposalSectionIndexEntry[]
+  affectedSectionId: string
+  focusLocator: ChapterHeadingLocator
+  createdSectionId?: string
+}
+
 export type DocumentSaveInput = {
   projectId: string
   content: string
@@ -343,6 +352,9 @@ export const IPC_CHANNELS = {
   CHAPTER_STRUCTURE_TREE: 'chapter-structure:tree',
   CHAPTER_STRUCTURE_PATH: 'chapter-structure:path',
   CHAPTER_STRUCTURE_UPDATE_TITLE: 'chapter-structure:update-title',
+  CHAPTER_STRUCTURE_INSERT_SIBLING: 'chapter-structure:insert-sibling',
+  CHAPTER_STRUCTURE_INDENT: 'chapter-structure:indent',
+  CHAPTER_STRUCTURE_OUTDENT: 'chapter-structure:outdent',
   CHAPTER_SUMMARY_EXTRACT: 'chapter-summary:extract',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
@@ -497,6 +509,18 @@ export type IpcChannelMap = {
   'chapter-structure:update-title': {
     input: { projectId: string; sectionId: string; title: string }
     output: ProposalSectionIndexEntry
+  }
+  'chapter-structure:insert-sibling': {
+    input: { projectId: string; sectionId: string; title?: string }
+    output: StructureMutationSnapshotDto
+  }
+  'chapter-structure:indent': {
+    input: { projectId: string; sectionId: string }
+    output: StructureMutationSnapshotDto
+  }
+  'chapter-structure:outdent': {
+    input: { projectId: string; sectionId: string }
+    output: StructureMutationSnapshotDto
   }
   'chapter-summary:extract': {
     input: ChapterSummaryExtractInput

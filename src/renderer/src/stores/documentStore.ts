@@ -28,6 +28,15 @@ export interface DocumentActions {
   updateContent: (content: string, projectId: string, options?: UpdateContentOptions) => void
   saveDocument: (projectId: string) => Promise<void>
   saveDocumentSync: (projectId: string, rootPath: string | null, content?: string) => boolean
+  /**
+   * Story 11.3: write a server-committed structure mutation snapshot back into
+   * the renderer store. Cancels queued autosave / debug trail so a stale tick
+   * cannot overwrite the just-committed markdown.
+   */
+  applyStructureSnapshot: (
+    projectId: string,
+    snapshot: { content: string; sectionIndex: ProposalSectionIndexEntry[] }
+  ) => void
   resetDocument: () => void
 }
 
@@ -325,6 +334,23 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
         },
       }))
       return false
+    },
+
+    applyStructureSnapshot: (projectId, snapshot) => {
+      const state = get()
+      if (state.loadedProjectId !== projectId) return
+      resetAutoSaveQueue()
+      resetDebugTrail()
+      latestSaveAttemptToken += 1
+      latestDocumentVersion += 1
+      set({
+        content: snapshot.content,
+        sectionIndex: snapshot.sectionIndex,
+        autoSave: {
+          ...defaultAutoSave,
+          lastSavedAt: new Date().toISOString(),
+        },
+      })
     },
 
     resetDocument: () => {

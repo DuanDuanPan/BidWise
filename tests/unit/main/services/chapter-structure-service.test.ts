@@ -318,3 +318,170 @@ describe('@story-11-2 chapterStructureService.updateTitle', () => {
     expect(mockUpdateMetadata).toHaveBeenCalled()
   })
 })
+
+describe('@story-11-3 chapterStructureService structural mutations', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockLoad.mockReset()
+    mockGetMetadata.mockReset()
+    mockSave.mockReset()
+    mockUpdateMetadata.mockReset()
+  })
+
+  function setupProject(markdown: string, sectionIndex: unknown[]): void {
+    mockLoad.mockResolvedValue({ projectId: 'p', content: markdown, lastSavedAt: '', version: 1 })
+    mockGetMetadata.mockResolvedValue(buildMeta(sectionIndex))
+    mockUpdateMetadata.mockImplementation(
+      async (_projectId: string, updater: (m: ProposalMetadata) => ProposalMetadata) =>
+        updater(buildMeta(sectionIndex))
+    )
+    mockSave.mockResolvedValue({ lastSavedAt: '2026-04-19T00:00:00.000Z' })
+  }
+
+  it('@p0 insertSibling appends a new sibling with fresh sectionId', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    const markdown = '## A\nbody A\n## B\n'
+    setupProject(markdown, [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'B',
+        level: 2,
+        order: 1,
+        headingLocator: { title: 'B', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    const result = await chapterStructureService.insertSibling('p', UUID_A)
+    expect(mockSave).toHaveBeenCalledTimes(1)
+    expect(result.markdown).toContain('## 新章节')
+    expect(result.createdSectionId).toBeDefined()
+    expect(result.createdSectionId).not.toBe(UUID_A)
+    expect(result.sectionIndex).toHaveLength(3)
+    expect(result.sectionIndex.map((e) => e.title)).toEqual(['A', '新章节', 'B'])
+  })
+
+  it('@p0 indent rejects when no previous sibling', async () => {
+    const { chapterStructureService, StructureBoundaryError } =
+      await import('@main/services/chapter-structure-service')
+    setupProject('## A\n### A.1\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'A.1',
+        level: 3,
+        order: 0,
+        parentSectionId: UUID_A,
+        headingLocator: { title: 'A.1', level: 3, occurrenceIndex: 0 },
+      }),
+    ])
+    await expect(chapterStructureService.indent('p', UUID_B)).rejects.toBeInstanceOf(
+      StructureBoundaryError
+    )
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('@p0 indent moves target subtree under previous sibling and recomputes parent', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    setupProject('# A\n## B\n## C\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 1,
+        order: 0,
+        headingLocator: { title: 'A', level: 1, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'B',
+        level: 2,
+        order: 0,
+        parentSectionId: UUID_A,
+        headingLocator: { title: 'B', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_C,
+        title: 'C',
+        level: 2,
+        order: 1,
+        parentSectionId: UUID_A,
+        headingLocator: { title: 'C', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    const result = await chapterStructureService.indent('p', UUID_C)
+    const cEntry = result.sectionIndex.find((e) => e.sectionId === UUID_C)!
+    expect(cEntry.level).toBe(3)
+    expect(cEntry.parentSectionId).toBe(UUID_B)
+    expect(result.affectedSectionId).toBe(UUID_C)
+  })
+
+  it('@p0 outdent moves target subtree to grandparent', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    setupProject('## A\n### A.1\n## B\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'A.1',
+        level: 3,
+        order: 0,
+        parentSectionId: UUID_A,
+        headingLocator: { title: 'A.1', level: 3, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_C,
+        title: 'B',
+        level: 2,
+        order: 1,
+        headingLocator: { title: 'B', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    const result = await chapterStructureService.outdent('p', UUID_B)
+    const a1 = result.sectionIndex.find((e) => e.sectionId === UUID_B)!
+    expect(a1.level).toBe(2)
+    expect(a1.parentSectionId).toBeUndefined()
+    expect(result.markdown).toContain('## A.1')
+  })
+
+  it('@p1 metadata fails before markdown write keeps both files consistent', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    mockLoad.mockResolvedValue({
+      projectId: 'p',
+      content: '# A\n',
+      lastSavedAt: '',
+      version: 1,
+    })
+    mockGetMetadata.mockResolvedValue(
+      buildMeta([
+        entry({
+          sectionId: UUID_A,
+          title: 'A',
+          level: 1,
+          headingLocator: { title: 'A', level: 1, occurrenceIndex: 0 },
+        }),
+      ])
+    )
+    mockUpdateMetadata.mockRejectedValue(new Error('metadata lock error'))
+
+    await expect(chapterStructureService.insertSibling('p', UUID_A)).rejects.toThrow(
+      /metadata lock error/
+    )
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+})

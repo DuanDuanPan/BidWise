@@ -493,3 +493,289 @@ export function normalizeGeneratedHeadingLevels(
 
   return result.join('\n')
 }
+
+// ─── Story 11.3: 结构变更 subtree helper ─────────────────────────────────────
+
+export type HeadingLevel = ChapterHeadingLocator['level']
+export const MAX_HEADING_LEVEL: HeadingLevel = 4
+
+/** 默认新章节标题 (Story 3.3 先例)。 */
+export const DEFAULT_NEW_SECTION_TITLE = '新章节'
+
+export interface SectionSubtreeBlock {
+  heading: MarkdownHeadingInfo
+  /** Exclusive end line index — points to the first line AFTER the subtree. */
+  endLineIndex: number
+  /** Raw markdown lines of the subtree, including the heading line. */
+  lines: string[]
+}
+
+/**
+ * Return the contiguous markdown block representing a heading and every
+ * descendant (nested headings + their bodies). Stops at the first subsequent
+ * heading with level ≤ target level, or at EOF.
+ */
+export function getSectionSubtreeBlock(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): SectionSubtreeBlock | null {
+  const lines = markdown.split('\n')
+  const headings = extractMarkdownHeadings(markdown)
+  const heading = findMarkdownHeading(headings, locator)
+  if (!heading) return null
+
+  let endLineIndex = lines.length
+  for (const candidate of headings) {
+    if (candidate.lineIndex > heading.lineIndex && candidate.level <= heading.level) {
+      endLineIndex = candidate.lineIndex
+      break
+    }
+  }
+  return {
+    heading,
+    endLineIndex,
+    lines: lines.slice(heading.lineIndex, endLineIndex),
+  }
+}
+
+/**
+ * Locate the previous sibling heading (same level, under the same immediate
+ * parent). Returns `null` at top-of-document boundary.
+ */
+export function findPreviousSiblingHeading(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): MarkdownHeadingInfo | null {
+  const headings = extractMarkdownHeadings(markdown)
+  const target = findMarkdownHeading(headings, locator)
+  if (!target) return null
+
+  let candidate: MarkdownHeadingInfo | null = null
+  for (const h of headings) {
+    if (h.lineIndex >= target.lineIndex) break
+    if (h.level < target.level) {
+      // New shallower ancestor — resets sibling search under that ancestor.
+      candidate = null
+    } else if (h.level === target.level) {
+      candidate = h
+    }
+  }
+  return candidate
+}
+
+/**
+ * Locate the immediate parent heading. Returns `null` when target is already at
+ * H1 (no parent possible).
+ */
+export function findParentHeading(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): MarkdownHeadingInfo | null {
+  const headings = extractMarkdownHeadings(markdown)
+  const target = findMarkdownHeading(headings, locator)
+  if (!target || target.level === 1) return null
+
+  let candidate: MarkdownHeadingInfo | null = null
+  for (const h of headings) {
+    if (h.lineIndex >= target.lineIndex) break
+    if (h.level < target.level) {
+      candidate = h
+    }
+  }
+  return candidate
+}
+
+function shiftHeadingLevels(
+  lines: string[],
+  delta: number
+): { ok: true; lines: string[] } | { ok: false; reason: 'max-depth' | 'min-depth' } {
+  let inFence = false
+  let fenceChar: string | null = null
+  let fenceLen = 0
+
+  const out: string[] = []
+  for (const line of lines) {
+    const fenceMatch = FENCE_RE.exec(line)
+    if (fenceMatch) {
+      const marker = fenceMatch[2]
+      const char = marker[0]
+      const len = marker.length
+      if (inFence) {
+        if (char === fenceChar && len >= fenceLen) {
+          inFence = false
+          fenceChar = null
+          fenceLen = 0
+        }
+      } else {
+        inFence = true
+        fenceChar = char
+        fenceLen = len
+      }
+      out.push(line)
+      continue
+    }
+    if (inFence) {
+      out.push(line)
+      continue
+    }
+    const match = HEADING_RE.exec(line)
+    if (!match) {
+      out.push(line)
+      continue
+    }
+    const newLevel = match[1].length + delta
+    if (newLevel > MAX_HEADING_LEVEL) return { ok: false, reason: 'max-depth' }
+    if (newLevel < 1) return { ok: false, reason: 'min-depth' }
+    out.push('#'.repeat(newLevel) + ' ' + match[2])
+  }
+  return { ok: true, lines: out }
+}
+
+export interface StructureMutationResult {
+  markdown: string
+  /** New heading's line index (insert) or moved heading's new line index (indent/outdent). */
+  affectedLineIndex: number
+  /** Resulting level of the heading that was inserted / moved. */
+  affectedLevel: HeadingLevel
+  /** Inserted heading's raw title (only for insertSibling). */
+  insertedTitle?: string
+}
+
+export type StructureMutationError =
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'no-previous-sibling' }
+  | { ok: false; reason: 'already-top-level' }
+  | { ok: false; reason: 'max-depth' }
+  | { ok: false; reason: 'min-depth' }
+
+/**
+ * Insert a new heading at the same level immediately after the current
+ * section's subtree. Default title is `新章节` (Story 3.3 convention).
+ * Produces a clean `\n\n# 新章节\n` block so subsequent autosaves stay valid.
+ */
+export function insertSiblingAfterSection(
+  markdown: string,
+  locator: ChapterHeadingLocator,
+  title: string = DEFAULT_NEW_SECTION_TITLE
+): { ok: true; result: StructureMutationResult } | { ok: false; reason: 'not-found' } {
+  const block = getSectionSubtreeBlock(markdown, locator)
+  if (!block) return { ok: false, reason: 'not-found' }
+
+  const lines = markdown.split('\n')
+  const headingLine = '#'.repeat(block.heading.level) + ' ' + title
+  const head = lines.slice(0, block.endLineIndex)
+  const tail = lines.slice(block.endLineIndex)
+
+  // Ensure blank line separation before new heading.
+  const needsLeadingBlank = head.length > 0 && head[head.length - 1].trim() !== ''
+  const insertedLineIndex = head.length + (needsLeadingBlank ? 1 : 0)
+  const middle: string[] = []
+  if (needsLeadingBlank) middle.push('')
+  middle.push(headingLine)
+  // Ensure blank line after inserted heading (before continuation) so editor
+  // parsing keeps the heading on its own block.
+  if (tail.length === 0 || tail[0].trim() !== '') {
+    middle.push('')
+  }
+
+  return {
+    ok: true,
+    result: {
+      markdown: [...head, ...middle, ...tail].join('\n'),
+      affectedLineIndex: insertedLineIndex,
+      affectedLevel: block.heading.level,
+      insertedTitle: title,
+    },
+  }
+}
+
+/**
+ * Demote a section and every descendant by one level, moving the whole subtree
+ * to become the final child of the previous sibling. No-op on boundaries.
+ */
+export function indentSectionSubtree(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): { ok: true; result: StructureMutationResult } | StructureMutationError {
+  const prevSibling = findPreviousSiblingHeading(markdown, locator)
+  if (!prevSibling) {
+    const block = getSectionSubtreeBlock(markdown, locator)
+    return { ok: false, reason: block ? 'no-previous-sibling' : 'not-found' }
+  }
+  const block = getSectionSubtreeBlock(markdown, locator)
+  if (!block) return { ok: false, reason: 'not-found' }
+
+  const shifted = shiftHeadingLevels(block.lines, 1)
+  if (!shifted.ok) return { ok: false, reason: 'max-depth' }
+
+  // The subtree of prev sibling ends where the next heading at level ≤ prev
+  // level appears. We splice target block to that boundary (so it becomes the
+  // final child of prev sibling). Because target is the NEXT sibling, its
+  // current position IS that boundary — so indenting just rewrites levels in
+  // place. Confirmed by AC1 spec ("缩进为前一个同级兄弟的最后一个子节点").
+  const lines = markdown.split('\n')
+  const before = lines.slice(0, block.heading.lineIndex)
+  const after = lines.slice(block.endLineIndex)
+  const nextMarkdown = [...before, ...shifted.lines, ...after].join('\n')
+  return {
+    ok: true,
+    result: {
+      markdown: nextMarkdown,
+      affectedLineIndex: block.heading.lineIndex,
+      affectedLevel: (block.heading.level + 1) as HeadingLevel,
+    },
+  }
+}
+
+/**
+ * Promote a section and every descendant by one level, moving the subtree to
+ * become the next sibling of its former parent. No-op when already at top.
+ */
+export function outdentSectionSubtree(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): { ok: true; result: StructureMutationResult } | StructureMutationError {
+  const block = getSectionSubtreeBlock(markdown, locator)
+  if (!block) return { ok: false, reason: 'not-found' }
+  if (block.heading.level === 1) return { ok: false, reason: 'already-top-level' }
+
+  const parent = findParentHeading(markdown, locator)
+  if (!parent) return { ok: false, reason: 'already-top-level' }
+
+  const parentLocator: ChapterHeadingLocator = {
+    title: parent.title,
+    level: parent.level,
+    occurrenceIndex: parent.occurrenceIndex,
+  }
+  const parentBlock = getSectionSubtreeBlock(markdown, parentLocator)
+  if (!parentBlock) return { ok: false, reason: 'not-found' }
+
+  const shifted = shiftHeadingLevels(block.lines, -1)
+  if (!shifted.ok) return { ok: false, reason: shifted.reason }
+
+  const lines = markdown.split('\n')
+  // Remove block from current location.
+  const withoutBlock = [
+    ...lines.slice(0, block.heading.lineIndex),
+    ...lines.slice(block.endLineIndex),
+  ]
+  // Adjust parent subtree end: because block lived INSIDE the parent subtree,
+  // parentBlock.endLineIndex > block.endLineIndex except when block was the
+  // final descendant. Recompute parent subtree end on the reduced array.
+  const removedCount = block.endLineIndex - block.heading.lineIndex
+  const newParentEnd = parentBlock.endLineIndex - removedCount
+
+  const before = withoutBlock.slice(0, newParentEnd)
+  const after = withoutBlock.slice(newParentEnd)
+  const needsLeadingBlank = before.length > 0 && before[before.length - 1].trim() !== ''
+  const middle = needsLeadingBlank ? ['', ...shifted.lines] : shifted.lines
+  const nextLines = [...before, ...middle, ...after]
+  return {
+    ok: true,
+    result: {
+      markdown: nextLines.join('\n'),
+      affectedLineIndex: before.length + (needsLeadingBlank ? 1 : 0),
+      affectedLevel: (block.heading.level - 1) as HeadingLevel,
+    },
+  }
+}

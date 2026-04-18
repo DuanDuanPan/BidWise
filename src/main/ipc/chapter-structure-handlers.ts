@@ -26,6 +26,18 @@ const handlerMap: { [C in ChapterStructureChannel]: () => void } = {
     createIpcHandler('chapter-structure:update-title', (input) =>
       chapterStructureService.updateTitle(input.projectId, input.sectionId, input.title)
     ),
+  'chapter-structure:insert-sibling': () =>
+    createIpcHandler('chapter-structure:insert-sibling', (input) =>
+      chapterStructureService.insertSibling(input.projectId, input.sectionId, input.title)
+    ),
+  'chapter-structure:indent': () =>
+    createIpcHandler('chapter-structure:indent', (input) =>
+      chapterStructureService.indent(input.projectId, input.sectionId)
+    ),
+  'chapter-structure:outdent': () =>
+    createIpcHandler('chapter-structure:outdent', (input) =>
+      chapterStructureService.outdent(input.projectId, input.sectionId)
+    ),
 }
 
 export type RegisteredChapterStructureChannels = ChapterStructureChannel

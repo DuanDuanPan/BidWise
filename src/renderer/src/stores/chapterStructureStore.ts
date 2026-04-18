@@ -1,5 +1,14 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
+import type { StructureMutationSnapshotDto } from '@shared/ipc-types'
+import { useDocumentStore } from './documentStore'
+import {
+  notifyDepthExceeded,
+  notifyLockedRejection,
+  notifyStructureBoundary,
+  notifyStructureError,
+} from '@modules/editor/lib/structure-feedback'
+import { computeMaxDepthBySectionId } from '@shared/chapter-structure-depth'
 
 /**
  * Renderer-side chapter structure store (Story 11.2).
@@ -33,6 +42,13 @@ export interface ChapterStructureState {
   sectionIdByNodeKey: Record<string, string>
 }
 
+export type StructureMutationOutcome =
+  | { ok: true; snapshot: StructureMutationSnapshotDto }
+  | {
+      ok: false
+      reason: 'locked' | 'pending-delete' | 'editing' | 'unknown-section' | 'boundary' | 'error'
+    }
+
 export interface ChapterStructureActions {
   focusNode: (nodeKey: string | null) => void
   enterEditing: (nodeKey: string) => void
@@ -42,6 +58,18 @@ export interface ChapterStructureActions {
   markPendingDelete: (nodeKeys: string[], expiresAt: string) => void
   clearPendingDelete: (nodeKeys: string[]) => void
   registerSectionIds: (mapping: Record<string, string>) => void
+  /** Story 11.3: insert a sibling chapter after the targeted node. */
+  insertSibling: (projectId: string, nodeKey: string) => Promise<StructureMutationOutcome>
+  /** Story 11.3: indent the targeted node + descendants under previous sibling. */
+  indentNode: (projectId: string, nodeKey: string) => Promise<StructureMutationOutcome>
+  /** Story 11.3: outdent the targeted node + descendants to the grandparent. */
+  outdentNode: (projectId: string, nodeKey: string) => Promise<StructureMutationOutcome>
+  /** Story 11.3: hand off cascade-delete payload to Story 11.4. */
+  requestSoftDelete: (
+    projectId: string,
+    sectionIds: string[],
+    nodeKeys: string[]
+  ) => Promise<{ ok: boolean }>
   reset: () => void
 }
 
@@ -138,11 +166,179 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
       set((state) => ({ sectionIdByNodeKey: { ...state.sectionIdByNodeKey, ...mapping } }))
     },
 
+    async insertSibling(projectId, nodeKey) {
+      const guard = guardMutation(nodeKey)
+      if (guard) return guard
+      const sectionId = resolveSectionId(nodeKey)
+      if (!sectionId) return { ok: false, reason: 'unknown-section' }
+      try {
+        const res = await window.api.chapterStructureInsertSibling({ projectId, sectionId })
+        if (!res.success) return handleMutationError(res.error)
+        const snapshot = res.data
+        commitSnapshot(projectId, snapshot)
+        // Newly created node: focus + enter editing for inline title input.
+        const createdId = snapshot.createdSectionId ?? snapshot.affectedSectionId
+        const createdKey = findNodeKeyForSectionId(createdId) ?? createdId
+        register({ [createdKey]: createdId })
+        ;(useChapterStructureStore.getState() as ChapterStructureStore).focusNode(createdKey)
+        ;(useChapterStructureStore.getState() as ChapterStructureStore).enterEditing(createdKey)
+        warnIfDepthExceeded(snapshot)
+        return { ok: true, snapshot }
+      } catch (err) {
+        notifyStructureError(err)
+        return { ok: false, reason: 'error' }
+      }
+    },
+
+    async indentNode(projectId, nodeKey) {
+      const guard = guardMutation(nodeKey)
+      if (guard) return guard
+      const sectionId = resolveSectionId(nodeKey)
+      if (!sectionId) return { ok: false, reason: 'unknown-section' }
+      try {
+        const res = await window.api.chapterStructureIndent({ projectId, sectionId })
+        if (!res.success) return handleMutationError(res.error)
+        const snapshot = res.data
+        commitSnapshot(projectId, snapshot)
+        const focusKey = findNodeKeyForSectionId(snapshot.affectedSectionId) ?? nodeKey
+        ;(useChapterStructureStore.getState() as ChapterStructureStore).focusNode(focusKey)
+        warnIfDepthExceeded(snapshot)
+        return { ok: true, snapshot }
+      } catch (err) {
+        notifyStructureError(err)
+        return { ok: false, reason: 'error' }
+      }
+    },
+
+    async outdentNode(projectId, nodeKey) {
+      const guard = guardMutation(nodeKey)
+      if (guard) return guard
+      const sectionId = resolveSectionId(nodeKey)
+      if (!sectionId) return { ok: false, reason: 'unknown-section' }
+      try {
+        const res = await window.api.chapterStructureOutdent({ projectId, sectionId })
+        if (!res.success) return handleMutationError(res.error)
+        const snapshot = res.data
+        commitSnapshot(projectId, snapshot)
+        const focusKey = findNodeKeyForSectionId(snapshot.affectedSectionId) ?? nodeKey
+        ;(useChapterStructureStore.getState() as ChapterStructureStore).focusNode(focusKey)
+        return { ok: true, snapshot }
+      } catch (err) {
+        notifyStructureError(err)
+        return { ok: false, reason: 'error' }
+      }
+    },
+
+    async requestSoftDelete(_projectId, sectionIds, nodeKeys) {
+      // Story 11.3 owns the cascade-target collection + 11.2 state guard;
+      // Story 11.4 will replace this stub with the real soft-delete pipeline.
+      const state = useChapterStructureStore.getState()
+      // Locked / pending-delete guard at the request entry — same priority rule
+      // as guardMutation but applied to the full collected node set.
+      for (const key of nodeKeys) {
+        if (state.lockedNodeKeys[key]) {
+          notifyLockedRejection()
+          return { ok: false }
+        }
+        if (state.pendingDeleteByNodeKey[key]) {
+          return { ok: false }
+        }
+      }
+      // Optimistic 5s window — keeps Story 11.2 visual contract live until
+      // Story 11.4 lands the real undo flow.
+      const expiresAt = new Date(Date.now() + 5000).toISOString()
+      state.markPendingDelete(nodeKeys, expiresAt)
+      // Auto-clear so the pending-delete UI does not get stuck before 11.4.
+      setTimeout(() => {
+        useChapterStructureStore.getState().clearPendingDelete(nodeKeys)
+      }, 5000)
+      // sectionIds are intentionally collected here for the future 11.4 IPC
+      // payload — bind them onto window so the upcoming wiring can read them
+      // without re-walking the outline.
+      const target: StructureSoftDeleteTarget = { sectionIds, nodeKeys, expiresAt }
+      pendingSoftDeletes.push(target)
+      return { ok: true }
+    },
+
     reset() {
       set({ ...INITIAL_STATE })
+      pendingSoftDeletes.length = 0
     },
   }))
 )
+
+// ─── Story 11.3 mutation helpers ────────────────────────────────────────────
+
+interface StructureSoftDeleteTarget {
+  sectionIds: string[]
+  nodeKeys: string[]
+  expiresAt: string
+}
+
+/** Exposed for Story 11.4 to drain queued cascade-delete targets. */
+export const pendingSoftDeletes: StructureSoftDeleteTarget[] = []
+
+function guardMutation(nodeKey: string): StructureMutationOutcome | null {
+  const state = useChapterStructureStore.getState()
+  if (state.lockedNodeKeys[nodeKey]) {
+    notifyLockedRejection()
+    return { ok: false, reason: 'locked' }
+  }
+  if (state.pendingDeleteByNodeKey[nodeKey]) {
+    return { ok: false, reason: 'pending-delete' }
+  }
+  if (state.editingNodeKey === nodeKey) {
+    return { ok: false, reason: 'editing' }
+  }
+  return null
+}
+
+function resolveSectionId(nodeKey: string): string | null {
+  const map = useChapterStructureStore.getState().sectionIdByNodeKey
+  if (map[nodeKey]) return map[nodeKey]
+  // Fallback: nodeKey already IS a sectionId (Story 11.2 convention).
+  return nodeKey
+}
+
+function findNodeKeyForSectionId(sectionId: string): string | null {
+  const map = useChapterStructureStore.getState().sectionIdByNodeKey
+  for (const [key, id] of Object.entries(map)) {
+    if (id === sectionId) return key
+  }
+  return null
+}
+
+function register(mapping: Record<string, string>): void {
+  useChapterStructureStore.getState().registerSectionIds(mapping)
+}
+
+function commitSnapshot(projectId: string, snapshot: StructureMutationSnapshotDto): void {
+  useDocumentStore.getState().applyStructureSnapshot(projectId, {
+    content: snapshot.markdown,
+    sectionIndex: snapshot.sectionIndex,
+  })
+}
+
+function warnIfDepthExceeded(snapshot: StructureMutationSnapshotDto): void {
+  const depthMap = computeMaxDepthBySectionId(snapshot.sectionIndex)
+  const depth = depthMap.get(snapshot.affectedSectionId) ?? 0
+  if (depth > 6) {
+    notifyDepthExceeded(depth)
+  }
+}
+
+function handleMutationError(error: { code: string; message: string }): StructureMutationOutcome {
+  // AC4 boundary cases (no previous sibling, already top-level) are silent
+  // no-ops by spec — surface only when the user might otherwise be confused.
+  if (error.code === 'STRUCTURE_BOUNDARY') {
+    if (/深度|超过最大限制/.test(error.message)) {
+      notifyStructureBoundary(error.message)
+    }
+    return { ok: false, reason: 'boundary' }
+  }
+  notifyStructureError(new Error(error.message))
+  return { ok: false, reason: 'error' }
+}
 
 /** Pure selector exported for tests — priority: pending-delete > locked > editing > focused > idle. */
 export function deriveChapterNodeState(

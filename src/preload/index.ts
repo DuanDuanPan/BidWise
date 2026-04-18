@@ -217,6 +217,16 @@ const requestApi = {
   chapterStructureUpdateTitle: (input: IpcChannelMap['chapter-structure:update-title']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_UPDATE_TITLE, input),
 
+  chapterStructureInsertSibling: (
+    input: IpcChannelMap['chapter-structure:insert-sibling']['input']
+  ) => typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_INSERT_SIBLING, input),
+
+  chapterStructureIndent: (input: IpcChannelMap['chapter-structure:indent']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_INDENT, input),
+
+  chapterStructureOutdent: (input: IpcChannelMap['chapter-structure:outdent']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_OUTDENT, input),
+
   chapterSummaryExtract: (input: IpcChannelMap['chapter-summary:extract']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_SUMMARY_EXTRACT, input),
 

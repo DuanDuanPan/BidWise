@@ -44,6 +44,8 @@ import { commandRegistry, useCommandPalette } from '@renderer/shared/command-pal
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { isMac } from '@renderer/shared/lib/platform'
 import { useDocumentStore, useReviewStore, getReviewProjectState } from '@renderer/stores'
+import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
+import { normalizeHeadingTitle } from '@shared/chapter-markdown'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
 import { useComplianceAutoRefresh } from '@modules/review/hooks/useComplianceAutoRefresh'
 import { useAdversarialLineup } from '@modules/review/hooks/useAdversarialLineup'
@@ -328,6 +330,24 @@ export function ProjectWorkspace(): React.JSX.Element {
   const showOutline = (isProposalWriting || isSolutionDesign) && Boolean(projectId)
   const showWordCount = isProposalWriting || isSolutionDesign
   const outline = useDocumentOutline(showOutline ? documentContent : '')
+  const sectionIndex = useDocumentStore((s) => s.sectionIndex)
+  const sectionIdByNodeKey = useMemo(() => {
+    if (!isProposalWriting) return {}
+    const map: Record<string, string> = {}
+    const walk = (nodes: typeof outline): void => {
+      for (const node of nodes) {
+        const id = resolveSectionIdFromLocator(sectionIndex, {
+          title: normalizeHeadingTitle(node.title),
+          level: node.level,
+          occurrenceIndex: node.occurrenceIndex,
+        })
+        if (id) map[node.key] = id
+        walk(node.children)
+      }
+    }
+    walk(outline)
+    return map
+  }, [isProposalWriting, outline, sectionIndex])
   const wordCount = useWordCount(documentContent)
   const showAutoSaveIndicator = isProposalWriting
   const chapterGen = useChapterGeneration(projectId ?? '')
@@ -517,7 +537,7 @@ export function ProjectWorkspace(): React.JSX.Element {
           <WorkspaceLayout
             left={
               <OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline}>
-                {isProposalWriting ? (
+                {isProposalWriting && projectId ? (
                   <DocumentOutlineTree
                     outline={outline}
                     chapterPhases={chapterPhases}
@@ -529,6 +549,7 @@ export function ProjectWorkspace(): React.JSX.Element {
                         node
                       )
                     }}
+                    structureKeymap={{ projectId, sectionIdByNodeKey }}
                   />
                 ) : isSolutionDesign && outline.length > 0 ? (
                   <DocumentOutlineTree outline={outline} />

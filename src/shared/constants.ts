@@ -50,6 +50,8 @@ export enum ErrorCode {
   SKILL_NOT_FOUND = 'SKILL_NOT_FOUND',
   SKILL_LOAD_FAILED = 'SKILL_LOAD_FAILED',
   SKILL_EXECUTE_FAILED = 'SKILL_EXECUTE_FAILED',
+  /** Story 11.3: structure mutation refused by AC4 boundary (no prev sibling, top-level, max-depth). */
+  STRUCTURE_BOUNDARY = 'STRUCTURE_BOUNDARY',
 }
 
 export const IPC_RESPONSE_SUCCESS = true
