@@ -170,6 +170,10 @@ const requestApi = {
   documentGetMetadata: (input: IpcChannelMap['document:get-metadata']['input']) =>
     typedInvoke(IPC_CHANNELS.DOCUMENT_GET_METADATA, input),
 
+  documentMarkSkeletonConfirmed: (
+    input: IpcChannelMap['document:mark-skeleton-confirmed']['input']
+  ) => typedInvoke(IPC_CHANNELS.DOCUMENT_MARK_SKELETON_CONFIRMED, input),
+
   templateList: () => typedInvoke(IPC_CHANNELS.TEMPLATE_LIST),
 
   templateGet: (input: IpcChannelMap['template:get']['input']) =>
@@ -221,11 +225,17 @@ const requestApi = {
     input: IpcChannelMap['chapter-structure:insert-sibling']['input']
   ) => typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_INSERT_SIBLING, input),
 
+  chapterStructureInsertChild: (input: IpcChannelMap['chapter-structure:insert-child']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_INSERT_CHILD, input),
+
   chapterStructureIndent: (input: IpcChannelMap['chapter-structure:indent']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_INDENT, input),
 
   chapterStructureOutdent: (input: IpcChannelMap['chapter-structure:outdent']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_OUTDENT, input),
+
+  chapterStructureMoveSubtree: (input: IpcChannelMap['chapter-structure:move-subtree']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_MOVE_SUBTREE, input),
 
   chapterSummaryExtract: (input: IpcChannelMap['chapter-summary:extract']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_SUMMARY_EXTRACT, input),

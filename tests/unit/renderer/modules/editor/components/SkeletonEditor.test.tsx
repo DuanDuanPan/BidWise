@@ -117,6 +117,13 @@ describe('@story-3-3 SkeletonEditor', () => {
     expect(screen.getByTestId('edit-input-s1')).toBeDefined()
   })
 
+  it('clicking a draft node shows focused highlight', () => {
+    render(<SkeletonEditor {...defaultProps} />)
+    fireEvent.click(screen.getByTestId('tree-node-s1'))
+    expect(screen.getByTestId('tree-node-s1-focus-bar')).toBeDefined()
+    expect(screen.getByTestId('tree-node-s1').getAttribute('data-node-state')).toBe('focused')
+  })
+
   it('opens dropdown and clicking delete calls modal.confirm', async () => {
     render(<SkeletonEditor {...defaultProps} />)
 

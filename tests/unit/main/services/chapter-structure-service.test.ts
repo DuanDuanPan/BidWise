@@ -462,6 +462,151 @@ describe('@story-11-3 chapterStructureService structural mutations', () => {
     expect(result.markdown).toContain('## A.1')
   })
 
+  it('@p0 @story-11-9 insertChild appends new heading as last child of parent', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    const markdown = '## A\n### A.1\n## B\n'
+    setupProject(markdown, [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'A.1',
+        level: 3,
+        order: 0,
+        parentSectionId: UUID_A,
+        headingLocator: { title: 'A.1', level: 3, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_C,
+        title: 'B',
+        level: 2,
+        order: 1,
+        headingLocator: { title: 'B', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    const result = await chapterStructureService.insertChild('p', UUID_A)
+    expect(mockSave).toHaveBeenCalledTimes(1)
+    // New child has level = parent + 1 = 3.
+    const created = result.sectionIndex.find((e) => e.sectionId === result.createdSectionId)!
+    expect(created.level).toBe(3)
+    expect(created.parentSectionId).toBe(UUID_A)
+    expect(created.title).toBe('新章节')
+    expect(result.markdown).toMatch(/### 新章节/)
+  })
+
+  it('@p0 @story-11-9 insertChild rejects when parent already at H4 (max-depth)', async () => {
+    const { chapterStructureService, StructureBoundaryError } =
+      await import('@main/services/chapter-structure-service')
+    setupProject('#### D\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'D',
+        level: 4,
+        order: 0,
+        headingLocator: { title: 'D', level: 4, occurrenceIndex: 0 },
+      }),
+    ])
+    await expect(chapterStructureService.insertChild('p', UUID_A)).rejects.toBeInstanceOf(
+      StructureBoundaryError
+    )
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('@p0 @story-11-9 moveSubtree placement=before reorders siblings', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    setupProject('## A\n## B\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'B',
+        level: 2,
+        order: 1,
+        headingLocator: { title: 'B', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    const result = await chapterStructureService.moveSubtree('p', UUID_B, UUID_A, 'before')
+    expect(mockSave).toHaveBeenCalledTimes(1)
+    expect(result.sectionIndex.map((e) => e.title)).toEqual(['B', 'A'])
+  })
+
+  it('@p0 @story-11-9 moveSubtree placement=inside nests as last child (level+1)', async () => {
+    const { chapterStructureService } = await import('@main/services/chapter-structure-service')
+    setupProject('## A\n## B\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'B',
+        level: 2,
+        order: 1,
+        headingLocator: { title: 'B', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    const result = await chapterStructureService.moveSubtree('p', UUID_B, UUID_A, 'inside')
+    const b = result.sectionIndex.find((e) => e.sectionId === UUID_B)!
+    expect(b.level).toBe(3)
+    expect(b.parentSectionId).toBe(UUID_A)
+  })
+
+  it('@p0 @story-11-9 moveSubtree rejects cycle (drop is descendant of drag)', async () => {
+    const { chapterStructureService, StructureBoundaryError } =
+      await import('@main/services/chapter-structure-service')
+    setupProject('## A\n### A.1\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+      entry({
+        sectionId: UUID_B,
+        title: 'A.1',
+        level: 3,
+        order: 0,
+        parentSectionId: UUID_A,
+        headingLocator: { title: 'A.1', level: 3, occurrenceIndex: 0 },
+      }),
+    ])
+    await expect(
+      chapterStructureService.moveSubtree('p', UUID_A, UUID_B, 'inside')
+    ).rejects.toBeInstanceOf(StructureBoundaryError)
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('@p0 @story-11-9 moveSubtree rejects move to self', async () => {
+    const { chapterStructureService, StructureBoundaryError } =
+      await import('@main/services/chapter-structure-service')
+    setupProject('## A\n', [
+      entry({
+        sectionId: UUID_A,
+        title: 'A',
+        level: 2,
+        order: 0,
+        headingLocator: { title: 'A', level: 2, occurrenceIndex: 0 },
+      }),
+    ])
+    await expect(
+      chapterStructureService.moveSubtree('p', UUID_A, UUID_A, 'before')
+    ).rejects.toBeInstanceOf(StructureBoundaryError)
+  })
+
   it('@p1 metadata fails before markdown write keeps both files consistent', async () => {
     const { chapterStructureService } = await import('@main/services/chapter-structure-service')
     mockLoad.mockResolvedValue({

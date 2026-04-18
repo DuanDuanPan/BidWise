@@ -336,6 +336,7 @@ export const IPC_CHANNELS = {
   DOCUMENT_SAVE: 'document:save',
   DOCUMENT_SAVE_SYNC: 'document:save-sync',
   DOCUMENT_GET_METADATA: 'document:get-metadata',
+  DOCUMENT_MARK_SKELETON_CONFIRMED: 'document:mark-skeleton-confirmed',
   TEMPLATE_LIST: 'template:list',
   TEMPLATE_GET: 'template:get',
   TEMPLATE_GENERATE_SKELETON: 'template:generate-skeleton',
@@ -353,8 +354,10 @@ export const IPC_CHANNELS = {
   CHAPTER_STRUCTURE_PATH: 'chapter-structure:path',
   CHAPTER_STRUCTURE_UPDATE_TITLE: 'chapter-structure:update-title',
   CHAPTER_STRUCTURE_INSERT_SIBLING: 'chapter-structure:insert-sibling',
+  CHAPTER_STRUCTURE_INSERT_CHILD: 'chapter-structure:insert-child',
   CHAPTER_STRUCTURE_INDENT: 'chapter-structure:indent',
   CHAPTER_STRUCTURE_OUTDENT: 'chapter-structure:outdent',
+  CHAPTER_STRUCTURE_MOVE_SUBTREE: 'chapter-structure:move-subtree',
   CHAPTER_SUMMARY_EXTRACT: 'chapter-summary:extract',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
@@ -479,6 +482,7 @@ export type IpcChannelMap = {
   'document:load': { input: { projectId: string }; output: ProposalDocument }
   'document:save': { input: DocumentSaveInput; output: DocumentSaveOutput }
   'document:get-metadata': { input: { projectId: string }; output: ProposalMetadata }
+  'document:mark-skeleton-confirmed': { input: { projectId: string }; output: ProposalMetadata }
   'template:list': { input: void; output: TemplateSummary[] }
   'template:get': { input: { templateId: string }; output: ProposalTemplate }
   'template:generate-skeleton': { input: GenerateSkeletonInput; output: GenerateSkeletonOutput }
@@ -514,12 +518,25 @@ export type IpcChannelMap = {
     input: { projectId: string; sectionId: string; title?: string }
     output: StructureMutationSnapshotDto
   }
+  'chapter-structure:insert-child': {
+    input: { projectId: string; parentSectionId: string; title?: string }
+    output: StructureMutationSnapshotDto
+  }
   'chapter-structure:indent': {
     input: { projectId: string; sectionId: string }
     output: StructureMutationSnapshotDto
   }
   'chapter-structure:outdent': {
     input: { projectId: string; sectionId: string }
+    output: StructureMutationSnapshotDto
+  }
+  'chapter-structure:move-subtree': {
+    input: {
+      projectId: string
+      dragSectionId: string
+      dropSectionId: string
+      placement: 'before' | 'after' | 'inside'
+    }
     output: StructureMutationSnapshotDto
   }
   'chapter-summary:extract': {

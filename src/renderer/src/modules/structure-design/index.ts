@@ -1,13 +1,29 @@
 /**
  * Structure Design module public surface.
  *
- * Story 11.3 / 11.4 / 11.8 import the focus-state machine API from here; the
- * underlying store lives in `@renderer/stores/chapterStructureStore` so that
- * every renderer module shares a single instance.
+ * Story 11.9: single unified `<StructureTreeView>` renderer replaces the
+ * Story 11.2 `StructureCanvas` / `StructureCanvasNode` pair. Consumers are
+ * `SkeletonEditor` (draft) and `StructureDesignWorkspace` (persisted).
  */
 export { StructureDesignWorkspace } from './components/StructureDesignWorkspace'
-export { StructureCanvas } from './components/StructureCanvas'
-export { StructureCanvasNode } from './components/StructureCanvasNode'
+export { StructureTreeView } from './components/StructureTreeView'
+export type {
+  StructureTreeNode,
+  StructureTreeViewMode,
+  StructureTreeViewPlacement,
+  StructureTreeViewProps,
+} from './components/StructureTreeView.types'
+export {
+  skeletonToTreeNodes,
+  treeNodesToSkeleton,
+  countTreeNodes,
+  generateDraftKey,
+} from './adapters/skeletonAdapter'
+export {
+  sectionIndexToTreeNodes,
+  collectSubtreeKeys,
+  findTreeNode,
+} from './adapters/persistedAdapter'
 export { useStructureOutline } from './hooks/useStructureOutline'
 export type { StructureNode } from './hooks/useStructureOutline'
 export { useChapterNodeState } from './hooks/useChapterNodeState'

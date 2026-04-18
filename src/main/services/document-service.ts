@@ -156,6 +156,9 @@ function normalizeMetadata(
     ...(meta?.chapterIdentitySchemaVersion !== undefined
       ? { chapterIdentitySchemaVersion: meta.chapterIdentitySchemaVersion }
       : {}),
+    ...(meta?.firstSkeletonConfirmedAt !== undefined
+      ? { firstSkeletonConfirmedAt: meta.firstSkeletonConfirmedAt }
+      : {}),
     lastSavedAt: meta?.lastSavedAt || lastSavedAt,
   }
 }
@@ -239,6 +242,23 @@ function parseMetadata(
       ErrorCode.PARSE,
       `${metaPath} 字段 chapterIdentitySchemaVersion 仅接受 1 或 2`
     )
+  }
+  if (metadata.firstSkeletonConfirmedAt !== undefined) {
+    // Story 11.9: this field drives the `SolutionDesignView` CTA label and is
+    // written back to disk unchanged. Reject non-strings / unparseable dates
+    // so a corrupted sidecar never silently poisons the label flow.
+    if (typeof metadata.firstSkeletonConfirmedAt !== 'string') {
+      throw new BidWiseError(
+        ErrorCode.PARSE,
+        `${metaPath} 字段 firstSkeletonConfirmedAt 必须是字符串`
+      )
+    }
+    if (Number.isNaN(Date.parse(metadata.firstSkeletonConfirmedAt))) {
+      throw new BidWiseError(
+        ErrorCode.PARSE,
+        `${metaPath} 字段 firstSkeletonConfirmedAt 必须是合法 ISO-8601 时间字符串`
+      )
+    }
   }
 
   return metadata
@@ -563,6 +583,19 @@ export const documentService = {
     await ensureChapterIdentityUpgraded(projectId)
     const metaPath = join(rootPath, 'proposal.meta.json')
     return readMetadata(metaPath, projectId, new Date().toISOString())
+  },
+
+  /**
+   * Story 11.9: idempotent first-write of the `firstSkeletonConfirmedAt`
+   * sidecar field. Returns the full ProposalMetadata after the call. When the
+   * field is already set (user re-enters proposal-writing after an earlier
+   * confirm), the existing value is preserved — we never overwrite.
+   */
+  async markSkeletonConfirmed(projectId: string): Promise<ProposalMetadata> {
+    return documentService.updateMetadata(projectId, (current) => {
+      if (current.firstSkeletonConfirmedAt) return current
+      return { ...current, firstSkeletonConfirmedAt: new Date().toISOString() }
+    })
   },
 
   async updateMetadata(

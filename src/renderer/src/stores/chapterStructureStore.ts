@@ -74,6 +74,20 @@ export interface ChapterStructureActions {
     sectionId: string,
     options?: MutationOptions
   ) => Promise<StructureMutationOutcome>
+  /** Story 11.9: insert a new last-child under `parentSectionId`. */
+  insertChild: (
+    projectId: string,
+    parentSectionId: string,
+    options?: MutationOptions
+  ) => Promise<StructureMutationOutcome>
+  /** Story 11.9: move drag subtree to a new position around `dropSectionId`. */
+  moveSubtree: (
+    projectId: string,
+    dragSectionId: string,
+    dropSectionId: string,
+    placement: 'before' | 'after' | 'inside',
+    options?: MutationOptions
+  ) => Promise<StructureMutationOutcome>
   /** Story 11.3: indent the targeted section + descendants under previous sibling. */
   indentSection: (
     projectId: string,
@@ -209,6 +223,55 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
           const store = useChapterStructureStore.getState()
           store.focusSection(createdId)
           store.enterEditing(createdId)
+          warnIfDepthExceeded(snapshot)
+          return { ok: true, snapshot }
+        } catch (err) {
+          notifyStructureError(err)
+          return { ok: false, reason: 'error' }
+        }
+      })
+    },
+
+    async insertChild(projectId, parentSectionId, options) {
+      const guard = guardMutation(parentSectionId)
+      if (guard) return guard
+      return runMutation(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureInsertChild({
+            projectId,
+            parentSectionId,
+          })
+          if (!res.success) return handleMutationError(res.error)
+          const snapshot = res.data
+          commitSnapshot(projectId, snapshot)
+          const createdId = snapshot.createdSectionId ?? snapshot.affectedSectionId
+          const store = useChapterStructureStore.getState()
+          store.focusSection(createdId)
+          store.enterEditing(createdId)
+          warnIfDepthExceeded(snapshot)
+          return { ok: true, snapshot }
+        } catch (err) {
+          notifyStructureError(err)
+          return { ok: false, reason: 'error' }
+        }
+      })
+    },
+
+    async moveSubtree(projectId, dragSectionId, dropSectionId, placement, options) {
+      const guard = guardMutation(dragSectionId)
+      if (guard) return guard
+      return runMutation(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureMoveSubtree({
+            projectId,
+            dragSectionId,
+            dropSectionId,
+            placement,
+          })
+          if (!res.success) return handleMutationError(res.error)
+          const snapshot = res.data
+          commitSnapshot(projectId, snapshot)
+          useChapterStructureStore.getState().focusSection(snapshot.affectedSectionId)
           warnIfDepthExceeded(snapshot)
           return { ok: true, snapshot }
         } catch (err) {

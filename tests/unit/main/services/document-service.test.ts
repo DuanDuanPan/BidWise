@@ -573,6 +573,81 @@ describe('documentService @story-3-1', () => {
     })
   })
 
+  describe('markSkeletonConfirmed @story-11-9', () => {
+    function baseMeta(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+      return {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        lastSavedAt: '2026-04-18T00:00:00.000Z',
+        ...overrides,
+      }
+    }
+
+    it('writes firstSkeletonConfirmedAt when absent', async () => {
+      const existing = baseMeta({})
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.meta.json')) {
+          return Promise.resolve(JSON.stringify(existing))
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      const result = await documentService.markSkeletonConfirmed('proj-1')
+      expect(result.firstSkeletonConfirmedAt).toBeTypeOf('string')
+      expect(Date.parse(result.firstSkeletonConfirmedAt as string)).not.toBeNaN()
+    })
+
+    it('is idempotent — repeat calls preserve the first timestamp', async () => {
+      const existing = baseMeta({ firstSkeletonConfirmedAt: '2026-04-01T00:00:00.000Z' })
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.meta.json')) {
+          return Promise.resolve(JSON.stringify(existing))
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+      mockWriteFile.mockResolvedValue(undefined)
+      mockRename.mockResolvedValue(undefined)
+
+      const result = await documentService.markSkeletonConfirmed('proj-1')
+      expect(result.firstSkeletonConfirmedAt).toBe('2026-04-01T00:00:00.000Z')
+    })
+
+    it('rejects non-string firstSkeletonConfirmedAt on parse', async () => {
+      // A dirty sidecar must not flow into the CTA-label pipeline untouched —
+      // parseMetadata is the one chokepoint that can catch type drift before
+      // any downstream code consumes the field.
+      const dirty = baseMeta({ firstSkeletonConfirmedAt: 42 })
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.meta.json')) {
+          return Promise.resolve(JSON.stringify(dirty))
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+
+      await expect(documentService.markSkeletonConfirmed('proj-1')).rejects.toMatchObject({
+        message: expect.stringContaining('firstSkeletonConfirmedAt 必须是字符串'),
+      })
+    })
+
+    it('rejects unparseable ISO-8601 strings on parse', async () => {
+      const dirty = baseMeta({ firstSkeletonConfirmedAt: 'not-a-date' })
+      mockReadFile.mockImplementation((path: string) => {
+        if (typeof path === 'string' && path.endsWith('proposal.meta.json')) {
+          return Promise.resolve(JSON.stringify(dirty))
+        }
+        return Promise.reject(createErrnoError('ENOENT'))
+      })
+
+      await expect(documentService.markSkeletonConfirmed('proj-1')).rejects.toMatchObject({
+        message: expect.stringContaining('ISO-8601'),
+      })
+    })
+  })
+
   describe('save preserves annotations', () => {
     it('does not drop existing annotations from metadata during save', async () => {
       const existingMeta = {

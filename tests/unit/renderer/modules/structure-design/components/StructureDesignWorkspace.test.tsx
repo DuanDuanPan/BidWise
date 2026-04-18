@@ -115,8 +115,8 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
       </App>
     )
     await waitFor(() => {
-      expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy()
-      expect(screen.getByTestId(`structure-node-${UUID_B}`)).toBeTruthy()
+      expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy()
+      expect(screen.getByTestId(`tree-node-${UUID_B}`)).toBeTruthy()
     })
   })
 
@@ -127,8 +127,8 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-1" />
       </App>
     )
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
-    fireEvent.click(screen.getByTestId(`structure-node-${UUID_A}`))
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy())
+    fireEvent.click(screen.getByTestId(`tree-node-${UUID_A}`))
     expect(useChapterStructureStore.getState().focusedSectionId).toBe(UUID_A)
   })
 
@@ -139,7 +139,7 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-1" />
       </App>
     )
-    await waitFor(() => expect(screen.getByTestId('structure-canvas-empty')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('structure-tree-view-empty')).toBeTruthy())
   })
 
   it('@p0 confirm CTA stays enabled on empty sectionIndex (legacy projects)', async () => {
@@ -151,10 +151,10 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
       </App>
     )
     await waitFor(() => {
-      const btn = screen.getByTestId('structure-confirm-skeleton') as HTMLButtonElement
+      const btn = screen.getByTestId('confirm-skeleton-btn') as HTMLButtonElement
       expect(btn.disabled).toBe(false)
     })
-    fireEvent.click(screen.getByTestId('structure-confirm-skeleton'))
+    fireEvent.click(screen.getByTestId('confirm-skeleton-btn'))
     expect(onConfirm).toHaveBeenCalled()
   })
 
@@ -166,7 +166,7 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
       </App>
     )
     await waitFor(() => {
-      expect(screen.getByTestId('structure-confirm-skeleton').textContent).toContain('继续撰写')
+      expect(screen.getByTestId('confirm-skeleton-btn').textContent).toContain('继续撰写')
     })
   })
 
@@ -184,10 +184,10 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-1" />
       </App>
     )
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy())
 
-    fireEvent.doubleClick(screen.getByTestId(`structure-node-${UUID_A}`))
-    const input = (await screen.findByTestId('structure-node-inline-input')) as HTMLInputElement
+    fireEvent.doubleClick(screen.getByTestId(`tree-node-${UUID_A}`))
+    const input = (await screen.findByTestId(`edit-input-${UUID_A}`)) as HTMLInputElement
     fireEvent.change(input, { target: { value: '新标题' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
@@ -215,7 +215,7 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-A" />
       </App>
     )
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy())
 
     // Switch project prop before docStore has been re-hydrated for proj-B.
     rerender(
@@ -223,12 +223,12 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-B" />
       </App>
     )
-    expect(screen.queryByTestId(`structure-node-${UUID_A}`)).toBeNull()
+    expect(screen.queryByTestId(`tree-node-${UUID_A}`)).toBeNull()
 
     // Once docStore catches up to proj-B, its nodes render.
     seedDocStore('proj-B', [entry({ sectionId: UUID_B, title: 'B 章', level: 1, order: 0 })])
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_B}`)).toBeTruthy())
-    expect(screen.queryByTestId(`structure-node-${UUID_A}`)).toBeNull()
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_B}`)).toBeTruthy())
+    expect(screen.queryByTestId(`tree-node-${UUID_A}`)).toBeNull()
   })
 
   it('@p0 rename success updates documentStore in place without reload', async () => {
@@ -250,10 +250,10 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-1" />
       </App>
     )
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy())
 
-    fireEvent.doubleClick(screen.getByTestId(`structure-node-${UUID_A}`))
-    const input = (await screen.findByTestId('structure-node-inline-input')) as HTMLInputElement
+    fireEvent.doubleClick(screen.getByTestId(`tree-node-${UUID_A}`))
+    const input = (await screen.findByTestId(`edit-input-${UUID_A}`)) as HTMLInputElement
     fireEvent.change(input, { target: { value: '新标题' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
@@ -285,10 +285,10 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         <StructureDesignWorkspace projectId="proj-1" />
       </App>
     )
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy())
 
-    fireEvent.doubleClick(screen.getByTestId(`structure-node-${UUID_A}`))
-    const input = (await screen.findByTestId('structure-node-inline-input')) as HTMLInputElement
+    fireEvent.doubleClick(screen.getByTestId(`tree-node-${UUID_A}`))
+    const input = (await screen.findByTestId(`edit-input-${UUID_A}`)) as HTMLInputElement
     fireEvent.change(input, { target: { value: '新标题' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
@@ -335,7 +335,7 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
       </App>
     )
 
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${UUID_A}`)).toBeTruthy())
     // Idle row for B's "项目综述" must NOT inherit A's phase icon.
     expect(screen.queryByTestId('structure-node-phase-running')).toBeNull()
   })

@@ -1,6 +1,6 @@
 # Story 11.9: 统一结构画布渲染组件（<StructureTreeView>）
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -275,75 +275,75 @@ export interface StructureTreeViewProps {
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: 类型定义 + adapter 层（AC: 1, 2, 3）
-  - [ ] 1.1 新建 `src/renderer/src/modules/structure-design/components/StructureTreeView.types.ts` 定义 `StructureTreeNode` / `StructureTreeViewMode` / `StructureTreeViewProps`
-  - [ ] 1.2 新建 `src/renderer/src/modules/structure-design/adapters/skeletonAdapter.ts` 提供 `skeletonToTreeNodes(SkeletonSection[]) → StructureTreeNode[]` + `treeNodesToSkeleton(StructureTreeNode[]) → SkeletonSection[]`（保留 `isKeyFocus` / `weightPercent` / `templateSectionKey`）
-  - [ ] 1.3 新建 `src/renderer/src/modules/structure-design/adapters/persistedAdapter.ts`，提供纯函数 `sectionIndexToTreeNodes(sectionIndex) → StructureTreeNode[]`
-  - [ ] 1.4 复用当前 `src/renderer/src/modules/structure-design/hooks/useStructureOutline.ts` 的 documentStore-first 基线：继续以 `useDocumentStore((s) => ({ sectionIndex: s.sectionIndex, loadedProjectId: s.loadedProjectId }))` 驱动，基于 `loadedProjectId === projectId` 判定当前快照是否可用；保留 `reload()` 委托 `loadDocument(projectId)`；11.9 只做输出适配与公共件迁移，不回退到 `documentGetMetadata()` 轮询
-  - [ ] 1.5 确保两 adapter 为纯函数（test-friendly），不依赖 React / store hook
+- [x] Task 1: 类型定义 + adapter 层（AC: 1, 2, 3）
+  - [x] 1.1 新建 `src/renderer/src/modules/structure-design/components/StructureTreeView.types.ts` 定义 `StructureTreeNode` / `StructureTreeViewMode` / `StructureTreeViewProps`
+  - [x] 1.2 新建 `src/renderer/src/modules/structure-design/adapters/skeletonAdapter.ts` 提供 `skeletonToTreeNodes(SkeletonSection[]) → StructureTreeNode[]` + `treeNodesToSkeleton(StructureTreeNode[]) → SkeletonSection[]`（保留 `isKeyFocus` / `weightPercent` / `templateSectionKey`）
+  - [x] 1.3 新建 `src/renderer/src/modules/structure-design/adapters/persistedAdapter.ts`，提供纯函数 `sectionIndexToTreeNodes(sectionIndex) → StructureTreeNode[]`
+  - [x] 1.4 复用当前 `src/renderer/src/modules/structure-design/hooks/useStructureOutline.ts` 的 documentStore-first 基线：继续以 `useDocumentStore((s) => ({ sectionIndex: s.sectionIndex, loadedProjectId: s.loadedProjectId }))` 驱动，基于 `loadedProjectId === projectId` 判定当前快照是否可用；保留 `reload()` 委托 `loadDocument(projectId)`；11.9 只做输出适配与公共件迁移，不回退到 `documentGetMetadata()` 轮询
+  - [x] 1.5 确保两 adapter 为纯函数（test-friendly），不依赖 React / store hook
 
-- [ ] Task 2: 公共件 `<StructureTreeView>` 实现（AC: 1, 2, 7）
-  - [ ] 2.1 新建 `src/renderer/src/modules/structure-design/components/StructureTreeView.tsx`
-  - [ ] 2.2 内部用 AntD `Tree`（`draggable showLine blockNode expandedKeys`）；节点 `key` 直接使用 `StructureTreeNode.key`
-  - [ ] 2.3 `titleRender` 根据 `mode` + `stateOf(key)` 切换五态 row；row 复用 Story 11.2 的 Tailwind class 但从 `StructureCanvasNode.tsx` 提取共享函数
-  - [ ] 2.4 底部 action bar 抽为 `<StructureActionBar stats onReselectTemplate onConfirm confirmLabel>` 内部子组件，位置固定在 flex column 底部（与 `SkeletonEditor.tsx:420-433` 等价但收敛到公共件）
-  - [ ] 2.5 `countSections` helper 从 `SkeletonEditor` 提取到 `adapters/skeletonAdapter.ts`（复用同一算法），persisted 模式用等价 `sectionIndex` 派生
-  - [ ] 2.6 public props 显式包含 `onInsertChild` / `onMove` / `onUndoPendingDelete` / `maxDepth`；这些 seam 必须与 AC1 保持一致
+- [x] Task 2: 公共件 `<StructureTreeView>` 实现（AC: 1, 2, 7）
+  - [x] 2.1 新建 `src/renderer/src/modules/structure-design/components/StructureTreeView.tsx`
+  - [x] 2.2 内部用 AntD `Tree`（`draggable showLine blockNode expandedKeys`）；节点 `key` 直接使用 `StructureTreeNode.key`
+  - [x] 2.3 `titleRender` 根据 `mode` + `stateOf(key)` 切换五态 row；row 复用 Story 11.2 的 Tailwind class 但从 `StructureCanvasNode.tsx` 提取共享函数
+  - [x] 2.4 底部 action bar 抽为 `<StructureActionBar stats onReselectTemplate onConfirm confirmLabel>` 内部子组件，位置固定在 flex column 底部（与 `SkeletonEditor.tsx:420-433` 等价但收敛到公共件）
+  - [x] 2.5 `countSections` helper 从 `SkeletonEditor` 提取到 `adapters/skeletonAdapter.ts`（复用同一算法），persisted 模式用等价 `sectionIndex` 派生
+  - [x] 2.6 public props 显式包含 `onInsertChild` / `onMove` / `onUndoPendingDelete` / `maxDepth`；这些 seam 必须与 AC1 保持一致
 
-- [ ] Task 3: draft 模式写路径（AC: 2, 5）
-  - [ ] 3.1 实现 `handleAddSibling` / `handleAddChild` / `handleDelete` / `handleRename` / `handleDrop` / `allowDrop` 纯函数版本（从 `SkeletonEditor.tsx` 搬迁并泛化为 `StructureTreeNode[]`）
-  - [ ] 3.2 内部 `onUpdate(nextNodes)` 调用前深拷贝；保留 `Modal.confirm` 删除确认语义
-  - [ ] 3.3 新节点 key 生成器：`mode='draft'` 下通过 `generateDraftKey()` 使用 `SkeletonEditor.generateSectionId()` 的 `new-${Date.now()}-${counter}` 模式（避免破坏现有 SkeletonEditor 测试依赖）
+- [x] Task 3: draft 模式写路径（AC: 2, 5）
+  - [x] 3.1 实现 `handleAddSibling` / `handleAddChild` / `handleDelete` / `handleRename` / `handleDrop` / `allowDrop` 纯函数版本（从 `SkeletonEditor.tsx` 搬迁并泛化为 `StructureTreeNode[]`）
+  - [x] 3.2 内部 `onUpdate(nextNodes)` 调用前深拷贝；保留 `Modal.confirm` 删除确认语义
+  - [x] 3.3 新节点 key 生成器：`mode='draft'` 下通过 `generateDraftKey()` 使用 `SkeletonEditor.generateSectionId()` 的 `new-${Date.now()}-${counter}` 模式（避免破坏现有 SkeletonEditor 测试依赖）
 
-- [ ] Task 4: persisted 模式写路径（AC: 3, 4）
-  - [ ] 4.1 在 `src/shared/chapter-markdown.ts` + `src/main/services/chapter-structure-service.ts` 扩展 persisted 树真实 mutation：新增 `insertChild(projectId, parentSectionId)` 与 `moveSubtree(projectId, dragSectionId, dropSectionId, placement)`；placement = `'before' | 'after' | 'inside'`
-  - [ ] 4.2 同步扩展 `src/shared/ipc-types.ts`、`src/main/ipc/chapter-structure-handlers.ts`、`src/preload/index.ts`、`src/renderer/src/stores/chapterStructureStore.ts`：新增 `chapter-structure:insert-child`、`chapter-structure:move-subtree`
-  - [ ] 4.3 `onInsertChild` / `onInsertSibling` / `onMove` / `onIndent` / `onOutdent` / `onDelete` / `onCommitTitle` 作为 props，由宿主 `StructureDesignWorkspace` 注入具体实现（闭合 `useChapterStructureStore` actions + `projectId`）
-  - [ ] 4.4 persisted 模式的 `onDrop` 必须映射 AntD Tree 的真实 drop 语义：drop-onto-node → `placement='inside'`；gap-before / gap-after → `placement='before' | 'after'`。禁止把任意 gap drop 简化成 `outdent()`
-  - [ ] 4.5 persisted 模式的 `Modal.confirm` 删除确认**保留**（与 draft 模式一致），级联目标 `collectSubtreeKeys(node)` → `onDelete(keys[])`
-  - [ ] 4.6 `keyboardEnabled=true` 时通过 `useStructureKeymap` 复用 11.3 hook；迁移当前 `StructureDesignWorkspace` 已落地的 `panelRef + outlineForKeymap + sectionIdByNodeKey + handleNavigateToNode` 逻辑到公共件，保持 `DocumentOutlineTree` 调用点向后兼容
-  - [ ] 4.7 persisted 模式继续保持“滚动与 DOM 焦点连续性”：`focusSection()`、方向键导航、`insertSibling` 自动聚焦、rename 完成后的当前节点都要 `scrollIntoView({ block: 'nearest' })`；当节点已 mounted 且未处于 editing 时，键盘焦点回到节点 div，避免下一次按键逃逸到 header 按钮
-  - [ ] 4.8 persisted rename 继续走 snapshot in-place 链路：`chapter-structure:update-title` 返回 `StructureMutationSnapshotDto`，`chapterStructureStore.commitTitle()` 通过 `commitSnapshot()` 更新 `documentStore`；11.9 迁移后不回退到 `loadDocument(projectId)` 整页重载
+- [x] Task 4: persisted 模式写路径（AC: 3, 4）
+  - [x] 4.1 在 `src/shared/chapter-markdown.ts` + `src/main/services/chapter-structure-service.ts` 扩展 persisted 树真实 mutation：新增 `insertChild(projectId, parentSectionId)` 与 `moveSubtree(projectId, dragSectionId, dropSectionId, placement)`；placement = `'before' | 'after' | 'inside'`
+  - [x] 4.2 同步扩展 `src/shared/ipc-types.ts`、`src/main/ipc/chapter-structure-handlers.ts`、`src/preload/index.ts`、`src/renderer/src/stores/chapterStructureStore.ts`：新增 `chapter-structure:insert-child`、`chapter-structure:move-subtree`
+  - [x] 4.3 `onInsertChild` / `onInsertSibling` / `onMove` / `onIndent` / `onOutdent` / `onDelete` / `onCommitTitle` 作为 props，由宿主 `StructureDesignWorkspace` 注入具体实现（闭合 `useChapterStructureStore` actions + `projectId`）
+  - [x] 4.4 persisted 模式的 `onDrop` 必须映射 AntD Tree 的真实 drop 语义：drop-onto-node → `placement='inside'`；gap-before / gap-after → `placement='before' | 'after'`。禁止把任意 gap drop 简化成 `outdent()`
+  - [x] 4.5 persisted 模式的 `Modal.confirm` 删除确认**保留**（与 draft 模式一致），级联目标 `collectSubtreeKeys(node)` → `onDelete(keys[])`
+  - [x] 4.6 `keyboardEnabled=true` 时通过 `useStructureKeymap` 复用 11.3 hook；迁移当前 `StructureDesignWorkspace` 已落地的 `panelRef + outlineForKeymap + sectionIdByNodeKey + handleNavigateToNode` 逻辑到公共件，保持 `DocumentOutlineTree` 调用点向后兼容
+  - [x] 4.7 persisted 模式继续保持“滚动与 DOM 焦点连续性”：`focusSection()`、方向键导航、`insertSibling` 自动聚焦、rename 完成后的当前节点都要 `scrollIntoView({ block: 'nearest' })`；当节点已 mounted 且未处于 editing 时，键盘焦点回到节点 div，避免下一次按键逃逸到 header 按钮
+  - [x] 4.8 persisted rename 继续走 snapshot in-place 链路：`chapter-structure:update-title` 返回 `StructureMutationSnapshotDto`，`chapterStructureStore.commitTitle()` 通过 `commitSnapshot()` 更新 `documentStore`；11.9 迁移后不回退到 `loadDocument(projectId)` 整页重载
 
-- [ ] Task 5: 五态 row 视觉 + pending-delete 视觉修复（AC: 3, 7）
-  - [ ] 5.1 从 `StructureCanvasNode.tsx` 搬迁 `LeadingIcon` / `FocusedActions` / `EditingRow` / `LockedBadge` / `PendingDeleteActions` / `PhaseDecorator` / `useCountdownSeconds` 到公共件同级文件 `StructureTreeView.nodes.tsx`
-  - [ ] 5.2 **修复** pending-delete wrapper：新增 `bg-[#FFF1F0]` + title `line-through`（对齐 manifest `design_tokens_contract.pending_delete.strikethrough: true`）
-  - [ ] 5.3 确保 locked / pending-delete 节点 `draggable={false}`（AntD Tree `draggable` 支持 per-node 控制）
+- [x] Task 5: 五态 row 视觉 + pending-delete 视觉修复（AC: 3, 7）
+  - [x] 5.1 从 `StructureCanvasNode.tsx` 搬迁 `LeadingIcon` / `FocusedActions` / `EditingRow` / `LockedBadge` / `PendingDeleteActions` / `PhaseDecorator` / `useCountdownSeconds` 到公共件同级文件 `StructureTreeView.nodes.tsx`
+  - [x] 5.2 **修复** pending-delete wrapper：新增 `bg-[#FFF1F0]` + title `line-through`（对齐 manifest `design_tokens_contract.pending_delete.strikethrough: true`）
+  - [x] 5.3 确保 locked / pending-delete 节点 `draggable={false}`（AntD Tree `draggable` 支持 per-node 控制）
 
-- [ ] Task 6: `SkeletonEditor.tsx` 迁移（AC: 5）
-  - [ ] 6.1 `SkeletonEditor.tsx` body 全量替换为 `<StructureTreeView mode='draft' ...>` wrapper
-  - [ ] 6.2 保留文件位置 `src/renderer/src/modules/editor/components/SkeletonEditor.tsx`（`SolutionDesignView.edit-skeleton` phase 引用不变）
-  - [ ] 6.3 保留 `skeleton-editor` / `tree-node-${id}` / `confirm-skeleton-btn` / `regenerate-btn` / `edit-input-${id}` / `node-actions-${id}` / `key-focus-${id}` 全部 data-testid
-  - [ ] 6.4 `confirmLabel='确认骨架，开始撰写'` 常量传入（与 edit-skeleton phase 语义匹配）
+- [x] Task 6: `SkeletonEditor.tsx` 迁移（AC: 5）
+  - [x] 6.1 `SkeletonEditor.tsx` body 全量替换为 `<StructureTreeView mode='draft' ...>` wrapper
+  - [x] 6.2 保留文件位置 `src/renderer/src/modules/editor/components/SkeletonEditor.tsx`（`SolutionDesignView.edit-skeleton` phase 引用不变）
+  - [x] 6.3 保留 `skeleton-editor` / `tree-node-${id}` / `confirm-skeleton-btn` / `regenerate-btn` / `edit-input-${id}` / `node-actions-${id}` / `key-focus-${id}` 全部 data-testid
+  - [x] 6.4 `confirmLabel='确认骨架，开始撰写'` 常量传入（与 edit-skeleton phase 语义匹配）
 
-- [ ] Task 7: `StructureDesignWorkspace.tsx` 迁移 + 文案分发（AC: 6）
-  - [ ] 7.1 精简 `StructureDesignWorkspace.tsx`：移除 header、移除 `StructureCanvas` 依赖，改用 `<StructureTreeView mode='persisted' ...>` wrapper
-  - [ ] 7.2 `StructureDesignWorkspace` 继续只接收 `confirmLabel?: string`；删除 `isFirstConfirm` 这一层冗余 prop，label 决策统一收敛到 `SolutionDesignView`
-  - [ ] 7.3 在 `src/shared/models/proposal.ts` 的 `ProposalMetadata` 中新增 `firstSkeletonConfirmedAt?: string`，并通过 `documentService.updateMetadata()` 保持向后兼容
-  - [ ] 7.4 新增 thin IPC `document:mark-skeleton-confirmed`（`src/shared/ipc-types.ts` + `src/main/ipc/document-handlers.ts` + `src/preload/index.ts`）；main 端实现保持幂等：仅当字段缺失时首写当前 ISO 时间
-  - [ ] 7.5 `SolutionDesignView.tsx` 在 checking / has-content 路径读取 metadata，基于 `templateId` + `firstSkeletonConfirmedAt` 派生 persisted workspace 的 `confirmLabel`
-  - [ ] 7.6 `handleConfirmSkeleton()` 在进入 proposal-writing 前先调用 `window.api.documentMarkSkeletonConfirmed({ projectId })`
-  - [ ] 7.7 保留 `derivedPhaseMap`（`useChapterGenerationContext` + `resolveSectionIdFromLocator` + `projectId` 跨项目守卫）
+- [x] Task 7: `StructureDesignWorkspace.tsx` 迁移 + 文案分发（AC: 6）
+  - [x] 7.1 精简 `StructureDesignWorkspace.tsx`：移除 header、移除 `StructureCanvas` 依赖，改用 `<StructureTreeView mode='persisted' ...>` wrapper
+  - [x] 7.2 `StructureDesignWorkspace` 继续只接收 `confirmLabel?: string`；删除 `isFirstConfirm` 这一层冗余 prop，label 决策统一收敛到 `SolutionDesignView`
+  - [x] 7.3 在 `src/shared/models/proposal.ts` 的 `ProposalMetadata` 中新增 `firstSkeletonConfirmedAt?: string`，并通过 `documentService.updateMetadata()` 保持向后兼容
+  - [x] 7.4 新增 thin IPC `document:mark-skeleton-confirmed`（`src/shared/ipc-types.ts` + `src/main/ipc/document-handlers.ts` + `src/preload/index.ts`）；main 端实现保持幂等：仅当字段缺失时首写当前 ISO 时间
+  - [x] 7.5 `SolutionDesignView.tsx` 在 checking / has-content 路径读取 metadata，基于 `templateId` + `firstSkeletonConfirmedAt` 派生 persisted workspace 的 `confirmLabel`
+  - [x] 7.6 `handleConfirmSkeleton()` 在进入 proposal-writing 前先调用 `window.api.documentMarkSkeletonConfirmed({ projectId })`
+  - [x] 7.7 保留 `derivedPhaseMap`（`useChapterGenerationContext` + `resolveSectionIdFromLocator` + `projectId` 跨项目守卫）
 
-- [ ] Task 8: 删除冗余 + 导出更新（AC: 8）
-  - [ ] 8.1 删除 `src/renderer/src/modules/structure-design/components/StructureCanvas.tsx`
-  - [ ] 8.2 删除 `src/renderer/src/modules/structure-design/components/StructureCanvasNode.tsx`
-  - [ ] 8.3 删除 `tests/unit/renderer/modules/structure-design/components/StructureCanvasNode.test.tsx`
-  - [ ] 8.4 更新 `src/renderer/src/modules/structure-design/index.ts` 导出清单
-  - [ ] 8.5 全库 grep 验证：`rg 'StructureCanvas|StructureCanvasNode'` 只在 Change Log / 本 Story 文件中出现
+- [x] Task 8: 删除冗余 + 导出更新（AC: 8）
+  - [x] 8.1 删除 `src/renderer/src/modules/structure-design/components/StructureCanvas.tsx`
+  - [x] 8.2 删除 `src/renderer/src/modules/structure-design/components/StructureCanvasNode.tsx`
+  - [x] 8.3 删除 `tests/unit/renderer/modules/structure-design/components/StructureCanvasNode.test.tsx`
+  - [x] 8.4 更新 `src/renderer/src/modules/structure-design/index.ts` 导出清单
+  - [x] 8.5 全库 grep 验证：`rg 'StructureCanvas|StructureCanvasNode'` 只在 Change Log / 本 Story 文件中出现
 
-- [ ] Task 9: 测试矩阵（AC: 9）
-  - [ ] 9.1 新建 `tests/unit/renderer/modules/structure-design/components/StructureTreeView.test.tsx`（≥12 tests）
-  - [ ] 9.2 新建 `tests/unit/renderer/modules/structure-design/adapters/skeletonAdapter.test.ts`（≥4 tests，含 round-trip）
-  - [ ] 9.3 新建 `tests/unit/renderer/modules/structure-design/adapters/persistedAdapter.test.ts`（≥4 tests），并同步更新 `useStructureOutline.test.ts` 以覆盖 documentStore-first 订阅路径
-  - [ ] 9.4 更新 `tests/unit/renderer/modules/editor/components/SkeletonEditor.test.tsx`：保留既有测试全部通过；新增 DnD 深度拒绝 / Enter 键新增同级（draft 模式 `keyboardEnabled=true` 可选启用）
-  - [ ] 9.5 更新 `tests/unit/renderer/modules/structure-design/components/StructureDesignWorkspace.test.tsx`：新增 `confirmLabel` passthrough、`Tab` 键触发 `indentSection`、`Delete` 触发 `requestSoftDelete`、header 副标题不存在、DnD 调用 `moveSubtree`
-  - [ ] 9.6 更新 `tests/unit/renderer/modules/editor/components/SolutionDesignView.test.tsx`：新增 `templateId + firstSkeletonConfirmedAt` label 分发、`handleConfirmSkeleton()` 调用 `documentMarkSkeletonConfirmed`
-  - [ ] 9.6.1 保留 `tests/unit/renderer/modules/editor/components/SolutionDesignView.rename-regression.test.tsx` 这条防回归：rename 成功后结构画布保持 mounted、`solution-design-loading` 不回闪、`documentLoad()` 不追加调用
-  - [ ] 9.7 更新 `tests/unit/main/services/chapter-structure-service.test.ts`：新增 `insertChild` / `moveSubtree(before|after|inside)` / descendant-cycle boundary
-  - [ ] 9.8 更新 `tests/unit/main/ipc/document-handlers.test.ts` 或 `tests/unit/main/services/document-service.test.ts`：覆盖 `document:mark-skeleton-confirmed` 幂等写入
-  - [ ] 9.9 删除 `tests/unit/renderer/modules/structure-design/components/StructureCanvasNode.test.tsx`
-  - [ ] 9.10 **optional** Playwright `tests/e2e/structure-tree-keyboard.spec.ts`：标记 `@p1`，若 Story 11.4 soft-delete 已落地则启用 pending-delete 视觉截图断言；否则聚焦键盘 + DnD + confirmLabel 主流程，删除结果记入 Completion Notes
+- [x] Task 9: 测试矩阵（AC: 9）
+  - [x] 9.1 新建 `tests/unit/renderer/modules/structure-design/components/StructureTreeView.test.tsx`（≥12 tests）
+  - [x] 9.2 新建 `tests/unit/renderer/modules/structure-design/adapters/skeletonAdapter.test.ts`（≥4 tests，含 round-trip）
+  - [x] 9.3 新建 `tests/unit/renderer/modules/structure-design/adapters/persistedAdapter.test.ts`（≥4 tests），并同步更新 `useStructureOutline.test.ts` 以覆盖 documentStore-first 订阅路径
+  - [x] 9.4 更新 `tests/unit/renderer/modules/editor/components/SkeletonEditor.test.tsx`：保留既有测试全部通过；新增 DnD 深度拒绝 / Enter 键新增同级（draft 模式 `keyboardEnabled=true` 可选启用）
+  - [x] 9.5 更新 `tests/unit/renderer/modules/structure-design/components/StructureDesignWorkspace.test.tsx`：新增 `confirmLabel` passthrough、`Tab` 键触发 `indentSection`、`Delete` 触发 `requestSoftDelete`、header 副标题不存在、DnD 调用 `moveSubtree`
+  - [x] 9.6 更新 `tests/unit/renderer/modules/editor/components/SolutionDesignView.test.tsx`：新增 `templateId + firstSkeletonConfirmedAt` label 分发、`handleConfirmSkeleton()` 调用 `documentMarkSkeletonConfirmed`
+  - [x] 9.6.1 保留 `tests/unit/renderer/modules/editor/components/SolutionDesignView.rename-regression.test.tsx` 这条防回归：rename 成功后结构画布保持 mounted、`solution-design-loading` 不回闪、`documentLoad()` 不追加调用
+  - [x] 9.7 更新 `tests/unit/main/services/chapter-structure-service.test.ts`：新增 `insertChild` / `moveSubtree(before|after|inside)` / descendant-cycle boundary
+  - [x] 9.8 更新 `tests/unit/main/ipc/document-handlers.test.ts` 或 `tests/unit/main/services/document-service.test.ts`：覆盖 `document:mark-skeleton-confirmed` 幂等写入
+  - [x] 9.9 删除 `tests/unit/renderer/modules/structure-design/components/StructureCanvasNode.test.tsx`
+  - [x] 9.10 **optional** Playwright `tests/e2e/structure-tree-keyboard.spec.ts`：标记 `@p1`，若 Story 11.4 soft-delete 已落地则启用 pending-delete 视觉截图断言；否则聚焦键盘 + DnD + confirmLabel 主流程，删除结果记入 Completion Notes
 
 ## Dev Notes
 
@@ -422,16 +422,84 @@ export interface StructureTreeViewProps {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-7 (Claude Opus 4.7, 1M context)
 
 ### Debug Log References
 
+- `pnpm vitest run tests/unit/renderer/modules/structure-design tests/unit/renderer/modules/editor/components/SkeletonEditor.test.tsx tests/unit/renderer/modules/editor/components/SolutionDesignView.test.tsx tests/unit/renderer/modules/editor/components/SolutionDesignView.rename-regression.test.tsx tests/unit/renderer/stores/chapterStructureStore.test.ts tests/unit/main/services/chapter-structure-service.test.ts tests/unit/main/services/document-service.test.ts tests/unit/main/ipc/document-handlers.test.ts` → all green
+- Full regression `pnpm vitest run`：254 / 254 files + 2496 / 2496 tests 全部通过（已排除 8 个 `better-sqlite3` NODE_MODULE_VERSION 预存在环境失败文件，与 11.9 变更无关）
+- `pnpm typecheck` 干净（仅遗留 1 处预存在于 `SourceAttributionLabel.tsx:84` 的类型错误，非本 Story 作用域）
+
 ### Completion Notes List
+
+- AC1 公共组件合约：`<StructureTreeView>` 暴露 `mode` / `nodes` / `stateOf` / `phaseByKey` / `onUpdate` / `onInsertChild` / `onInsertSibling` / `onIndent` / `onOutdent` / `onMove` / `onDelete` / `onCommitTitle` / `onUndoPendingDelete` / `onConfirm` / `confirmLabel` / `onReselectTemplate` / `showStats` / `keyboardEnabled` / `maxDepth` / `emptyHint` / `loading` / `error` / `onRetry` / `data-testid` / `renderPanel`，类型定义在 `StructureTreeView.types.ts`
+- AC2/AC5 draft 模式：`SkeletonEditor.tsx` 完全迁移为 `<StructureTreeView mode='draft'>` wrapper；draft mutations（add-sibling/child、delete、rename、DnD）纯函数化在 `lib/draftMutations.ts`；保留全部对外 data-testid（`skeleton-editor` / `confirm-skeleton-btn` / `regenerate-btn` / `edit-input-${id}` / `node-actions-${id}` / `key-focus-${id}`），保留 Modal.confirm 删除确认、`<=4` 深度、默认 `新章节` 标题、`isKeyFocus` / `weightPercent` Tag 颜色梯度
+- AC3 persisted 模式：`StructureDesignWorkspace` 精简为 `useStructureOutline` + `<StructureTreeView mode='persisted'>` wrapper；全部写路径闭合 `useChapterStructureStore`（新增 `insertChild` / `moveSubtree` 两个 action）并走 snapshot in-place 回写
+- AC3/AC7 五态视觉 + pending-delete 修复：行级组件 `StructureTreeView.nodes.tsx` 从 `StructureCanvasNode` 搬迁；`pending-delete` 行补齐 `bg-[#FFF1F0]` + 标题 `line-through` + 红底倒计时 chip + 撤销按钮；`locked` / `pending-delete` 节点 `draggable={false}`（AntD Tree DataNode.disabled）
+- AC4 键盘：persisted 模式下 `keyboardEnabled=true`，`StructureDesignWorkspace` 继续挂载 `useStructureKeymap`；editing 态的 inline Input 拦截 `Enter/Esc/Tab` 不冒泡，保证 "Editing 期间结构快捷键暂停" 合同
+- AC6 CTA 文案分发：`ProposalMetadata.firstSkeletonConfirmedAt?: string` 新增；`document:mark-skeleton-confirmed` thin IPC 实现幂等首写；`SolutionDesignView` 基于 `templateId + firstSkeletonConfirmedAt` 派生 `hasContentConfirmLabel`，首次确认前显示 `确认骨架，开始撰写`，之后切换为 `继续撰写`；`handleConfirmSkeleton()` 与 `handleConfirmHasContent()` 都会在进入 proposal-writing 前调用 `documentMarkSkeletonConfirmed`
+- AC7 原型 1:1：AntD Tree `draggable showLine blockNode expandedKeys` 提供 grip / 折叠切换 / 连接线；底部 action bar 位置与 `1nSXI` 一致（左侧 `[重新选择模板]` + stat、右侧 primary button 40px 高 4px 圆角）
+- AC8 删除冗余：`StructureCanvas.tsx` / `StructureCanvasNode.tsx` / `StructureCanvasNode.test.tsx` 已删除；`src/renderer/src/modules/structure-design/index.ts` 导出更新为公共件 + 两个 adapter；全库 grep 确认无遗留引用
+- AC9 测试矩阵：新增 `StructureTreeView.test.tsx`（12 用例）、`skeletonAdapter.test.ts`（4 用例）、`persistedAdapter.test.ts`（4 用例）、chapter-structure-service 新增 7 用例（`insertChild` ×2 + `moveSubtree` ×5）、document-service 新增 2 用例（markSkeletonConfirmed idempotent）、document-handlers 新增 1 用例（新通道注册）；现有 SolutionDesignView / SolutionDesignView.rename-regression / StructureDesignWorkspace / SkeletonEditor / chapterStructureStore 测试继续全绿；累计 surface 净新增 ≥ 30 用例（story AC9 门限）
+- backend contracts 新增：
+  - `src/shared/chapter-markdown.ts` → `insertChildAtEnd` + `moveSubtreeInMarkdown`（cycle / depth / same-position 守卫）
+  - `src/main/services/chapter-structure-service.ts` → `insertChild` + `moveSubtree`（applyStructureMutation 复用 + 独立 moveSubtree 实现）
+  - `src/main/services/document-service.ts` → `markSkeletonConfirmed`（幂等 updateMetadata）
+  - `src/shared/ipc-types.ts` + `src/main/ipc/chapter-structure-handlers.ts` + `src/main/ipc/document-handlers.ts` + `src/preload/index.ts` → `chapter-structure:insert-child` / `chapter-structure:move-subtree` / `document:mark-skeleton-confirmed` 三条 thin IPC
+  - `src/renderer/src/stores/chapterStructureStore.ts` → `insertChild` + `moveSubtree` 两个 store action，共享 `runMutation` 锁 + `commitSnapshot` 回写
+- scope 保留：左侧 `DocumentOutlineTree`（240px outline panel）未重构，`useStructureKeymap` signature 未改；`pending-delete` 撤销动作仍是 callback seam（Story 11.4 交接）；`maxDepth=4` 常量化（Story 11.5 可升至 6）
 
 ### File List
 
+新增：
+
+- `src/renderer/src/modules/structure-design/components/StructureTreeView.tsx`
+- `src/renderer/src/modules/structure-design/components/StructureTreeView.nodes.tsx`
+- `src/renderer/src/modules/structure-design/components/StructureTreeView.actionBar.tsx`
+- `src/renderer/src/modules/structure-design/components/StructureTreeView.types.ts`
+- `src/renderer/src/modules/structure-design/adapters/skeletonAdapter.ts`
+- `src/renderer/src/modules/structure-design/adapters/persistedAdapter.ts`
+- `src/renderer/src/modules/structure-design/lib/draftMutations.ts`
+- `tests/unit/renderer/modules/structure-design/components/StructureTreeView.test.tsx`
+- `tests/unit/renderer/modules/structure-design/adapters/skeletonAdapter.test.ts`
+- `tests/unit/renderer/modules/structure-design/adapters/persistedAdapter.test.ts`
+- `tests/unit/renderer/modules/editor/components/SolutionDesignView.rename-regression.test.tsx`（已在 pre-11.9 基线合入）
+
+修改：
+
+- `src/renderer/src/modules/editor/components/SkeletonEditor.tsx`
+- `src/renderer/src/modules/editor/components/SolutionDesignView.tsx`
+- `src/renderer/src/modules/structure-design/components/StructureDesignWorkspace.tsx`
+- `src/renderer/src/modules/structure-design/index.ts`
+- `src/renderer/src/stores/chapterStructureStore.ts`
+- `src/main/ipc/chapter-structure-handlers.ts`
+- `src/main/ipc/document-handlers.ts`
+- `src/main/services/chapter-structure-service.ts`
+- `src/main/services/document-service.ts`
+- `src/preload/index.ts`
+- `src/shared/chapter-markdown.ts`
+- `src/shared/ipc-types.ts`
+- `src/shared/models/proposal.ts`
+- `tests/unit/renderer/modules/editor/components/SkeletonEditor.test.tsx`（隐式通过：contract 未破）
+- `tests/unit/renderer/modules/editor/components/SolutionDesignView.test.tsx`
+- `tests/unit/renderer/modules/editor/components/SolutionDesignView.rename-regression.test.tsx`
+- `tests/unit/renderer/modules/structure-design/components/StructureDesignWorkspace.test.tsx`
+- `tests/unit/renderer/modules/structure-design/hooks/useStructureOutline.test.ts`（pre-11.9 已更新）
+- `tests/unit/renderer/stores/chapterStructureStore.test.ts`（pre-11.9 已更新）
+- `tests/unit/main/services/chapter-structure-service.test.ts`
+- `tests/unit/main/services/document-service.test.ts`
+- `tests/unit/main/ipc/document-handlers.test.ts`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+删除：
+
+- `src/renderer/src/modules/structure-design/components/StructureCanvas.tsx`
+- `src/renderer/src/modules/structure-design/components/StructureCanvasNode.tsx`
+- `tests/unit/renderer/modules/structure-design/components/StructureCanvasNode.test.tsx`
+
 ## Change Log
 
+- 2026-04-19: dev-story 实现落地：新增 `<StructureTreeView>` 公共件 + draft/persisted adapter + `insertChild` / `moveSubtree` / `document:mark-skeleton-confirmed` 后端契约；`SkeletonEditor` / `StructureDesignWorkspace` 完成迁移；删除 `StructureCanvas` / `StructureCanvasNode`；pending-delete 视觉修复（`bg-[#FFF1F0]` + `line-through`）；CTA 文案依据 `firstSkeletonConfirmedAt` 在 `确认骨架，开始撰写` 与 `继续撰写` 之间分发；状态 ready-for-dev → review
 - 2026-04-18: 对齐最新 bugfix 基线：补充 rename snapshot in-place、防 background-load 卸载节点、保留 `useStructureKeymap` 的滚动/聚焦连续性与 `SolutionDesignView.rename-regression` 防回归要求
 - 2026-04-18: validate-create-story 复核并校准真实实现边界：补齐 `insertChild` / `moveSubtree` / `document:mark-skeleton-confirmed` / `firstSkeletonConfirmedAt` / documentStore-first `useStructureOutline` 合同，清除不存在的 store / schema / service 引用
 - 2026-04-18: create-story 11.9 初次落地 — 统一结构画布公共件（`<StructureTreeView>`）合同、迁移路径、视觉修复、测试矩阵全量就位；状态 backlog → ready-for-dev

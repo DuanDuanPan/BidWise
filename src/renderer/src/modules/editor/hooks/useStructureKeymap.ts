@@ -32,10 +32,32 @@ export interface StructureKeymapOptions {
   sectionIdByNodeKey: Record<string, string>
   /** Disable structural mutations (e.g. proposal stage not active). */
   disabled?: boolean
+  /**
+   * Story 11.9 AC3/AC4: keyboard structural mutations dispatch through these
+   * callbacks when provided so a host's public-API write path is honoured for
+   * both mouse/DnD and keyboard. When a callback is absent the hook falls back
+   * to the Story 11.3 store action (preserving `DocumentOutlineTree` behaviour
+   * + every existing `useStructureKeymap.test.tsx` assertion).
+   */
+  onInsertSibling?: (sectionId: string) => void | Promise<void>
+  onIndent?: (sectionId: string) => void | Promise<void>
+  onOutdent?: (sectionId: string) => void | Promise<void>
+  onDelete?: (sectionIds: string[]) => void | Promise<void>
 }
 
 export function useStructureKeymap(opts: StructureKeymapOptions): void {
-  const { panelRef, projectId, outline, onNavigateToNode, sectionIdByNodeKey, disabled } = opts
+  const {
+    panelRef,
+    projectId,
+    outline,
+    onNavigateToNode,
+    sectionIdByNodeKey,
+    disabled,
+    onInsertSibling,
+    onIndent,
+    onOutdent,
+    onDelete,
+  } = opts
 
   const navIndex = useMemo(
     () => buildNavIndex(outline, sectionIdByNodeKey),
@@ -69,15 +91,23 @@ export function useStructureKeymap(opts: StructureKeymapOptions): void {
         case 'Enter': {
           if (!focusedSectionId) return
           event.preventDefault()
-          void store.insertSibling(projectId, focusedSectionId)
+          if (onInsertSibling) {
+            void onInsertSibling(focusedSectionId)
+          } else {
+            void store.insertSibling(projectId, focusedSectionId)
+          }
           return
         }
         case 'Tab': {
           if (!focusedSectionId) return
           event.preventDefault()
-          void (shift
-            ? store.outdentSection(projectId, focusedSectionId)
-            : store.indentSection(projectId, focusedSectionId))
+          if (shift) {
+            if (onOutdent) void onOutdent(focusedSectionId)
+            else void store.outdentSection(projectId, focusedSectionId)
+          } else {
+            if (onIndent) void onIndent(focusedSectionId)
+            else void store.indentSection(projectId, focusedSectionId)
+          }
           return
         }
         case 'Delete':
@@ -85,7 +115,11 @@ export function useStructureKeymap(opts: StructureKeymapOptions): void {
           if (!focusedEntry) return
           event.preventDefault()
           const sectionIds = collectSubtreeSectionIds(focusedEntry.node, sectionIdByNodeKey)
-          void store.requestSoftDelete(projectId, sectionIds)
+          if (onDelete) {
+            void onDelete(sectionIds)
+          } else {
+            void store.requestSoftDelete(projectId, sectionIds)
+          }
           return
         }
         case 'F2': {
@@ -150,7 +184,18 @@ export function useStructureKeymap(opts: StructureKeymapOptions): void {
 
     root.addEventListener('keydown', handler)
     return () => root.removeEventListener('keydown', handler)
-  }, [panelRef, projectId, navIndex, onNavigateToNode, sectionIdByNodeKey, disabled])
+  }, [
+    panelRef,
+    projectId,
+    navIndex,
+    onNavigateToNode,
+    sectionIdByNodeKey,
+    disabled,
+    onInsertSibling,
+    onIndent,
+    onOutdent,
+    onDelete,
+  ])
 }
 
 interface NavEntry {

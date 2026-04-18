@@ -30,6 +30,10 @@ const handlerMap: { [C in ChapterStructureChannel]: () => void } = {
     createIpcHandler('chapter-structure:insert-sibling', (input) =>
       chapterStructureService.insertSibling(input.projectId, input.sectionId, input.title)
     ),
+  'chapter-structure:insert-child': () =>
+    createIpcHandler('chapter-structure:insert-child', (input) =>
+      chapterStructureService.insertChild(input.projectId, input.parentSectionId, input.title)
+    ),
   'chapter-structure:indent': () =>
     createIpcHandler('chapter-structure:indent', (input) =>
       chapterStructureService.indent(input.projectId, input.sectionId)
@@ -37,6 +41,15 @@ const handlerMap: { [C in ChapterStructureChannel]: () => void } = {
   'chapter-structure:outdent': () =>
     createIpcHandler('chapter-structure:outdent', (input) =>
       chapterStructureService.outdent(input.projectId, input.sectionId)
+    ),
+  'chapter-structure:move-subtree': () =>
+    createIpcHandler('chapter-structure:move-subtree', (input) =>
+      chapterStructureService.moveSubtree(
+        input.projectId,
+        input.dragSectionId,
+        input.dropSectionId,
+        input.placement
+      )
     ),
 }
 

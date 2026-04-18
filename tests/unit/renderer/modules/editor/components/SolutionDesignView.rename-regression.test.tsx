@@ -110,11 +110,11 @@ describe('SolutionDesignView rename regression', () => {
     )
 
     await waitFor(() => expect(screen.getByTestId('structure-design-workspace')).toBeTruthy())
-    await waitFor(() => expect(screen.getByTestId(`structure-node-${SECTION_ID}`)).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId(`tree-node-${SECTION_ID}`)).toBeTruthy())
     expect(documentLoad).toHaveBeenCalledTimes(1)
 
-    fireEvent.doubleClick(screen.getByTestId(`structure-node-${SECTION_ID}`))
-    const input = (await screen.findByTestId('structure-node-inline-input')) as HTMLInputElement
+    fireEvent.doubleClick(screen.getByTestId(`tree-node-${SECTION_ID}`))
+    const input = (await screen.findByTestId(`edit-input-${SECTION_ID}`)) as HTMLInputElement
     fireEvent.change(input, { target: { value: '新标题' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 

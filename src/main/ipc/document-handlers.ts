@@ -24,6 +24,10 @@ const documentHandlerMap: { [C in DocumentChannel]: () => void } = {
     createIpcHandler('document:get-metadata', ({ projectId }) =>
       documentService.getMetadata(projectId)
     ),
+  'document:mark-skeleton-confirmed': () =>
+    createIpcHandler('document:mark-skeleton-confirmed', ({ projectId }) =>
+      documentService.markSkeletonConfirmed(projectId)
+    ),
 }
 
 export type RegisteredDocumentChannels = DocumentChannel

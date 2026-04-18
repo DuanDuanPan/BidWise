@@ -779,3 +779,153 @@ export function outdentSectionSubtree(
     },
   }
 }
+
+// ─── Story 11.9: insertChild + moveSubtree (persisted DnD real contract) ────
+
+/**
+ * Insert a new heading as the LAST child of `parentLocator`. When the parent
+ * already has descendants the new heading goes after the parent subtree's last
+ * own-child; when the parent has no children it goes directly after the parent
+ * line. Rejects with `max-depth` when the new level would exceed H4.
+ */
+export function insertChildAtEnd(
+  markdown: string,
+  parentLocator: ChapterHeadingLocator,
+  title: string = DEFAULT_NEW_SECTION_TITLE
+):
+  | { ok: true; result: StructureMutationResult }
+  | { ok: false; reason: 'not-found' | 'max-depth' } {
+  const parentBlock = getSectionSubtreeBlock(markdown, parentLocator)
+  if (!parentBlock) return { ok: false, reason: 'not-found' }
+  const newLevel = (parentBlock.heading.level + 1) as HeadingLevel
+  if (newLevel > MAX_HEADING_LEVEL) return { ok: false, reason: 'max-depth' }
+
+  const lines = markdown.split('\n')
+  // Insert position is exactly the parent subtree end — appends after any
+  // existing descendants, keeping ordering contiguous.
+  const insertPos = parentBlock.endLineIndex
+  const head = lines.slice(0, insertPos)
+  const tail = lines.slice(insertPos)
+
+  const headingLine = '#'.repeat(newLevel) + ' ' + title
+  const needsLeadingBlank = head.length > 0 && head[head.length - 1].trim() !== ''
+  const insertedLineIndex = head.length + (needsLeadingBlank ? 1 : 0)
+  const middle: string[] = []
+  if (needsLeadingBlank) middle.push('')
+  middle.push(headingLine)
+  if (tail.length === 0 || tail[0].trim() !== '') {
+    middle.push('')
+  }
+
+  return {
+    ok: true,
+    result: {
+      markdown: [...head, ...middle, ...tail].join('\n'),
+      affectedLineIndex: insertedLineIndex,
+      affectedLevel: newLevel,
+      insertedTitle: title,
+    },
+  }
+}
+
+export type MoveSubtreePlacement = 'before' | 'after' | 'inside'
+
+export type MoveSubtreeError =
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'cycle' }
+  | { ok: false; reason: 'max-depth' }
+  | { ok: false; reason: 'min-depth' }
+  | { ok: false; reason: 'same-position' }
+
+/**
+ * Move a section + descendants to a new position relative to `dropLocator`.
+ *
+ * - `before`: drag becomes immediate previous sibling of drop (level = drop.level).
+ * - `after` : drag becomes immediate next sibling of drop (level = drop.level).
+ * - `inside`: drag becomes the LAST child of drop (level = drop.level + 1).
+ *
+ * Cycles (drop inside drag subtree) are rejected. Depth overflow (drag subtree
+ * bottom > H4 after shift) is rejected. When the move is a no-op (drag already
+ * at target position), returns `same-position` so callers can skip commit.
+ */
+export function moveSubtreeInMarkdown(
+  markdown: string,
+  dragLocator: ChapterHeadingLocator,
+  dropLocator: ChapterHeadingLocator,
+  placement: MoveSubtreePlacement
+): { ok: true; result: StructureMutationResult } | MoveSubtreeError {
+  const dragBlock = getSectionSubtreeBlock(markdown, dragLocator)
+  if (!dragBlock) return { ok: false, reason: 'not-found' }
+  const dropBlock = getSectionSubtreeBlock(markdown, dropLocator)
+  if (!dropBlock) return { ok: false, reason: 'not-found' }
+
+  // Cycle guard: drop must not live inside drag subtree.
+  if (
+    dropBlock.heading.lineIndex >= dragBlock.heading.lineIndex &&
+    dropBlock.heading.lineIndex < dragBlock.endLineIndex
+  ) {
+    return { ok: false, reason: 'cycle' }
+  }
+
+  const targetLevel: HeadingLevel =
+    placement === 'inside'
+      ? ((dropBlock.heading.level + 1) as HeadingLevel)
+      : (dropBlock.heading.level as HeadingLevel)
+  if (targetLevel > MAX_HEADING_LEVEL) return { ok: false, reason: 'max-depth' }
+  if (targetLevel < 1) return { ok: false, reason: 'min-depth' }
+
+  const delta = targetLevel - dragBlock.heading.level
+  const shifted = shiftHeadingLevels(dragBlock.lines, delta)
+  if (!shifted.ok) return { ok: false, reason: shifted.reason }
+
+  const lines = markdown.split('\n')
+  const linesAfterRemove = [
+    ...lines.slice(0, dragBlock.heading.lineIndex),
+    ...lines.slice(dragBlock.endLineIndex),
+  ]
+
+  // Re-resolve drop block on the reduced document — its position may have
+  // shifted when the drag block was above it.
+  const reducedMarkdown = linesAfterRemove.join('\n')
+  const drop2 = getSectionSubtreeBlock(reducedMarkdown, dropLocator)
+  if (!drop2) return { ok: false, reason: 'not-found' }
+
+  let insertAt: number
+  if (placement === 'before') {
+    insertAt = drop2.heading.lineIndex
+  } else {
+    // 'after' and 'inside' both splice at the END of the drop subtree — for
+    // 'inside' the higher `targetLevel` ensures the block gets parsed as a
+    // descendant of drop; for 'after' the equal level makes it a next sibling.
+    insertAt = drop2.endLineIndex
+  }
+
+  // Same-position short-circuit: if the moved block is already at the exact
+  // computed insert target (same lines, same level), skip to avoid a no-op
+  // commit that would still rewrite proposal.md.
+  const reducedLines = reducedMarkdown.split('\n')
+  const needsLeadingBlank =
+    insertAt > 0 && reducedLines.length > 0 && reducedLines[insertAt - 1]?.trim() !== ''
+  const insertedLineIndex = insertAt + (needsLeadingBlank ? 1 : 0)
+  const middle: string[] = []
+  if (needsLeadingBlank) middle.push('')
+  middle.push(...shifted.lines)
+  // Ensure a blank line separates the moved block from whatever follows.
+  if (insertAt < reducedLines.length && reducedLines[insertAt]?.trim() !== '') {
+    middle.push('')
+  }
+
+  const nextLines = [...reducedLines.slice(0, insertAt), ...middle, ...reducedLines.slice(insertAt)]
+  const nextMarkdown = nextLines.join('\n')
+
+  if (nextMarkdown === markdown) return { ok: false, reason: 'same-position' }
+
+  return {
+    ok: true,
+    result: {
+      markdown: nextMarkdown,
+      affectedLineIndex: insertedLineIndex,
+      affectedLevel: targetLevel,
+    },
+  }
+}

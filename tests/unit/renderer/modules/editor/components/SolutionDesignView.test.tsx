@@ -49,6 +49,7 @@ const mockTemplateList = vi.fn()
 const mockTemplateGet = vi.fn()
 const mockTemplateGenerateSkeleton = vi.fn()
 const mockTemplatePersistSkeleton = vi.fn()
+const mockDocumentMarkSkeletonConfirmed = vi.fn().mockResolvedValue({ success: true, data: null })
 const mockDocumentGetMetadata = vi.fn().mockResolvedValue({
   success: true,
   data: {
@@ -84,13 +85,41 @@ Object.defineProperty(window, 'api', {
     templateGenerateSkeleton: mockTemplateGenerateSkeleton,
     templatePersistSkeleton: mockTemplatePersistSkeleton,
     documentGetMetadata: mockDocumentGetMetadata,
+    documentMarkSkeletonConfirmed: mockDocumentMarkSkeletonConfirmed,
   },
 })
 
 const mockOnEnterProposalWriting = vi.fn()
+const populatedSectionIndex = [
+  {
+    sectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    title: '项目概述',
+    level: 1,
+    order: 0,
+    occurrenceIndex: 0,
+    headingLocator: { title: '项目概述', level: 1, occurrenceIndex: 0 },
+  },
+  {
+    sectionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    title: '系统设计',
+    level: 1,
+    order: 1,
+    occurrenceIndex: 0,
+    headingLocator: { title: '系统设计', level: 1, occurrenceIndex: 0 },
+  },
+]
 
 function renderWithApp(ui: React.ReactElement): ReturnType<typeof render> {
   return render(<App>{ui}</App>)
+}
+
+async function waitForConfirmButtonReady(): Promise<HTMLButtonElement> {
+  await waitFor(() => {
+    const btn = screen.getByTestId('confirm-skeleton-btn') as HTMLButtonElement
+    expect(btn).toBeDefined()
+    expect(btn.className).not.toContain('ant-btn-loading')
+  })
+  return screen.getByTestId('confirm-skeleton-btn') as HTMLButtonElement
 }
 
 describe('@story-3-3 SolutionDesignView', () => {
@@ -100,6 +129,16 @@ describe('@story-3-3 SolutionDesignView', () => {
     mockLoading = false
     mockLoadedProjectId = null
     mockSectionIndex = []
+    mockDocumentMarkSkeletonConfirmed.mockResolvedValue({ success: true, data: null })
+    mockDocumentGetMetadata.mockResolvedValue({
+      success: true,
+      data: {
+        annotations: [],
+        sourceAttributions: [],
+        baselineValidations: [],
+        sectionIndex: [],
+      },
+    })
     mockTemplateList.mockResolvedValue({
       success: true,
       data: [
@@ -144,24 +183,7 @@ describe('@story-3-3 SolutionDesignView', () => {
     mockContent = '# 项目概述\n\n# 系统设计\n'
     mockLoading = false
     mockLoadedProjectId = 'proj-1'
-    mockSectionIndex = [
-      {
-        sectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        title: '项目概述',
-        level: 1,
-        order: 0,
-        occurrenceIndex: 0,
-        headingLocator: { title: '项目概述', level: 1, occurrenceIndex: 0 },
-      },
-      {
-        sectionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        title: '系统设计',
-        level: 1,
-        order: 1,
-        occurrenceIndex: 0,
-        headingLocator: { title: '系统设计', level: 1, occurrenceIndex: 0 },
-      },
-    ]
+    mockSectionIndex = populatedSectionIndex
 
     renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
@@ -181,34 +203,56 @@ describe('@story-3-3 SolutionDesignView', () => {
   it('triggers onEnterProposalWriting on confirm-skeleton click', async () => {
     mockContent = '# 已有内容\n'
     mockLoading = false
+    mockLoadedProjectId = 'proj-1'
+    mockSectionIndex = populatedSectionIndex
 
     renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
     )
 
+    fireEvent.click(await waitForConfirmButtonReady())
     await waitFor(() => {
-      const btn = screen.getByTestId('structure-confirm-skeleton') as HTMLButtonElement
-      expect(btn).toBeDefined()
-      expect(btn.disabled).toBe(false)
+      expect(mockOnEnterProposalWriting).toHaveBeenCalled()
     })
+  })
 
-    fireEvent.click(screen.getByTestId('structure-confirm-skeleton'))
-    expect(mockOnEnterProposalWriting).toHaveBeenCalled()
+  it('always marks skeleton confirmed on has-content confirm click (Story 11.9 AC6)', async () => {
+    // Regression: before the fix, handleConfirmHasContent only called the
+    // idempotent mark IPC when the derived CTA label === "确认骨架，开始撰写".
+    // On first paint metaTemplateId / firstSkeletonConfirmedAt are both
+    // undefined, so label defaulted to "继续撰写" and the mark was skipped,
+    // leaving firstSkeletonConfirmedAt empty for the next visit.
+    mockContent = '# 已有内容\n'
+    mockLoading = false
+    mockLoadedProjectId = 'proj-1'
+    mockSectionIndex = populatedSectionIndex
+    mockDocumentMarkSkeletonConfirmed.mockClear()
+
+    renderWithApp(
+      <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
+    )
+
+    fireEvent.click(await waitForConfirmButtonReady())
+    await waitFor(() => {
+      expect(mockDocumentMarkSkeletonConfirmed).toHaveBeenCalledWith({ projectId: 'proj-1' })
+    })
   })
 
   it('opens reselect confirmation when document already has content', async () => {
     mockContent = '# 已有内容\n'
     mockLoading = false
+    mockLoadedProjectId = 'proj-1'
+    mockSectionIndex = populatedSectionIndex
 
     renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('structure-reselect-template')).toBeDefined()
+      expect(screen.getByTestId('regenerate-btn')).toBeDefined()
     })
 
-    fireEvent.click(screen.getByTestId('structure-reselect-template'))
+    fireEvent.click(screen.getByTestId('regenerate-btn'))
 
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '重新选择模板' })).toBeDefined()

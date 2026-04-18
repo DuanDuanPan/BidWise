@@ -1,63 +1,59 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { App, Button } from 'antd'
-import { useStructureOutline, type StructureNode } from '../hooks/useStructureOutline'
-import { StructureCanvas } from './StructureCanvas'
-import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
+import { useCallback, useEffect, useMemo } from 'react'
+import { App } from 'antd'
+import { useStructureOutline } from '../hooks/useStructureOutline'
+import { StructureTreeView } from './StructureTreeView'
+import { sectionIndexToTreeNodes } from '../adapters/persistedAdapter'
+import {
+  useChapterStructureStore,
+  deriveChapterNodeState,
+  type ChapterNodeState,
+} from '@renderer/stores/chapterStructureStore'
 import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
-import { useStructureKeymap } from '@modules/editor/hooks/useStructureKeymap'
-import type { OutlineNode } from '@modules/editor/hooks/useDocumentOutline'
 
 export interface StructureDesignWorkspaceProps {
   projectId: string
-  /**
-   * Fired when the user proceeds to the proposal-writing stage. Button label
-   * adapts via `confirmLabel`. The action is ALWAYS enabled when a callback
-   * is provided — legacy/imported projects without a populated sectionIndex
-   * still need a path forward.
-   */
   onConfirmSkeleton?: () => void
-  /** Label for the primary CTA. Defaults to "继续撰写". */
+  /**
+   * Caller-supplied CTA label. `SolutionDesignView` derives this from
+   * `templateId + firstSkeletonConfirmedAt` — workspace is dumb and simply
+   * forwards. Defaults to `继续撰写` when omitted.
+   */
   confirmLabel?: string
-  /** Fired when user requests to re-run the template selector (handed off to Story 11.6). */
+  confirmLoading?: boolean
   onReselectTemplate?: () => void
-  /** sectionId → generation phase map for idle-row decorators (AC5). */
   phaseByNodeKey?: ReadonlyMap<string, ChapterGenerationPhase>
 }
 
 /**
- * Structure Design Workspace host (Story 11.2 + Story 11.6 seam).
- *
- * Story 11.2 lands the canvas-slot minimum implementation: a single structure
- * canvas column that renders the five-state machine for each chapter node.
- * Story 11.6 will expand this with: (a) Modal-based template/import entry
- * picker, (b) three-path diff merge view in the main area.
+ * Story 11.9: persisted-mode host around `<StructureTreeView>`. Owns store
+ * actions, keymap wiring, scroll / DOM focus continuity, and derived phase
+ * map. The shared tree component handles visuals + DnD routing.
  */
 export function StructureDesignWorkspace({
   projectId,
   onConfirmSkeleton,
   confirmLabel = '继续撰写',
+  confirmLoading,
   onReselectTemplate,
   phaseByNodeKey,
 }: StructureDesignWorkspaceProps): React.JSX.Element {
   const { message } = App.useApp()
-  const { tree, flat, loading, error, reload } = useStructureOutline(projectId)
-  const panelRef = useRef<HTMLDivElement>(null)
+  const { flat, loading, error, reload } = useStructureOutline(projectId)
 
   const bindProject = useChapterStructureStore((s) => s.bindProject)
   const commitTitle = useChapterStructureStore((s) => s.commitTitle)
+  const insertSibling = useChapterStructureStore((s) => s.insertSibling)
+  const insertChildAction = useChapterStructureStore((s) => s.insertChild)
+  const indentSection = useChapterStructureStore((s) => s.indentSection)
+  const outdentSection = useChapterStructureStore((s) => s.outdentSection)
+  const moveSubtreeAction = useChapterStructureStore((s) => s.moveSubtree)
+  const requestSoftDelete = useChapterStructureStore((s) => s.requestSoftDelete)
 
-  // Phase source (AC5). Prefer explicit prop when a parent injects it; fall
-  // back to the global ChapterGenerationContext so solution-design mounts
-  // automatically decorate idle rows when 11.8 streaming / 3.11 batch runs.
-  //
-  // Guard: `useChapterGeneration` keeps `statuses` state across projectId
-  // changes (only resets after the new project starts its own generation).
-  // Common chapter names like "项目综述" / "系统设计" collide frequently;
-  // without this check, project A's phase icons would appear on project B
-  // after a switch. Only consume statuses when the context still reports the
-  // project we're rendering.
+  // Phase source — prefer host-injected map, otherwise derive from global
+  // ChapterGenerationContext. Same projectId guard as pre-11.9 so commonly
+  // named chapters (综述 / 概述) can't leak a phase icon between projects.
   const chapterGen = useChapterGenerationContext()
   const derivedPhaseMap = useMemo<ReadonlyMap<string, ChapterGenerationPhase>>(() => {
     if (phaseByNodeKey) return phaseByNodeKey
@@ -71,8 +67,6 @@ export function StructureDesignWorkspace({
     return map
   }, [phaseByNodeKey, chapterGen, flat, projectId])
 
-  // Bind renderer state to the current project; switching auto-resets so
-  // focus/editing from project A cannot leak into project B dispatches.
   useEffect(() => {
     bindProject(projectId)
     return () => {
@@ -80,115 +74,66 @@ export function StructureDesignWorkspace({
     }
   }, [projectId, bindProject])
 
-  // Keymap expects OutlineNode shape (markdown-derived). In structure-design
-  // we build it synthetically from the chapter tree: nodeKey === sectionId
-  // (Story 11.1), so sectionIdByNodeKey is an identity map and lineIndex /
-  // occurrenceIndex are unused by the keymap itself.
-  const outlineForKeymap = useMemo<OutlineNode[]>(() => {
-    const toOutline = (n: StructureNode): OutlineNode => ({
-      key: n.nodeKey,
-      title: n.title,
-      level: n.level,
-      lineIndex: 0,
-      occurrenceIndex: 0,
-      children: n.children.map(toOutline),
-    })
-    return tree.map(toOutline)
-  }, [tree])
+  const persistedNodes = useMemo(() => sectionIndexToTreeNodes(flat), [flat])
 
-  const sectionIdByNodeKey = useMemo<Record<string, string>>(() => {
-    const map: Record<string, string> = {}
-    const walk = (nodes: StructureNode[]): void => {
-      for (const n of nodes) {
-        map[n.nodeKey] = n.sectionId
-        walk(n.children)
-      }
-    }
-    walk(tree)
-    return map
-  }, [tree])
-
-  const handleNavigateToNode = useCallback((node: OutlineNode) => {
-    const el = panelRef.current?.querySelector<HTMLElement>(
-      `[data-testid="structure-node-${node.key}"]`
-    )
-    if (!el) return
-    if (typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ block: 'nearest', behavior: 'auto' })
-    }
-    el.focus({ preventScroll: true })
-  }, [])
-
-  useStructureKeymap({
-    panelRef,
-    projectId,
-    outline: outlineForKeymap,
-    onNavigateToNode: handleNavigateToNode,
-    sectionIdByNodeKey,
-  })
-
-  // Sync DOM viewport + focus with the store's `focusedSectionId` after each
-  // tree render. Two responsibilities:
-  //   1. Scroll the focused node into view on EVERY change — covers Enter
-  //      (new sibling auto-focused), Tab/Shift+Tab (indent/outdent moves the
-  //      node), arrow-key navigation, and programmatic focusSection calls.
-  //      Without this the tree may already show the new node but viewport
-  //      stays where it was, giving the "scroll to find it" UX.
-  //   2. When not editing and nothing else has taken DOM focus, put focus on
-  //      the node div so `isWithinPanel` keeps returning true — otherwise the
-  //      next keystroke bypasses the keymap and native Tab/Shift+Tab escapes
-  //      into the header buttons.
-  const focusedSectionId = useChapterStructureStore((s) => s.focusedSectionId)
-  const editingSectionId = useChapterStructureStore((s) => s.editingSectionId)
-  useEffect(() => {
-    if (!focusedSectionId) return
-    const panel = panelRef.current
-    if (!panel) return
-    const el = panel.querySelector<HTMLElement>(
-      `[data-testid="structure-node-${focusedSectionId}"]`
-    )
-    if (!el) return
-    if (typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ block: 'nearest', behavior: 'auto' })
-    }
-    if (editingSectionId) return
-    const active = document.activeElement
-    if (active && active !== document.body) return
-    el.focus({ preventScroll: true })
-  }, [focusedSectionId, editingSectionId, tree])
+  const stateOf = useCallback(
+    (key: string): ChapterNodeState =>
+      deriveChapterNodeState(useChapterStructureStore.getState(), key),
+    []
+  )
 
   const handleCommitTitle = useCallback(
-    async (nodeKey: string, nextTitle: string): Promise<void> => {
-      // Go through the store so this rename acquires the same mutation lock,
-      // pending-autosave flush, and editingLocked guard that the outline-tree
-      // path uses. The store now applies the committed snapshot directly, so
-      // rename keeps the canvas mounted and preserves scroll/focus continuity.
-      const res = await commitTitle(projectId, nodeKey, nextTitle)
-      if (!res.ok) {
-        // commitTitle surfaces its own error toast through structure-feedback;
-        // avoid double-reporting.
-        return
-      }
+    async (key: string, nextTitle: string): Promise<void> => {
+      await commitTitle(projectId, key, nextTitle)
     },
     [projectId, commitTitle]
   )
 
-  const handleAddChild = useCallback(
-    (_nodeKey: string) => {
-      message.info('新增子节点将接入 Story 11.3 keymap cascade')
+  const handleInsertChild = useCallback(
+    async (parentKey: string): Promise<void> => {
+      await insertChildAction(projectId, parentKey)
     },
-    [message]
+    [projectId, insertChildAction]
   )
 
-  const handleOpenMoreMenu = useCallback(
-    (_nodeKey: string, _anchor: HTMLElement) => {
-      message.info('节点菜单将接入 Story 11.3 / 11.4 / 11.8')
+  const handleInsertSibling = useCallback(
+    async (targetKey: string): Promise<void> => {
+      await insertSibling(projectId, targetKey)
     },
-    [message]
+    [projectId, insertSibling]
   )
 
-  const handleUndoPendingDelete = useCallback(
-    (_nodeKey: string) => {
+  const handleIndent = useCallback(
+    async (targetKey: string): Promise<void> => {
+      await indentSection(projectId, targetKey)
+    },
+    [projectId, indentSection]
+  )
+
+  const handleOutdent = useCallback(
+    async (targetKey: string): Promise<void> => {
+      await outdentSection(projectId, targetKey)
+    },
+    [projectId, outdentSection]
+  )
+
+  const handleMove = useCallback(
+    async (dragKey: string, dropKey: string, placement: 'before' | 'after' | 'inside') => {
+      await moveSubtreeAction(projectId, dragKey, dropKey, placement)
+    },
+    [projectId, moveSubtreeAction]
+  )
+
+  const handleDelete = useCallback(
+    async (keys: string[]): Promise<void> => {
+      await requestSoftDelete(projectId, keys)
+    },
+    [projectId, requestSoftDelete]
+  )
+
+  const handleUndo = useCallback(
+    (_keys: string[]): void => {
+      // Story 11.4 replaces this with `clearPendingDelete` + cascade restore.
       message.info('撤销删除由 Story 11.4 soft-delete 接管')
     },
     [message]
@@ -196,66 +141,35 @@ export function StructureDesignWorkspace({
 
   return (
     <div
-      className="flex h-full flex-col gap-4 p-6"
+      className="flex h-full flex-col"
       data-testid="structure-design-workspace"
       data-project-id={projectId}
     >
-      <header className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-h4 text-text-primary font-semibold">方案结构</span>
-          <span className="text-caption text-text-tertiary">
-            点击章节聚焦 · 双击 / F2 进入重命名 · 结构变更由 11.3 / 11.4 / 11.8 接入
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {onReselectTemplate && (
-            <Button onClick={onReselectTemplate} data-testid="structure-reselect-template">
-              重新选择模板
-            </Button>
-          )}
-          {onConfirmSkeleton && (
-            <Button
-              type="primary"
-              onClick={onConfirmSkeleton}
-              data-testid="structure-confirm-skeleton"
-            >
-              {confirmLabel}
-            </Button>
-          )}
-        </div>
-      </header>
-
-      {error && (
-        <div
-          role="alert"
-          className="bg-danger/10 text-danger rounded border border-[var(--color-danger)] px-3 py-2 text-sm"
-          data-testid="structure-design-error"
-        >
-          {error}
-          <Button
-            size="small"
-            type="link"
-            className="!text-danger ml-2"
-            onClick={() => {
-              reload()
-            }}
-          >
-            重试
-          </Button>
-        </div>
-      )}
-
-      <div ref={panelRef} tabIndex={-1} className="min-h-0 flex-1 outline-none">
-        <StructureCanvas
-          tree={tree}
-          loading={loading}
-          onCommitTitle={handleCommitTitle}
-          onAddChild={handleAddChild}
-          onOpenMoreMenu={handleOpenMoreMenu}
-          onUndoPendingDelete={handleUndoPendingDelete}
-          phaseByNodeKey={derivedPhaseMap}
-        />
-      </div>
+      <StructureTreeView
+        mode="persisted"
+        nodes={persistedNodes}
+        projectId={projectId}
+        stateOf={stateOf}
+        phaseByKey={derivedPhaseMap}
+        onInsertChild={handleInsertChild}
+        onInsertSibling={handleInsertSibling}
+        onIndent={handleIndent}
+        onOutdent={handleOutdent}
+        onMove={handleMove}
+        onDelete={handleDelete}
+        onCommitTitle={handleCommitTitle}
+        onUndoPendingDelete={handleUndo}
+        onConfirm={onConfirmSkeleton}
+        confirmLabel={confirmLabel}
+        confirmLoading={confirmLoading}
+        onReselectTemplate={onReselectTemplate}
+        keyboardEnabled
+        showStats
+        loading={loading}
+        error={error ?? null}
+        onRetry={reload}
+        data-testid="structure-tree-view"
+      />
     </div>
   )
 }

@@ -10,6 +10,7 @@ const mockDocumentService = vi.hoisted(() => ({
   save: vi.fn(),
   getMetadata: vi.fn(),
   saveSync: vi.fn(),
+  markSkeletonConfirmed: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -49,8 +50,16 @@ describe('document-handlers @story-3-1', () => {
   it('registers async document channels plus the sync save listener', () => {
     registerDocumentHandlers()
 
-    expect(mockCreateIpcHandler).toHaveBeenCalledTimes(3)
+    // Story 11.9: adds `document:mark-skeleton-confirmed` alongside the
+    // original three async channels.
+    expect(mockCreateIpcHandler).toHaveBeenCalledTimes(4)
     expect(mockOn).toHaveBeenCalledWith('document:save-sync', expect.any(Function))
+  })
+
+  it('@story-11-9 registers document:mark-skeleton-confirmed channel', () => {
+    registerDocumentHandlers()
+    const channels = mockCreateIpcHandler.mock.calls.map((c) => c[0])
+    expect(channels).toContain('document:mark-skeleton-confirmed')
   })
 
   it('removes the previous sync listener before re-registering to avoid HMR duplication', () => {

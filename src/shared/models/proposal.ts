@@ -40,6 +40,14 @@ export interface ProposalMetadata {
   confirmedSkeletons?: Record<string, SkeletonExpandPlan>
   /** Story 11.1: chapter identity schema version; absent == v1 (legacy). */
   chapterIdentitySchemaVersion?: ChapterIdentitySchemaVersion
+  /**
+   * Story 11.9: first time the user explicitly confirmed the skeleton and left
+   * `edit-skeleton` for `proposal-writing`. Written once (idempotent) by
+   * `document:mark-skeleton-confirmed`; consumed by `SolutionDesignView` to
+   * derive the `has-content` CTA label between
+   * `确认骨架，开始撰写` (first confirm pending) and `继续撰写` (already confirmed).
+   */
+  firstSkeletonConfirmedAt?: string
   lastSavedAt: string // ISO-8601
 }
 

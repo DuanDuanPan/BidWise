@@ -541,7 +541,11 @@ export function ProjectWorkspace(): React.JSX.Element {
             onStageClick={navigateToStage}
           />
 
-          {/* Three-column workspace layout */}
+          {/* Three-column workspace layout. Center goes fluid by default
+              (`centerMaxWidth` null) — OutlinePanel + AnnotationPanel already
+              frame the middle, and inner views (Plate editor, structure tree)
+              own their own typography caps. Pass a number per-stage if a
+              reading-optimised cap is needed. */}
           <WorkspaceLayout
             left={
               <OutlinePanel collapsed={outlineCollapsed} onToggle={toggleOutline}>

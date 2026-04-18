@@ -18,10 +18,18 @@ function TestHarness({
   outline,
   sectionIdByNodeKey,
   disabled,
+  onInsertSibling,
+  onIndent,
+  onOutdent,
+  onDelete,
 }: {
   outline: OutlineNode[]
   sectionIdByNodeKey: Record<string, string>
   disabled?: boolean
+  onInsertSibling?: (sectionId: string) => void
+  onIndent?: (sectionId: string) => void
+  onOutdent?: (sectionId: string) => void
+  onDelete?: (sectionIds: string[]) => void
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null)
   useStructureKeymap({
@@ -31,6 +39,10 @@ function TestHarness({
     onNavigateToNode: () => {},
     sectionIdByNodeKey,
     disabled,
+    onInsertSibling,
+    onIndent,
+    onOutdent,
+    onDelete,
   })
   return <div ref={ref} data-testid="panel" tabIndex={0} />
 }
@@ -176,6 +188,62 @@ describe('@story-11-3 useStructureKeymap', () => {
     firePanelKey('Delete')
     expect(insertSiblingSpy).not.toHaveBeenCalled()
     expect(indentSpy).not.toHaveBeenCalled()
+    expect(requestSoftDeleteSpy).not.toHaveBeenCalled()
+  })
+
+  it('@story-11-9 routes Enter through onInsertSibling callback when provided (public-contract path)', () => {
+    // Story 11.9 AC3/AC4 regression: when a host exposes the public
+    // `onInsertSibling` prop on `<StructureTreeView>`, the keymap must call
+    // that callback (which the host can wrap with telemetry / custom write
+    // paths) instead of dispatching `store.insertSibling` directly.
+    const hostInsertSibling = vi.fn()
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
+    render(
+      <TestHarness
+        outline={[node({ key: 'heading-0' })]}
+        sectionIdByNodeKey={{ 'heading-0': 'sid-0' }}
+        onInsertSibling={hostInsertSibling}
+      />
+    )
+    firePanelKey('Enter')
+    expect(hostInsertSibling).toHaveBeenCalledWith('sid-0')
+    expect(insertSiblingSpy).not.toHaveBeenCalled()
+  })
+
+  it('@story-11-9 routes Tab / Shift+Tab through onIndent / onOutdent callbacks when provided', () => {
+    const hostIndent = vi.fn()
+    const hostOutdent = vi.fn()
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
+    render(
+      <TestHarness
+        outline={[node({ key: 'heading-0' })]}
+        sectionIdByNodeKey={{ 'heading-0': 'sid-0' }}
+        onIndent={hostIndent}
+        onOutdent={hostOutdent}
+      />
+    )
+    firePanelKey('Tab')
+    firePanelKey('Tab', true)
+    expect(hostIndent).toHaveBeenCalledWith('sid-0')
+    expect(hostOutdent).toHaveBeenCalledWith('sid-0')
+    expect(indentSpy).not.toHaveBeenCalled()
+    expect(outdentSpy).not.toHaveBeenCalled()
+  })
+
+  it('@story-11-9 routes Delete through onDelete callback when provided (subtree sectionIds)', () => {
+    const hostDelete = vi.fn()
+    const child = node({ key: 'heading-1', title: 'c' })
+    const parent = node({ key: 'heading-0', title: 'p', children: [child] })
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
+    render(
+      <TestHarness
+        outline={[parent]}
+        sectionIdByNodeKey={{ 'heading-0': 'sid-0', 'heading-1': 'sid-1' }}
+        onDelete={hostDelete}
+      />
+    )
+    firePanelKey('Delete')
+    expect(hostDelete).toHaveBeenCalledWith(['sid-0', 'sid-1'])
     expect(requestSoftDeleteSpy).not.toHaveBeenCalled()
   })
 

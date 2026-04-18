@@ -22,8 +22,11 @@ import {
   extractMarkdownHeadings,
   findMarkdownHeading,
   indentSectionSubtree,
+  insertChildAtEnd,
   insertSiblingAfterSection,
+  moveSubtreeInMarkdown,
   outdentSectionSubtree,
+  type MoveSubtreePlacement,
 } from '@shared/chapter-markdown'
 import type { ChapterHeadingLocator, ChapterTreeNode } from '@shared/chapter-types'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
@@ -237,6 +240,168 @@ export const chapterStructureService = {
     })
   },
 
+  /**
+   * Insert a new H(n+1) section as the LAST child of parent (Story 11.9).
+   * Default title is `新章节`. Rejects `STRUCTURE_BOUNDARY` when parent is at H4.
+   */
+  async insertChild(
+    projectId: string,
+    parentSectionId: string,
+    title: string = DEFAULT_NEW_SECTION_TITLE
+  ): Promise<StructureMutationSnapshot> {
+    const trimmed = title.trim() || DEFAULT_NEW_SECTION_TITLE
+    return applyStructureMutation(projectId, parentSectionId, 'insertChild', {
+      markdownFn: (markdown, locator) => {
+        const outcome = insertChildAtEnd(markdown, locator, trimmed)
+        if (!outcome.ok) {
+          if (outcome.reason === 'max-depth') {
+            throw new StructureBoundaryError('子节点深度超过最大限制 (H4)', 'max-depth')
+          }
+          throw new NotFoundError(`parentSectionId 不在 markdown 中: ${parentSectionId}`)
+        }
+        return outcome.result
+      },
+      treeFn: (tree, parent) => {
+        const newId = randomUUID()
+        const newLevel = (parent.level + 1) as ChapterHeadingLocator['level']
+        const newNode: ChapterTreeNode = {
+          sectionId: newId,
+          parentSectionId: parent.sectionId,
+          order: 0, // recomputed via normalizeSiblingOrder in rebuildSectionIndex
+          title: trimmed,
+          level: newLevel,
+          occurrenceIndex: 0,
+          headingLocator: {
+            title: trimmed,
+            level: newLevel,
+            occurrenceIndex: 0,
+          },
+          children: [],
+        }
+        const parentNode = findNodeById(tree, parent.sectionId)
+        if (!parentNode) throw new NotFoundError('父节点丢失')
+        newNode.order = parentNode.children.length
+        parentNode.children.push(newNode)
+        return { createdSectionId: newId, affectedSectionId: newId }
+      },
+    })
+  },
+
+  /**
+   * Move a section + descendants to a new position relative to `dropSectionId`
+   * (Story 11.9). Mirrors AntD Tree DnD semantics: placement='before' | 'after'
+   * splices as sibling, 'inside' nests as last child with level+1.
+   */
+  async moveSubtree(
+    projectId: string,
+    dragSectionId: string,
+    dropSectionId: string,
+    placement: MoveSubtreePlacement
+  ): Promise<StructureMutationSnapshot> {
+    if (dragSectionId === dropSectionId) {
+      throw new StructureBoundaryError('不能移动到自身', 'not-found')
+    }
+    const doc = await documentService.load(projectId)
+    const meta = await documentService.getMetadata(projectId)
+    const originalIndex = meta.sectionIndex ?? []
+    const dragTarget = originalIndex.find((e) => e.sectionId === dragSectionId)
+    if (!dragTarget) throw new NotFoundError(`sectionId 不存在: ${dragSectionId}`)
+    const dropTarget = originalIndex.find((e) => e.sectionId === dropSectionId)
+    if (!dropTarget) throw new NotFoundError(`sectionId 不存在: ${dropSectionId}`)
+
+    // Step 1 — markdown mutation.
+    const mdOutcome = moveSubtreeInMarkdown(
+      doc.content,
+      dragTarget.headingLocator,
+      dropTarget.headingLocator,
+      placement
+    )
+    if (!mdOutcome.ok) {
+      if (mdOutcome.reason === 'cycle') {
+        throw new StructureBoundaryError('不能移动到自身的后代节点', 'not-found')
+      }
+      if (mdOutcome.reason === 'max-depth') {
+        throw new StructureBoundaryError('子树深度超过最大限制 (H4)', 'max-depth')
+      }
+      if (mdOutcome.reason === 'min-depth') {
+        throw new StructureBoundaryError('子树深度越界', 'min-depth')
+      }
+      if (mdOutcome.reason === 'same-position') {
+        throw new StructureBoundaryError('节点已在目标位置', 'not-found')
+      }
+      throw new NotFoundError(`sectionId 不在 markdown 中`)
+    }
+    const nextMarkdown = mdOutcome.result.markdown
+
+    // Step 2 — tree mutation (mirrors markdown so rebuildSectionIndex aligns).
+    const tree = buildChapterTree(originalIndex)
+    const dragNode = findNodeById(tree, dragSectionId)
+    if (!dragNode) throw new NotFoundError('拖拽节点丢失')
+    const dropNode = findNodeById(tree, dropSectionId)
+    if (!dropNode) throw new NotFoundError('目标节点丢失')
+    if (isDescendantOf(dragNode, dropSectionId)) {
+      throw new StructureBoundaryError('不能移动到自身的后代节点', 'not-found')
+    }
+    const dragSiblings = findSiblingContainer(tree, dragNode.parentSectionId ?? undefined)
+    const dragIdx = dragSiblings.findIndex((n) => n.sectionId === dragNode.sectionId)
+    if (dragIdx < 0) throw new NotFoundError('拖拽节点未在父容器中')
+    dragSiblings.splice(dragIdx, 1)
+
+    if (placement === 'inside') {
+      const newLevel = (dropNode.level + 1) as ChapterHeadingLocator['level']
+      shiftNodeLevels(dragNode, newLevel - dragNode.level)
+      dragNode.parentSectionId = dropNode.sectionId
+      dragNode.order = dropNode.children.length
+      dropNode.children.push(dragNode)
+    } else {
+      const dropSiblings = findSiblingContainer(tree, dropNode.parentSectionId ?? undefined)
+      const dropIdx = dropSiblings.findIndex((n) => n.sectionId === dropNode.sectionId)
+      if (dropIdx < 0) throw new NotFoundError('目标节点未在父容器中')
+      shiftNodeLevels(dragNode, dropNode.level - dragNode.level)
+      dragNode.parentSectionId = dropNode.parentSectionId
+      const insertIdx = placement === 'before' ? dropIdx : dropIdx + 1
+      dropSiblings.splice(insertIdx, 0, dragNode)
+    }
+
+    // Step 3 — rebuild sectionIndex.
+    const nextIndex = rebuildSectionIndex(nextMarkdown, tree, originalIndex)
+
+    // Step 4 — commit metadata then markdown; rollback on failure.
+    const previousSectionIndex = originalIndex
+    const updatedMeta = await documentService.updateMetadata(projectId, (current) => ({
+      ...current,
+      sectionIndex: nextIndex,
+    }))
+    try {
+      await documentService.save(projectId, nextMarkdown)
+    } catch (saveErr) {
+      try {
+        await documentService.updateMetadata(projectId, (current) => ({
+          ...current,
+          sectionIndex: previousSectionIndex,
+        }))
+      } catch (rollbackErr) {
+        logger.error(
+          `moveSubtree rollback failed: project=${projectId} drag=${dragSectionId} drop=${dropSectionId}`,
+          rollbackErr
+        )
+      }
+      throw saveErr
+    }
+
+    const committedIndex = updatedMeta.sectionIndex ?? []
+    const affected = committedIndex.find((e) => e.sectionId === dragSectionId)
+    if (!affected) {
+      throw new NotFoundError(`moveSubtree 后 sectionId 丢失: ${dragSectionId}`)
+    }
+    return {
+      markdown: nextMarkdown,
+      sectionIndex: committedIndex,
+      affectedSectionId: dragSectionId,
+      focusLocator: affected.headingLocator,
+    }
+  },
+
   /** Outdent target subtree to its grandparent (Story 11.3 AC1 Shift+Tab). */
   async outdent(projectId: string, sectionId: string): Promise<StructureMutationSnapshot> {
     return applyStructureMutation(projectId, sectionId, 'outdent', {
@@ -322,7 +487,7 @@ interface MutationHandlers {
 async function applyStructureMutation(
   projectId: string,
   sectionId: string,
-  opLabel: 'insertSibling' | 'indent' | 'outdent',
+  opLabel: 'insertSibling' | 'insertChild' | 'indent' | 'outdent',
   handlers: MutationHandlers
 ): Promise<StructureMutationSnapshot> {
   const doc = await documentService.load(projectId)
@@ -394,6 +559,16 @@ function findSiblingContainer(
     stack.push(...n.children)
   }
   throw new NotFoundError(`父节点不存在: ${parentSectionId}`)
+}
+
+function isDescendantOf(dragNode: ChapterTreeNode, dropSectionId: string): boolean {
+  const stack: ChapterTreeNode[] = [...dragNode.children]
+  while (stack.length > 0) {
+    const n = stack.pop()!
+    if (n.sectionId === dropSectionId) return true
+    stack.push(...n.children)
+  }
+  return false
 }
 
 function findNodeById(tree: ChapterTreeNode[], sectionId: string): ChapterTreeNode | null {

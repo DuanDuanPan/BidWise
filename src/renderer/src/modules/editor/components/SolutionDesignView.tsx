@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Alert, App, Button, Spin } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { TemplateSelector } from './TemplateSelector'
@@ -64,6 +64,24 @@ export function SolutionDesignView({
   const documentContent = useDocumentStore((s) => s.content)
   const documentLoading = useDocumentStore((s) => s.loading)
 
+  // Story 11.9 AC6: has-content CTA label depends on
+  //   (a) templateId presence — only template-backed projects go through the
+  //       "first confirm" ceremony; non-template imports always see 继续撰写.
+  //   (b) firstSkeletonConfirmedAt absence — once persisted, any return visit
+  //       to has-content means user already confirmed at least once.
+  const [metaTemplateId, setMetaTemplateId] = useState<string | undefined>(undefined)
+  const [firstSkeletonConfirmedAt, setFirstSkeletonConfirmedAt] = useState<string | undefined>(
+    undefined
+  )
+  // Gate the label + CTA until metadata lands so a fast first-paint click can't
+  // resolve against uninitialised signals and skip the mark-confirmed write.
+  const [metaLoaded, setMetaLoaded] = useState(false)
+  const hasContentConfirmLabel = useMemo(() => {
+    if (!metaLoaded) return '加载中…'
+    if (metaTemplateId && !firstSkeletonConfirmedAt) return '确认骨架，开始撰写'
+    return '继续撰写'
+  }, [metaLoaded, metaTemplateId, firstSkeletonConfirmedAt])
+
   // Cancel any in-flight debounce timer and pending persist
   const cancelPendingPersist = useCallback(() => {
     if (persistTimerRef.current) {
@@ -83,7 +101,37 @@ export function SolutionDesignView({
     setPreviewTemplate(null)
     setTemplateId('')
     setOverwriteConfirmed(false)
+    setMetaTemplateId(undefined)
+    setFirstSkeletonConfirmedAt(undefined)
+    setMetaLoaded(false)
   }, [projectId, cancelPendingPersist])
+
+  // Load proposal metadata sidecar when entering has-content so the CTA label
+  // reflects live `templateId` + `firstSkeletonConfirmedAt` state. Re-runs per
+  // project; tolerates missing sidecar by leaving both signals undefined (→
+  // default `继续撰写`).
+  useEffect(() => {
+    if (phase !== 'has-content') return
+    let cancelled = false
+    async function loadMeta(): Promise<void> {
+      try {
+        const res = await window.api.documentGetMetadata({ projectId })
+        if (cancelled) return
+        if (res.success) {
+          setMetaTemplateId(res.data.templateId)
+          setFirstSkeletonConfirmedAt(res.data.firstSkeletonConfirmedAt)
+        }
+      } catch {
+        // Non-critical — label falls back to 继续撰写.
+      } finally {
+        if (!cancelled) setMetaLoaded(true)
+      }
+    }
+    void loadMeta()
+    return () => {
+      cancelled = true
+    }
+  }, [phase, projectId])
 
   // Step 1: Check if proposal has content
   useEffect(() => {
@@ -259,8 +307,29 @@ export function SolutionDesignView({
     while (persistingRef.current) {
       await new Promise((r) => setTimeout(r, 100))
     }
+    // Story 11.9 AC6: mark the first-confirm timestamp BEFORE entering
+    // proposal-writing. The IPC is idempotent, so re-confirms are no-ops.
+    try {
+      await window.api.documentMarkSkeletonConfirmed({ projectId })
+    } catch {
+      // Non-fatal: label stays as "确认骨架，开始撰写" on next visit; user can
+      // re-confirm. Never block the proposal-writing transition on this write.
+    }
     onEnterProposalWriting()
-  }, [skeleton, doPersist, onEnterProposalWriting])
+  }, [skeleton, doPersist, onEnterProposalWriting, projectId])
+
+  const handleConfirmHasContent = useCallback(async () => {
+    // Story 11.9 AC6: always mark the first-confirm signal. The IPC is
+    // idempotent (no-op after the first write), so dropping the label-based
+    // guard avoids the race where a first-paint click fires before metadata
+    // loads and leaves firstSkeletonConfirmedAt empty for the next visit.
+    try {
+      await window.api.documentMarkSkeletonConfirmed({ projectId })
+    } catch {
+      /* non-fatal */
+    }
+    onEnterProposalWriting()
+  }, [projectId, onEnterProposalWriting])
 
   const handleRegenerate = useCallback(() => {
     modal.confirm({
@@ -334,7 +403,9 @@ export function SolutionDesignView({
       {phase === 'has-content' && (
         <StructureDesignWorkspace
           projectId={projectId}
-          onConfirmSkeleton={onEnterProposalWriting}
+          onConfirmSkeleton={handleConfirmHasContent}
+          confirmLabel={hasContentConfirmLabel}
+          confirmLoading={!metaLoaded}
           onReselectTemplate={handleReselectFromHasContent}
         />
       )}
