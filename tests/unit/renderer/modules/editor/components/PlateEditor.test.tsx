@@ -10,6 +10,8 @@ const mockDeserialize = vi.fn((_editor: unknown, markdown: string) => [
 const mockSerialize = vi.fn(() => '# Serialized')
 const mockSetValue = vi.fn()
 let latestPlateContentProps: Record<string, unknown> | null = null
+let latestPlateProps: Record<string, unknown> | null = null
+let documentStoreState: Record<string, unknown> = {}
 
 const mockEditor = {
   api: {
@@ -30,6 +32,8 @@ vi.mock('@renderer/stores', () => ({
       loading: false,
       error: null,
       autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      editingLocked: false,
+      ...documentStoreState,
     })
   ),
 }))
@@ -57,21 +61,26 @@ vi.mock('platejs/react', () => ({
   Plate: ({
     children,
     onValueChange,
+    readOnly,
   }: {
     children: ReactNode
     onValueChange?: (options: { editor: unknown; value: unknown[] }) => void
-  }) => (
-    <div>
-      <button
-        type="button"
-        data-testid="trigger-value-change"
-        onClick={() => onValueChange?.({ editor: mockEditor, value: [] })}
-      >
-        Trigger
-      </button>
-      {children}
-    </div>
-  ),
+    readOnly?: boolean
+  }) => {
+    latestPlateProps = { readOnly }
+    return (
+      <div data-testid="plate-root" data-readonly={readOnly ? 'true' : 'false'}>
+        <button
+          type="button"
+          data-testid="trigger-value-change"
+          onClick={() => onValueChange?.({ editor: mockEditor, value: [] })}
+        >
+          Trigger
+        </button>
+        {children}
+      </div>
+    )
+  },
   PlateContent: ({
     className,
     ...props
@@ -91,6 +100,8 @@ describe('@story-3-1 PlateEditor', () => {
     ])
     mockSetValue.mockReset()
     latestPlateContentProps = null
+    latestPlateProps = null
+    documentStoreState = {}
 
     vi.stubGlobal(
       'requestIdleCallback',
@@ -107,6 +118,19 @@ describe('@story-3-1 PlateEditor', () => {
 
   afterEach(() => {
     cleanup()
+  })
+
+  it('@story-11-3 @p0 passes readOnly=false to Plate when editingLocked is false', () => {
+    documentStoreState = { editingLocked: false }
+    render(<PlateEditor initialContent="" projectId="proj-1" />)
+    expect(latestPlateProps?.readOnly).toBe(false)
+  })
+
+  it('@story-11-3 @p0 passes readOnly=true to Plate while a structure mutation is in flight', () => {
+    documentStoreState = { editingLocked: true }
+    render(<PlateEditor initialContent="" projectId="proj-1" />)
+    expect(latestPlateProps?.readOnly).toBe(true)
+    expect(screen.getByTestId('plate-root').getAttribute('data-readonly')).toBe('true')
   })
 
   it('mounts and renders the editor content area', () => {

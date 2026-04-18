@@ -156,6 +156,11 @@ export function PlateEditor({
   onInsertAssetReady,
 }: PlateEditorProps): React.JSX.Element {
   const updateContent = useDocumentStore((s) => s.updateContent)
+  // Story 11.3: freeze the editor while a chapter-structure mutation is in
+  // flight. Without this, the user can keep typing during the mutation
+  // window — those characters show briefly, then vanish when the returning
+  // snapshot triggers `editor.tf.setValue(initialNodes)` below.
+  const editingLocked = useDocumentStore((s) => s.editingLocked)
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const idleCallbackRef = useRef<number | null>(null)
   const latestLoadedMarkdownRef = useRef(initialContent)
@@ -512,7 +517,7 @@ export function PlateEditor({
   }, [clearPendingSerialization])
 
   return (
-    <Plate editor={editor} onValueChange={handleValueChange}>
+    <Plate editor={editor} readOnly={editingLocked} onValueChange={handleValueChange}>
       <PlateContent
         className={plateContentClassName}
         style={plateContentStyle}
