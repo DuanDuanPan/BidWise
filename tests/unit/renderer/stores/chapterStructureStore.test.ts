@@ -293,6 +293,9 @@ describe('chapterStructureStore', () => {
       const order: string[] = []
       saveDocumentSpy.mockImplementation(async () => {
         order.push('save')
+        useDocumentStore.setState({
+          autoSave: { dirty: false, saving: false, lastSavedAt: 'saved', error: null },
+        })
       })
       updateTitleApi.mockImplementation(async () => {
         order.push('update-title')
@@ -318,6 +321,9 @@ describe('chapterStructureStore', () => {
       const order: string[] = []
       saveDocumentSpy.mockImplementation(async () => {
         order.push('save')
+        useDocumentStore.setState({
+          autoSave: { dirty: false, saving: false, lastSavedAt: 'saved', error: null },
+        })
       })
       insertSiblingApi.mockImplementation(async () => {
         order.push('insert')
@@ -353,6 +359,83 @@ describe('chapterStructureStore', () => {
       const outcome = await useChapterStructureStore.getState().commitTitle('p', sidA, '新')
       expect(outcome.ok).toBe(false)
       expect(updateTitleApi).not.toHaveBeenCalled()
+    })
+
+    it('waits for an in-flight save to finish before running the mutation', async () => {
+      // Start state: autosave already in flight from a previous scheduleSave.
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: true, lastSavedAt: null, error: null },
+      })
+      const flushOrder: string[] = []
+      insertSiblingApi.mockImplementation(async () => {
+        flushOrder.push('insert')
+        return { success: true, data: makeSnapshot(sidA, sidB) }
+      })
+
+      const mutationPromise = useChapterStructureStore.getState().insertSibling('p', sidA)
+      // Let the flush subscribe before we settle saving=false.
+      await new Promise((r) => setTimeout(r, 0))
+      expect(flushOrder).toEqual([])
+      // Now the in-flight save completes cleanly.
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: 'now', error: null },
+      })
+      await mutationPromise
+      expect(flushOrder).toEqual(['insert'])
+    })
+
+    it('loops until durable when content changed during a save', async () => {
+      // First save call completes but leaves dirty=true (user typed during save).
+      // Second save call cleans the state.
+      let saveCalls = 0
+      saveDocumentSpy.mockImplementation(async () => {
+        saveCalls += 1
+        if (saveCalls === 1) {
+          useDocumentStore.setState({
+            autoSave: { dirty: true, saving: false, lastSavedAt: 'first', error: null },
+          })
+          return
+        }
+        useDocumentStore.setState({
+          autoSave: { dirty: false, saving: false, lastSavedAt: 'second', error: null },
+        })
+      })
+      await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(saveCalls).toBe(2)
+    })
+
+    it('aborts after flush timeout when autosave never drains', async () => {
+      // Save never settles state — dirty remains true forever.
+      saveDocumentSpy.mockResolvedValue(undefined)
+      const outcome = await useChapterStructureStore
+        .getState()
+        .insertSibling('p', sidA, { flushTimeoutMs: 50 })
+      expect(outcome.ok).toBe(false)
+      expect(insertSiblingApi).not.toHaveBeenCalled()
+    })
+
+    it('sets mutating=true during IPC window and clears it on completion', async () => {
+      let inFlightMutating: boolean | null = null
+      insertSiblingApi.mockImplementation(async () => {
+        inFlightMutating = useChapterStructureStore.getState().mutating
+        return { success: true, data: makeSnapshot(sidA, sidB) }
+      })
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(inFlightMutating).toBe(true)
+      expect(useChapterStructureStore.getState().mutating).toBe(false)
+    })
+
+    it('clears mutating even when IPC throws', async () => {
+      insertSiblingApi.mockRejectedValue(new Error('boom'))
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      const outcome = await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(outcome.ok).toBe(false)
+      expect(useChapterStructureStore.getState().mutating).toBe(false)
     })
   })
 

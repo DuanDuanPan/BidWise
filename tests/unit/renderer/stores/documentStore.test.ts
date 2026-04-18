@@ -82,6 +82,20 @@ describe('@story-3-1 documentStore', () => {
       expect(state.autoSave.dirty).toBe(true)
     })
 
+    it('drops writes while editingLocked=true (prevents races with structure mutations)', () => {
+      useDocumentStore.setState({
+        content: '# Before',
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      useDocumentStore.getState().setEditingLocked(true)
+      useDocumentStore.getState().updateContent('# After lock', 'proj-1')
+      expect(useDocumentStore.getState().content).toBe('# Before')
+
+      useDocumentStore.getState().setEditingLocked(false)
+      useDocumentStore.getState().updateContent('# After unlock', 'proj-1')
+      expect(useDocumentStore.getState().content).toBe('# After unlock')
+    })
+
     it('blocks catastrophic shrink: 2000-char doc → 2-byte empty-editor is rejected', () => {
       useDocumentStore.setState({
         content: '# Real doc\n' + 'a'.repeat(2000),

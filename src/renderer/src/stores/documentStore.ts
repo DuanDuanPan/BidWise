@@ -21,6 +21,13 @@ export interface DocumentState {
    * `@shared/chapter-identity`. Empty array when metadata is unavailable.
    */
   sectionIndex: ProposalSectionIndexEntry[]
+  /**
+   * Story 11.3: set by `chapterStructureStore` mutations while an IPC is in
+   * flight. `updateContent` drops writes while this is true so Plate edits
+   * racing with a mutation cannot overwrite the snapshot that will replace
+   * `content` when the mutation returns.
+   */
+  editingLocked: boolean
 }
 
 export interface DocumentActions {
@@ -37,6 +44,8 @@ export interface DocumentActions {
     projectId: string,
     snapshot: { content: string; sectionIndex: ProposalSectionIndexEntry[] }
   ) => void
+  /** Story 11.3: gate for `updateContent` writes during structure mutations. */
+  setEditingLocked: (locked: boolean) => void
   resetDocument: () => void
 }
 
@@ -111,6 +120,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
     error: null,
     autoSave: { ...defaultAutoSave },
     sectionIndex: [],
+    editingLocked: false,
 
     loadDocument: async (projectId: string) => {
       resetAutoSaveQueue()
@@ -166,6 +176,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
     },
 
     updateContent: (content: string, projectId: string, options?: UpdateContentOptions) => {
+      // Story 11.3: drop writes while a structure mutation is in flight. The
+      // mutation's returning snapshot replaces `content`; allowing concurrent
+      // Plate edits to land here would make them disappear on snapshot apply.
+      if (get().editingLocked) {
+        console.debug(
+          '[gen-debug:updateContent] BLOCKED: editingLocked (structure mutation in flight)'
+        )
+        return
+      }
       const prevContent = get().content
       const contentChanged = prevContent !== content
       const source = options?.debugContext?.source ?? 'unknown'
@@ -336,6 +355,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
       return false
     },
 
+    setEditingLocked: (locked) => {
+      set({ editingLocked: locked })
+    },
+
     applyStructureSnapshot: (projectId, snapshot) => {
       const state = get()
       if (state.loadedProjectId !== projectId) return
@@ -365,6 +388,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
         error: null,
         autoSave: { ...defaultAutoSave },
         sectionIndex: [],
+        editingLocked: false,
       })
     },
   }

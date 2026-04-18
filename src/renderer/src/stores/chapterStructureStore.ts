@@ -36,6 +36,10 @@ export interface ChapterStructureState {
   pendingDeleteBySectionId: Record<string, PendingDeleteEntry>
   /** Project currently bound to this store. Switching auto-resets state. */
   boundProjectId: string | null
+  /** Story 11.3: true while a mutation IPC is in flight. Pairs with
+   *  `documentStore.editingLocked` to prevent concurrent Plate edits from
+   *  being overwritten by the returning snapshot. */
+  mutating: boolean
 }
 
 export type StructureMutationOutcome =
@@ -47,6 +51,13 @@ export type StructureMutationOutcome =
 
 export type CommitTitleOutcome = { ok: true } | { ok: false; reason: 'locked' | 'error' }
 
+export interface MutationOptions {
+  /** Max time (ms) to wait for pending autosave to drain before aborting. */
+  flushTimeoutMs?: number
+}
+
+const DEFAULT_FLUSH_TIMEOUT_MS = 5000
+
 export interface ChapterStructureActions {
   focusSection: (sectionId: string | null) => void
   enterEditing: (sectionId: string) => void
@@ -56,13 +67,30 @@ export interface ChapterStructureActions {
   markPendingDelete: (sectionIds: string[], expiresAt: string) => void
   clearPendingDelete: (sectionIds: string[]) => void
   /** Story 11.3: insert a sibling chapter after the targeted section. */
-  insertSibling: (projectId: string, sectionId: string) => Promise<StructureMutationOutcome>
+  insertSibling: (
+    projectId: string,
+    sectionId: string,
+    options?: MutationOptions
+  ) => Promise<StructureMutationOutcome>
   /** Story 11.3: indent the targeted section + descendants under previous sibling. */
-  indentSection: (projectId: string, sectionId: string) => Promise<StructureMutationOutcome>
+  indentSection: (
+    projectId: string,
+    sectionId: string,
+    options?: MutationOptions
+  ) => Promise<StructureMutationOutcome>
   /** Story 11.3: outdent the targeted section + descendants to the grandparent. */
-  outdentSection: (projectId: string, sectionId: string) => Promise<StructureMutationOutcome>
+  outdentSection: (
+    projectId: string,
+    sectionId: string,
+    options?: MutationOptions
+  ) => Promise<StructureMutationOutcome>
   /** Story 11.3: commit inline-edited title for a section. */
-  commitTitle: (projectId: string, sectionId: string, title: string) => Promise<CommitTitleOutcome>
+  commitTitle: (
+    projectId: string,
+    sectionId: string,
+    title: string,
+    options?: MutationOptions
+  ) => Promise<CommitTitleOutcome>
   /** Story 11.3: hand off cascade-delete payload to Story 11.4. */
   requestSoftDelete: (projectId: string, sectionIds: string[]) => Promise<{ ok: boolean }>
   /**
@@ -82,6 +110,7 @@ const INITIAL_STATE: ChapterStructureState = {
   lockedSectionIds: {},
   pendingDeleteBySectionId: {},
   boundProjectId: null,
+  mutating: false,
 }
 
 export const useChapterStructureStore = create<ChapterStructureStore>()(
@@ -161,66 +190,66 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
       })
     },
 
-    async insertSibling(projectId, sectionId) {
+    async insertSibling(projectId, sectionId, options) {
       const guard = guardMutation(sectionId)
       if (guard) return guard
-      const flushed = await flushPendingContent(projectId)
-      if (!flushed) return { ok: false, reason: 'error' }
-      try {
-        const res = await window.api.chapterStructureInsertSibling({ projectId, sectionId })
-        if (!res.success) return handleMutationError(res.error)
-        const snapshot = res.data
-        commitSnapshot(projectId, snapshot)
-        const createdId = snapshot.createdSectionId ?? snapshot.affectedSectionId
-        const store = useChapterStructureStore.getState()
-        store.focusSection(createdId)
-        store.enterEditing(createdId)
-        warnIfDepthExceeded(snapshot)
-        return { ok: true, snapshot }
-      } catch (err) {
-        notifyStructureError(err)
-        return { ok: false, reason: 'error' }
-      }
+      return runMutation(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureInsertSibling({ projectId, sectionId })
+          if (!res.success) return handleMutationError(res.error)
+          const snapshot = res.data
+          commitSnapshot(projectId, snapshot)
+          const createdId = snapshot.createdSectionId ?? snapshot.affectedSectionId
+          const store = useChapterStructureStore.getState()
+          store.focusSection(createdId)
+          store.enterEditing(createdId)
+          warnIfDepthExceeded(snapshot)
+          return { ok: true, snapshot }
+        } catch (err) {
+          notifyStructureError(err)
+          return { ok: false, reason: 'error' }
+        }
+      })
     },
 
-    async indentSection(projectId, sectionId) {
+    async indentSection(projectId, sectionId, options) {
       const guard = guardMutation(sectionId)
       if (guard) return guard
-      const flushed = await flushPendingContent(projectId)
-      if (!flushed) return { ok: false, reason: 'error' }
-      try {
-        const res = await window.api.chapterStructureIndent({ projectId, sectionId })
-        if (!res.success) return handleMutationError(res.error)
-        const snapshot = res.data
-        commitSnapshot(projectId, snapshot)
-        useChapterStructureStore.getState().focusSection(snapshot.affectedSectionId)
-        warnIfDepthExceeded(snapshot)
-        return { ok: true, snapshot }
-      } catch (err) {
-        notifyStructureError(err)
-        return { ok: false, reason: 'error' }
-      }
+      return runMutation(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureIndent({ projectId, sectionId })
+          if (!res.success) return handleMutationError(res.error)
+          const snapshot = res.data
+          commitSnapshot(projectId, snapshot)
+          useChapterStructureStore.getState().focusSection(snapshot.affectedSectionId)
+          warnIfDepthExceeded(snapshot)
+          return { ok: true, snapshot }
+        } catch (err) {
+          notifyStructureError(err)
+          return { ok: false, reason: 'error' }
+        }
+      })
     },
 
-    async outdentSection(projectId, sectionId) {
+    async outdentSection(projectId, sectionId, options) {
       const guard = guardMutation(sectionId)
       if (guard) return guard
-      const flushed = await flushPendingContent(projectId)
-      if (!flushed) return { ok: false, reason: 'error' }
-      try {
-        const res = await window.api.chapterStructureOutdent({ projectId, sectionId })
-        if (!res.success) return handleMutationError(res.error)
-        const snapshot = res.data
-        commitSnapshot(projectId, snapshot)
-        useChapterStructureStore.getState().focusSection(snapshot.affectedSectionId)
-        return { ok: true, snapshot }
-      } catch (err) {
-        notifyStructureError(err)
-        return { ok: false, reason: 'error' }
-      }
+      return runMutation(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureOutdent({ projectId, sectionId })
+          if (!res.success) return handleMutationError(res.error)
+          const snapshot = res.data
+          commitSnapshot(projectId, snapshot)
+          useChapterStructureStore.getState().focusSection(snapshot.affectedSectionId)
+          return { ok: true, snapshot }
+        } catch (err) {
+          notifyStructureError(err)
+          return { ok: false, reason: 'error' }
+        }
+      })
     },
 
-    async commitTitle(projectId, sectionId, title) {
+    async commitTitle(projectId, sectionId, title, options) {
       const state = useChapterStructureStore.getState()
       if (state.lockedSectionIds[sectionId]) {
         notifyLockedRejection()
@@ -231,28 +260,25 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
         useChapterStructureStore.getState().exitEditing()
         return { ok: true }
       }
-      const flushed = await flushPendingContent(projectId)
-      if (!flushed) return { ok: false, reason: 'error' }
-      try {
-        const res = await window.api.chapterStructureUpdateTitle({
-          projectId,
-          sectionId,
-          title: trimmed,
-        })
-        if (!res.success) {
-          notifyStructureError(new Error(res.error.message))
+      return runCommitTitle(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureUpdateTitle({
+            projectId,
+            sectionId,
+            title: trimmed,
+          })
+          if (!res.success) {
+            notifyStructureError(new Error(res.error.message))
+            return { ok: false, reason: 'error' }
+          }
+          await useDocumentStore.getState().loadDocument(projectId)
+          useChapterStructureStore.getState().exitEditing()
+          return { ok: true }
+        } catch (err) {
+          notifyStructureError(err)
           return { ok: false, reason: 'error' }
         }
-        // Rename writes new markdown + sectionIndex to disk; reload so
-        // documentStore mirrors persisted state before autosave can push
-        // the stale in-memory copy back.
-        await useDocumentStore.getState().loadDocument(projectId)
-        useChapterStructureStore.getState().exitEditing()
-        return { ok: true }
-      } catch (err) {
-        notifyStructureError(err)
-        return { ok: false, reason: 'error' }
-      }
+      })
     },
 
     async requestSoftDelete(projectId, sectionIds) {
@@ -303,23 +329,133 @@ interface StructureSoftDeleteTarget {
 export const pendingSoftDeletes: StructureSoftDeleteTarget[] = []
 
 /**
- * Main-side chapter-structure mutations read markdown from disk before
- * computing the next snapshot. If the renderer has unsaved body edits still
- * sitting in the autosave debounce queue, the mutation would silently drop
- * them. Flush first; if the flush fails, abort the mutation rather than
- * risk overwriting the user's in-memory edits with a stale disk snapshot.
+ * Strictly flush pending autosave so that the disk copy of `proposal.md`
+ * mirrors the renderer's current in-memory content BEFORE a structure
+ * mutation IPC runs on the main side.
+ *
+ * `saveDocument` has three race windows the naive `await saveDocument()`
+ * does not close:
+ *   A. It returns immediately if a save is already in flight (queued for
+ *      replay via `setTimeout(0)` later).
+ *   B. It can finish with `dirty: true` when the user typed mid-save.
+ *   C. The replayed save is async — completion is not observable from the
+ *      returning promise.
+ *
+ * This loop subscribes to the document store and drives saves until the
+ * observed `autoSave` state reports `!dirty && !saving && !error`, then
+ * returns. If `autoSave.error` ever becomes non-null, or the wall-clock
+ * timeout expires, return `false` so the mutation aborts without a stale
+ * disk read.
  */
-async function flushPendingContent(projectId: string): Promise<boolean> {
+async function flushPendingContent(projectId: string, timeoutMs: number): Promise<boolean> {
   const docStore = useDocumentStore.getState()
   if (docStore.loadedProjectId !== projectId) return true
-  if (!docStore.autoSave.dirty) return true
-  await docStore.saveDocument(projectId)
-  const after = useDocumentStore.getState()
-  if (after.autoSave.error) {
-    notifyStructureError(new Error(after.autoSave.error))
-    return false
+  const deadline = Date.now() + timeoutMs
+
+  while (true) {
+    const s = useDocumentStore.getState()
+    if (s.loadedProjectId !== projectId) return true
+    if (s.autoSave.error) {
+      notifyStructureError(new Error(s.autoSave.error))
+      return false
+    }
+    if (!s.autoSave.dirty && !s.autoSave.saving) return true
+    if (Date.now() > deadline) {
+      notifyStructureError(new Error('保存尚未完成，已中止结构变更（flush 超时）'))
+      return false
+    }
+    if (s.autoSave.saving) {
+      await waitForSaveSettled(deadline - Date.now())
+      continue
+    }
+    // dirty + not saving: drive one save and re-check. If the save returns
+    // without state progress (e.g. queued-while-saving skip, or a stubbed
+    // save in tests) yield so the wall clock can advance toward deadline.
+    const prevLastSavedAt = s.autoSave.lastSavedAt
+    await s.saveDocument(projectId)
+    const after = useDocumentStore.getState()
+    const noProgress =
+      after.autoSave.dirty === s.autoSave.dirty &&
+      after.autoSave.saving === s.autoSave.saving &&
+      after.autoSave.lastSavedAt === prevLastSavedAt
+    if (noProgress) {
+      await sleep(Math.min(10, Math.max(0, deadline - Date.now())))
+    }
   }
-  return true
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function waitForSaveSettled(remainingMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const unsub = useDocumentStore.subscribe((state) => {
+      if (!state.autoSave.saving) {
+        unsub()
+        clearTimeout(timer)
+        resolve()
+      }
+    })
+    const timer = setTimeout(
+      () => {
+        unsub()
+        resolve()
+      },
+      Math.max(0, remainingMs)
+    )
+    // Guard against the no-op state where saving already settled.
+    if (!useDocumentStore.getState().autoSave.saving) {
+      unsub()
+      clearTimeout(timer)
+      resolve()
+    }
+  })
+}
+
+/**
+ * Wrap a mutation body with: (a) mutating flag, (b) documentStore editing
+ * lock so Plate writes cannot race the snapshot apply, (c) durable flush.
+ * Ensures flags are cleared even when the mutation throws.
+ */
+async function runMutation(
+  projectId: string,
+  options: MutationOptions | undefined,
+  body: () => Promise<StructureMutationOutcome>
+): Promise<StructureMutationOutcome> {
+  useChapterStructureStore.setState({ mutating: true })
+  useDocumentStore.getState().setEditingLocked(true)
+  try {
+    const flushed = await flushPendingContent(
+      projectId,
+      options?.flushTimeoutMs ?? DEFAULT_FLUSH_TIMEOUT_MS
+    )
+    if (!flushed) return { ok: false, reason: 'error' }
+    return await body()
+  } finally {
+    useDocumentStore.getState().setEditingLocked(false)
+    useChapterStructureStore.setState({ mutating: false })
+  }
+}
+
+async function runCommitTitle(
+  projectId: string,
+  options: MutationOptions | undefined,
+  body: () => Promise<CommitTitleOutcome>
+): Promise<CommitTitleOutcome> {
+  useChapterStructureStore.setState({ mutating: true })
+  useDocumentStore.getState().setEditingLocked(true)
+  try {
+    const flushed = await flushPendingContent(
+      projectId,
+      options?.flushTimeoutMs ?? DEFAULT_FLUSH_TIMEOUT_MS
+    )
+    if (!flushed) return { ok: false, reason: 'error' }
+    return await body()
+  } finally {
+    useDocumentStore.getState().setEditingLocked(false)
+    useChapterStructureStore.setState({ mutating: false })
+  }
 }
 
 function guardMutation(sectionId: string): StructureMutationOutcome | null {
