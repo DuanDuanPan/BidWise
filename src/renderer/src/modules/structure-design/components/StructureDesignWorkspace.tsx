@@ -3,7 +3,6 @@ import { App, Button } from 'antd'
 import { useStructureOutline } from '../hooks/useStructureOutline'
 import { StructureCanvas } from './StructureCanvas'
 import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
-import { useDocumentStore } from '@renderer/stores'
 import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
@@ -44,6 +43,7 @@ export function StructureDesignWorkspace({
   const { tree, flat, loading, error, reload } = useStructureOutline(projectId)
 
   const bindProject = useChapterStructureStore((s) => s.bindProject)
+  const commitTitle = useChapterStructureStore((s) => s.commitTitle)
 
   // Phase source (AC5). Prefer explicit prop when a parent injects it; fall
   // back to the global ChapterGenerationContext so solution-design mounts
@@ -79,27 +79,20 @@ export function StructureDesignWorkspace({
 
   const handleCommitTitle = useCallback(
     async (nodeKey: string, nextTitle: string): Promise<void> => {
-      try {
-        const res = await window.api.chapterStructureUpdateTitle({
-          projectId,
-          sectionId: nodeKey,
-          title: nextTitle,
-        })
-        if (!res.success) {
-          message.error(res.error.message)
-          return
-        }
-        // Rehydrate renderer caches. Rename wrote new markdown + sectionIndex
-        // to disk; without a reload, `documentStore.content` keeps the old
-        // heading line and the next autosave — or proposal-writing editor
-        // mount — would push the stale copy back, silently undoing the edit.
-        await useDocumentStore.getState().loadDocument(projectId)
-        reload()
-      } catch (err) {
-        message.error((err as Error).message)
+      // Go through the store so this rename acquires the same mutation lock,
+      // pending-autosave flush, and editingLocked guard that the outline-tree
+      // path uses. Bypassing it (e.g. calling the IPC directly) would let an
+      // in-flight autosave race the disk read inside chapter-structure
+      // service and silently discard body edits.
+      const res = await commitTitle(projectId, nodeKey, nextTitle)
+      if (!res.ok) {
+        // commitTitle surfaces its own error toast through structure-feedback;
+        // avoid double-reporting.
+        return
       }
+      reload()
     },
-    [projectId, message, reload]
+    [projectId, commitTitle, reload]
   )
 
   const handleAddChild = useCallback(

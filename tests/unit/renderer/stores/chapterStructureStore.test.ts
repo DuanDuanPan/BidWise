@@ -437,6 +437,74 @@ describe('chapterStructureStore', () => {
       expect(outcome.ok).toBe(false)
       expect(useChapterStructureStore.getState().mutating).toBe(false)
     })
+
+    it('rejects a concurrent mutation with reason=mutating (atomic lock)', async () => {
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      // Hold the first IPC in flight so we can race a second dispatch.
+      let resolveFirst: (() => void) | null = null
+      insertSiblingApi.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = () => resolve({ success: true, data: makeSnapshot(sidA, sidB) })
+          })
+      )
+
+      const store = useChapterStructureStore.getState()
+      const first = store.insertSibling('p', sidA)
+      // Second call happens while first is pending.
+      const second = await store.insertSibling('p', sidC)
+      expect(second.ok).toBe(false)
+      if (!second.ok) expect(second.reason).toBe('mutating')
+      // Complete the first.
+      resolveFirst?.()
+      const firstOutcome = await first
+      expect(firstOutcome.ok).toBe(true)
+      // Lock released — a subsequent mutation succeeds.
+      expect(useChapterStructureStore.getState().mutating).toBe(false)
+    })
+
+    it('releases the lock so a follow-up mutation can proceed', async () => {
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      const first = await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(first.ok).toBe(true)
+      const second = await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(second.ok).toBe(true)
+    })
+
+    it('commitTitle rejects a concurrent call with reason=mutating', async () => {
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      let resolveFirst: (() => void) | null = null
+      updateTitleApi.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = () =>
+              resolve({
+                success: true,
+                data: {
+                  sectionId: sidA,
+                  title: '一',
+                  level: 1,
+                  order: 0,
+                  occurrenceIndex: 0,
+                  headingLocator: { title: '一', level: 1, occurrenceIndex: 0 },
+                },
+              })
+          })
+      )
+      const store = useChapterStructureStore.getState()
+      const first = store.commitTitle('p', sidA, '一')
+      const second = await store.commitTitle('p', sidA, '二')
+      expect(second.ok).toBe(false)
+      if (!second.ok) expect(second.reason).toBe('mutating')
+      resolveFirst?.()
+      await first
+    })
   })
 
   describe('bindProject: project-scoped reset (prevent cross-project identity leakage)', () => {

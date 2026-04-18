@@ -46,10 +46,12 @@ export type StructureMutationOutcome =
   | { ok: true; snapshot: StructureMutationSnapshotDto }
   | {
       ok: false
-      reason: 'locked' | 'pending-delete' | 'editing' | 'boundary' | 'error'
+      reason: 'locked' | 'pending-delete' | 'editing' | 'boundary' | 'error' | 'mutating'
     }
 
-export type CommitTitleOutcome = { ok: true } | { ok: false; reason: 'locked' | 'error' }
+export type CommitTitleOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'locked' | 'error' | 'mutating' }
 
 export interface MutationOptions {
   /** Max time (ms) to wait for pending autosave to drain before aborting. */
@@ -414,17 +416,35 @@ function waitForSaveSettled(remainingMs: number): Promise<void> {
 }
 
 /**
- * Wrap a mutation body with: (a) mutating flag, (b) documentStore editing
- * lock so Plate writes cannot race the snapshot apply, (c) durable flush.
- * Ensures flags are cleared even when the mutation throws.
+ * Atomic test-and-set for the mutation lock. Relies on JS single-threaded
+ * execution: the `getState` read and `setState` write below run in one
+ * synchronous step with no `await` between them, so two concurrent callers
+ * cannot both observe `mutating=false` and both succeed.
+ */
+function acquireMutationLock(): boolean {
+  if (useChapterStructureStore.getState().mutating) return false
+  useChapterStructureStore.setState({ mutating: true })
+  useDocumentStore.getState().setEditingLocked(true)
+  return true
+}
+
+function releaseMutationLock(): void {
+  useDocumentStore.getState().setEditingLocked(false)
+  useChapterStructureStore.setState({ mutating: false })
+}
+
+/**
+ * Wrap a mutation body with: (a) atomic lock acquire that rejects reentrant
+ * calls with reason=mutating, (b) documentStore editing lock so Plate writes
+ * cannot race the snapshot apply, (c) durable flush. Ensures flags are
+ * cleared even when the mutation throws.
  */
 async function runMutation(
   projectId: string,
   options: MutationOptions | undefined,
   body: () => Promise<StructureMutationOutcome>
 ): Promise<StructureMutationOutcome> {
-  useChapterStructureStore.setState({ mutating: true })
-  useDocumentStore.getState().setEditingLocked(true)
+  if (!acquireMutationLock()) return { ok: false, reason: 'mutating' }
   try {
     const flushed = await flushPendingContent(
       projectId,
@@ -433,8 +453,7 @@ async function runMutation(
     if (!flushed) return { ok: false, reason: 'error' }
     return await body()
   } finally {
-    useDocumentStore.getState().setEditingLocked(false)
-    useChapterStructureStore.setState({ mutating: false })
+    releaseMutationLock()
   }
 }
 
@@ -443,8 +462,7 @@ async function runCommitTitle(
   options: MutationOptions | undefined,
   body: () => Promise<CommitTitleOutcome>
 ): Promise<CommitTitleOutcome> {
-  useChapterStructureStore.setState({ mutating: true })
-  useDocumentStore.getState().setEditingLocked(true)
+  if (!acquireMutationLock()) return { ok: false, reason: 'mutating' }
   try {
     const flushed = await flushPendingContent(
       projectId,
@@ -453,8 +471,7 @@ async function runCommitTitle(
     if (!flushed) return { ok: false, reason: 'error' }
     return await body()
   } finally {
-    useDocumentStore.getState().setEditingLocked(false)
-    useChapterStructureStore.setState({ mutating: false })
+    releaseMutationLock()
   }
 }
 
