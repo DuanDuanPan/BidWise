@@ -505,6 +505,54 @@ describe('chapterStructureStore', () => {
       resolveFirst?.()
       await first
     })
+
+    it('preserves the global mutation lock across project switches', async () => {
+      useDocumentStore.setState({
+        loadedProjectId: 'proj-A',
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+
+      let releaseFirst: (() => void) | null = null
+      let callCount = 0
+      insertSiblingApi.mockImplementation(async () => {
+        callCount += 1
+        if (callCount === 1) {
+          return await new Promise((resolve) => {
+            releaseFirst = () => resolve({ success: true, data: makeSnapshot(sidA, sidB) })
+          })
+        }
+        return { success: true, data: makeSnapshot(sidC, sidA) }
+      })
+
+      const store = useChapterStructureStore.getState()
+      const first = store.insertSibling('proj-A', sidA)
+      await Promise.resolve()
+
+      try {
+        expect(releaseFirst).toBeTypeOf('function')
+        expect(useChapterStructureStore.getState().mutating).toBe(true)
+        expect(useDocumentStore.getState().editingLocked).toBe(true)
+
+        store.bindProject('proj-B')
+
+        expect(useChapterStructureStore.getState().boundProjectId).toBe('proj-B')
+        expect(useChapterStructureStore.getState().mutating).toBe(true)
+        expect(useDocumentStore.getState().editingLocked).toBe(true)
+
+        const second = await store.insertSibling('proj-B', sidC)
+        expect(second.ok).toBe(false)
+        if (!second.ok) expect(second.reason).toBe('mutating')
+        expect(insertSiblingApi).toHaveBeenCalledTimes(1)
+      } finally {
+        if (releaseFirst) {
+          releaseFirst()
+          await first
+        }
+      }
+
+      expect(useChapterStructureStore.getState().mutating).toBe(false)
+      expect(useDocumentStore.getState().editingLocked).toBe(false)
+    })
   })
 
   describe('bindProject: project-scoped reset (prevent cross-project identity leakage)', () => {

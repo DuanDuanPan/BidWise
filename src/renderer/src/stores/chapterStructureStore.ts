@@ -106,12 +106,16 @@ export interface ChapterStructureActions {
 
 export type ChapterStructureStore = ChapterStructureState & ChapterStructureActions
 
-const INITIAL_STATE: ChapterStructureState = {
+const PROJECT_SCOPED_INITIAL_STATE: Omit<ChapterStructureState, 'mutating'> = {
   focusedSectionId: null,
   editingSectionId: null,
   lockedSectionIds: {},
   pendingDeleteBySectionId: {},
   boundProjectId: null,
+}
+
+const INITIAL_STATE: ChapterStructureState = {
+  ...PROJECT_SCOPED_INITIAL_STATE,
   mutating: false,
 }
 
@@ -304,14 +308,24 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
     },
 
     bindProject(projectId) {
+      let preserveGlobalMutationLock = false
       set((state) => {
         if (state.boundProjectId === projectId) return {}
         // Project switch — clear all per-project state so sectionIds from
         // the prior project cannot reach chapter-structure:* IPC under the
-        // new projectId.
+        // new projectId. The mutation lock is global to the renderer and
+        // stays owned by the in-flight IPC until releaseMutationLock().
         pendingSoftDeletes.length = 0
-        return { ...INITIAL_STATE, boundProjectId: projectId }
+        preserveGlobalMutationLock = state.mutating
+        return {
+          ...PROJECT_SCOPED_INITIAL_STATE,
+          boundProjectId: projectId,
+          mutating: state.mutating,
+        }
       })
+      if (preserveGlobalMutationLock) {
+        useDocumentStore.getState().setEditingLocked(true)
+      }
     },
 
     reset() {
