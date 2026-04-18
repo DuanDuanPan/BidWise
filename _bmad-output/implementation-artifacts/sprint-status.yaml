@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-17
+last_updated: 2026-04-18
 project: 5-方案助手
 project_key: NOKEY
 tracking_system: file-system
@@ -159,3 +159,18 @@ development_status:
   10-3-experience-injection-anti-repeat: backlog
   10-4-changelog-experience-traceability: backlog
   epic-10-retrospective: optional
+
+  # ── Epic 11: 方案结构增强 (8 stories) ──
+  # Sprint A (① 快捷键体验): 11-1 → 11-2 → 11-3 → 11-4 → 11-5
+  # Sprint B (③ Word + 入口): 11-6 → 11-7
+  # Sprint C (② AI 推荐):     11-8
+  epic-11: backlog
+  11-1-enabler-stable-id-refactor: review
+  11-2-focus-state-machine: backlog
+  11-3-xmind-keymap-cascade-delete: backlog
+  11-4-soft-delete-toast-undo: backlog
+  11-5-depth-limit-warn-llm-lock: backlog
+  11-6-three-path-entry-diff-merge: backlog
+  11-7-word-outline-import: backlog
+  11-8-llm-structure-recommend: backlog
+  epic-11-retrospective: optional

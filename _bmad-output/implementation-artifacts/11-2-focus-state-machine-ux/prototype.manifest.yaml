@@ -1,0 +1,87 @@
+story_id: 11-2-focus-state-machine
+story_file: _bmad-output/implementation-artifacts/11-2-focus-state-machine.md
+ux_spec: null
+pen_file: _bmad-output/implementation-artifacts/3-2-editor-workspace-doc-outline-ux/prototype.pen
+snapshot_file: null
+save_report_file: null
+reference_exports: []
+
+# Story 11.2 原型帧位置
+# 共用 Story 3.2 的 prototype.pen，以复用 BidWise 真实外壳、SOP stepper 与 design tokens
+# 方案设计阶段下有两个互补子场景：landing-page（已有方案结构列表）与 confirm-skeleton（骨架编辑画布）
+primary_frames:
+- id: zHAzA
+  name: 'Story 11.2 — 方案设计 · 焦点节点五状态机'
+  position: { x: 0, y: 4912 }
+  size: { width: 1440, height: 1040 }
+  purpose: 方案设计阶段 landing 页（已有方案结构列表视图），10 行章节卡片内联演示五态
+  state_demo_rows:
+    idle: CH37l           # row-1 项目综述
+    focused: AEv0k         # row-2 需求理解与响应（2px brand ring + brand-light + [+ 子节点][⋯]）
+    editing: TYpsC         # row-3 总体技术方案（inline input + cursor + Enter/Esc hint）
+    locked: wLPJy          # row-4 详细功能设计（灰底 + 🔒 + AI 生成中 badge）
+    pending_delete: B5WTY  # row-5 信息安全方案（红底 + 3s 倒计时 + 撤销）
+  auxiliary_nodes:
+    chapter_list_container: CiICL
+    focus_bar_rect: pjN5H          # 3px brand 竖条
+    editing_inline_input: mCfUN
+    editing_cursor_rect: 1dwGn
+    locked_badge: lIxmG
+    pending_countdown: O9z7P       # 红色 3s 倒计时 chip
+    pending_undo_btn: pl51Z
+    priority_chip_row: MGzxY       # 底部 pending-delete › locked › editing › focused › idle 链
+
+- id: 0V4bl
+  name: 'Story 11.2 — 方案设计 · 确认骨架阶段'
+  position: { x: 0, y: 6072 }
+  size: { width: 1440, height: 1040 }
+  purpose: 方案设计阶段 confirm-skeleton 场景（三列：文档大纲 / Structure Canvas / 批注），结构画布 1:1 还原目标
+  state_demo_rows:
+    focused: ViyV2   # H1 需求理解与响应（整个 H1 进入 Focused，带 [+ 子节点]）
+    editing: kgpPO   # H2 网络与通信设计（inline input + cursor + hint）
+    locked: vTpGV    # H2 核心业务功能设计（灰底 + lock icon + AI 生成中）
+    pending_delete: c6TPR  # H2 安全防护措施（红底 + 3s + 撤销）
+    idle_reference: VgVI8  # H1 项目综述（idle 基线对照）
+  auxiliary_nodes:
+    outline_panel_tree: RZAvZ        # 左侧 文档大纲 30 行文本树
+    structure_canvas: 958vH           # 中间带 grip-vertical 拖拽柄的骨架画布
+    annotation_panel_empty: 9w2Hm     # 右侧 批注 空态
+    action_bar: 1nSXI                 # 底部 [重新选择模板] · stat · [确认骨架，开始撰写]
+
+dev_lookup_order:
+- Read story file Dev Notes 与 AC
+- Read this manifest（primary_frames + state_demo_rows）
+- Open .pen 文件，通过 Pencil MCP batch_get 上述 node id 读结构与精确样式
+- 对齐 design tokens：$brand #1677FF, $brand-light #F0F5FF, $danger #FF4D4F, $success #52C41A, $text-primary/secondary, $border #E8E8E8
+
+design_tokens_contract:
+  focused:
+    bg: '#F0F5FF'             # $brand-light
+    outline: 'brand 2px'       # $brand，对应 AC1 "蓝色 2px focus outline"
+    left_bar: 'brand 3px'      # 某些场景以左边框呈现（landing 页使用）
+    text_fill: '$brand'
+  editing:
+    bg: '#FFFFFF'
+    border: 'brand 2px'
+    cursor: 'text-primary 2px'
+    hint: 'Enter 提交 · Esc 取消 (brand-light bg)'
+  locked:
+    bg: '#F5F5F5'              # $bg-sidebar
+    icon: 'lucide/lock 14px $text-secondary'
+    badge: 'AI 生成中… with lucide/sparkles $warning'
+  pending_delete:
+    bg: '#FFF1F0'
+    ink: '$danger #FF4D4F'
+    strikethrough: true
+    countdown_chip: 'danger bg, white 3s bold'
+    undo_btn: 'white bg, danger border, lucide/undo-2 + 撤销'
+  idle:
+    bg: 'transparent'
+    text_fill: '$text-primary'
+
+notes: >
+  原型与 3.2（editor-workspace-doc-outline）共享 prototype.pen 以继承同一 design token 体系。
+  dev-story 时应通过 Pencil MCP 直接打开 .pen 文件定位对应 frame id，按 state_demo_rows 的 node id
+  逐个读取样式合同（padding / gap / stroke / fill / fontSize / fontWeight / cornerRadius），
+  保证 1:1 还原。priority_chip_row 同时作为优先级规则 pending-delete > locked > editing > focused > idle
+  的视觉 ground truth。
