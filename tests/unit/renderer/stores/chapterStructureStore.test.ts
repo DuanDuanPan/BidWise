@@ -225,4 +225,176 @@ describe('chapterStructureStore', () => {
       expect(outcome.ok).toBe(false)
     })
   })
+
+  describe('flush pending autosave before mutation (prevent content loss)', () => {
+    const makeSnapshot = (affectedSectionId: string, createdSectionId?: string): unknown => ({
+      markdown: '# A\n## B\n',
+      sectionIndex: [
+        {
+          sectionId: affectedSectionId,
+          title: 'A',
+          level: 1,
+          order: 0,
+          occurrenceIndex: 0,
+          headingLocator: { title: 'A', level: 1, occurrenceIndex: 0 },
+        },
+      ],
+      affectedSectionId,
+      focusLocator: { title: 'A', level: 1, occurrenceIndex: 0 },
+      ...(createdSectionId ? { createdSectionId } : {}),
+    })
+
+    let saveDocumentSpy: ReturnType<typeof vi.fn>
+    let insertSiblingApi: ReturnType<typeof vi.fn>
+    let updateTitleApi: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      insertSiblingApi = vi
+        .fn()
+        .mockResolvedValue({ success: true, data: makeSnapshot(sidA, sidB) })
+      updateTitleApi = vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          sectionId: sidA,
+          title: '新标题',
+          level: 1,
+          order: 0,
+          occurrenceIndex: 0,
+          headingLocator: { title: '新标题', level: 1, occurrenceIndex: 0 },
+        },
+      })
+      vi.stubGlobal('api', {
+        chapterStructureInsertSibling: insertSiblingApi,
+        chapterStructureIndent: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: makeSnapshot(sidA) }),
+        chapterStructureOutdent: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: makeSnapshot(sidA) }),
+        chapterStructureUpdateTitle: updateTitleApi,
+      })
+
+      saveDocumentSpy = vi.fn().mockResolvedValue(undefined)
+      useDocumentStore.setState({
+        loadedProjectId: 'p',
+        content: 'hello',
+        autoSave: { dirty: true, saving: false, lastSavedAt: null, error: null },
+        saveDocument: saveDocumentSpy as never,
+        loadDocument: vi.fn().mockResolvedValue(undefined) as never,
+        applyStructureSnapshot: vi.fn() as never,
+      })
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('commitTitle flushes dirty pending autosave BEFORE update-title IPC', async () => {
+      const order: string[] = []
+      saveDocumentSpy.mockImplementation(async () => {
+        order.push('save')
+      })
+      updateTitleApi.mockImplementation(async () => {
+        order.push('update-title')
+        return {
+          success: true,
+          data: {
+            sectionId: sidA,
+            title: '新',
+            level: 1,
+            order: 0,
+            occurrenceIndex: 0,
+            headingLocator: { title: '新', level: 1, occurrenceIndex: 0 },
+          },
+        }
+      })
+
+      await useChapterStructureStore.getState().commitTitle('p', sidA, '新')
+      expect(saveDocumentSpy).toHaveBeenCalledWith('p')
+      expect(order).toEqual(['save', 'update-title'])
+    })
+
+    it('insertSibling flushes dirty pending autosave BEFORE insert IPC', async () => {
+      const order: string[] = []
+      saveDocumentSpy.mockImplementation(async () => {
+        order.push('save')
+      })
+      insertSiblingApi.mockImplementation(async () => {
+        order.push('insert')
+        return { success: true, data: makeSnapshot(sidA, sidB) }
+      })
+
+      await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(saveDocumentSpy).toHaveBeenCalledWith('p')
+      expect(order).toEqual(['save', 'insert'])
+    })
+
+    it('does NOT flush when autoSave is clean', async () => {
+      useDocumentStore.setState({
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+      await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(saveDocumentSpy).not.toHaveBeenCalled()
+    })
+
+    it('does NOT flush when documentStore is bound to a different project', async () => {
+      useDocumentStore.setState({ loadedProjectId: 'other' })
+      await useChapterStructureStore.getState().insertSibling('p', sidA)
+      expect(saveDocumentSpy).not.toHaveBeenCalled()
+    })
+
+    it('aborts mutation when pending save fails (preserves user delta)', async () => {
+      // Simulate a save error surfaced via autoSave.error.
+      saveDocumentSpy.mockImplementation(async () => {
+        useDocumentStore.setState({
+          autoSave: { dirty: true, saving: false, lastSavedAt: null, error: '磁盘只读' },
+        })
+      })
+      const outcome = await useChapterStructureStore.getState().commitTitle('p', sidA, '新')
+      expect(outcome.ok).toBe(false)
+      expect(updateTitleApi).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('bindProject: project-scoped reset (prevent cross-project identity leakage)', () => {
+    it('bindProject on fresh store binds without resetting', () => {
+      useChapterStructureStore.getState().bindProject('proj-A')
+      expect(useChapterStructureStore.getState().boundProjectId).toBe('proj-A')
+    })
+
+    it('switching projectId resets focus / editing / locked / pending-delete state', () => {
+      const store = useChapterStructureStore.getState()
+      store.bindProject('proj-A')
+      store.focusSection(sidA)
+      store.enterEditing(sidA)
+      store.markLocked(sidB)
+      store.markPendingDelete([sidC], '2026-04-18T00:00:10.000Z')
+
+      store.bindProject('proj-B')
+
+      const next = useChapterStructureStore.getState()
+      expect(next.boundProjectId).toBe('proj-B')
+      expect(next.focusedSectionId).toBe(null)
+      expect(next.editingSectionId).toBe(null)
+      expect(next.lockedSectionIds).toEqual({})
+      expect(next.pendingDeleteBySectionId).toEqual({})
+    })
+
+    it('re-binding the same projectId is idempotent', () => {
+      const store = useChapterStructureStore.getState()
+      store.bindProject('proj-A')
+      store.focusSection(sidA)
+      store.bindProject('proj-A')
+      expect(useChapterStructureStore.getState().focusedSectionId).toBe(sidA)
+    })
+
+    it('bindProject(null) clears state (e.g. leaving workspace)', () => {
+      const store = useChapterStructureStore.getState()
+      store.bindProject('proj-A')
+      store.focusSection(sidA)
+      store.bindProject(null)
+      expect(useChapterStructureStore.getState().focusedSectionId).toBe(null)
+      expect(useChapterStructureStore.getState().boundProjectId).toBe(null)
+    })
+  })
 })

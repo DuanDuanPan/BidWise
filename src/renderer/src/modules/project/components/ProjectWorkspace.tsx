@@ -44,6 +44,7 @@ import { commandRegistry, useCommandPalette } from '@renderer/shared/command-pal
 import { formatShortcut } from '@renderer/shared/lib/platform'
 import { isMac } from '@renderer/shared/lib/platform'
 import { useDocumentStore, useReviewStore, getReviewProjectState } from '@renderer/stores'
+import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
 import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import { normalizeHeadingTitle } from '@shared/chapter-markdown'
 import { useAnnotationStore } from '@renderer/stores/annotationStore'
@@ -144,6 +145,13 @@ export function ProjectWorkspace(): React.JSX.Element {
       void loadDocument(projectId)
     }
   }, [projectId, loadedProjectId, loadDocument])
+
+  // Bind chapter-structure store to the current project so sectionIds from
+  // a previously viewed project cannot leak into mutation dispatches here.
+  const bindChapterProject = useChapterStructureStore((s) => s.bindProject)
+  useEffect(() => {
+    bindChapterProject(projectId ?? null)
+  }, [projectId, bindChapterProject])
 
   // Export preview integration (Story 8.2)
   const exportPreview = useExportPreview()

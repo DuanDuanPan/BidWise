@@ -34,6 +34,8 @@ export interface ChapterStructureState {
   editingSectionId: string | null
   lockedSectionIds: Record<string, true>
   pendingDeleteBySectionId: Record<string, PendingDeleteEntry>
+  /** Project currently bound to this store. Switching auto-resets state. */
+  boundProjectId: string | null
 }
 
 export type StructureMutationOutcome =
@@ -63,6 +65,12 @@ export interface ChapterStructureActions {
   commitTitle: (projectId: string, sectionId: string, title: string) => Promise<CommitTitleOutcome>
   /** Story 11.3: hand off cascade-delete payload to Story 11.4. */
   requestSoftDelete: (projectId: string, sectionIds: string[]) => Promise<{ ok: boolean }>
+  /**
+   * Bind the store to a project. If `projectId` differs from the currently
+   * bound one, resets all per-project state so sectionIds from the previous
+   * project cannot leak into mutation dispatches on the new project.
+   */
+  bindProject: (projectId: string | null) => void
   reset: () => void
 }
 
@@ -73,6 +81,7 @@ const INITIAL_STATE: ChapterStructureState = {
   editingSectionId: null,
   lockedSectionIds: {},
   pendingDeleteBySectionId: {},
+  boundProjectId: null,
 }
 
 export const useChapterStructureStore = create<ChapterStructureStore>()(
@@ -155,6 +164,8 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
     async insertSibling(projectId, sectionId) {
       const guard = guardMutation(sectionId)
       if (guard) return guard
+      const flushed = await flushPendingContent(projectId)
+      if (!flushed) return { ok: false, reason: 'error' }
       try {
         const res = await window.api.chapterStructureInsertSibling({ projectId, sectionId })
         if (!res.success) return handleMutationError(res.error)
@@ -175,6 +186,8 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
     async indentSection(projectId, sectionId) {
       const guard = guardMutation(sectionId)
       if (guard) return guard
+      const flushed = await flushPendingContent(projectId)
+      if (!flushed) return { ok: false, reason: 'error' }
       try {
         const res = await window.api.chapterStructureIndent({ projectId, sectionId })
         if (!res.success) return handleMutationError(res.error)
@@ -192,6 +205,8 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
     async outdentSection(projectId, sectionId) {
       const guard = guardMutation(sectionId)
       if (guard) return guard
+      const flushed = await flushPendingContent(projectId)
+      if (!flushed) return { ok: false, reason: 'error' }
       try {
         const res = await window.api.chapterStructureOutdent({ projectId, sectionId })
         if (!res.success) return handleMutationError(res.error)
@@ -216,6 +231,8 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
         useChapterStructureStore.getState().exitEditing()
         return { ok: true }
       }
+      const flushed = await flushPendingContent(projectId)
+      if (!flushed) return { ok: false, reason: 'error' }
       try {
         const res = await window.api.chapterStructureUpdateTitle({
           projectId,
@@ -258,6 +275,17 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
       return { ok: true }
     },
 
+    bindProject(projectId) {
+      set((state) => {
+        if (state.boundProjectId === projectId) return {}
+        // Project switch — clear all per-project state so sectionIds from
+        // the prior project cannot reach chapter-structure:* IPC under the
+        // new projectId.
+        pendingSoftDeletes.length = 0
+        return { ...INITIAL_STATE, boundProjectId: projectId }
+      })
+    },
+
     reset() {
       set({ ...INITIAL_STATE })
       pendingSoftDeletes.length = 0
@@ -273,6 +301,26 @@ interface StructureSoftDeleteTarget {
 
 /** Exposed for Story 11.4 to drain queued cascade-delete targets. */
 export const pendingSoftDeletes: StructureSoftDeleteTarget[] = []
+
+/**
+ * Main-side chapter-structure mutations read markdown from disk before
+ * computing the next snapshot. If the renderer has unsaved body edits still
+ * sitting in the autosave debounce queue, the mutation would silently drop
+ * them. Flush first; if the flush fails, abort the mutation rather than
+ * risk overwriting the user's in-memory edits with a stale disk snapshot.
+ */
+async function flushPendingContent(projectId: string): Promise<boolean> {
+  const docStore = useDocumentStore.getState()
+  if (docStore.loadedProjectId !== projectId) return true
+  if (!docStore.autoSave.dirty) return true
+  await docStore.saveDocument(projectId)
+  const after = useDocumentStore.getState()
+  if (after.autoSave.error) {
+    notifyStructureError(new Error(after.autoSave.error))
+    return false
+  }
+  return true
+}
 
 function guardMutation(sectionId: string): StructureMutationOutcome | null {
   const state = useChapterStructureStore.getState()

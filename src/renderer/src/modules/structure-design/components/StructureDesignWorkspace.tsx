@@ -43,7 +43,7 @@ export function StructureDesignWorkspace({
   const { message } = App.useApp()
   const { tree, flat, loading, error, reload } = useStructureOutline(projectId)
 
-  const reset = useChapterStructureStore((s) => s.reset)
+  const bindProject = useChapterStructureStore((s) => s.bindProject)
 
   // Phase source (AC5). Prefer explicit prop when a parent injects it; fall
   // back to the global ChapterGenerationContext so solution-design mounts
@@ -68,12 +68,14 @@ export function StructureDesignWorkspace({
     return map
   }, [phaseByNodeKey, chapterGen, flat, projectId])
 
-  // Reset renderer state when switching projects to avoid leaked focus.
+  // Bind renderer state to the current project; switching auto-resets so
+  // focus/editing from project A cannot leak into project B dispatches.
   useEffect(() => {
+    bindProject(projectId)
     return () => {
-      reset()
+      bindProject(null)
     }
-  }, [projectId, reset])
+  }, [projectId, bindProject])
 
   const handleCommitTitle = useCallback(
     async (nodeKey: string, nextTitle: string): Promise<void> => {
