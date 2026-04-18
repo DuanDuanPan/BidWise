@@ -156,6 +156,26 @@ describe('diagram-validation-service', () => {
       expect(result.placeholders).toHaveLength(0)
     })
 
+    it('@p0 should parse placeholder when LLM emits full-width colon separators', () => {
+      // LLM 把规则"描述冒号用全角"泛化到分隔符，输出 `%%DIAGRAM：skill：标题：描述%%`
+      // 或 `%%DIAGRAM:skill:标题：描述%%`。两种情况都应正确解析。
+      const mdAllFullWidth =
+        '%%DIAGRAM：skill：多源实测数据调度与预处理流程图：展示从试验数据源与飞行数据源获取原始时序数据，经过调度引擎中转，进入分段、平均、连接、平移四大核心预处理算子组计算%%'
+      const result1 = parseDiagramPlaceholders(mdAllFullWidth)
+      expect(result1.placeholders).toHaveLength(1)
+      expect(result1.placeholders[0].type).toBe('skill')
+      expect(result1.placeholders[0].title).toBe('多源实测数据调度与预处理流程图')
+      expect(result1.placeholders[0].description).toContain('展示从试验数据源')
+      expect(result1.markdownWithSkeletons).not.toContain('%%DIAGRAM')
+
+      const mdMixed =
+        '%%DIAGRAM:skill:多源实测数据调度与预处理流程图：展示从试验数据源获取时序数据%%'
+      const result2 = parseDiagramPlaceholders(mdMixed)
+      expect(result2.placeholders).toHaveLength(1)
+      expect(result2.placeholders[0].title).toBe('多源实测数据调度与预处理流程图')
+      expect(result2.placeholders[0].description).toContain('展示从试验数据源')
+    })
+
     it('@p0 should fall back to title when description is truncated base64', () => {
       // Simulate LLM-emitted base64 truncated mid-UTF-8 (drops the last Chinese byte).
       const fullBytes = Buffer.from('展示自动生成模块的集成链路架构图', 'utf-8')

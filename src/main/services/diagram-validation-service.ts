@@ -10,9 +10,14 @@ export type DiagramType = 'mermaid' | 'drawio' | 'skill'
 
 // Accept any type token so LLM-hallucinated types like "C4Container" are still captured;
 // non-standard types are normalized to 'mermaid' in parseDiagramPlaceholders.
-const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM:([A-Za-z0-9_-]+):([^:\n]+):([\s\S]*?)%%/g
+const DIAGRAM_PLACEHOLDER_RE = /%%DIAGRAM[:：]([A-Za-z0-9_-]+)[:：]([^:：\n]+)[:：]([\s\S]*?)%%/g
 const BASE64_TEXT_RE = /^[A-Za-z0-9+/]+={0,2}$/
-const DIAGRAM_PLACEHOLDER_LINE_RE = /^%%DIAGRAM:[A-Za-z0-9_-]+:/
+const DIAGRAM_PLACEHOLDER_LINE_RE = /^%%DIAGRAM[:：][A-Za-z0-9_-]+[:：]/
+// LLM 常把 rule "描述冒号用全角" 泛化到分隔符上，输出 `%%DIAGRAM：skill：标题：描述%%`。
+// 先把首两段分隔符归一为 ASCII `:`，之后的 title/description 分隔符由主 regex 同时兼容
+// ASCII/全角。
+const DIAGRAM_PLACEHOLDER_SEPARATOR_PREFIX_RE = /%%DIAGRAM：/g
+const DIAGRAM_PLACEHOLDER_TYPE_SEPARATOR_RE = /(%%DIAGRAM:[A-Za-z0-9_-]+)：/g
 
 export interface DiagramPlaceholder {
   placeholderId: string
@@ -165,8 +170,15 @@ function normalizeDiagramType(raw: string): DiagramType {
   return 'mermaid' // C4Container, architecture-beta, flowchart, etc. → all mermaid
 }
 
+function normalizeDiagramPlaceholderSeparators(markdown: string): string {
+  return markdown
+    .replace(DIAGRAM_PLACEHOLDER_SEPARATOR_PREFIX_RE, '%%DIAGRAM:')
+    .replace(DIAGRAM_PLACEHOLDER_TYPE_SEPARATOR_RE, '$1:')
+}
+
 export function parseDiagramPlaceholders(markdown: string): ParsedDiagramPlaceholders {
-  const repairedMarkdown = repairUnclosedDiagramPlaceholders(markdown)
+  const normalizedSeparators = normalizeDiagramPlaceholderSeparators(markdown)
+  const repairedMarkdown = repairUnclosedDiagramPlaceholders(normalizedSeparators)
   const placeholders: DiagramPlaceholder[] = []
   const markdownWithSkeletons = repairedMarkdown.replace(
     DIAGRAM_PLACEHOLDER_RE,
