@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Tree, Tooltip } from 'antd'
+import { Tree, Tooltip, Input, type InputRef } from 'antd'
 import {
   FileTextOutlined,
   ClockCircleOutlined,
@@ -18,12 +18,11 @@ const MAX_TITLE_LEN = 30
 interface DocumentOutlineTreeProps {
   outline: OutlineNode[]
   onNodeClick?: (node: OutlineNode) => void
-  /** Map of "level:title:occurrenceIndex" → phase for status icon decoration */
   chapterPhases?: Map<string, ChapterGenerationPhase>
   /**
-   * Story 11.3: when set, structural shortcuts (Enter / Tab / Shift+Tab /
-   * Delete / F2 / Esc / arrows) bind to the tree root and dispatch to the
-   * canonical `chapter-structure-service` mutations.
+   * Story 11.3: when set, structural shortcuts + inline title editing bind to
+   * the tree root. `sectionIdByNodeKey` projects transient `heading-N` keys
+   * onto canonical sectionIds for dispatch.
    */
   structureKeymap?: {
     projectId: string
@@ -89,34 +88,150 @@ function getStatusIcon(phase: ChapterGenerationPhase | undefined): React.ReactNo
   }
 }
 
-function toTreeData(
-  nodes: OutlineNode[],
-  interactive: boolean,
+interface InlineTitleInputProps {
+  initial: string
+  onCommit: (next: string) => void
+  onCancel: () => void
+}
+
+function InlineTitleInput({
+  initial,
+  onCommit,
+  onCancel,
+}: InlineTitleInputProps): React.JSX.Element {
+  const [value, setValue] = useState(initial)
+  const ref = useRef<InputRef>(null)
+  useEffect(() => {
+    ref.current?.focus({ cursor: 'end' })
+  }, [])
+  return (
+    <Input
+      ref={ref}
+      value={value}
+      size="small"
+      data-testid="outline-node-inline-input"
+      onChange={(e) => setValue(e.target.value)}
+      onPressEnter={(e) => {
+        e.stopPropagation()
+        onCommit(value)
+      }}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          onCancel()
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className="!border-brand !border"
+      style={{ height: 24 }}
+    />
+  )
+}
+
+interface TitleNodeProps {
+  node: OutlineNode
+  phase: ChapterGenerationPhase | undefined
+  interactive: boolean
+  editable: boolean
+  isEditing: boolean
+  onCommitTitle?: (next: string) => void
+  onCancelTitle?: () => void
+  onEnterEditing?: () => void
+}
+
+function TitleNode({
+  node,
+  phase,
+  interactive,
+  editable,
+  isEditing,
+  onCommitTitle,
+  onCancelTitle,
+  onEnterEditing,
+}: TitleNodeProps): React.JSX.Element {
+  const truncated = node.title.length > MAX_TITLE_LEN
+  const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
+
+  if (isEditing && editable && onCommitTitle && onCancelTitle) {
+    return (
+      <span data-testid={`outline-node-${node.key}`} aria-label={`编辑 ${node.title}`}>
+        <InlineTitleInput initial={node.title} onCommit={onCommitTitle} onCancel={onCancelTitle} />
+      </span>
+    )
+  }
+
+  const handleDoubleClick = editable && onEnterEditing ? () => onEnterEditing() : undefined
+
+  return (
+    <span
+      onMouseDown={(e) => e.preventDefault()}
+      onDoubleClick={handleDoubleClick}
+      className={`text-caption text-[var(--color-text-secondary)] select-none ${interactive ? 'cursor-pointer' : 'cursor-default'}`}
+      data-testid={`outline-node-${node.key}`}
+      aria-label={`${node.level}级标题 ${node.title}`}
+      title={node.title}
+    >
+      {truncated ? <Tooltip title={node.title}>{displayTitle}</Tooltip> : displayTitle}
+      {getStatusIcon(phase)}
+    </span>
+  )
+}
+
+interface BuildTreeDataArgs {
+  nodes: OutlineNode[]
+  interactive: boolean
   chapterPhases?: Map<string, ChapterGenerationPhase>
-): DataNode[] {
+  editingSectionId: string | null
+  sectionIdByNodeKey: Record<string, string>
+  projectId: string | null
+  onCommitTitle: (projectId: string, sectionId: string, next: string) => void
+  onCancelTitle: () => void
+  onEnterEditing: (sectionId: string) => void
+}
+
+function toTreeData(args: BuildTreeDataArgs): DataNode[] {
+  const {
+    nodes,
+    interactive,
+    chapterPhases,
+    editingSectionId,
+    sectionIdByNodeKey,
+    projectId,
+    onCommitTitle,
+    onCancelTitle,
+    onEnterEditing,
+  } = args
   return nodes.map((node) => {
-    const truncated = node.title.length > MAX_TITLE_LEN
-    const displayTitle = truncated ? node.title.slice(0, MAX_TITLE_LEN) + '…' : node.title
     const phaseKey = `${node.level}:${node.title}:${node.occurrenceIndex}`
     const phase = chapterPhases?.get(phaseKey)
+    const sectionId = sectionIdByNodeKey[node.key] ?? null
+    const editable = Boolean(projectId && sectionId)
+    const isEditing = Boolean(sectionId && editingSectionId === sectionId)
 
     const titleNode = (
-      <span
-        onMouseDown={(e) => e.preventDefault()}
-        className={`text-caption text-[var(--color-text-secondary)] select-none ${interactive ? 'cursor-pointer' : 'cursor-default'}`}
-        data-testid={`outline-node-${node.key}`}
-        aria-label={`${node.level}级标题 ${node.title}`}
-        title={node.title}
-      >
-        {truncated ? <Tooltip title={node.title}>{displayTitle}</Tooltip> : displayTitle}
-        {getStatusIcon(phase)}
-      </span>
+      <TitleNode
+        node={node}
+        phase={phase}
+        interactive={interactive}
+        editable={editable}
+        isEditing={isEditing}
+        onCommitTitle={
+          editable && sectionId && projectId
+            ? (next) => onCommitTitle(projectId, sectionId, next)
+            : undefined
+        }
+        onCancelTitle={editable ? onCancelTitle : undefined}
+        onEnterEditing={editable && sectionId ? () => onEnterEditing(sectionId) : undefined}
+      />
     )
 
     return {
       key: node.key,
       title: titleNode,
-      children: toTreeData(node.children, interactive, chapterPhases),
+      children: toTreeData({ ...args, nodes: node.children }),
     }
   })
 }
@@ -130,9 +245,12 @@ export function DocumentOutlineTree({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set())
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const focusedNodeKey = useChapterStructureStore((s) => s.focusedNodeKey)
-  const focusNode = useChapterStructureStore((s) => s.focusNode)
-  const registerSectionIds = useChapterStructureStore((s) => s.registerSectionIds)
+  const focusedSectionId = useChapterStructureStore((s) => s.focusedSectionId)
+  const editingSectionId = useChapterStructureStore((s) => s.editingSectionId)
+  const focusSection = useChapterStructureStore((s) => s.focusSection)
+  const enterEditing = useChapterStructureStore((s) => s.enterEditing)
+  const exitEditing = useChapterStructureStore((s) => s.exitEditing)
+  const commitTitle = useChapterStructureStore((s) => s.commitTitle)
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, OutlineNode>()
@@ -141,6 +259,23 @@ export function DocumentOutlineTree({
   }, [outline])
   const allKeys = useMemo(() => collectKeys(outline), [outline])
 
+  const sectionIdByNodeKey = useMemo(
+    () => structureKeymap?.sectionIdByNodeKey ?? {},
+    [structureKeymap]
+  )
+  const projectId = structureKeymap?.projectId ?? null
+
+  // Reverse map: sectionId → nodeKey, rebuilt every render from the current
+  // outline snapshot. This is the only cross-layer projection — persistent
+  // state never stores transient heading keys.
+  const nodeKeyBySectionId = useMemo(() => {
+    const out = new Map<string, string>()
+    for (const [nodeKey, sid] of Object.entries(sectionIdByNodeKey)) {
+      out.set(sid, nodeKey)
+    }
+    return out
+  }, [sectionIdByNodeKey])
+
   const handleSelect = useCallback(
     (keys: React.Key[]) => {
       if (keys.length === 0 || !onNodeClick) return
@@ -148,46 +283,58 @@ export function DocumentOutlineTree({
       const node = nodeMap.get(key)
       if (node) {
         setSelectedKeys([key])
-        if (structureKeymap) focusNode(key)
+        if (structureKeymap) {
+          const sid = sectionIdByNodeKey[key]
+          if (sid) focusSection(sid)
+        }
         onNodeClick(node)
       }
     },
-    [nodeMap, onNodeClick, structureKeymap, focusNode]
+    [nodeMap, onNodeClick, structureKeymap, focusSection, sectionIdByNodeKey]
   )
 
-  // Story 11.3: register the bridge from outline keys (heading-N) to canonical
-  // sectionIds so requestSoftDelete + IPC mutations can resolve identity.
-  useEffect(() => {
-    if (!structureKeymap) return
-    registerSectionIds(structureKeymap.sectionIdByNodeKey)
-  }, [structureKeymap, registerSectionIds])
+  const handleEnterEditing = useCallback(
+    (sectionId: string) => {
+      focusSection(sectionId)
+      enterEditing(sectionId)
+    },
+    [focusSection, enterEditing]
+  )
+
+  const handleCommitTitle = useCallback(
+    (pid: string, sectionId: string, next: string) => {
+      void commitTitle(pid, sectionId, next)
+    },
+    [commitTitle]
+  )
 
   useStructureKeymap({
     panelRef: rootRef,
-    projectId: structureKeymap?.projectId ?? null,
+    projectId,
     outline,
     onNavigateToNode: (node) => onNodeClick?.(node),
-    sectionIdByNodeKey: structureKeymap?.sectionIdByNodeKey ?? {},
+    sectionIdByNodeKey,
     disabled: !structureKeymap,
   })
 
-  // Mirror Story 11.2 focused state into Tree's selectedKeys so Tab/arrow nav
-  // immediately updates the visual selection without a click round-trip.
+  // Project focused sectionId back to the current outline's nodeKey so the
+  // AntD Tree renders selection. Mutation → new markdown → new `heading-N`
+  // key is resolved here without any stale-map risk.
   const effectiveSelectedKeys = useMemo(() => {
-    if (structureKeymap && focusedNodeKey) return [focusedNodeKey]
+    if (structureKeymap && focusedSectionId) {
+      const nodeKey = nodeKeyBySectionId.get(focusedSectionId)
+      if (nodeKey) return [nodeKey]
+    }
     return selectedKeys
-  }, [structureKeymap, focusedNodeKey, selectedKeys])
+  }, [structureKeymap, focusedSectionId, nodeKeyBySectionId, selectedKeys])
+
   const handleExpand = useCallback(
     (keys: React.Key[]) => {
       const expandedSet = new Set(keys.map(String))
       const nextCollapsed = new Set<string>()
-
       for (const key of allKeys) {
-        if (!expandedSet.has(key)) {
-          nextCollapsed.add(key)
-        }
+        if (!expandedSet.has(key)) nextCollapsed.add(key)
       }
-
       setCollapsedKeys(nextCollapsed)
     },
     [allKeys]
@@ -195,8 +342,29 @@ export function DocumentOutlineTree({
 
   const interactive = Boolean(onNodeClick)
   const treeData = useMemo(
-    () => toTreeData(outline, interactive, chapterPhases),
-    [outline, interactive, chapterPhases]
+    () =>
+      toTreeData({
+        nodes: outline,
+        interactive,
+        chapterPhases,
+        editingSectionId,
+        sectionIdByNodeKey,
+        projectId,
+        onCommitTitle: handleCommitTitle,
+        onCancelTitle: exitEditing,
+        onEnterEditing: handleEnterEditing,
+      }),
+    [
+      outline,
+      interactive,
+      chapterPhases,
+      editingSectionId,
+      sectionIdByNodeKey,
+      projectId,
+      handleCommitTitle,
+      exitEditing,
+      handleEnterEditing,
+    ]
   )
   const expandedKeys = useMemo(
     () => allKeys.filter((key) => !collapsedKeys.has(key)),

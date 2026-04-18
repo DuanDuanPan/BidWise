@@ -188,14 +188,13 @@ describe('@story-3-2 DocumentOutlineTree', () => {
     expect(root).toHaveAttribute('tabIndex', '-1')
   })
 
-  it('@story-11-3 @p1 click selects + drives chapterStructureStore.focusNode', async () => {
+  it('@story-11-3 @p1 click selects + drives focusSection with sectionId', async () => {
     const { useChapterStructureStore } = await import('@renderer/stores/chapterStructureStore')
     useChapterStructureStore.setState({
-      focusedNodeKey: null,
-      editingNodeKey: null,
-      lockedNodeKeys: {},
-      pendingDeleteByNodeKey: {},
-      sectionIdByNodeKey: {},
+      focusedSectionId: null,
+      editingSectionId: null,
+      lockedSectionIds: {},
+      pendingDeleteBySectionId: {},
     })
     const node = makeNode({ key: 'heading-0', title: '点击我' })
     render(
@@ -209,7 +208,115 @@ describe('@story-3-2 DocumentOutlineTree', () => {
       />
     )
     fireEvent.click(screen.getByText('点击我'))
-    expect(useChapterStructureStore.getState().focusedNodeKey).toBe('heading-0')
+    expect(useChapterStructureStore.getState().focusedSectionId).toBe('sid-0')
+  })
+
+  it('@story-11-3 @p0 double-click enters editing for sectionId (AC1/AC2)', async () => {
+    const { useChapterStructureStore } = await import('@renderer/stores/chapterStructureStore')
+    useChapterStructureStore.setState({
+      focusedSectionId: null,
+      editingSectionId: null,
+      lockedSectionIds: {},
+      pendingDeleteBySectionId: {},
+    })
+    const node = makeNode({ key: 'heading-0', title: '双击重命名' })
+    render(
+      <DocumentOutlineTree
+        outline={[node]}
+        onNodeClick={vi.fn()}
+        structureKeymap={{
+          projectId: 'p',
+          sectionIdByNodeKey: { 'heading-0': 'sid-0' },
+        }}
+      />
+    )
+    fireEvent.doubleClick(screen.getByText('双击重命名'))
+    expect(useChapterStructureStore.getState().editingSectionId).toBe('sid-0')
+  })
+
+  it('@story-11-3 @p0 renders inline Input when editingSectionId matches node', async () => {
+    const { useChapterStructureStore } = await import('@renderer/stores/chapterStructureStore')
+    useChapterStructureStore.setState({
+      focusedSectionId: 'sid-0',
+      editingSectionId: 'sid-0',
+      lockedSectionIds: {},
+      pendingDeleteBySectionId: {},
+    })
+    const node = makeNode({ key: 'heading-0', title: '可编辑' })
+    render(
+      <DocumentOutlineTree
+        outline={[node]}
+        onNodeClick={vi.fn()}
+        structureKeymap={{
+          projectId: 'p',
+          sectionIdByNodeKey: { 'heading-0': 'sid-0' },
+        }}
+      />
+    )
+    expect(screen.getByTestId('outline-node-inline-input')).toBeInTheDocument()
+  })
+
+  it('@story-11-3 @p0 Enter in inline input dispatches commitTitle + exits editing', async () => {
+    const { useChapterStructureStore } = await import('@renderer/stores/chapterStructureStore')
+    const commitSpy = vi.fn().mockResolvedValue({ ok: true })
+    useChapterStructureStore.setState({
+      focusedSectionId: 'sid-0',
+      editingSectionId: 'sid-0',
+      lockedSectionIds: {},
+      pendingDeleteBySectionId: {},
+    })
+    const real = useChapterStructureStore.getState()
+    useChapterStructureStore.setState({
+      ...real,
+      commitTitle: commitSpy as unknown as typeof real.commitTitle,
+    })
+    const node = makeNode({ key: 'heading-0', title: '旧标题' })
+    render(
+      <DocumentOutlineTree
+        outline={[node]}
+        onNodeClick={vi.fn()}
+        structureKeymap={{
+          projectId: 'p',
+          sectionIdByNodeKey: { 'heading-0': 'sid-0' },
+        }}
+      />
+    )
+    const input = screen.getByTestId('outline-node-inline-input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '新标题' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+    expect(commitSpy).toHaveBeenCalledWith('p', 'sid-0', '新标题')
+  })
+
+  it('@story-11-3 @p0 Esc in inline input exits editing without commit', async () => {
+    const { useChapterStructureStore } = await import('@renderer/stores/chapterStructureStore')
+    const commitSpy = vi.fn().mockResolvedValue({ ok: true })
+    useChapterStructureStore.setState({
+      focusedSectionId: 'sid-0',
+      editingSectionId: 'sid-0',
+      lockedSectionIds: {},
+      pendingDeleteBySectionId: {},
+    })
+    const real = useChapterStructureStore.getState()
+    useChapterStructureStore.setState({
+      ...real,
+      commitTitle: commitSpy as unknown as typeof real.commitTitle,
+    })
+    const node = makeNode({ key: 'heading-0', title: '旧标题' })
+    render(
+      <DocumentOutlineTree
+        outline={[node]}
+        onNodeClick={vi.fn()}
+        structureKeymap={{
+          projectId: 'p',
+          sectionIdByNodeKey: { 'heading-0': 'sid-0' },
+        }}
+      />
+    )
+    const input = screen.getByTestId('outline-node-inline-input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '改了没提交' } })
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' })
+    expect(commitSpy).not.toHaveBeenCalled()
+    expect(useChapterStructureStore.getState().editingSectionId).toBeNull()
   })
 
   it('@story-3-2 @p0 allows collapsing nested outline nodes from the tree switcher', () => {

@@ -72,37 +72,37 @@ export function StructureCanvasNode({
   generationPhase,
   stateOverride,
 }: StructureCanvasNodeProps): React.JSX.Element {
-  const snapshot = useChapterNodeState(node.nodeKey)
+  const snapshot = useChapterNodeState(node.sectionId)
   const state = stateOverride ?? snapshot.state
   const pendingDelete = snapshot.pendingDelete
   const remaining = useCountdownSeconds(pendingDelete)
 
-  const focusNode = useChapterStructureStore((s) => s.focusNode)
+  const focusSection = useChapterStructureStore((s) => s.focusSection)
   const enterEditing = useChapterStructureStore((s) => s.enterEditing)
   const exitEditing = useChapterStructureStore((s) => s.exitEditing)
 
   const handleClick = (): void => {
     if (state === 'locked' || state === 'pending-delete') return
-    focusNode(node.nodeKey)
+    focusSection(node.sectionId)
   }
 
   const handleDoubleClick = (): void => {
     if (state === 'locked' || state === 'pending-delete') return
-    enterEditing(node.nodeKey)
+    enterEditing(node.sectionId)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (state === 'locked' || state === 'pending-delete') return
     if (e.key === 'F2' && state !== 'editing') {
       e.preventDefault()
-      enterEditing(node.nodeKey)
+      enterEditing(node.sectionId)
     }
   }
 
   const commit = (nextTitle: string): void => {
     const trimmed = nextTitle.trim()
     if (trimmed && trimmed !== node.title) {
-      onCommitTitle(node.nodeKey, trimmed)
+      onCommitTitle(node.sectionId, trimmed)
     }
     exitEditing()
   }

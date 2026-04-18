@@ -91,7 +91,7 @@ describe('@story-11-2 StructureCanvasNode', () => {
       const node = makeNode()
       renderNode(node)
       fireEvent.click(screen.getByTestId(`structure-node-${UUID}`))
-      expect(useChapterStructureStore.getState().focusedNodeKey).toBe(null)
+      expect(useChapterStructureStore.getState().focusedSectionId).toBe(null)
     })
 
     it('@p0 F2 on locked node does NOT enter editing', () => {
@@ -99,14 +99,14 @@ describe('@story-11-2 StructureCanvasNode', () => {
       const node = makeNode()
       renderNode(node)
       fireEvent.keyDown(screen.getByTestId(`structure-node-${UUID}`), { key: 'F2' })
-      expect(useChapterStructureStore.getState().editingNodeKey).toBe(null)
+      expect(useChapterStructureStore.getState().editingSectionId).toBe(null)
     })
 
     it('@p0 F2 on idle node enters editing mode', () => {
       const node = makeNode()
       renderNode(node)
       fireEvent.keyDown(screen.getByTestId(`structure-node-${UUID}`), { key: 'F2' })
-      expect(useChapterStructureStore.getState().editingNodeKey).toBe(UUID)
+      expect(useChapterStructureStore.getState().editingSectionId).toBe(UUID)
     })
   })
 

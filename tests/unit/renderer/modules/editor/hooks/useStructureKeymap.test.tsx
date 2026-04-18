@@ -54,19 +54,17 @@ describe('@story-11-3 useStructureKeymap', () => {
     outdentSpy.mockClear()
     requestSoftDeleteSpy.mockClear()
     useChapterStructureStore.setState({
-      focusedNodeKey: null,
-      editingNodeKey: null,
-      lockedNodeKeys: {},
-      pendingDeleteByNodeKey: {},
-      sectionIdByNodeKey: {},
+      focusedSectionId: null,
+      editingSectionId: null,
+      lockedSectionIds: {},
+      pendingDeleteBySectionId: {},
     })
-    // Override store actions with spies so we observe dispatches without full IPC wiring.
     const real = useChapterStructureStore.getState()
     useChapterStructureStore.setState({
       ...real,
       insertSibling: insertSiblingSpy as unknown as typeof real.insertSibling,
-      indentNode: indentSpy as unknown as typeof real.indentNode,
-      outdentNode: outdentSpy as unknown as typeof real.outdentNode,
+      indentSection: indentSpy as unknown as typeof real.indentSection,
+      outdentSection: outdentSpy as unknown as typeof real.outdentSection,
       requestSoftDelete: requestSoftDeleteSpy as unknown as typeof real.requestSoftDelete,
     })
   })
@@ -81,8 +79,8 @@ describe('@story-11-3 useStructureKeymap', () => {
     )
   }
 
-  it('@p0 Enter dispatches insertSibling on focused node', () => {
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0' })
+  it('@p0 Enter dispatches insertSibling with the focused sectionId', () => {
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
     render(
       <TestHarness
         outline={[node({ key: 'heading-0' })]}
@@ -90,11 +88,11 @@ describe('@story-11-3 useStructureKeymap', () => {
       />
     )
     firePanelKey('Enter')
-    expect(insertSiblingSpy).toHaveBeenCalledWith('p', 'heading-0')
+    expect(insertSiblingSpy).toHaveBeenCalledWith('p', 'sid-0')
   })
 
-  it('@p0 Tab dispatches indentNode, Shift+Tab dispatches outdentNode', () => {
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0' })
+  it('@p0 Tab dispatches indentSection, Shift+Tab dispatches outdentSection', () => {
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
     render(
       <TestHarness
         outline={[node({ key: 'heading-0' })]}
@@ -102,15 +100,15 @@ describe('@story-11-3 useStructureKeymap', () => {
       />
     )
     firePanelKey('Tab')
-    expect(indentSpy).toHaveBeenCalledWith('p', 'heading-0')
+    expect(indentSpy).toHaveBeenCalledWith('p', 'sid-0')
     firePanelKey('Tab', true)
-    expect(outdentSpy).toHaveBeenCalledWith('p', 'heading-0')
+    expect(outdentSpy).toHaveBeenCalledWith('p', 'sid-0')
   })
 
-  it('@p0 Delete collects subtree sectionIds and requests soft delete', () => {
+  it('@p0 Delete collects subtree sectionIds and requests soft delete (projectId preserved)', () => {
     const child = node({ key: 'heading-1', title: 'c' })
     const parent = node({ key: 'heading-0', title: 'p', children: [child] })
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0' })
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
     render(
       <TestHarness
         outline={[parent]}
@@ -118,15 +116,11 @@ describe('@story-11-3 useStructureKeymap', () => {
       />
     )
     firePanelKey('Delete')
-    expect(requestSoftDeleteSpy).toHaveBeenCalledWith(
-      'p',
-      ['sid-0', 'sid-1'],
-      ['heading-0', 'heading-1']
-    )
+    expect(requestSoftDeleteSpy).toHaveBeenCalledWith('p', ['sid-0', 'sid-1'])
   })
 
-  it('@p0 F2 enters editing on focused node', () => {
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0' })
+  it('@p0 F2 enters editing on focused section', () => {
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
     render(
       <TestHarness
         outline={[node({ key: 'heading-0' })]}
@@ -134,11 +128,14 @@ describe('@story-11-3 useStructureKeymap', () => {
       />
     )
     firePanelKey('F2')
-    expect(useChapterStructureStore.getState().editingNodeKey).toBe('heading-0')
+    expect(useChapterStructureStore.getState().editingSectionId).toBe('sid-0')
   })
 
   it('@p0 Esc exits editing', () => {
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0', editingNodeKey: 'heading-0' })
+    useChapterStructureStore.setState({
+      focusedSectionId: 'sid-0',
+      editingSectionId: 'sid-0',
+    })
     render(
       <TestHarness
         outline={[node({ key: 'heading-0' })]}
@@ -146,13 +143,13 @@ describe('@story-11-3 useStructureKeymap', () => {
       />
     )
     firePanelKey('Escape')
-    expect(useChapterStructureStore.getState().editingNodeKey).toBeNull()
+    expect(useChapterStructureStore.getState().editingSectionId).toBeNull()
   })
 
-  it('@p0 ArrowDown advances focus to next visible node', () => {
+  it('@p0 ArrowDown advances focus to next visible sectionId', () => {
     const a = node({ key: 'heading-0', title: 'A' })
     const b = node({ key: 'heading-1', title: 'B', level: 2 })
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0' })
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
     render(
       <TestHarness
         outline={[a, b]}
@@ -160,11 +157,14 @@ describe('@story-11-3 useStructureKeymap', () => {
       />
     )
     firePanelKey('ArrowDown')
-    expect(useChapterStructureStore.getState().focusedNodeKey).toBe('heading-1')
+    expect(useChapterStructureStore.getState().focusedSectionId).toBe('sid-1')
   })
 
   it('@p1 structural keys are ignored while editing (inline input keeps semantics)', () => {
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0', editingNodeKey: 'heading-0' })
+    useChapterStructureStore.setState({
+      focusedSectionId: 'sid-0',
+      editingSectionId: 'sid-0',
+    })
     render(
       <TestHarness
         outline={[node({ key: 'heading-0' })]}
@@ -180,7 +180,7 @@ describe('@story-11-3 useStructureKeymap', () => {
   })
 
   it('@p1 disabled=true unmounts keydown handler', () => {
-    useChapterStructureStore.setState({ focusedNodeKey: 'heading-0' })
+    useChapterStructureStore.setState({ focusedSectionId: 'sid-0' })
     render(
       <TestHarness
         outline={[node({ key: 'heading-0' })]}

@@ -19,16 +19,16 @@ export interface ChapterNodeStateSnapshot {
  * local copies of `focused / editing / locked / pending-delete` — that would
  * fork the priority rule (AC6) and break cross-story coordination.
  */
-export function useChapterNodeState(nodeKey: string): ChapterNodeStateSnapshot {
+export function useChapterNodeState(sectionId: string): ChapterNodeStateSnapshot {
   return useChapterStructureStore(
     useShallow((store) => {
-      const state = deriveChapterNodeState(store, nodeKey)
+      const state = deriveChapterNodeState(store, sectionId)
       return {
         state,
         isFocused: state === 'focused',
         isEditing: state === 'editing',
         isLocked: state === 'locked',
-        pendingDelete: store.pendingDeleteByNodeKey[nodeKey] ?? null,
+        pendingDelete: store.pendingDeleteBySectionId[sectionId] ?? null,
       }
     })
   )

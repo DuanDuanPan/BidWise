@@ -43,7 +43,6 @@ export function StructureDesignWorkspace({
   const { message } = App.useApp()
   const { tree, flat, loading, error, reload } = useStructureOutline(projectId)
 
-  const registerSectionIds = useChapterStructureStore((s) => s.registerSectionIds)
   const reset = useChapterStructureStore((s) => s.reset)
 
   // Phase source (AC5). Prefer explicit prop when a parent injects it; fall
@@ -68,15 +67,6 @@ export function StructureDesignWorkspace({
     }
     return map
   }, [phaseByNodeKey, chapterGen, flat, projectId])
-
-  useEffect(() => {
-    if (flat.length === 0) return
-    const mapping: Record<string, string> = {}
-    for (const entry of flat) {
-      mapping[entry.sectionId] = entry.sectionId
-    }
-    registerSectionIds(mapping)
-  }, [flat, registerSectionIds])
 
   // Reset renderer state when switching projects to avoid leaked focus.
   useEffect(() => {

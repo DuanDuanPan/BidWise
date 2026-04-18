@@ -66,7 +66,7 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
     })
   })
 
-  it('@p0 clicking node triggers focusNode on the chapterStructureStore', async () => {
+  it('@p0 clicking node triggers focusSection on the chapterStructureStore', async () => {
     mockMetadataApi([entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 })])
     render(
       <App>
@@ -75,25 +75,7 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
     )
     await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
     fireEvent.click(screen.getByTestId(`structure-node-${UUID_A}`))
-    expect(useChapterStructureStore.getState().focusedNodeKey).toBe(UUID_A)
-  })
-
-  it('@p0 registers sectionId bridge after load (Story 11.1 contract)', async () => {
-    mockMetadataApi([
-      entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 }),
-      entry({ sectionId: UUID_B, title: '需求理解', level: 1, order: 1 }),
-    ])
-    render(
-      <App>
-        <StructureDesignWorkspace projectId="proj-1" />
-      </App>
-    )
-    await waitFor(() => {
-      expect(useChapterStructureStore.getState().sectionIdByNodeKey).toEqual({
-        [UUID_A]: UUID_A,
-        [UUID_B]: UUID_B,
-      })
-    })
+    expect(useChapterStructureStore.getState().focusedSectionId).toBe(UUID_A)
   })
 
   it('@p1 shows empty state when sectionIndex is empty', async () => {
