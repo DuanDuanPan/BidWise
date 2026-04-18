@@ -277,7 +277,8 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
             notifyStructureError(new Error(res.error.message))
             return { ok: false, reason: 'error' }
           }
-          await useDocumentStore.getState().loadDocument(projectId)
+          commitSnapshot(projectId, res.data)
+          useChapterStructureStore.getState().focusSection(res.data.affectedSectionId)
           useChapterStructureStore.getState().exitEditing()
           return { ok: true }
         } catch (err) {

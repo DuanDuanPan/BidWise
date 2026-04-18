@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { buildChapterTree } from '@shared/chapter-identity'
 import type { ChapterGenerationPhase, ChapterTreeNode } from '@shared/chapter-types'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
+import { useDocumentStore } from '@renderer/stores/documentStore'
 
 /**
  * Read-side view of a chapter node used by the Structure Design workspace.
@@ -43,57 +44,41 @@ function toStructureNode(entry: ChapterTreeNode, parentId: string | null): Struc
   }
 }
 
+/**
+ * Reads chapter tree from `documentStore.sectionIndex`. The document store is
+ * the single source of truth: `loadDocument` populates it on project entry,
+ * `applyStructureSnapshot` (via `commitSnapshot` inside each structural
+ * mutation) atomically updates it in-place.
+ *
+ * Consuming the store directly means we skip a second IPC round-trip after
+ * every mutation. That refetch previously caused a visible "refresh" cycle
+ * (loading flash + new tree reference) that reset scroll position and hid the
+ * freshly-created node that Story 11.3 AC1 requires to stay focused+editing.
+ */
 export function useStructureOutline(projectId: string | null): UseStructureOutlineResult {
-  const [tree, setTree] = useState<StructureNode[]>([])
-  const [flat, setFlat] = useState<ProposalSectionIndexEntry[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [refreshNonce, setRefreshNonce] = useState(0)
+  const loadedProjectId = useDocumentStore((s) => s.loadedProjectId)
+  const sectionIndex = useDocumentStore((s) => s.sectionIndex)
+  const storeLoading = useDocumentStore((s) => s.loading)
+  const error = useDocumentStore((s) => s.error)
+  const loadDocument = useDocumentStore((s) => s.loadDocument)
+
+  const matchesProject = projectId !== null && loadedProjectId === projectId
+  const flat = matchesProject ? sectionIndex : []
+
+  const tree = useMemo<StructureNode[]>(() => {
+    if (!matchesProject) return []
+    return buildChapterTree(sectionIndex).map((node) => toStructureNode(node, null))
+  }, [matchesProject, sectionIndex])
 
   const reload = useCallback(() => {
-    setRefreshNonce((n) => n + 1)
-  }, [])
+    if (projectId) void loadDocument(projectId)
+  }, [projectId, loadDocument])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function run(): Promise<void> {
-      if (!projectId) {
-        setTree([])
-        setFlat([])
-        setError(null)
-        return
-      }
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await window.api.documentGetMetadata({ projectId })
-        if (cancelled) return
-        if (!res.success) {
-          setError(res.error.message)
-          setTree([])
-          setFlat([])
-          return
-        }
-        const index = res.data.sectionIndex ?? []
-        setFlat(index)
-        const built = buildChapterTree(index)
-        setTree(built.map((node) => toStructureNode(node, null)))
-      } catch (err) {
-        if (cancelled) return
-        setError((err as Error).message)
-        setTree([])
-        setFlat([])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [projectId, refreshNonce])
-
-  return { tree, flat, loading, error, reload }
+  return {
+    tree,
+    flat,
+    loading: storeLoading && !matchesProject,
+    error,
+    reload,
+  }
 }

@@ -59,7 +59,12 @@ export function StructureCanvas({
     [onCommitTitle, onAddChild, onOpenMoreMenu, onUndoPendingDelete, phaseByNodeKey]
   )
 
-  if (loading) {
+  // Only surface the Spin state on an initial load (empty tree). Background
+  // reloads (triggered after structural mutations) must NOT unmount the rendered
+  // node list — the focused node div would unmount with it and DOM focus would
+  // slide to <body>, breaking the keymap's `isWithinPanel` guard and letting
+  // native Shift+Tab jump into the header buttons.
+  if (loading && flat.length === 0) {
     return (
       <div
         className="flex h-full items-center justify-center"

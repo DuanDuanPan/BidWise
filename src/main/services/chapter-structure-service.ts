@@ -73,7 +73,7 @@ export const chapterStructureService = {
     projectId: string,
     sectionId: string,
     title: string
-  ): Promise<ProposalSectionIndexEntry> {
+  ): Promise<StructureMutationSnapshot> {
     const trimmed = title.trim()
     if (!trimmed) {
       throw new ValidationError('章节标题不能为空')
@@ -154,7 +154,12 @@ export const chapterStructureService = {
     if (!nextEntry) {
       throw new NotFoundError(`sectionId 重命名后丢失: ${sectionId}`)
     }
-    return nextEntry
+    return {
+      markdown: nextMarkdown,
+      sectionIndex: updated.sectionIndex ?? [],
+      affectedSectionId: sectionId,
+      focusLocator: nextEntry.headingLocator,
+    }
   },
 
   /**

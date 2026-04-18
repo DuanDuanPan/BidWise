@@ -113,8 +113,11 @@ describe('@story-11-2 chapterStructureService.updateTitle', () => {
     expect(mockSave).toHaveBeenCalledTimes(1)
     const [, writtenContent] = mockSave.mock.calls[0]
     expect(writtenContent).toBe('# 新标题\n\n正文内容\n\n## 子章节\n')
-    expect(result.title).toBe('新标题')
-    expect(result.headingLocator.title).toBe('新标题')
+    expect(result.markdown).toBe('# 新标题\n\n正文内容\n\n## 子章节\n')
+    expect(result.affectedSectionId).toBe(UUID_A)
+    expect(result.focusLocator.title).toBe('新标题')
+    expect(result.sectionIndex[0].title).toBe('新标题')
+    expect(result.sectionIndex[0].headingLocator.title).toBe('新标题')
   })
 
   it('@p0 recomputes occurrenceIndex for duplicate titles after rename', async () => {

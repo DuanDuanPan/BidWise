@@ -8,6 +8,8 @@ const mockUpdateContent = vi.fn()
 
 let mockContent = ''
 let mockLoading = false
+let mockLoadedProjectId: string | null = null
+let mockSectionIndex: unknown[] = []
 
 vi.mock('@renderer/stores', () => ({
   useDocumentStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
@@ -15,6 +17,25 @@ vi.mock('@renderer/stores', () => ({
       loading: mockLoading,
       error: null,
       content: mockContent,
+      loadedProjectId: mockLoadedProjectId,
+      sectionIndex: mockSectionIndex,
+      loadDocument: mockLoadDocument,
+      updateContent: mockUpdateContent,
+      autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      saveDocument: vi.fn(),
+      resetDocument: vi.fn(),
+    })
+  ),
+}))
+
+vi.mock('@renderer/stores/documentStore', () => ({
+  useDocumentStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
+    selector({
+      loading: mockLoading,
+      error: null,
+      content: mockContent,
+      loadedProjectId: mockLoadedProjectId,
+      sectionIndex: mockSectionIndex,
       loadDocument: mockLoadDocument,
       updateContent: mockUpdateContent,
       autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
@@ -77,6 +98,8 @@ describe('@story-3-3 SolutionDesignView', () => {
     vi.clearAllMocks()
     mockContent = ''
     mockLoading = false
+    mockLoadedProjectId = null
+    mockSectionIndex = []
     mockTemplateList.mockResolvedValue({
       success: true,
       data: [
@@ -120,6 +143,25 @@ describe('@story-3-3 SolutionDesignView', () => {
   it('shows has-content view when document has content', async () => {
     mockContent = '# 项目概述\n\n# 系统设计\n'
     mockLoading = false
+    mockLoadedProjectId = 'proj-1'
+    mockSectionIndex = [
+      {
+        sectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        title: '项目概述',
+        level: 1,
+        order: 0,
+        occurrenceIndex: 0,
+        headingLocator: { title: '项目概述', level: 1, occurrenceIndex: 0 },
+      },
+      {
+        sectionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        title: '系统设计',
+        level: 1,
+        order: 1,
+        occurrenceIndex: 0,
+        headingLocator: { title: '系统设计', level: 1, occurrenceIndex: 0 },
+      },
+    ]
 
     renderWithApp(
       <SolutionDesignView projectId="proj-1" onEnterProposalWriting={mockOnEnterProposalWriting} />

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { App, Button } from 'antd'
-import { useStructureOutline } from '../hooks/useStructureOutline'
+import { useStructureOutline, type StructureNode } from '../hooks/useStructureOutline'
 import { StructureCanvas } from './StructureCanvas'
 import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
 import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import type { ChapterGenerationPhase } from '@shared/chapter-types'
 import { useChapterGenerationContext } from '@modules/editor/context/useChapterGenerationContext'
+import { useStructureKeymap } from '@modules/editor/hooks/useStructureKeymap'
+import type { OutlineNode } from '@modules/editor/hooks/useDocumentOutline'
 
 export interface StructureDesignWorkspaceProps {
   projectId: string
@@ -41,6 +43,7 @@ export function StructureDesignWorkspace({
 }: StructureDesignWorkspaceProps): React.JSX.Element {
   const { message } = App.useApp()
   const { tree, flat, loading, error, reload } = useStructureOutline(projectId)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const bindProject = useChapterStructureStore((s) => s.bindProject)
   const commitTitle = useChapterStructureStore((s) => s.commitTitle)
@@ -77,22 +80,97 @@ export function StructureDesignWorkspace({
     }
   }, [projectId, bindProject])
 
+  // Keymap expects OutlineNode shape (markdown-derived). In structure-design
+  // we build it synthetically from the chapter tree: nodeKey === sectionId
+  // (Story 11.1), so sectionIdByNodeKey is an identity map and lineIndex /
+  // occurrenceIndex are unused by the keymap itself.
+  const outlineForKeymap = useMemo<OutlineNode[]>(() => {
+    const toOutline = (n: StructureNode): OutlineNode => ({
+      key: n.nodeKey,
+      title: n.title,
+      level: n.level,
+      lineIndex: 0,
+      occurrenceIndex: 0,
+      children: n.children.map(toOutline),
+    })
+    return tree.map(toOutline)
+  }, [tree])
+
+  const sectionIdByNodeKey = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {}
+    const walk = (nodes: StructureNode[]): void => {
+      for (const n of nodes) {
+        map[n.nodeKey] = n.sectionId
+        walk(n.children)
+      }
+    }
+    walk(tree)
+    return map
+  }, [tree])
+
+  const handleNavigateToNode = useCallback((node: OutlineNode) => {
+    const el = panelRef.current?.querySelector<HTMLElement>(
+      `[data-testid="structure-node-${node.key}"]`
+    )
+    if (!el) return
+    if (typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+    }
+    el.focus({ preventScroll: true })
+  }, [])
+
+  useStructureKeymap({
+    panelRef,
+    projectId,
+    outline: outlineForKeymap,
+    onNavigateToNode: handleNavigateToNode,
+    sectionIdByNodeKey,
+  })
+
+  // Sync DOM viewport + focus with the store's `focusedSectionId` after each
+  // tree render. Two responsibilities:
+  //   1. Scroll the focused node into view on EVERY change — covers Enter
+  //      (new sibling auto-focused), Tab/Shift+Tab (indent/outdent moves the
+  //      node), arrow-key navigation, and programmatic focusSection calls.
+  //      Without this the tree may already show the new node but viewport
+  //      stays where it was, giving the "scroll to find it" UX.
+  //   2. When not editing and nothing else has taken DOM focus, put focus on
+  //      the node div so `isWithinPanel` keeps returning true — otherwise the
+  //      next keystroke bypasses the keymap and native Tab/Shift+Tab escapes
+  //      into the header buttons.
+  const focusedSectionId = useChapterStructureStore((s) => s.focusedSectionId)
+  const editingSectionId = useChapterStructureStore((s) => s.editingSectionId)
+  useEffect(() => {
+    if (!focusedSectionId) return
+    const panel = panelRef.current
+    if (!panel) return
+    const el = panel.querySelector<HTMLElement>(
+      `[data-testid="structure-node-${focusedSectionId}"]`
+    )
+    if (!el) return
+    if (typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+    }
+    if (editingSectionId) return
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    el.focus({ preventScroll: true })
+  }, [focusedSectionId, editingSectionId, tree])
+
   const handleCommitTitle = useCallback(
     async (nodeKey: string, nextTitle: string): Promise<void> => {
       // Go through the store so this rename acquires the same mutation lock,
       // pending-autosave flush, and editingLocked guard that the outline-tree
-      // path uses. Bypassing it (e.g. calling the IPC directly) would let an
-      // in-flight autosave race the disk read inside chapter-structure
-      // service and silently discard body edits.
+      // path uses. The store now applies the committed snapshot directly, so
+      // rename keeps the canvas mounted and preserves scroll/focus continuity.
       const res = await commitTitle(projectId, nodeKey, nextTitle)
       if (!res.ok) {
         // commitTitle surfaces its own error toast through structure-feedback;
         // avoid double-reporting.
         return
       }
-      reload()
     },
-    [projectId, commitTitle, reload]
+    [projectId, commitTitle]
   )
 
   const handleAddChild = useCallback(
@@ -167,7 +245,7 @@ export function StructureDesignWorkspace({
         </div>
       )}
 
-      <div className="min-h-0 flex-1">
+      <div ref={panelRef} tabIndex={-1} className="min-h-0 flex-1 outline-none">
         <StructureCanvas
           tree={tree}
           loading={loading}

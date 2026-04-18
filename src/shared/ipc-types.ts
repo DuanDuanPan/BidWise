@@ -508,7 +508,7 @@ export type IpcChannelMap = {
   }
   'chapter-structure:update-title': {
     input: { projectId: string; sectionId: string; title: string }
-    output: ProposalSectionIndexEntry
+    output: StructureMutationSnapshotDto
   }
   'chapter-structure:insert-sibling': {
     input: { projectId: string; sectionId: string; title?: string }

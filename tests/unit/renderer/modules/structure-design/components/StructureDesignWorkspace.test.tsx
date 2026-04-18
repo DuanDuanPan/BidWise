@@ -8,6 +8,7 @@ import { ChapterGenerationProvider } from '@modules/editor/context/ChapterGenera
 import type { ChapterGenerationStatus, ChapterHeadingLocator } from '@shared/chapter-types'
 import type { UseChapterGenerationReturn } from '@modules/editor/hooks/useChapterGeneration'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
+import type { StructureMutationSnapshotDto } from '@shared/ipc-types'
 
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -24,10 +25,56 @@ function entry(overrides: Partial<ProposalSectionIndexEntry>): ProposalSectionIn
   } as ProposalSectionIndexEntry
 }
 
+function renameSnapshot(
+  sectionIndex: ProposalSectionIndexEntry[],
+  sectionId: string,
+  title: string
+): StructureMutationSnapshotDto {
+  const target = sectionIndex.find((item) => item.sectionId === sectionId)
+  return {
+    markdown: sectionIndex
+      .map((item) => {
+        const nextTitle = item.sectionId === sectionId ? title : item.title
+        return `${'#'.repeat(item.level)} ${nextTitle}\n`
+      })
+      .join('\n'),
+    sectionIndex: sectionIndex.map((item) =>
+      item.sectionId === sectionId
+        ? {
+            ...item,
+            title,
+            headingLocator: { ...item.headingLocator, title },
+          }
+        : item
+    ),
+    affectedSectionId: sectionId,
+    focusLocator: target
+      ? { ...target.headingLocator, title }
+      : {
+          title,
+          level: 1,
+          occurrenceIndex: 0,
+        },
+  }
+}
+
+function seedDocStore(projectId: string, sectionIndex: ProposalSectionIndexEntry[]): void {
+  useDocumentStore.setState({
+    loadedProjectId: projectId,
+    sectionIndex,
+    loading: false,
+    error: null,
+  })
+}
+
 function mockMetadataApi(
   sectionIndex: ProposalSectionIndexEntry[],
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  projectId = 'proj-1'
 ): void {
+  // Hook now reads from documentStore directly; we still keep the IPC stubs
+  // around for mutation calls (chapterStructureUpdateTitle, etc.) that
+  // individual tests override via `extra`.
   vi.stubGlobal('api', {
     documentGetMetadata: vi.fn().mockResolvedValue({
       success: true,
@@ -41,12 +88,19 @@ function mockMetadataApi(
     chapterStructureUpdateTitle: vi.fn(),
     ...extra,
   })
+  seedDocStore(projectId, sectionIndex)
 }
 
 describe('@story-11-2 StructureDesignWorkspace', () => {
   beforeEach(() => {
     cleanup()
     useChapterStructureStore.getState().reset()
+    useDocumentStore.setState({
+      loadedProjectId: null,
+      sectionIndex: [],
+      loading: false,
+      error: null,
+    })
     vi.restoreAllMocks()
   })
 
@@ -117,18 +171,12 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
   })
 
   it('@p0 rename commits through chapterStructureUpdateTitle IPC (AC2)', async () => {
+    const initialIndex = [entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 })]
     const updateTitle = vi.fn().mockResolvedValue({
       success: true,
-      data: {
-        sectionId: UUID_A,
-        title: '新标题',
-        level: 1,
-        order: 0,
-        occurrenceIndex: 0,
-        headingLocator: { title: '新标题', level: 1, occurrenceIndex: 0 },
-      },
+      data: renameSnapshot(initialIndex, UUID_A, '新标题'),
     })
-    mockMetadataApi([entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 })], {
+    mockMetadataApi(initialIndex, {
       chapterStructureUpdateTitle: updateTitle,
     })
     render(
@@ -149,63 +197,47 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
         sectionId: UUID_A,
         title: '新标题',
       })
+      expect(screen.getByText('新标题')).toBeTruthy()
     })
   })
 
-  it('@p0 late response from previous project is discarded (race guard)', async () => {
-    const slowResolver: Array<(v: unknown) => void> = []
-    const documentGetMetadata = vi.fn().mockImplementation(
-      (input: { projectId: string }) =>
-        new Promise((resolve) => {
-          slowResolver.push((sectionIndex) => {
-            resolve({
-              success: true,
-              data: {
-                annotations: [],
-                sourceAttributions: [],
-                baselineValidations: [],
-                sectionIndex,
-              },
-            })
-          })
-          void input
-        })
-    )
-    vi.stubGlobal('api', { documentGetMetadata, chapterStructureUpdateTitle: vi.fn() })
+  it('@p0 only renders nodes when docStore loadedProjectId matches (project switch guard)', async () => {
+    // The hook now reads sectionIndex from documentStore. When the store still
+    // holds the previous project's data during a switch, the workspace must
+    // render an empty tree rather than leaking stale nodes into the new
+    // project's canvas.
+    vi.stubGlobal('api', { chapterStructureUpdateTitle: vi.fn() })
+
+    seedDocStore('proj-A', [entry({ sectionId: UUID_A, title: 'A 章', level: 1, order: 0 })])
 
     const { rerender } = render(
       <App>
         <StructureDesignWorkspace projectId="proj-A" />
       </App>
     )
-    // Switch to project B before project A resolves.
+    await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_A}`)).toBeTruthy())
+
+    // Switch project prop before docStore has been re-hydrated for proj-B.
     rerender(
       <App>
         <StructureDesignWorkspace projectId="proj-B" />
       </App>
     )
+    expect(screen.queryByTestId(`structure-node-${UUID_A}`)).toBeNull()
 
-    // Resolve project A first (stale), then project B.
-    slowResolver[0]([entry({ sectionId: UUID_A, title: 'A 章', level: 1, order: 0 })])
-    slowResolver[1]([entry({ sectionId: UUID_B, title: 'B 章', level: 1, order: 0 })])
-
+    // Once docStore catches up to proj-B, its nodes render.
+    seedDocStore('proj-B', [entry({ sectionId: UUID_B, title: 'B 章', level: 1, order: 0 })])
     await waitFor(() => expect(screen.getByTestId(`structure-node-${UUID_B}`)).toBeTruthy())
     expect(screen.queryByTestId(`structure-node-${UUID_A}`)).toBeNull()
   })
 
-  it('@p0 rename success rehydrates documentStore (prevents stale autosave overwrite)', async () => {
+  it('@p0 rename success updates documentStore in place without reload', async () => {
+    const initialIndex = [entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 })]
     const updateTitle = vi.fn().mockResolvedValue({
       success: true,
-      data: {
-        sectionId: UUID_A,
-        title: '新标题',
-        level: 1,
-        order: 0,
-        occurrenceIndex: 0,
-        headingLocator: { title: '新标题', level: 1, occurrenceIndex: 0 },
-      },
+      data: renameSnapshot(initialIndex, UUID_A, '新标题'),
     })
-    mockMetadataApi([entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 })], {
+    mockMetadataApi(initialIndex, {
       chapterStructureUpdateTitle: updateTitle,
     })
 
@@ -227,8 +259,10 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
 
     await waitFor(() => {
       expect(updateTitle).toHaveBeenCalled()
-      expect(loadDocumentSpy).toHaveBeenCalledWith('proj-1')
+      expect(screen.getByText('新标题')).toBeTruthy()
     })
+    expect(loadDocumentSpy).not.toHaveBeenCalled()
+    expect(useDocumentStore.getState().sectionIndex[0]?.title).toBe('新标题')
 
     useDocumentStore.setState({ loadDocument: originalLoadDocument })
   })
@@ -265,15 +299,19 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
   })
 
   it('@p0 ignores phase statuses from a different project (cross-project guard)', async () => {
-    mockMetadataApi([
-      entry({
-        sectionId: UUID_A,
-        title: '项目综述',
-        level: 1,
-        order: 0,
-        headingLocator: { title: '项目综述', level: 1, occurrenceIndex: 0 },
-      }),
-    ])
+    mockMetadataApi(
+      [
+        entry({
+          sectionId: UUID_A,
+          title: '项目综述',
+          level: 1,
+          order: 0,
+          headingLocator: { title: '项目综述', level: 1, occurrenceIndex: 0 },
+        }),
+      ],
+      {},
+      'proj-B'
+    )
 
     const locator: ChapterHeadingLocator = { title: '项目综述', level: 1, occurrenceIndex: 0 }
     const status: ChapterGenerationStatus = {

@@ -153,17 +153,9 @@ describe('chapterStructureStore', () => {
         chapterStructureOutdent: vi
           .fn()
           .mockResolvedValue({ success: true, data: makeSnapshot(sidA) }),
-        chapterStructureUpdateTitle: vi.fn().mockResolvedValue({
-          success: true,
-          data: {
-            sectionId: sidA,
-            title: '新标题',
-            level: 1,
-            order: 0,
-            occurrenceIndex: 0,
-            headingLocator: { title: '新标题', level: 1, occurrenceIndex: 0 },
-          },
-        }),
+        chapterStructureUpdateTitle: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: makeSnapshot(sidA) }),
       })
       const loadDocument = vi.fn().mockResolvedValue(undefined)
       const applyStructureSnapshot = vi.fn()
@@ -197,7 +189,7 @@ describe('chapterStructureStore', () => {
       expect(useChapterStructureStore.getState().focusedSectionId).toBe(sidA)
     })
 
-    it('commitTitle dispatches chapter-structure:update-title and rehydrates documentStore', async () => {
+    it('commitTitle dispatches chapter-structure:update-title and applies snapshot in place', async () => {
       const store = useChapterStructureStore.getState()
       const outcome = await store.commitTitle('p', sidA, '新标题')
       expect(outcome.ok).toBe(true)
@@ -205,7 +197,20 @@ describe('chapterStructureStore', () => {
         (window.api as unknown as { chapterStructureUpdateTitle: ReturnType<typeof vi.fn> })
           .chapterStructureUpdateTitle
       ).toHaveBeenCalledWith({ projectId: 'p', sectionId: sidA, title: '新标题' })
-      expect(useDocumentStore.getState().loadDocument).toHaveBeenCalledWith('p')
+      expect(useDocumentStore.getState().applyStructureSnapshot).toHaveBeenCalledWith('p', {
+        content: '# A\n## B\n',
+        sectionIndex: [
+          {
+            sectionId: sidA,
+            title: 'A',
+            level: 1,
+            order: 0,
+            occurrenceIndex: 0,
+            headingLocator: { title: 'A', level: 1, occurrenceIndex: 0 },
+          },
+        ],
+      })
+      expect(useDocumentStore.getState().loadDocument).not.toHaveBeenCalled()
       expect(useChapterStructureStore.getState().editingSectionId).toBe(null)
     })
 
@@ -252,17 +257,7 @@ describe('chapterStructureStore', () => {
       insertSiblingApi = vi
         .fn()
         .mockResolvedValue({ success: true, data: makeSnapshot(sidA, sidB) })
-      updateTitleApi = vi.fn().mockResolvedValue({
-        success: true,
-        data: {
-          sectionId: sidA,
-          title: '新标题',
-          level: 1,
-          order: 0,
-          occurrenceIndex: 0,
-          headingLocator: { title: '新标题', level: 1, occurrenceIndex: 0 },
-        },
-      })
+      updateTitleApi = vi.fn().mockResolvedValue({ success: true, data: makeSnapshot(sidA) })
       vi.stubGlobal('api', {
         chapterStructureInsertSibling: insertSiblingApi,
         chapterStructureIndent: vi

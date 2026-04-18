@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { renderHook } from '@testing-library/react'
 import { useStructureOutline } from '@modules/structure-design/hooks/useStructureOutline'
+import { useDocumentStore } from '@renderer/stores/documentStore'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
 
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -19,34 +20,38 @@ function entry(overrides: Partial<ProposalSectionIndexEntry>): ProposalSectionIn
   } as ProposalSectionIndexEntry
 }
 
-function mockMetadataApi(sectionIndex: ProposalSectionIndexEntry[] | undefined): void {
-  vi.stubGlobal('api', {
-    documentGetMetadata: vi.fn().mockResolvedValue({
-      success: true,
-      data: {
-        annotations: [],
-        sourceAttributions: [],
-        baselineValidations: [],
-        sectionIndex,
-      },
-    }),
+function seedDocStore(
+  projectId: string | null,
+  sectionIndex: ProposalSectionIndexEntry[],
+  overrides: Partial<{ loading: boolean; error: string | null }> = {}
+): void {
+  useDocumentStore.setState({
+    loadedProjectId: projectId,
+    sectionIndex,
+    loading: overrides.loading ?? false,
+    error: overrides.error ?? null,
   })
 }
 
 describe('@story-11-2 useStructureOutline', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
+    useDocumentStore.setState({
+      loadedProjectId: null,
+      sectionIndex: [],
+      loading: false,
+      error: null,
+    })
   })
 
-  it('@p0 returns empty tree when projectId is null', async () => {
-    mockMetadataApi([])
+  it('@p0 returns empty tree when projectId is null', () => {
+    seedDocStore('proj-1', [entry({ sectionId: UUID_A, title: 'X', level: 1, order: 0 })])
     const { result } = renderHook(() => useStructureOutline(null))
-    await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.tree).toEqual([])
+    expect(result.current.loading).toBe(false)
   })
 
-  it('@p0 builds a hierarchical tree from sectionIndex', async () => {
-    mockMetadataApi([
+  it('@p0 builds a hierarchical tree from docStore sectionIndex', () => {
+    seedDocStore('proj-1', [
       entry({ sectionId: UUID_A, title: '项目综述', level: 1, order: 0 }),
       entry({
         sectionId: UUID_B,
@@ -59,7 +64,6 @@ describe('@story-11-2 useStructureOutline', () => {
     ])
 
     const { result } = renderHook(() => useStructureOutline('proj-1'))
-    await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.tree).toHaveLength(2)
     expect(result.current.tree[0].sectionId).toBe(UUID_A)
@@ -69,31 +73,29 @@ describe('@story-11-2 useStructureOutline', () => {
     expect(result.current.tree[1].sectionId).toBe(UUID_C)
   })
 
-  it('@p0 uses sectionId as nodeKey (Story 11.1 contract, AC6)', async () => {
-    mockMetadataApi([entry({ sectionId: UUID_A, title: 'X', level: 1, order: 0 })])
+  it('@p0 uses sectionId as nodeKey (Story 11.1 contract, AC6)', () => {
+    seedDocStore('proj-1', [entry({ sectionId: UUID_A, title: 'X', level: 1, order: 0 })])
     const { result } = renderHook(() => useStructureOutline('proj-1'))
-    await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.tree[0].nodeKey).toBe(UUID_A)
     expect(result.current.tree[0].sectionId).toBe(UUID_A)
   })
 
-  it('@p1 surfaces error when IPC returns failure', async () => {
-    vi.stubGlobal('api', {
-      documentGetMetadata: vi.fn().mockResolvedValue({
-        success: false,
-        error: { code: 'NOT_FOUND', message: 'project missing' },
-      }),
-    })
+  it('@p1 surfaces docStore error state', () => {
+    seedDocStore(null, [], { error: 'project missing' })
     const { result } = renderHook(() => useStructureOutline('proj-1'))
-    await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.error).toBe('project missing')
     expect(result.current.tree).toEqual([])
   })
 
-  it('@p1 handles missing sectionIndex gracefully', async () => {
-    mockMetadataApi(undefined)
+  it('@p1 returns empty tree when docStore holds a different project', () => {
+    seedDocStore('other-proj', [entry({ sectionId: UUID_A, title: 'X', level: 1, order: 0 })])
     const { result } = renderHook(() => useStructureOutline('proj-1'))
-    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.tree).toEqual([])
+  })
+
+  it('@p1 handles empty sectionIndex gracefully', () => {
+    seedDocStore('proj-1', [])
+    const { result } = renderHook(() => useStructureOutline('proj-1'))
     expect(result.current.tree).toEqual([])
     expect(result.current.error).toBe(null)
   })
