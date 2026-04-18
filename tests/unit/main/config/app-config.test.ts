@@ -4,7 +4,11 @@ import { promises as fs } from 'fs'
 vi.mock('electron', () => ({
   app: {
     getPath: (name: string) =>
-      name === 'userData' ? '/mock-user-data' : name === 'appData' ? '/mock-app-data' : '/mock-path',
+      name === 'userData'
+        ? '/mock-user-data'
+        : name === 'appData'
+          ? '/mock-app-data'
+          : '/mock-path',
   },
 }))
 
