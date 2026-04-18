@@ -28,6 +28,32 @@ const mockTemplateList = vi.fn()
 const mockTemplateGet = vi.fn()
 const mockTemplateGenerateSkeleton = vi.fn()
 const mockTemplatePersistSkeleton = vi.fn()
+const mockDocumentGetMetadata = vi.fn().mockResolvedValue({
+  success: true,
+  data: {
+    annotations: [],
+    sourceAttributions: [],
+    baselineValidations: [],
+    sectionIndex: [
+      {
+        sectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        title: '项目概述',
+        level: 1,
+        order: 0,
+        occurrenceIndex: 0,
+        headingLocator: { title: '项目概述', level: 1, occurrenceIndex: 0 },
+      },
+      {
+        sectionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        title: '系统设计',
+        level: 1,
+        order: 1,
+        occurrenceIndex: 0,
+        headingLocator: { title: '系统设计', level: 1, occurrenceIndex: 0 },
+      },
+    ],
+  },
+})
 
 Object.defineProperty(window, 'api', {
   writable: true,
@@ -36,6 +62,7 @@ Object.defineProperty(window, 'api', {
     templateGet: mockTemplateGet,
     templateGenerateSkeleton: mockTemplateGenerateSkeleton,
     templatePersistSkeleton: mockTemplatePersistSkeleton,
+    documentGetMetadata: mockDocumentGetMetadata,
   },
 })
 
@@ -99,14 +126,17 @@ describe('@story-3-3 SolutionDesignView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('has-content-view')).toBeDefined()
+      expect(screen.getByTestId('structure-design-workspace')).toBeDefined()
     })
 
-    expect(screen.getByText('项目概述')).toBeDefined()
-    expect(screen.getByText('系统设计')).toBeDefined()
+    // Structure canvas renders nodes from sectionIndex (Story 11.2 integration)
+    await waitFor(() => {
+      expect(screen.getByText('项目概述')).toBeDefined()
+      expect(screen.getByText('系统设计')).toBeDefined()
+    })
   })
 
-  it('triggers onEnterProposalWriting on continue writing click', async () => {
+  it('triggers onEnterProposalWriting on confirm-skeleton click', async () => {
     mockContent = '# 已有内容\n'
     mockLoading = false
 
@@ -115,10 +145,12 @@ describe('@story-3-3 SolutionDesignView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('continue-writing-btn')).toBeDefined()
+      const btn = screen.getByTestId('structure-confirm-skeleton') as HTMLButtonElement
+      expect(btn).toBeDefined()
+      expect(btn.disabled).toBe(false)
     })
 
-    fireEvent.click(screen.getByTestId('continue-writing-btn'))
+    fireEvent.click(screen.getByTestId('structure-confirm-skeleton'))
     expect(mockOnEnterProposalWriting).toHaveBeenCalled()
   })
 
@@ -131,10 +163,10 @@ describe('@story-3-3 SolutionDesignView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('reselect-template-btn')).toBeDefined()
+      expect(screen.getByTestId('structure-reselect-template')).toBeDefined()
     })
 
-    fireEvent.click(screen.getByTestId('reselect-template-btn'))
+    fireEvent.click(screen.getByTestId('structure-reselect-template'))
 
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '重新选择模板' })).toBeDefined()

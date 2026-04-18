@@ -214,6 +214,9 @@ const requestApi = {
   chapterStructurePath: (input: IpcChannelMap['chapter-structure:path']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_PATH, input),
 
+  chapterStructureUpdateTitle: (input: IpcChannelMap['chapter-structure:update-title']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_UPDATE_TITLE, input),
+
   chapterSummaryExtract: (input: IpcChannelMap['chapter-summary:extract']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_SUMMARY_EXTRACT, input),
 

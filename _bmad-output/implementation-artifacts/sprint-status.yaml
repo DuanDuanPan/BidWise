@@ -166,7 +166,7 @@ development_status:
   # Sprint C (② AI 推荐):     11-8
   epic-11: backlog
   11-1-enabler-stable-id-refactor: review
-  11-2-focus-state-machine: backlog
+  11-2-focus-state-machine: review
   11-3-xmind-keymap-cascade-delete: backlog
   11-4-soft-delete-toast-undo: backlog
   11-5-depth-limit-warn-llm-lock: backlog

@@ -214,7 +214,7 @@ describe('aiProxy', () => {
       mockGetConfig.mockResolvedValue({
         provider: 'openai',
         openaiApiKey: 'openai-key',
-        openaiBaseUrl: 'https://minimax.a7m.com.cn/v1',
+        baseUrl: 'https://minimax.a7m.com.cn/v1',
         desensitizeEnabled: true,
         defaultModel: 'gpt-4o',
       })

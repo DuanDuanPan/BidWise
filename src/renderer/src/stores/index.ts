@@ -42,3 +42,12 @@ export type {
 
 export { useTerminologyStore } from './terminologyStore'
 export type { TerminologyStore, TerminologyState, TerminologyActions } from './terminologyStore'
+
+export { useChapterStructureStore, deriveChapterNodeState } from './chapterStructureStore'
+export type {
+  ChapterStructureStore,
+  ChapterStructureState,
+  ChapterStructureActions,
+  ChapterNodeState,
+  PendingDeleteEntry,
+} from './chapterStructureStore'

@@ -22,6 +22,10 @@ const handlerMap: { [C in ChapterStructureChannel]: () => void } = {
     createIpcHandler('chapter-structure:path', (input) =>
       chapterStructureService.path(input.projectId, input.sectionId)
     ),
+  'chapter-structure:update-title': () =>
+    createIpcHandler('chapter-structure:update-title', (input) =>
+      chapterStructureService.updateTitle(input.projectId, input.sectionId, input.title)
+    ),
 }
 
 export type RegisteredChapterStructureChannels = ChapterStructureChannel

@@ -167,6 +167,8 @@ describe('AgentOrchestrator @story-2-2', () => {
         content: 'AI response',
         usage: { promptTokens: 100, completionTokens: 50 },
         latencyMs: 1200,
+        provider: 'claude',
+        model: 'claude-sonnet-4-20250514',
       })
     })
 

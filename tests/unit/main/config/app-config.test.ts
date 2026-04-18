@@ -66,7 +66,7 @@ describe('app-config', () => {
     const config = await getAiProxyConfig()
     expect(config.provider).toBe('claude')
     expect(config.anthropicApiKey).toBe('sk-test-123')
-    expect(config.openaiBaseUrl).toBe('https://example.com/v1')
+    expect(config.baseUrl).toBe('https://example.com/v1')
     expect(config.desensitizeEnabled).toBe(true)
   })
 
@@ -139,7 +139,7 @@ describe('app-config', () => {
 
     const config = await getAiProxyConfig()
     expect(config.openaiApiKey).toBe('key')
-    expect(config.openaiBaseUrl).toBe('https://minimax.a7m.com.cn/v1')
+    expect(config.baseUrl).toBe('https://minimax.a7m.com.cn/v1')
     expect(config.defaultModel).toBe('MiniMax-M2.7-highspeed')
   })
 
@@ -159,17 +159,17 @@ describe('app-config', () => {
     )
   })
 
-  it('setupAiConfig persists openaiBaseUrl when provided', async () => {
+  it('setupAiConfig persists baseUrl when provided', async () => {
     await setupAiConfig({
       provider: 'openai',
       openaiApiKey: 'sk-openai-test',
-      openaiBaseUrl: 'https://minimax.a7m.com.cn/v1',
+      baseUrl: 'https://minimax.a7m.com.cn/v1',
       defaultModel: 'MiniMax-M2.7-highspeed',
       desensitizeEnabled: true,
     })
 
     expect(encryptConfig).toHaveBeenCalledWith(
-      expect.stringContaining('"openaiBaseUrl": "https://minimax.a7m.com.cn/v1"')
+      expect.stringContaining('"baseUrl": "https://minimax.a7m.com.cn/v1"')
     )
   })
 
@@ -209,7 +209,7 @@ describe('app-config', () => {
       configPath: '/mock-user-data/data/config/ai-provider.enc',
       provider: 'openai',
       defaultModel: 'gpt-4o',
-      openaiBaseUrl: 'https://example.com/v1',
+      baseUrl: 'https://example.com/v1',
       desensitizeEnabled: false,
       hasApiKey: true,
     })
@@ -265,7 +265,7 @@ describe('app-config', () => {
       configPath: '/mock-user-data/data/config/ai-provider.enc',
       provider: 'claude',
       defaultModel: 'claude-sonnet-4-20250514',
-      openaiBaseUrl: undefined,
+      baseUrl: undefined,
       desensitizeEnabled: true,
       hasApiKey: true,
     })
@@ -286,7 +286,7 @@ describe('app-config', () => {
     await saveAiProxyConfig({
       provider: 'openai',
       defaultModel: 'gpt-4o-mini',
-      openaiBaseUrl: 'https://new.example.com/v1',
+      baseUrl: 'https://new.example.com/v1',
       desensitizeEnabled: false,
     })
 
@@ -297,7 +297,7 @@ describe('app-config', () => {
       expect.stringContaining('"defaultModel": "gpt-4o-mini"')
     )
     expect(encryptConfig).toHaveBeenCalledWith(
-      expect.stringContaining('"openaiBaseUrl": "https://new.example.com/v1"')
+      expect.stringContaining('"baseUrl": "https://new.example.com/v1"')
     )
     expect(encryptConfig).toHaveBeenCalledWith(
       expect.stringContaining('"desensitizeEnabled": false')

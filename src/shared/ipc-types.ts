@@ -342,6 +342,7 @@ export const IPC_CHANNELS = {
   CHAPTER_STRUCTURE_GET: 'chapter-structure:get',
   CHAPTER_STRUCTURE_TREE: 'chapter-structure:tree',
   CHAPTER_STRUCTURE_PATH: 'chapter-structure:path',
+  CHAPTER_STRUCTURE_UPDATE_TITLE: 'chapter-structure:update-title',
   CHAPTER_SUMMARY_EXTRACT: 'chapter-summary:extract',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
@@ -492,6 +493,10 @@ export type IpcChannelMap = {
   'chapter-structure:path': {
     input: { projectId: string; sectionId: string }
     output: string | null
+  }
+  'chapter-structure:update-title': {
+    input: { projectId: string; sectionId: string; title: string }
+    output: ProposalSectionIndexEntry
   }
   'chapter-summary:extract': {
     input: ChapterSummaryExtractInput

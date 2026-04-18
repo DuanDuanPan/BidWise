@@ -1,24 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Alert, App, Button, Spin, Typography, List } from 'antd'
+import { Alert, App, Button, Spin } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { TemplateSelector } from './TemplateSelector'
 import { SkeletonEditor } from './SkeletonEditor'
+import { StructureDesignWorkspace } from '@modules/structure-design/components/StructureDesignWorkspace'
 import type { TemplateSummary, ProposalTemplate, SkeletonSection } from '@shared/template-types'
-
-const { Title } = Typography
 
 type ViewPhase = 'checking' | 'select-template' | 'edit-skeleton' | 'has-content'
 
 interface SolutionDesignViewProps {
   projectId: string
   onEnterProposalWriting: () => void
-}
-
-function extractH1Titles(content: string): string[] {
-  return content
-    .split('\n')
-    .filter((line) => /^# /.test(line))
-    .map((line) => line.replace(/^# /, '').trim())
 }
 
 function skeletonToMarkdown(sections: SkeletonSection[]): string {
@@ -67,9 +59,6 @@ export function SolutionDesignView({
   const persistingRef = useRef(false)
   const pendingPersistRef = useRef<SkeletonSection[] | null>(null)
 
-  // Existing content summary
-  const [h1Titles, setH1Titles] = useState<string[]>([])
-
   const loadDocument = useDocumentStore((s) => s.loadDocument)
   const updateContent = useDocumentStore((s) => s.updateContent)
   const documentContent = useDocumentStore((s) => s.content)
@@ -94,7 +83,6 @@ export function SolutionDesignView({
     setPreviewTemplate(null)
     setTemplateId('')
     setOverwriteConfirmed(false)
-    setH1Titles([])
   }, [projectId, cancelPendingPersist])
 
   // Step 1: Check if proposal has content
@@ -116,7 +104,6 @@ export function SolutionDesignView({
     if (documentLoading || phase !== 'checking') return
     const content = documentContent.trim()
     if (content) {
-      setH1Titles(extractH1Titles(content))
       setPhase('has-content')
     } else {
       setPhase('select-template')
@@ -345,30 +332,11 @@ export function SolutionDesignView({
       )}
 
       {phase === 'has-content' && (
-        <div className="mx-auto w-full max-w-xl" data-testid="has-content-view">
-          <Title level={4} className="mb-4">
-            已有方案结构
-          </Title>
-          <List
-            bordered
-            dataSource={h1Titles}
-            renderItem={(title) => <List.Item>{title}</List.Item>}
-            locale={{ emptyText: '无章节结构' }}
-            className="mb-6"
-          />
-          <div className="flex gap-3">
-            <Button
-              type="primary"
-              onClick={onEnterProposalWriting}
-              data-testid="continue-writing-btn"
-            >
-              继续撰写
-            </Button>
-            <Button onClick={handleReselectFromHasContent} data-testid="reselect-template-btn">
-              重新选择模板
-            </Button>
-          </div>
-        </div>
+        <StructureDesignWorkspace
+          projectId={projectId}
+          onConfirmSkeleton={onEnterProposalWriting}
+          onReselectTemplate={handleReselectFromHasContent}
+        />
       )}
 
       {phase === 'select-template' && (

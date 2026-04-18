@@ -181,6 +181,7 @@ describe('ScoringExtractor', () => {
     expect(mockEnqueue).toHaveBeenCalledWith({
       category: 'import',
       input: { projectId: 'proj-1', rootPath: '/projects/proj-1' },
+      maxRetries: 0,
     })
   })
 

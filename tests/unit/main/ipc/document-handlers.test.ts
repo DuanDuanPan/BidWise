@@ -83,7 +83,9 @@ describe('document-handlers @story-3-1', () => {
     expect(mockDocumentService.saveSync).toHaveBeenCalledWith(
       'proj-1',
       '/tmp/bidwise-test/data/projects/proj-1',
-      '# Sync'
+      '# Sync',
+      undefined,
+      undefined
     )
     expect(event.returnValue).toEqual({
       success: true,

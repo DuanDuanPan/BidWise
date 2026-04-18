@@ -23,7 +23,7 @@ describe('AiConfigModal', () => {
           configPath: '/mock-user-data/data/config/ai-provider.enc',
           provider: 'openai',
           defaultModel: 'gpt-4o',
-          openaiBaseUrl: 'https://example.com/v1',
+          baseUrl: 'https://example.com/v1',
           desensitizeEnabled: true,
           hasApiKey: true,
         },
@@ -62,7 +62,7 @@ describe('AiConfigModal', () => {
         provider: 'openai',
         apiKey: undefined,
         defaultModel: 'gpt-4o-mini',
-        openaiBaseUrl: 'https://example.com/v1',
+        baseUrl: 'https://example.com/v1',
         desensitizeEnabled: true,
       })
     })
