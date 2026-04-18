@@ -319,6 +319,71 @@ describe('template-service @story-3-3', () => {
         expect(lowWeight.isKeyFocus).toBe(false)
       }
     })
+
+    it('@story-11-1 materializes project-local UUID for every skeleton section', async () => {
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+      const result = await templateService.generateSkeleton({
+        projectId: 'proj-1',
+        templateId: 'test-template',
+      })
+
+      function collect(
+        sections: Array<{ id: string; templateSectionKey?: string; children: unknown[] }>
+      ): void {
+        for (const s of sections) {
+          expect(s.id).toMatch(UUID_RE)
+          expect(s.templateSectionKey).toMatch(/^s\d/)
+          collect(s.children as typeof sections)
+        }
+      }
+      collect(result.skeleton as never)
+    })
+
+    it('@story-11-1 stamps chapterIdentitySchemaVersion=2 on bootstrap metadata', async () => {
+      mockScoringExtractor.getScoringModel.mockResolvedValue(SAMPLE_SCORING_MODEL)
+
+      await templateService.generateSkeleton({
+        projectId: 'proj-1',
+        templateId: 'test-template',
+      })
+
+      const updateCall = mockDocumentService.updateMetadata.mock.calls.at(-1)
+      expect(updateCall).toBeDefined()
+      const updater = updateCall![1] as (m: Record<string, unknown>) => Record<string, unknown>
+      const updated = updater({ annotations: [], sourceAttributions: [], baselineValidations: [] })
+      expect(updated.chapterIdentitySchemaVersion).toBe(2)
+    })
+
+    it('@review-11-1-f4 persists sibling-local order, not flat traversal index', async () => {
+      // SAMPLE_TEMPLATE: s1 (with child s1.1) + s2.
+      // Flat traversal would assign roots 0, 2 (skipping 1 for the child).
+      // Contract requires sibling-local: roots → 0, 1; child → 0.
+      await templateService.generateSkeleton({
+        projectId: 'proj-1',
+        templateId: 'test-template',
+      })
+
+      const updateCall = mockDocumentService.updateMetadata.mock.calls.at(-1)
+      const updater = updateCall![1] as (m: Record<string, unknown>) => Record<string, unknown>
+      const updated = updater({ annotations: [], sourceAttributions: [], baselineValidations: [] })
+      const sectionIndex = updated.sectionIndex as Array<{
+        sectionId: string
+        title: string
+        level: number
+        order: number
+        parentSectionId?: string
+      }>
+
+      const overview = sectionIndex.find((e) => e.title === '项目概述')!
+      const arch = sectionIndex.find((e) => e.title === '系统架构设计')!
+      const background = sectionIndex.find((e) => e.title === '项目背景')!
+
+      expect(overview.order).toBe(0)
+      expect(arch.order).toBe(1) // sibling-local — not 2
+      expect(background.parentSectionId).toBe(overview.sectionId)
+      expect(background.order).toBe(0) // first (and only) child of overview
+    })
   })
 
   describe('persistSkeleton', () => {

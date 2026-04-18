@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { readFile, rename, rm, writeFile } from 'fs/promises'
 import { projectService } from '@main/services/project-service'
+import { chapterIdentityMigrationService } from '@main/services/chapter-identity-migration-service'
 import { ErrorCode } from '@shared/constants'
 import {
   createContentDigest,
@@ -152,6 +153,9 @@ function normalizeMetadata(
     ...(meta?.confirmedSkeletons !== undefined
       ? { confirmedSkeletons: meta.confirmedSkeletons }
       : {}),
+    ...(meta?.chapterIdentitySchemaVersion !== undefined
+      ? { chapterIdentitySchemaVersion: meta.chapterIdentitySchemaVersion }
+      : {}),
     lastSavedAt: meta?.lastSavedAt || lastSavedAt,
   }
 }
@@ -225,6 +229,16 @@ function parseMetadata(
       Array.isArray(metadata.confirmedSkeletons))
   ) {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 confirmedSkeletons 必须是对象`)
+  }
+  if (
+    metadata.chapterIdentitySchemaVersion !== undefined &&
+    metadata.chapterIdentitySchemaVersion !== 1 &&
+    metadata.chapterIdentitySchemaVersion !== 2
+  ) {
+    throw new BidWiseError(
+      ErrorCode.PARSE,
+      `${metaPath} 字段 chapterIdentitySchemaVersion 仅接受 1 或 2`
+    )
   }
 
   return metadata
@@ -342,9 +356,25 @@ async function withMetadataLock<T>(projectId: string, fn: () => Promise<T>): Pro
   }
 }
 
+/**
+ * Story 11.1: lazy per-session gate that ensures a project is on the latest
+ * chapter identity schema before any metadata read/write. Log-only on
+ * failure — we must not block proposal reads when migration has a transient
+ * issue (disk, SQLite lock); downstream services can still operate on the
+ * legacy shape until migration retries.
+ */
+async function ensureChapterIdentityUpgraded(projectId: string): Promise<void> {
+  try {
+    await chapterIdentityMigrationService.ensureMigrated(projectId)
+  } catch (err) {
+    logger.warn(`Chapter identity migration deferred for ${projectId}: ${(err as Error).message}`)
+  }
+}
+
 export const documentService = {
   async load(projectId: string): Promise<ProposalDocument> {
     const rootPath = await getProjectRootPath(projectId)
+    await ensureChapterIdentityUpgraded(projectId)
     const filePath = join(rootPath, 'proposal.md')
     const metaPath = join(rootPath, 'proposal.meta.json')
 
@@ -530,6 +560,7 @@ export const documentService = {
 
   async getMetadata(projectId: string): Promise<ProposalMetadata> {
     const rootPath = await getProjectRootPath(projectId)
+    await ensureChapterIdentityUpgraded(projectId)
     const metaPath = join(rootPath, 'proposal.meta.json')
     return readMetadata(metaPath, projectId, new Date().toISOString())
   },

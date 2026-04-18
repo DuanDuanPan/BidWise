@@ -2,6 +2,7 @@ import { join } from 'path'
 import { app } from 'electron'
 import { readFile, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
+import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@main/utils/logger'
 import { BidWiseError } from '@main/utils/errors'
 import { ErrorCode } from '@shared/constants'
@@ -20,6 +21,8 @@ import type {
   ProposalSectionIndexEntry,
 } from '@shared/template-types'
 import type { ScoringModel } from '@shared/analysis-types'
+import { CHAPTER_IDENTITY_SCHEMA_LATEST } from '@shared/models/proposal'
+import { isStableSectionId } from '@shared/chapter-identity'
 
 const logger = createLogger('template-service')
 
@@ -199,7 +202,10 @@ function applyWeights(
     }
 
     return {
-      id: section.id,
+      // Story 11.1: SkeletonSection.id is project-local UUID. Template
+      // `s1.1`-style key is preserved separately for traceability.
+      id: uuidv4(),
+      templateSectionKey: section.id,
       title: section.title,
       level: section.level,
       guidanceText: section.guidanceText,
@@ -244,16 +250,24 @@ function extractSectionWeights(sections: SkeletonSection[]): SectionWeightEntry[
 
   function collect(section: SkeletonSection): void {
     if (section.weightPercent !== undefined) {
-      weights.push({
+      // Story 11.1: sectionId here is the project-local UUID produced in
+      // applyWeights(); templateSectionKey carries the template `s1.1` key.
+      const entry: SectionWeightEntry = {
         sectionId: section.id,
         sectionTitle: section.title,
         weightPercent: section.weightPercent,
         isKeyFocus: section.isKeyFocus,
-        scoringCriterionId: section.scoringCriterionId,
-        scoringCriterionName: section.scoringCriterionName,
-        scoringSubItemId: section.scoringSubItemId,
-        scoringSubItemName: section.scoringSubItemName,
-      })
+      }
+      if (section.templateSectionKey !== undefined)
+        entry.templateSectionKey = section.templateSectionKey
+      if (section.scoringCriterionId !== undefined)
+        entry.scoringCriterionId = section.scoringCriterionId
+      if (section.scoringCriterionName !== undefined)
+        entry.scoringCriterionName = section.scoringCriterionName
+      if (section.scoringSubItemId !== undefined) entry.scoringSubItemId = section.scoringSubItemId
+      if (section.scoringSubItemName !== undefined)
+        entry.scoringSubItemName = section.scoringSubItemName
+      weights.push(entry)
     }
     for (const child of section.children) {
       collect(child)
@@ -269,18 +283,33 @@ function extractSectionWeights(sections: SkeletonSection[]): SectionWeightEntry[
 function extractSectionIndex(sections: SkeletonSection[]): ProposalSectionIndexEntry[] {
   const entries: ProposalSectionIndexEntry[] = []
   const titleOccurrences = new Map<string, number>()
+  // Story 11.1 contract: `order` is sibling-local (0..N within each parent),
+  // not a flat traversal index. Track per-parent counter so root + nested
+  // siblings each restart at 0.
+  const orderByParent = new Map<string | undefined, number>()
 
   function collect(section: SkeletonSection, parentSectionId?: string): void {
+    // Defensive: if upstream handed us a non-UUID `id` we still must record it,
+    // but log so migration/retro diagnostics surface the drift.
+    if (!isStableSectionId(section.id)) {
+      logger.warn(
+        `extractSectionIndex: non-UUID sectionId detected (templateSectionKey=${section.templateSectionKey ?? 'none'}, title=${section.title})`
+      )
+    }
     const key = `${section.level}::${section.title}`
     const occ = titleOccurrences.get(key) ?? 0
     titleOccurrences.set(key, occ + 1)
 
+    const siblingOrder = orderByParent.get(parentSectionId) ?? 0
+    orderByParent.set(parentSectionId, siblingOrder + 1)
+
     entries.push({
       sectionId: section.id,
+      templateSectionKey: section.templateSectionKey,
       title: section.title,
       level: section.level,
       parentSectionId,
-      order: entries.length,
+      order: siblingOrder,
       occurrenceIndex: occ,
       headingLocator: {
         title: section.title,
@@ -306,6 +335,27 @@ function countTopLevelSections(sections: SkeletonSection[]): number {
   return sections.filter((s) => s.level === 1).length
 }
 
+/**
+ * Story 11.1: defensive normalization for skeletons that arrive from the
+ * renderer. If a section carries a template-style `id` (e.g. `s1.1`) instead
+ * of a UUID, mint a fresh UUID and preserve the original key as
+ * `templateSectionKey`. A UUID already present is left untouched so user edits
+ * survive round-tripping.
+ */
+function ensureStableIds(sections: SkeletonSection[]): SkeletonSection[] {
+  return sections.map((section) => {
+    const hasUuid = isStableSectionId(section.id)
+    return {
+      ...section,
+      id: hasUuid ? section.id : uuidv4(),
+      templateSectionKey: hasUuid
+        ? section.templateSectionKey
+        : (section.templateSectionKey ?? section.id),
+      children: ensureStableIds(section.children),
+    }
+  })
+}
+
 async function saveMetadata(
   projectId: string,
   sectionWeights: SectionWeightEntry[],
@@ -317,6 +367,9 @@ async function saveMetadata(
     sectionWeights,
     sectionIndex,
     templateId,
+    // Story 11.1: newly materialized projects land on the latest schema and
+    // skip the legacy → v2 migration path entirely.
+    chapterIdentitySchemaVersion: CHAPTER_IDENTITY_SCHEMA_LATEST,
     lastSavedAt: new Date().toISOString(),
   }))
 }
@@ -406,7 +459,10 @@ export const templateService = {
   },
 
   async persistSkeleton(input: PersistSkeletonInput): Promise<PersistSkeletonOutput> {
-    const { projectId, templateId, skeleton } = input
+    const { projectId, templateId } = input
+    // Story 11.1: backfill UUIDs for any sections that arrive with legacy
+    // template-style ids so persistence stays on the UUID canonical model.
+    const skeleton = ensureStableIds(input.skeleton)
 
     const markdown = sectionsToMarkdown(skeleton)
     const sectionWeights = extractSectionWeights(skeleton)

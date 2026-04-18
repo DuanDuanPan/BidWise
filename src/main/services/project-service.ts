@@ -37,9 +37,20 @@ export const projectService = {
     try {
       mkdirSync(join(projectDir, 'assets'), { recursive: true })
       writeFileSync(join(projectDir, 'proposal.md'), '', 'utf-8')
+      // Story 11.1: stamp brand-new projects at the latest chapter identity
+      // schema so chapter-identity-migration-service can skip them.
       writeFileSync(
         join(projectDir, 'proposal.meta.json'),
-        JSON.stringify({ annotations: [], scores: [] }),
+        JSON.stringify({
+          version: '1.0',
+          projectId,
+          annotations: [],
+          scores: [],
+          sourceAttributions: [],
+          baselineValidations: [],
+          chapterIdentitySchemaVersion: 2,
+          lastSavedAt: new Date().toISOString(),
+        }),
         'utf-8'
       )
     } catch (err) {

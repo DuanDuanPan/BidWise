@@ -17,6 +17,7 @@ import {
   isMarkdownSectionEmpty,
 } from '@shared/chapter-markdown'
 import { createChapterLocatorKey } from '@shared/chapter-locator-key'
+import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 
 function extractText(node: unknown): string {
@@ -76,6 +77,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
   const level = getHeadingLevel(element.type as string)
   const chapterGen = useChapterGenerationContext()
   const content = useDocumentStore((s) => s.content)
+  const sectionIndex = useDocumentStore((s) => s.sectionIndex)
   const editor = useEditorRef()
   const [hovering, setHovering] = useState(false)
   const [regenerateOpen, setRegenerateOpen] = useState(false)
@@ -98,6 +100,13 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
     if (!text || level < 1 || level > 4) return null
     return computeLocator(content, text, level, occurrenceIndex)
   }, [content, text, level, occurrenceIndex])
+
+  // Story 11.1: bridge to canonical UUID when sectionIndex is available.
+  // Persistence callers (skeletonConfirm) prefer this over locator keys.
+  const resolvedSectionId = useMemo(() => {
+    if (!locator || sectionIndex.length === 0) return undefined
+    return resolveSectionIdFromLocator(sectionIndex, locator)
+  }, [locator, sectionIndex])
 
   const sourceAttr = useSourceAttributionContext()
 
@@ -172,7 +181,11 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
 
   const handleConfirmAndBatch = useCallback(() => {
     if (!chapterGen || !locator || !status?.skeletonPlan) return
-    const sectionId = locatorKey(locator)
+    // Story 11.1: prefer UUID `sectionId` when resolvable so
+    // `confirmedSkeletons` is keyed canonically. Fall back to locator key for
+    // brand-new headings not yet present in sectionIndex — main-side
+    // `_normalizeSectionId` handles both shapes.
+    const sectionId = resolvedSectionId ?? locatorKey(locator)
     const plan = { ...status.skeletonPlan, confirmedAt: new Date().toISOString() }
     void chapterGen.confirmSkeleton(locator, sectionId, plan).then((confirmed) => {
       if (confirmed) {
@@ -180,7 +193,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
       }
     })
     setSkeletonPreviewOpen(false)
-  }, [chapterGen, locator, status])
+  }, [chapterGen, locator, resolvedSectionId, status])
 
   const handleRegenerateSkeleton = useCallback(() => {
     if (!chapterGen || !locator) return
@@ -233,6 +246,7 @@ function ChapterAwareHeading(props: PlateElementProps): React.JSX.Element {
       data-heading-level={level}
       data-heading-occurrence={occurrenceIndex}
       data-heading-locator-key={locator ? createChapterLocatorKey(locator) : undefined}
+      data-heading-section-id={resolvedSectionId}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
@@ -385,6 +399,7 @@ export function OutlineHeadingElement(props: PlateElementProps): React.JSX.Eleme
   const text = extractText(element).trim()
   const level = getHeadingLevel(element.type as string)
   const content = useDocumentStore((s) => s.content)
+  const sectionIndex = useDocumentStore((s) => s.sectionIndex)
   const editor = useEditorRef()
 
   const occurrenceIndex = useMemo(() => {
@@ -404,12 +419,21 @@ export function OutlineHeadingElement(props: PlateElementProps): React.JSX.Eleme
     return computeLocator(content, text, level, occurrenceIndex)
   }, [content, text, level, occurrenceIndex])
 
+  // Story 11.1: emit canonical UUID `sectionId` on the DOM marker so
+  // renderer hooks (useCurrentSection, skeletonConfirm callers) can read
+  // either form.
+  const resolvedSectionId = useMemo(() => {
+    if (!locator || sectionIndex.length === 0) return undefined
+    return resolveSectionIdFromLocator(sectionIndex, locator)
+  }, [locator, sectionIndex])
+
   return (
     <div
       data-heading-text={text}
       data-heading-level={level}
       data-heading-occurrence={occurrenceIndex}
       data-heading-locator-key={locator ? createChapterLocatorKey(locator) : undefined}
+      data-heading-section-id={resolvedSectionId}
     >
       <PlateElement {...props} className={getHeadingClassName(level)}>
         {children}

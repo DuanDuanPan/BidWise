@@ -26,6 +26,8 @@ export interface RenderableParagraph {
 
 export interface SourceAttribution {
   id: string
+  /** Story 11.1: canonical project-level chapter UUID. Optional for legacy v1. */
+  sectionId?: string
   sectionLocator: ChapterHeadingLocator
   paragraphIndex: number
   paragraphDigest: string
@@ -39,6 +41,8 @@ export interface SourceAttribution {
 
 export interface BaselineValidation {
   id: string
+  /** Story 11.1: canonical project-level chapter UUID. Optional for legacy v1. */
+  sectionId?: string
   sectionLocator: ChapterHeadingLocator
   paragraphIndex: number
   claim: string

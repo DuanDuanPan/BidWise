@@ -10,6 +10,42 @@ export interface ChapterHeadingLocator {
   occurrenceIndex: number
 }
 
+/**
+ * Project-level stable chapter identity (UUID v4). Story 11.1.
+ *
+ * `sectionId` persists across structure edits (rename, move, reorder). Every
+ * cross-service reference (annotations, traceability, source attributions,
+ * chapter summaries, notifications, confirmed skeletons) uses this value.
+ *
+ * Template `s1.1`-style keys remain as `templateSectionKey` (read-side only),
+ * and `ChapterHeadingLocator` remains the runtime view used by markdown /
+ * DOM bridging code paths.
+ */
+export type StableSectionId = string
+
+/**
+ * Canonical per-chapter identity record stored in
+ * `proposal.meta.json.sectionIndex`. Story 11.1.
+ *
+ * Consumers derive locator keys / display numbers / tree paths at read time;
+ * persistence anywhere downstream uses `sectionId` as the foreign key.
+ */
+export interface ChapterIdentityEntry {
+  sectionId: StableSectionId
+  parentSectionId?: StableSectionId
+  order: number
+  title: string
+  level: 1 | 2 | 3 | 4
+  occurrenceIndex: number
+  templateSectionKey?: string
+  headingLocator: ChapterHeadingLocator
+}
+
+/** In-memory tree built from a flat `sectionIndex[]` at read time. */
+export interface ChapterTreeNode extends ChapterIdentityEntry {
+  children: ChapterTreeNode[]
+}
+
 /** Phase state machine for chapter generation */
 export type ChapterGenerationPhase =
   | 'queued'

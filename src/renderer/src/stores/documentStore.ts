@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AutoSaveState } from '@shared/models/proposal'
+import type { ProposalSectionIndexEntry } from '@shared/template-types'
 import type { DocumentSaveDebugContext } from '@shared/ipc-types'
 
 interface UpdateContentOptions {
@@ -13,6 +14,13 @@ export interface DocumentState {
   loading: boolean
   error: string | null
   autoSave: AutoSaveState
+  /**
+   * Story 11.1: canonical chapter identity index from
+   * `proposal.meta.json.sectionIndex`. Populated during `loadDocument`;
+   * consumers derive `sectionId ↔ locator` via
+   * `@shared/chapter-identity`. Empty array when metadata is unavailable.
+   */
+  sectionIndex: ProposalSectionIndexEntry[]
 }
 
 export interface DocumentActions {
@@ -93,6 +101,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
     loading: false,
     error: null,
     autoSave: { ...defaultAutoSave },
+    sectionIndex: [],
 
     loadDocument: async (projectId: string) => {
       resetAutoSaveQueue()
@@ -107,10 +116,27 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
           if (requestVersion !== latestDocumentVersion) {
             return
           }
+          // Story 11.1: pull sectionIndex alongside content so renderer-side
+          // `sectionId` resolution (useCurrentSection, OutlineHeadingElement)
+          // works without an extra IPC round-trip per heading.
+          let sectionIndex: ProposalSectionIndexEntry[] = []
+          try {
+            const metaRes = await window.api.documentGetMetadata({ projectId })
+            if (metaRes.success) {
+              sectionIndex = metaRes.data.sectionIndex ?? []
+            }
+          } catch {
+            // Metadata fetch is best-effort — empty sectionIndex just means
+            // bridging falls back to locator-only mode.
+          }
+          if (requestVersion !== latestDocumentVersion) {
+            return
+          }
           set({
             content: res.data.content,
             loadedProjectId: projectId,
             loading: false,
+            sectionIndex,
             autoSave: {
               ...defaultAutoSave,
               lastSavedAt: res.data.lastSavedAt,
@@ -120,7 +146,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
           if (requestVersion !== latestDocumentVersion) {
             return
           }
-          set({ error: res.error.message, loading: false, loadedProjectId: null })
+          set({ error: res.error.message, loading: false, loadedProjectId: null, sectionIndex: [] })
         }
       } catch (err) {
         if (requestVersion !== latestDocumentVersion) {
@@ -312,6 +338,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
         loading: false,
         error: null,
         autoSave: { ...defaultAutoSave },
+        sectionIndex: [],
       })
     },
   }

@@ -11,6 +11,7 @@ import { projectService } from '@main/services/project-service'
 import { taskQueue } from '@main/services/task-queue'
 import { extractRenderableParagraphs, createContentDigest } from '@shared/chapter-markdown'
 import { extractJsonArray } from '@main/utils/llm-json'
+import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import type {
   AttributeSourcesInput,
   ValidateBaselineInput,
@@ -117,6 +118,14 @@ export const sourceAttributionService = {
           'ai-inference',
           'no-source',
         ])
+        // Story 11.1: stamp canonical UUID sectionId (when resolvable) so
+        // downstream queries can filter by UUID; sectionLocator remains the
+        // DOM-bridging view.
+        const metaForLookup = await documentService.getMetadata(input.projectId)
+        const resolvedSectionId = metaForLookup.sectionIndex
+          ? resolveSectionIdFromLocator(metaForLookup.sectionIndex, input.target)
+          : undefined
+
         const attributions: SourceAttribution[] = rawAttributions.map((raw) => {
           const para = paragraphs.find((p) => p.paragraphIndex === raw.paragraphIndex)
           const sourceType = validSourceTypes.has(raw.sourceType)
@@ -124,6 +133,7 @@ export const sourceAttributionService = {
             : 'no-source'
           return {
             id: `sa-${input.target.level}-${input.target.occurrenceIndex}-${raw.paragraphIndex}`,
+            ...(resolvedSectionId ? { sectionId: resolvedSectionId } : {}),
             sectionLocator: input.target,
             paragraphIndex: raw.paragraphIndex,
             paragraphDigest: para?.digest ?? '',
@@ -139,7 +149,11 @@ export const sourceAttributionService = {
         await documentService.updateMetadata(input.projectId, (meta) => ({
           ...meta,
           sourceAttributions: [
-            ...meta.sourceAttributions.filter((a) => locatorKey(a.sectionLocator) !== sectionKey),
+            ...meta.sourceAttributions.filter((a) =>
+              resolvedSectionId && a.sectionId
+                ? a.sectionId !== resolvedSectionId
+                : locatorKey(a.sectionLocator) !== sectionKey
+            ),
             ...attributions,
           ],
         }))
@@ -232,9 +246,16 @@ export const sourceAttributionService = {
         // Parse structured JSON from agent output
         const rawValidations = parseBaselineJson(agentStatus.result.content)
 
+        // Story 11.1: canonical sectionId stamping for baseline validations.
+        const metaForLookup = await documentService.getMetadata(input.projectId)
+        const resolvedSectionId = metaForLookup.sectionIndex
+          ? resolveSectionIdFromLocator(metaForLookup.sectionIndex, input.target)
+          : undefined
+
         // Build full BaselineValidation records
         const validations: BaselineValidation[] = rawValidations.map((raw) => ({
           id: `bv-${input.target.level}-${input.target.occurrenceIndex}-${raw.paragraphIndex}`,
+          ...(resolvedSectionId ? { sectionId: resolvedSectionId } : {}),
           sectionLocator: input.target,
           paragraphIndex: raw.paragraphIndex,
           claim: raw.claim,
@@ -249,7 +270,11 @@ export const sourceAttributionService = {
         await documentService.updateMetadata(input.projectId, (meta) => ({
           ...meta,
           baselineValidations: [
-            ...meta.baselineValidations.filter((v) => locatorKey(v.sectionLocator) !== sectionKey),
+            ...meta.baselineValidations.filter((v) =>
+              resolvedSectionId && v.sectionId
+                ? v.sectionId !== resolvedSectionId
+                : locatorKey(v.sectionLocator) !== sectionKey
+            ),
             ...validations,
           ],
         }))

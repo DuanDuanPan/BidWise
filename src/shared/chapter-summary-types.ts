@@ -19,7 +19,12 @@ export const CHAPTER_SUMMARY_FALLBACK_LENGTH = 500
 
 /** Persisted entry in chapter-summaries.json sidecar */
 export interface ChapterSummaryEntry {
-  /** Stable identity: createChapterLocatorKey(locator) */
+  /**
+   * Story 11.1: canonical project-level chapter UUID. Optional for
+   * backward-read of legacy v1 sidecars; post-migration writers always set it.
+   */
+  sectionId?: string
+  /** DOM-bridging key: createChapterLocatorKey(locator). Kept for read-side. */
   headingKey: string
   headingTitle: string
   headingLevel: ChapterHeadingLocator['level']
@@ -44,6 +49,8 @@ export interface ChapterSummarySidecar {
 
 /** Single grouped summary candidate after read-time hydration */
 export interface GeneratedChapterSummary {
+  /** Story 11.1: project-level chapter UUID when resolvable via sectionIndex. */
+  sectionId?: string
   headingKey: string
   headingTitle: string
   headingLevel: ChapterHeadingLocator['level']

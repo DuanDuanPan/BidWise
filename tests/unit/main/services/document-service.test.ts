@@ -408,6 +408,41 @@ describe('documentService @story-3-1', () => {
       expect(result.sourceAttributions).toEqual([])
       expect(result.baselineValidations).toEqual([])
     })
+
+    it('@story-11-1 preserves chapterIdentitySchemaVersion on read', async () => {
+      const meta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        sourceAttributions: [],
+        baselineValidations: [],
+        chapterIdentitySchemaVersion: 2,
+        lastSavedAt: '2026-04-06T00:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(meta))
+
+      const result = await documentService.getMetadata('proj-1')
+      expect(result.chapterIdentitySchemaVersion).toBe(2)
+    })
+
+    it('@story-11-1 rejects chapterIdentitySchemaVersion outside {1,2}', async () => {
+      const meta = {
+        version: '1.0',
+        projectId: 'proj-1',
+        annotations: [],
+        scores: [],
+        sourceAttributions: [],
+        baselineValidations: [],
+        chapterIdentitySchemaVersion: 99,
+        lastSavedAt: '2026-04-06T00:00:00.000Z',
+      }
+      mockReadFile.mockResolvedValue(JSON.stringify(meta))
+
+      await expect(documentService.getMetadata('proj-1')).rejects.toMatchObject({
+        code: 'PARSE',
+      })
+    })
   })
 
   describe('@story-3-5 updateMetadata', () => {

@@ -39,7 +39,12 @@ import {
   isMarkdownSectionContentEmpty,
 } from '@shared/chapter-markdown'
 import { chapterSummaryStore } from '@main/services/chapter-summary-store'
-import { createChapterLocatorKey } from '@shared/chapter-locator-key'
+import { createChapterLocatorKey, parseChapterLocatorKey } from '@shared/chapter-locator-key'
+import {
+  isStableSectionId,
+  resolveLocatorFromSectionId,
+  resolveSectionIdFromLocator,
+} from '@shared/chapter-identity'
 import { headingTreeDistance } from '@main/utils/heading-tree-distance'
 import {
   CHAPTER_SUMMARY_FALLBACK_LENGTH,
@@ -610,11 +615,16 @@ export const chapterGenerationService = {
     sectionId: string,
     plan: SkeletonExpandPlan
   ): Promise<{ success: true }> {
+    // Story 11.1: callers may pass either a UUID `sectionId` or the legacy
+    // locator-key form (`2:公司简介:0`). Normalize to UUID so
+    // `confirmedSkeletons` is keyed consistently with the rest of the
+    // identity model.
+    const normalizedSectionId = await this._normalizeSectionId(projectId, sectionId)
     await documentService.updateMetadata(projectId, (current) => ({
       ...current,
       confirmedSkeletons: {
         ...current.confirmedSkeletons,
-        [sectionId]: plan,
+        [normalizedSectionId]: plan,
       },
     }))
     return { success: true }
@@ -627,10 +637,16 @@ export const chapterGenerationService = {
   ): Promise<BatchGenerateOutput> {
     // Read confirmed skeleton from metadata
     const metadata = await documentService.getMetadata(projectId)
-    const confirmedSkeleton = metadata.confirmedSkeletons?.[sectionId]
+    // Story 11.1: try UUID directly, then fall back to locator-key lookup for
+    // pre-migration callers. Prefer the UUID form so subsequent writes stay
+    // canonical.
+    const normalizedSectionId = await this._normalizeSectionId(projectId, sectionId, metadata)
+    const confirmedSkeleton =
+      metadata.confirmedSkeletons?.[normalizedSectionId] ?? metadata.confirmedSkeletons?.[sectionId]
     if (!confirmedSkeleton) {
       throw new BidWiseError(ErrorCode.NOT_FOUND, `确认的骨架计划未找到: sectionId=${sectionId}`)
     }
+    sectionId = normalizedSectionId
 
     // Build full rich context (same as _dispatchGeneration)
     const doc = await documentService.load(projectId)
@@ -1309,16 +1325,61 @@ export const chapterGenerationService = {
     try {
       const metadata = await documentService.getMetadata(projectId)
       if (!metadata.sectionIndex || metadata.sectionIndex.length === 0) return undefined
-
-      const entry = metadata.sectionIndex.find(
-        (s) =>
-          s.headingLocator.title === target.title &&
-          s.headingLocator.level === target.level &&
-          s.headingLocator.occurrenceIndex === target.occurrenceIndex
-      )
-      return entry?.sectionId
+      return resolveSectionIdFromLocator(metadata.sectionIndex, target)
     } catch (err) {
       logger.warn('Failed to resolve sectionId from metadata:', err)
+      return undefined
+    }
+  },
+
+  /**
+   * Story 11.1: normalize any caller-provided sectionId to the canonical UUID
+   * stored in `sectionIndex`. Accepts:
+   *   1. Actual UUID → returned as-is.
+   *   2. Locator key `level:title:occurrenceIndex` → parsed and resolved.
+   *   3. Unknown string (template key, title-hash) → returned as-is so legacy
+   *      data still round-trips while migration catches up.
+   */
+  async _normalizeSectionId(
+    projectId: string,
+    sectionIdOrKey: string,
+    preloadedMetadata?: {
+      sectionIndex?: { headingLocator: ChapterHeadingLocator; sectionId: string }[]
+    }
+  ): Promise<string> {
+    if (isStableSectionId(sectionIdOrKey)) return sectionIdOrKey
+    try {
+      const metadata = preloadedMetadata ?? (await documentService.getMetadata(projectId))
+      const sectionIndex = metadata.sectionIndex
+      if (!sectionIndex || sectionIndex.length === 0) return sectionIdOrKey
+
+      const locator = parseChapterLocatorKey(sectionIdOrKey)
+      if (locator) {
+        const resolved = resolveSectionIdFromLocator(sectionIndex as never, locator)
+        if (resolved) return resolved
+      }
+      // Fallback: exact match on sectionId (covers template keys like `s1.1`
+      // that survived migration for read-only contexts).
+      const direct = sectionIndex.find((s) => s.sectionId === sectionIdOrKey)
+      if (direct) return direct.sectionId
+      return sectionIdOrKey
+    } catch (err) {
+      logger.warn(`Failed to normalize sectionId "${sectionIdOrKey}":`, err)
+      return sectionIdOrKey
+    }
+  },
+
+  /** Story 11.1: inverse of `_resolveSectionId` — UUID → current locator. */
+  async _resolveLocatorFromSectionId(
+    projectId: string,
+    sectionId: string
+  ): Promise<ChapterHeadingLocator | undefined> {
+    try {
+      const metadata = await documentService.getMetadata(projectId)
+      if (!metadata.sectionIndex || metadata.sectionIndex.length === 0) return undefined
+      return resolveLocatorFromSectionId(metadata.sectionIndex, sectionId)
+    } catch (err) {
+      logger.warn('Failed to resolve locator from sectionId:', err)
       return undefined
     }
   },

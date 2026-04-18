@@ -1,10 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChapterHeadingLocator } from '@shared/chapter-types'
 import { createChapterLocatorKey } from '@shared/chapter-locator-key'
+import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
+import { useDocumentStore } from '@renderer/stores'
 
 export interface CurrentSectionInfo {
   locator: ChapterHeadingLocator
+  /** Story 11.1: locator-key view used for DOM bridging / scroll alignment. */
   sectionKey: string
+  /**
+   * Story 11.1: canonical project-level UUID, resolved via
+   * `proposal.meta.json.sectionIndex`. Undefined when metadata has not yet
+   * loaded or the heading is not indexed (e.g. freshly typed unsynced
+   * heading). Consumers that persist this value MUST fall through to
+   * `sectionKey` only as a read-bridge, never as a persistence id.
+   */
+  sectionId?: string
   label: string
 }
 
@@ -22,6 +33,7 @@ export interface UseCurrentSectionOptions {
 export function useCurrentSection(options?: UseCurrentSectionOptions): CurrentSectionInfo | null {
   const minLevel = options?.minLevel ?? 2
   const maxLevel = options?.maxLevel ?? 4
+  const sectionIndex = useDocumentStore((s) => s.sectionIndex)
   const [section, setSection] = useState<CurrentSectionInfo | null>(null)
   const lastKeyRef = useRef<string | null>(null)
   const detectFrameRef = useRef<number | null>(null)
@@ -83,10 +95,15 @@ export function useCurrentSection(options?: UseCurrentSectionOptions): CurrentSe
     const occurrenceIndex = parseInt(occStr, 10)
     const locator: ChapterHeadingLocator = { title: text, level, occurrenceIndex }
     const sectionKey = createChapterLocatorKey(locator)
+    // Story 11.1: resolve canonical UUID when sectionIndex is available so
+    // downstream persistence (annotations, traceability) has a stable id.
+    const sectionId = sectionIndex.length
+      ? resolveSectionIdFromLocator(sectionIndex, locator)
+      : undefined
 
     lastKeyRef.current = sectionKey
-    setSection({ locator, sectionKey, label: text })
-  }, [minLevel, maxLevel])
+    setSection({ locator, sectionKey, sectionId, label: text })
+  }, [minLevel, maxLevel, sectionIndex])
 
   useEffect(() => {
     const container = document.querySelector(

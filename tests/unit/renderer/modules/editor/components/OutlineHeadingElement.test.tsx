@@ -11,6 +11,9 @@ vi.mock('@renderer/stores', () => ({
   useDocumentStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       content: mockContent,
+      // Story 11.1: OutlineHeadingElement now selects sectionIndex to derive
+      // canonical UUID `sectionId`; keep tests stable with an empty default.
+      sectionIndex: [],
     })
   ),
 }))

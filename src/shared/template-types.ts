@@ -1,7 +1,13 @@
 import type { ChapterHeadingLocator } from './chapter-types'
 
-/** 模板章节定义 */
+/** 模板章节定义 — template-local structural key (e.g. "s1.1") */
 export interface TemplateSection {
+  /**
+   * Template-local key, stable across project instances of the same template.
+   * After materialization, this becomes `templateSectionKey` on the project
+   * chapter identity entry and `SkeletonSection.id` carries a project-local
+   * UUID instead (Story 11.1).
+   */
   id: string // 如 "s1", "s1.1"
   title: string // 章节标题
   level: 1 | 2 | 3 | 4 // 标题层级
@@ -30,7 +36,10 @@ export interface ProposalTemplate {
 
 /** 骨架章节（模板 + 评分权重合并后） */
 export interface SkeletonSection {
+  /** Project-local UUID v4 (Story 11.1). */
   id: string
+  /** Template-local structural key preserved for traceability. */
+  templateSectionKey?: string
   title: string
   level: 1 | 2 | 3 | 4
   guidanceText?: string
@@ -45,7 +54,10 @@ export interface SkeletonSection {
 
 /** 持久化到 proposal.meta.json 的权重映射 */
 export interface SectionWeightEntry {
-  sectionId: string // 稳定骨架节点 ID
+  /** Project-level stable UUID (Story 11.1). */
+  sectionId: string
+  /** Template-local structural key, preserved through migration. */
+  templateSectionKey?: string
   sectionTitle: string
   weightPercent: number
   isKeyFocus: boolean
@@ -57,7 +69,10 @@ export interface SectionWeightEntry {
 
 /** 追溯矩阵章节索引条目 (Story 2.8) */
 export interface ProposalSectionIndexEntry {
+  /** Project-level stable UUID v4 (Story 11.1). */
   sectionId: string
+  /** Template-local structural key (e.g. "s1.1") — preserved for traceability. */
+  templateSectionKey?: string
   title: string
   level: 1 | 2 | 3 | 4
   parentSectionId?: string

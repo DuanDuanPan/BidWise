@@ -88,7 +88,9 @@ import type {
   GenerateSkeletonOutput,
   PersistSkeletonInput,
   PersistSkeletonOutput,
+  ProposalSectionIndexEntry,
 } from './template-types'
+import type { ChapterTreeNode } from './chapter-types'
 import type {
   ChapterHeadingLocator,
   ChapterGenerateInput,
@@ -336,6 +338,10 @@ export const IPC_CHANNELS = {
   CHAPTER_BATCH_GENERATE: 'chapter:batch-generate',
   CHAPTER_BATCH_RETRY_SECTION: 'chapter:batch-retry-section',
   CHAPTER_BATCH_SKIP_SECTION: 'chapter:batch-skip-section',
+  CHAPTER_STRUCTURE_LIST: 'chapter-structure:list',
+  CHAPTER_STRUCTURE_GET: 'chapter-structure:get',
+  CHAPTER_STRUCTURE_TREE: 'chapter-structure:tree',
+  CHAPTER_STRUCTURE_PATH: 'chapter-structure:path',
   CHAPTER_SUMMARY_EXTRACT: 'chapter-summary:extract',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
@@ -471,6 +477,22 @@ export type IpcChannelMap = {
   'chapter:batch-generate': { input: BatchGenerateInput; output: BatchGenerateOutput }
   'chapter:batch-retry-section': { input: BatchRetrySectionInput; output: BatchRetrySectionOutput }
   'chapter:batch-skip-section': { input: BatchSkipSectionInput; output: BatchSkipSectionOutput }
+  'chapter-structure:list': {
+    input: { projectId: string }
+    output: ProposalSectionIndexEntry[]
+  }
+  'chapter-structure:get': {
+    input: { projectId: string; sectionId: string }
+    output: ProposalSectionIndexEntry | null
+  }
+  'chapter-structure:tree': {
+    input: { projectId: string }
+    output: ChapterTreeNode[]
+  }
+  'chapter-structure:path': {
+    input: { projectId: string; sectionId: string }
+    output: string | null
+  }
   'chapter-summary:extract': {
     input: ChapterSummaryExtractInput
     output: ChapterSummaryExtractOutput

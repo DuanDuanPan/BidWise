@@ -202,6 +202,18 @@ const requestApi = {
   chapterBatchSkipSection: (input: IpcChannelMap['chapter:batch-skip-section']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_BATCH_SKIP_SECTION, input),
 
+  chapterStructureList: (input: IpcChannelMap['chapter-structure:list']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_LIST, input),
+
+  chapterStructureGet: (input: IpcChannelMap['chapter-structure:get']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_GET, input),
+
+  chapterStructureTree: (input: IpcChannelMap['chapter-structure:tree']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_TREE, input),
+
+  chapterStructurePath: (input: IpcChannelMap['chapter-structure:path']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_PATH, input),
+
   chapterSummaryExtract: (input: IpcChannelMap['chapter-summary:extract']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_SUMMARY_EXTRACT, input),
 

@@ -14,6 +14,7 @@ import { createLogger } from '@main/utils/logger'
 import { documentService } from '@main/services/document-service'
 import { chapterSummaryStore } from '@main/services/chapter-summary-store'
 import { createChapterLocatorKey } from '@shared/chapter-locator-key'
+import { resolveSectionIdFromLocator } from '@shared/chapter-identity'
 import { createContentDigest, getMarkdownDirectSectionBody } from '@shared/chapter-markdown'
 import { extractJsonObject } from '@main/utils/llm-json'
 import {
@@ -109,7 +110,24 @@ export const chapterSummaryPostProcessor: AgentPostProcessor = async (result, co
     summaryText = truncate(fallbackSource, PLAIN_TEXT_FALLBACK_LENGTH)
   }
 
+  // Story 11.1: resolve canonical UUID sectionId from the live sectionIndex
+  // so summary entries can be joined to structure edits even after title or
+  // order changes. Missing sectionIndex (empty skeleton) leaves sectionId
+  // undefined — read-side keeps bridging via headingKey.
+  let resolvedSectionId: string | undefined
+  try {
+    const meta = await documentService.getMetadata(projectId)
+    if (meta.sectionIndex && meta.sectionIndex.length > 0) {
+      resolvedSectionId = resolveSectionIdFromLocator(meta.sectionIndex, locator)
+    }
+  } catch (err) {
+    logger.warn(
+      `chapter-summary post-processor: sectionIndex resolve failed for "${locator.title}" (${(err as Error).message}); falling back to headingKey-only entry`
+    )
+  }
+
   const entry: ChapterSummaryEntry = {
+    ...(resolvedSectionId ? { sectionId: resolvedSectionId } : {}),
     headingKey: createChapterLocatorKey(locator),
     headingTitle: locator.title,
     headingLevel: locator.level,
@@ -123,7 +141,7 @@ export const chapterSummaryPostProcessor: AgentPostProcessor = async (result, co
 
   await chapterSummaryStore.upsert(projectId, entry)
   logger.info(
-    `chapter-summary persisted: project=${projectId} locator=${entry.headingKey} lineHash=${lineHash.slice(0, 8)} structured=${structured !== null}`
+    `chapter-summary persisted: project=${projectId} locator=${entry.headingKey} sectionId=${resolvedSectionId ?? 'n/a'} lineHash=${lineHash.slice(0, 8)} structured=${structured !== null}`
   )
 
   return { ...result, content: summaryText }
