@@ -2,28 +2,21 @@ import type { ChapterGenerationPhase } from '@shared/chapter-types'
 import type { ChapterNodeState } from '@renderer/stores/chapterStructureStore'
 
 /**
- * Story 11.9: unified structure tree view contracts.
+ * Structure tree view contracts.
  *
- * The public `<StructureTreeView>` component is consumed by two hosts:
- *   - `SkeletonEditor` (draft mode): in-memory `SkeletonSection[]` edits with
- *     full-tree replace semantics via `onUpdate`.
- *   - `StructureDesignWorkspace` (persisted mode): live `sectionIndex` edits
- *     that route through Story 11.3 store actions + Story 11.9 DnD / insert
- *     child contracts.
+ * Consumed by `StructureDesignWorkspace` (solution-design has-content) and
+ * `DocumentOutlineTree` (proposal-writing). All mutations flow through
+ * host-supplied callbacks that close over `chapterStructureStore` actions.
  */
 
-export type StructureTreeViewMode = 'draft' | 'persisted'
-
 export interface StructureTreeNode {
-  /** Stable node key. draft = internal id; persisted = sectionId (UUID). */
+  /** Stable node key === canonical `sectionId` (UUID). */
   key: string
   title: string
   level: 1 | 2 | 3 | 4 | 5 | 6
-  /** draft: show red `重点投入` tag. persisted: ignored. */
+  /** Forwarded from sectionIndex so the footer "N 个重点章节" stat stays honest. */
   isKeyFocus?: boolean
-  /** draft: show weight tag with color bucket (>=15% red, >=5% orange). persisted: ignored. */
-  weightPercent?: number
-  /** persisted: stable template anchor; draft: unused. */
+  /** Stable template anchor, when the section came from a template. */
   templateSectionKey?: string
   children: StructureTreeNode[]
 }
@@ -31,20 +24,16 @@ export interface StructureTreeNode {
 export type StructureTreeViewPlacement = 'before' | 'after' | 'inside'
 
 export interface StructureTreeViewProps {
-  mode: StructureTreeViewMode
   nodes: StructureTreeNode[]
 
-  /** Five-state visual (persisted only). Ignored in draft mode. */
+  /** Five-state visual. */
   stateOf?: (key: string) => ChapterNodeState
-  /** Idle-state phase decorator (persisted only). */
+  /** Idle-state phase decorator. */
   phaseByKey?: ReadonlyMap<string, ChapterGenerationPhase>
 
-  /* === Write path — mode-exclusive. === */
-  /** draft: full-tree replace after any mutation. persisted: must not be passed. */
-  onUpdate?: (nextNodes: StructureTreeNode[]) => void
-  /** persisted: insert a new last-child under `parentKey`. */
+  /* === Write path — all mutations route through host callbacks that close
+   *     over `chapterStructureStore` actions. === */
   onInsertChild?: (parentKey: string) => Promise<void> | void
-  /** persisted: insert a sibling after `targetKey`. */
   onInsertSibling?: (targetKey: string) => Promise<void> | void
   onIndent?: (targetKey: string) => Promise<void> | void
   onOutdent?: (targetKey: string) => Promise<void> | void
@@ -59,11 +48,10 @@ export interface StructureTreeViewProps {
 
   /* === Shared === */
   /**
-   * Required when `mode='persisted'` and keyboard support is on — the internal
-   * Story 11.3 keymap dispatches `insertSibling` / `indent` / `outdent` /
-   * `requestSoftDelete` against this projectId. Omitting it (or passing null)
-   * silently disables the keymap so draft mounts and read-only previews stay
-   * pure.
+   * Required when keyboard support is on — the internal Story 11.3 keymap
+   * dispatches `insertSibling` / `indent` / `outdent` / `requestSoftDelete`
+   * against this projectId. Omitting it (or passing null) silently disables
+   * the keymap so read-only previews stay pure.
    */
   projectId?: string | null
   onConfirm?: () => void
@@ -72,6 +60,7 @@ export interface StructureTreeViewProps {
   confirmLoading?: boolean
   onReselectTemplate?: () => void
   showStats?: boolean
+  /** Defaults to `true`; set to `false` for read-only previews. */
   keyboardEnabled?: boolean
   maxDepth?: number
   emptyHint?: React.ReactNode

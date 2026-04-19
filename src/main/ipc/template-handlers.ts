@@ -12,10 +12,6 @@ const templateHandlerMap: { [C in TemplateChannel]: () => void } = {
     createIpcHandler('template:generate-skeleton', (input) =>
       templateService.generateSkeleton(input)
     ),
-  'template:persist-skeleton': () =>
-    createIpcHandler('template:persist-skeleton', (input) =>
-      templateService.persistSkeleton(input)
-    ),
 }
 
 export type RegisteredTemplateChannels = TemplateChannel

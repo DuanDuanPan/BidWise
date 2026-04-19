@@ -182,9 +182,6 @@ const requestApi = {
   templateGenerateSkeleton: (input: IpcChannelMap['template:generate-skeleton']['input']) =>
     typedInvoke(IPC_CHANNELS.TEMPLATE_GENERATE_SKELETON, input),
 
-  templatePersistSkeleton: (input: IpcChannelMap['template:persist-skeleton']['input']) =>
-    typedInvoke(IPC_CHANNELS.TEMPLATE_PERSIST_SKELETON, input),
-
   chapterGenerate: (input: IpcChannelMap['chapter:generate']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_GENERATE, input),
 

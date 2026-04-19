@@ -86,8 +86,6 @@ import type {
   ProposalTemplate,
   GenerateSkeletonInput,
   GenerateSkeletonOutput,
-  PersistSkeletonInput,
-  PersistSkeletonOutput,
   ProposalSectionIndexEntry,
 } from './template-types'
 import type { ChapterTreeNode, PendingStructureDeletionSummary } from './chapter-types'
@@ -340,7 +338,6 @@ export const IPC_CHANNELS = {
   TEMPLATE_LIST: 'template:list',
   TEMPLATE_GET: 'template:get',
   TEMPLATE_GENERATE_SKELETON: 'template:generate-skeleton',
-  TEMPLATE_PERSIST_SKELETON: 'template:persist-skeleton',
   CHAPTER_GENERATE: 'chapter:generate',
   CHAPTER_REGENERATE: 'chapter:regenerate',
   CHAPTER_SKELETON_GENERATE: 'chapter:skeleton-generate',
@@ -490,7 +487,6 @@ export type IpcChannelMap = {
   'template:list': { input: void; output: TemplateSummary[] }
   'template:get': { input: { templateId: string }; output: ProposalTemplate }
   'template:generate-skeleton': { input: GenerateSkeletonInput; output: GenerateSkeletonOutput }
-  'template:persist-skeleton': { input: PersistSkeletonInput; output: PersistSkeletonOutput }
   'chapter:generate': { input: ChapterGenerateInput; output: ChapterGenerateOutput }
   'chapter:regenerate': { input: ChapterRegenerateInput; output: ChapterGenerateOutput }
   'chapter:skeleton-generate': { input: SkeletonGenerateInput; output: SkeletonGenerateOutput }

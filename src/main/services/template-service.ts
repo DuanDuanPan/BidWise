@@ -14,8 +14,6 @@ import type {
   TemplateSection,
   GenerateSkeletonInput,
   GenerateSkeletonOutput,
-  PersistSkeletonInput,
-  PersistSkeletonOutput,
   SkeletonSection,
   SectionWeightEntry,
   ProposalSectionIndexEntry,
@@ -335,27 +333,6 @@ function countTopLevelSections(sections: SkeletonSection[]): number {
   return sections.filter((s) => s.level === 1).length
 }
 
-/**
- * Story 11.1: defensive normalization for skeletons that arrive from the
- * renderer. If a section carries a template-style `id` (e.g. `s1.1`) instead
- * of a UUID, mint a fresh UUID and preserve the original key as
- * `templateSectionKey`. A UUID already present is left untouched so user edits
- * survive round-tripping.
- */
-function ensureStableIds(sections: SkeletonSection[]): SkeletonSection[] {
-  return sections.map((section) => {
-    const hasUuid = isStableSectionId(section.id)
-    return {
-      ...section,
-      id: hasUuid ? section.id : uuidv4(),
-      templateSectionKey: hasUuid
-        ? section.templateSectionKey
-        : (section.templateSectionKey ?? section.id),
-      children: ensureStableIds(section.children),
-    }
-  })
-}
-
 async function saveMetadata(
   projectId: string,
   sectionWeights: SectionWeightEntry[],
@@ -456,25 +433,5 @@ export const templateService = {
     )
 
     return { skeleton, markdown, sectionWeights, sectionCount, lastSavedAt }
-  },
-
-  async persistSkeleton(input: PersistSkeletonInput): Promise<PersistSkeletonOutput> {
-    const { projectId, templateId } = input
-    // Story 11.1: backfill UUIDs for any sections that arrive with legacy
-    // template-style ids so persistence stays on the UUID canonical model.
-    const skeleton = ensureStableIds(input.skeleton)
-
-    const markdown = sectionsToMarkdown(skeleton)
-    const sectionWeights = extractSectionWeights(skeleton)
-    const sectionIndex = extractSectionIndex(skeleton)
-    const sectionCount = countTopLevelSections(skeleton)
-
-    // Persist proposal.md
-    const { lastSavedAt } = await documentService.save(projectId, markdown)
-
-    // Persist metadata
-    await saveMetadata(projectId, sectionWeights, sectionIndex, templateId)
-
-    return { markdown, sectionWeights, sectionCount, lastSavedAt }
   },
 }

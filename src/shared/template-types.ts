@@ -98,16 +98,3 @@ export interface GenerateSkeletonOutput {
   sectionCount: number
   lastSavedAt: string
 }
-
-export interface PersistSkeletonInput {
-  projectId: string
-  templateId: string
-  skeleton: SkeletonSection[]
-}
-
-export interface PersistSkeletonOutput {
-  markdown: string
-  sectionWeights: SectionWeightEntry[]
-  sectionCount: number
-  lastSavedAt: string
-}

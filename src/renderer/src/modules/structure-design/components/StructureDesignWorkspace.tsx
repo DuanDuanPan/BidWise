@@ -148,7 +148,6 @@ export function StructureDesignWorkspace({
       data-project-id={projectId}
     >
       <StructureTreeView
-        mode="persisted"
         nodes={persistedNodes}
         projectId={projectId}
         stateOf={stateOf}

@@ -385,37 +385,4 @@ describe('template-service @story-3-3', () => {
       expect(background.order).toBe(0) // first (and only) child of overview
     })
   })
-
-  describe('persistSkeleton', () => {
-    beforeEach(() => {
-      mockDocumentService.save.mockResolvedValue({
-        lastSavedAt: '2026-03-30T02:00:00.000Z',
-      })
-      mockDocumentService.updateMetadata.mockResolvedValue({})
-    })
-
-    it('regenerates markdown and updates metadata', async () => {
-      const skeleton = [
-        {
-          id: 's1',
-          title: '第一章',
-          level: 1 as const,
-          guidanceText: '引导文本',
-          isKeyFocus: false,
-          children: [],
-        },
-      ]
-
-      const result = await templateService.persistSkeleton({
-        projectId: 'proj-1',
-        templateId: 'test-template',
-        skeleton,
-      })
-
-      expect(result.markdown).toContain('# 第一章')
-      expect(result.markdown).toContain('> 引导文本')
-      expect(result.sectionCount).toBe(1)
-      expect(mockDocumentService.save).toHaveBeenCalledWith('proj-1', result.markdown)
-    })
-  })
 })

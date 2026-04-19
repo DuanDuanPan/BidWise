@@ -62,3 +62,21 @@ export function findTreeNode(nodes: StructureTreeNode[], key: string): Structure
   }
   return null
 }
+
+/**
+ * Footer stats for the shared action bar. `keyFocus` reflects the
+ * `isKeyFocus` flag carried through `sectionIndexToTreeNodes`.
+ */
+export function countTreeNodes(nodes: StructureTreeNode[]): { total: number; keyFocus: number } {
+  let total = 0
+  let keyFocus = 0
+  const walk = (tree: StructureTreeNode[]): void => {
+    for (const node of tree) {
+      total += 1
+      if (node.isKeyFocus) keyFocus += 1
+      walk(node.children)
+    }
+  }
+  walk(nodes)
+  return { total, keyFocus }
+}

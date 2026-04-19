@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
 import {
   collectSubtreeKeys,
+  countTreeNodes,
   findTreeNode,
   sectionIndexToTreeNodes,
 } from '@modules/structure-design/adapters/persistedAdapter'
@@ -84,9 +85,9 @@ describe('@story-11-9 persistedAdapter', () => {
 
   it('forwards isKeyFocus so the shared footer key-chapter count stays honest', () => {
     // Regression: pre-fix `chapterNodeToTreeNode` dropped isKeyFocus, so
-    // countTreeNodes in persisted mode always returned keyFocus=0 even when
-    // sectionIndex flagged multiple chapters. Spec 11-9 AC7 requires the
-    // shared action bar stat to match source data in both modes.
+    // countTreeNodes always returned keyFocus=0 even when sectionIndex
+    // flagged multiple chapters. Spec 11-9 AC7 requires the shared action
+    // bar stat to match source data.
     const flat = [
       entry({ sectionId: UUID.A, title: 'A', level: 1, order: 0, isKeyFocus: true }),
       entry({ sectionId: UUID.B, title: 'B', level: 1, order: 1, isKeyFocus: false }),
@@ -94,5 +95,29 @@ describe('@story-11-9 persistedAdapter', () => {
     ]
     const tree = sectionIndexToTreeNodes(flat)
     expect(tree.map((n) => n.isKeyFocus)).toEqual([true, false, true])
+  })
+
+  it('countTreeNodes totals nodes + key-focus flags across the whole subtree', () => {
+    const flat = [
+      entry({ sectionId: UUID.A, title: 'A', level: 1, order: 0, isKeyFocus: true }),
+      entry({
+        sectionId: UUID.B,
+        title: 'B',
+        level: 2,
+        order: 0,
+        parentSectionId: UUID.A,
+        isKeyFocus: true,
+      }),
+      entry({
+        sectionId: UUID.C,
+        title: 'C',
+        level: 2,
+        order: 1,
+        parentSectionId: UUID.A,
+        isKeyFocus: false,
+      }),
+    ]
+    const tree = sectionIndexToTreeNodes(flat)
+    expect(countTreeNodes(tree)).toEqual({ total: 3, keyFocus: 2 })
   })
 })

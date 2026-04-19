@@ -80,7 +80,6 @@ describe('SolutionDesignView rename regression', () => {
       templateList: vi.fn(),
       templateGet: vi.fn(),
       templateGenerateSkeleton: vi.fn(),
-      templatePersistSkeleton: vi.fn(),
       documentSave: vi.fn(),
       documentSaveSync: vi.fn(),
     })

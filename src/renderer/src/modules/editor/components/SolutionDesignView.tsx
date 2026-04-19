@@ -1,38 +1,27 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Alert, App, Button, Spin } from 'antd'
 import { useDocumentStore } from '@renderer/stores'
 import { TemplateSelector } from './TemplateSelector'
-import { SkeletonEditor } from './SkeletonEditor'
 import { StructureDesignWorkspace } from '@modules/structure-design/components/StructureDesignWorkspace'
-import type { TemplateSummary, ProposalTemplate, SkeletonSection } from '@shared/template-types'
+import type { TemplateSummary, ProposalTemplate } from '@shared/template-types'
 
-type ViewPhase = 'checking' | 'select-template' | 'edit-skeleton' | 'has-content'
+type ViewPhase = 'checking' | 'select-template' | 'has-content'
 
 interface SolutionDesignViewProps {
   projectId: string
   onEnterProposalWriting: () => void
 }
 
-function skeletonToMarkdown(sections: SkeletonSection[]): string {
-  const lines: string[] = []
-  function render(section: SkeletonSection): void {
-    const hashes = '#'.repeat(section.level)
-    lines.push(`${hashes} ${section.title}`)
-    lines.push('')
-    if (section.guidanceText) {
-      lines.push(`> ${section.guidanceText}`)
-      lines.push('')
-    }
-    for (const child of section.children) {
-      render(child)
-    }
-  }
-  for (const s of sections) {
-    render(s)
-  }
-  return lines.join('\n')
-}
-
+/**
+ * Solution-design entry. After Story 11.9 unification the "edit-skeleton"
+ * phase is gone: `templateGenerateSkeleton` already writes the canonical
+ * `proposal.md` + `proposal.meta.json.sectionIndex`, so the generated
+ * skeleton is immediately loaded through `documentStore.loadDocument` and
+ * the user drops straight into `has-content`. Structural edits (insert /
+ * indent / delete / rename / move) all flow through
+ * `chapterStructureStore` per-mutation, removing the old in-memory draft
+ * + debounced `templatePersistSkeleton` round-trip.
+ */
 export function SolutionDesignView({
   projectId,
   onEnterProposalWriting,
@@ -48,19 +37,9 @@ export function SolutionDesignView({
   const [previewTemplate, setPreviewTemplate] = useState<ProposalTemplate | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
-
-  // Skeleton editing state
-  const [skeleton, setSkeleton] = useState<SkeletonSection[]>([])
-  const [templateId, setTemplateId] = useState<string>('')
   const [overwriteConfirmed, setOverwriteConfirmed] = useState(false)
 
-  // Debounce timer for persist
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const persistingRef = useRef(false)
-  const pendingPersistRef = useRef<SkeletonSection[] | null>(null)
-
   const loadDocument = useDocumentStore((s) => s.loadDocument)
-  const updateContent = useDocumentStore((s) => s.updateContent)
   const documentContent = useDocumentStore((s) => s.content)
   const documentLoading = useDocumentStore((s) => s.loading)
 
@@ -82,29 +61,17 @@ export function SolutionDesignView({
     return '继续撰写'
   }, [metaLoaded, metaTemplateId, firstSkeletonConfirmedAt])
 
-  // Cancel any in-flight debounce timer and pending persist
-  const cancelPendingPersist = useCallback(() => {
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current)
-      persistTimerRef.current = null
-    }
-    pendingPersistRef.current = null
-  }, [])
-
   // Reset state when projectId changes to avoid stale phase from previous project
   useEffect(() => {
-    cancelPendingPersist()
     setPhase('checking')
     setError(null)
-    setSkeleton([])
     setSelectedTemplateId(null)
     setPreviewTemplate(null)
-    setTemplateId('')
     setOverwriteConfirmed(false)
     setMetaTemplateId(undefined)
     setFirstSkeletonConfirmedAt(undefined)
     setMetaLoaded(false)
-  }, [projectId, cancelPendingPersist])
+  }, [projectId])
 
   // Load proposal metadata sidecar when entering has-content so the CTA label
   // reflects live `templateId` + `firstSkeletonConfirmedAt` state. Re-runs per
@@ -201,7 +168,11 @@ export function SolutionDesignView({
     }
   }, [])
 
-  // Generate skeleton
+  // Generate skeleton → refresh store → drop straight into has-content.
+  // `templateGenerateSkeleton` writes proposal.md + proposal.meta.json.sectionIndex
+  // on the main side, so `loadDocument` picks both up and every downstream
+  // consumer (StructureDesignWorkspace, chapter-structure-store, outline
+  // parser) sees the new tree without any in-memory draft round-trip.
   const handleGenerate = useCallback(async () => {
     if (!selectedTemplateId) return
     setGenerating(true)
@@ -213,10 +184,13 @@ export function SolutionDesignView({
         overwriteExisting: overwriteConfirmed,
       })
       if (res.success) {
-        setSkeleton(res.data.skeleton)
-        setTemplateId(selectedTemplateId)
-        updateContent(res.data.markdown, projectId, { scheduleSave: false })
-        setPhase('edit-skeleton')
+        // Force the has-content metadata effect to re-fetch so CTA label /
+        // firstSkeletonConfirmedAt reflect the freshly-generated skeleton.
+        setMetaLoaded(false)
+        setMetaTemplateId(undefined)
+        setFirstSkeletonConfirmedAt(undefined)
+        await loadDocument(projectId)
+        setPhase('has-content')
       } else {
         if (res.error.code === 'SKELETON_OVERWRITE_REQUIRED') {
           modal.confirm({
@@ -238,7 +212,7 @@ export function SolutionDesignView({
     } finally {
       setGenerating(false)
     }
-  }, [selectedTemplateId, projectId, overwriteConfirmed, updateContent, modal])
+  }, [selectedTemplateId, projectId, overwriteConfirmed, loadDocument, modal])
 
   // Auto-retry generate after overwrite confirmed
   useEffect(() => {
@@ -247,76 +221,6 @@ export function SolutionDesignView({
       setOverwriteConfirmed(false)
     }
   }, [overwriteConfirmed, handleGenerate])
-
-  // Debounced persist for skeleton edits
-  const doPersist = useCallback(
-    async (sections: SkeletonSection[]) => {
-      persistingRef.current = true
-      try {
-        await window.api.templatePersistSkeleton({
-          projectId,
-          templateId,
-          skeleton: sections,
-        })
-      } catch (err) {
-        // Non-fatal, skeleton is in memory
-        console.warn('Skeleton persist failed:', err)
-      } finally {
-        persistingRef.current = false
-        // If there's a pending persist, run it
-        const pending = pendingPersistRef.current
-        if (pending) {
-          pendingPersistRef.current = null
-          void doPersist(pending)
-        }
-      }
-    },
-    [projectId, templateId]
-  )
-
-  const handleSkeletonUpdate = useCallback(
-    (updated: SkeletonSection[]) => {
-      setSkeleton(updated)
-      // Sync markdown to store for outline/word count
-      const markdown = skeletonToMarkdown(updated)
-      updateContent(markdown, projectId, { scheduleSave: false })
-      // Debounced persist
-      if (persistTimerRef.current) {
-        clearTimeout(persistTimerRef.current)
-      }
-      persistTimerRef.current = setTimeout(() => {
-        persistTimerRef.current = null
-        if (persistingRef.current) {
-          pendingPersistRef.current = updated
-        } else {
-          void doPersist(updated)
-        }
-      }, 1000)
-    },
-    [projectId, updateContent, doPersist]
-  )
-
-  const handleConfirmSkeleton = useCallback(async () => {
-    // Wait for pending persist
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current)
-      persistTimerRef.current = null
-      await doPersist(skeleton)
-    }
-    // Wait if currently persisting
-    while (persistingRef.current) {
-      await new Promise((r) => setTimeout(r, 100))
-    }
-    // Story 11.9 AC6: mark the first-confirm timestamp BEFORE entering
-    // proposal-writing. The IPC is idempotent, so re-confirms are no-ops.
-    try {
-      await window.api.documentMarkSkeletonConfirmed({ projectId })
-    } catch {
-      // Non-fatal: label stays as "确认骨架，开始撰写" on next visit; user can
-      // re-confirm. Never block the proposal-writing transition on this write.
-    }
-    onEnterProposalWriting()
-  }, [skeleton, doPersist, onEnterProposalWriting, projectId])
 
   const handleConfirmHasContent = useCallback(async () => {
     // Story 11.9 AC6: always mark the first-confirm signal. The IPC is
@@ -331,24 +235,6 @@ export function SolutionDesignView({
     onEnterProposalWriting()
   }, [projectId, onEnterProposalWriting])
 
-  const handleRegenerate = useCallback(() => {
-    modal.confirm({
-      title: '重新选择模板',
-      content: '重新生成骨架将覆盖当前编辑内容，是否继续？',
-      okText: '确认',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: () => {
-        cancelPendingPersist()
-        setPhase('select-template')
-        setSkeleton([])
-        setSelectedTemplateId(null)
-        setPreviewTemplate(null)
-        setOverwriteConfirmed(true)
-      },
-    })
-  }, [cancelPendingPersist, modal])
-
   const handleReselectFromHasContent = useCallback(() => {
     modal.confirm({
       title: '重新选择模板',
@@ -357,17 +243,11 @@ export function SolutionDesignView({
       okType: 'danger',
       cancelText: '取消',
       onOk: () => {
-        cancelPendingPersist()
         setOverwriteConfirmed(true)
         setPhase('select-template')
       },
     })
-  }, [cancelPendingPersist, modal])
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return cancelPendingPersist
-  }, [cancelPendingPersist])
+  }, [modal])
 
   // --- Render ---
 
@@ -420,15 +300,6 @@ export function SolutionDesignView({
           generating={generating}
           onSelect={handleSelectTemplate}
           onGenerate={handleGenerate}
-        />
-      )}
-
-      {phase === 'edit-skeleton' && (
-        <SkeletonEditor
-          skeleton={skeleton}
-          onUpdate={handleSkeletonUpdate}
-          onConfirm={handleConfirmSkeleton}
-          onRegenerate={handleRegenerate}
         />
       )}
     </div>

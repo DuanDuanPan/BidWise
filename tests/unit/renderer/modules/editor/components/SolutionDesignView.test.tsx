@@ -48,7 +48,6 @@ vi.mock('@renderer/stores/documentStore', () => ({
 const mockTemplateList = vi.fn()
 const mockTemplateGet = vi.fn()
 const mockTemplateGenerateSkeleton = vi.fn()
-const mockTemplatePersistSkeleton = vi.fn()
 const mockDocumentMarkSkeletonConfirmed = vi.fn().mockResolvedValue({ success: true, data: null })
 const mockDocumentGetMetadata = vi.fn().mockResolvedValue({
   success: true,
@@ -83,7 +82,6 @@ Object.defineProperty(window, 'api', {
     templateList: mockTemplateList,
     templateGet: mockTemplateGet,
     templateGenerateSkeleton: mockTemplateGenerateSkeleton,
-    templatePersistSkeleton: mockTemplatePersistSkeleton,
     documentGetMetadata: mockDocumentGetMetadata,
     documentMarkSkeletonConfirmed: mockDocumentMarkSkeletonConfirmed,
   },

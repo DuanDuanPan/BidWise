@@ -1,27 +1,17 @@
 /**
  * Structure Design module public surface.
- *
- * Story 11.9: single unified `<StructureTreeView>` renderer replaces the
- * Story 11.2 `StructureCanvas` / `StructureCanvasNode` pair. Consumers are
- * `SkeletonEditor` (draft) and `StructureDesignWorkspace` (persisted).
  */
 export { StructureDesignWorkspace } from './components/StructureDesignWorkspace'
 export { StructureTreeView } from './components/StructureTreeView'
 export type {
   StructureTreeNode,
-  StructureTreeViewMode,
   StructureTreeViewPlacement,
   StructureTreeViewProps,
 } from './components/StructureTreeView.types'
 export {
-  skeletonToTreeNodes,
-  treeNodesToSkeleton,
-  countTreeNodes,
-  generateDraftKey,
-} from './adapters/skeletonAdapter'
-export {
   sectionIndexToTreeNodes,
   collectSubtreeKeys,
+  countTreeNodes,
   findTreeNode,
 } from './adapters/persistedAdapter'
 export { useStructureOutline } from './hooks/useStructureOutline'

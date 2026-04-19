@@ -5,7 +5,6 @@ const mockTemplateService = vi.hoisted(() => ({
   listTemplates: vi.fn(),
   getTemplate: vi.fn(),
   generateSkeleton: vi.fn(),
-  persistSkeleton: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -27,9 +26,9 @@ describe('template-handlers @story-3-3', () => {
     vi.clearAllMocks()
   })
 
-  it('registers all four template channels', () => {
+  it('registers all three template channels', () => {
     registerTemplateHandlers()
-    expect(mockCreateIpcHandler).toHaveBeenCalledTimes(4)
+    expect(mockCreateIpcHandler).toHaveBeenCalledTimes(3)
   })
 
   it('registers template:list channel', () => {
@@ -51,13 +50,6 @@ describe('template-handlers @story-3-3', () => {
     const calls = mockCreateIpcHandler.mock.calls
     const genCall = calls.find((c: unknown[]) => c[0] === 'template:generate-skeleton')
     expect(genCall).toBeDefined()
-  })
-
-  it('registers template:persist-skeleton channel', () => {
-    registerTemplateHandlers()
-    const calls = mockCreateIpcHandler.mock.calls
-    const persistCall = calls.find((c: unknown[]) => c[0] === 'template:persist-skeleton')
-    expect(persistCall).toBeDefined()
   })
 
   it('template:list handler delegates to templateService.listTemplates', async () => {
@@ -89,16 +81,5 @@ describe('template-handlers @story-3-3', () => {
     )?.[1] as (input: unknown) => Promise<unknown>
     await handler(input)
     expect(mockTemplateService.generateSkeleton).toHaveBeenCalledWith(input)
-  })
-
-  it('template:persist-skeleton handler delegates to templateService.persistSkeleton', async () => {
-    const input = { projectId: 'p1', templateId: 't1', skeleton: [] }
-    mockTemplateService.persistSkeleton.mockResolvedValue({})
-    registerTemplateHandlers()
-    const handler = mockCreateIpcHandler.mock.calls.find(
-      (c: unknown[]) => c[0] === 'template:persist-skeleton'
-    )?.[1] as (input: unknown) => Promise<unknown>
-    await handler(input)
-    expect(mockTemplateService.persistSkeleton).toHaveBeenCalledWith(input)
   })
 })
