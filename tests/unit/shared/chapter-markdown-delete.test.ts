@@ -157,6 +157,36 @@ describe('@story-11-4 restoreSectionSubtree', () => {
     })
     expect(restored).toBe(md)
   })
+
+  it('prepends as first child of parent when no previous sibling (bug: 二、一)', () => {
+    // User scenario: 新建章节一、二 → 删除章节一 → 撤销 → 必须恢复为 一、二。
+    // Before the fix `parentBlock.endLineIndex` appended after 章节二, flipping
+    // sibling order to 二、一 in both markdown and markdown-driven outline.
+    const original = ['# 项目标书', '## 章节一', '段一', '## 章节二', '段二'].join('\n')
+    const extract = extractSectionSubtree(original, {
+      title: '章节一',
+      level: 2,
+      occurrenceIndex: 0,
+    })!
+    // First child of 项目标书 → `computeRestoreAnchor` captures null for
+    // previousSibling, so `runUndo` only has the parent locator to anchor on.
+    const restored = restoreSectionSubtree(extract.remainderMarkdown, extract.subtreeMarkdown, {
+      previousHeadingLocator: null,
+      parentHeadingLocator: { title: '项目标书', level: 1, occurrenceIndex: 0 },
+    })
+    expect(restored).toBe(original)
+  })
+
+  it('first-child restore keeps order stable across deeper subtrees', () => {
+    const original = ['# 根', '## 章一', '段一', '### 小节', '小段', '## 章二', '段二'].join('\n')
+    const remainder = ['# 根', '## 章二', '段二'].join('\n')
+    const subtree = ['## 章一', '段一', '### 小节', '小段'].join('\n')
+    const restored = restoreSectionSubtree(remainder, subtree, {
+      previousHeadingLocator: null,
+      parentHeadingLocator: { title: '根', level: 1, occurrenceIndex: 0 },
+    })
+    expect(restored).toBe(original)
+  })
 })
 
 describe('@story-11-4 RestoreAnchor serialization', () => {

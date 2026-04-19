@@ -1082,7 +1082,10 @@ export function removeSectionSubtrees(
  *
  *  1. `previousHeadingLocator` resolves → insert immediately after that
  *     sibling's current subtree (matches the original sibling ordering).
- *  2. `parentHeadingLocator` resolves → append as last child of parent.
+ *  2. `parentHeadingLocator` resolves with no previous sibling → prepend
+ *     as first child of parent, i.e. insert before the parent's first
+ *     existing descendant heading (or right after the parent heading line
+ *     when parent currently has no descendants).
  *  3. Neither resolves → prepend at top of document.
  *
  * The caller is responsible for passing the parent locator when it still
@@ -1117,7 +1120,19 @@ function resolveRestoreInsertionPoint(
   }
   if (anchor.parentHeadingLocator) {
     const parentBlock = getSectionSubtreeBlock(markdown, anchor.parentHeadingLocator)
-    if (parentBlock) return parentBlock.endLineIndex
+    if (parentBlock) {
+      // Deleted node had no previous sibling → it was the FIRST child of
+      // parent. Using `parentBlock.endLineIndex` would append AFTER every
+      // surviving sibling, flipping sibling order on restore. Instead,
+      // anchor at the first descendant heading inside the parent block so
+      // the restored subtree lands back at the head of the child list.
+      const headings = extractMarkdownHeadings(markdown)
+      const firstDescendant = headings.find(
+        (h) => h.lineIndex > parentBlock.heading.lineIndex && h.lineIndex < parentBlock.endLineIndex
+      )
+      if (firstDescendant) return firstDescendant.lineIndex
+      return parentBlock.endLineIndex
+    }
   }
   return 0
 }
