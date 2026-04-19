@@ -90,7 +90,7 @@ import type {
   PersistSkeletonOutput,
   ProposalSectionIndexEntry,
 } from './template-types'
-import type { ChapterTreeNode } from './chapter-types'
+import type { ChapterTreeNode, PendingStructureDeletionSummary } from './chapter-types'
 import type {
   ChapterHeadingLocator,
   ChapterGenerateInput,
@@ -358,6 +358,10 @@ export const IPC_CHANNELS = {
   CHAPTER_STRUCTURE_INDENT: 'chapter-structure:indent',
   CHAPTER_STRUCTURE_OUTDENT: 'chapter-structure:outdent',
   CHAPTER_STRUCTURE_MOVE_SUBTREE: 'chapter-structure:move-subtree',
+  CHAPTER_STRUCTURE_SOFT_DELETE: 'chapter-structure:soft-delete',
+  CHAPTER_STRUCTURE_UNDO_DELETE: 'chapter-structure:undo-delete',
+  CHAPTER_STRUCTURE_FINALIZE_DELETE: 'chapter-structure:finalize-delete',
+  CHAPTER_STRUCTURE_LIST_PENDING_DELETIONS: 'chapter-structure:list-pending-deletions',
   CHAPTER_SUMMARY_EXTRACT: 'chapter-summary:extract',
   ANNOTATION_CREATE: 'annotation:create',
   ANNOTATION_UPDATE: 'annotation:update',
@@ -538,6 +542,35 @@ export type IpcChannelMap = {
       placement: 'before' | 'after' | 'inside'
     }
     output: StructureMutationSnapshotDto
+  }
+  'chapter-structure:soft-delete': {
+    input: { projectId: string; sectionIds: string[] }
+    output: {
+      deletionId: string
+      deletedAt: string
+      expiresAt: string
+      lastSavedAt: string
+      markdown: string
+      sectionIndex: ProposalSectionIndexEntry[]
+      summary: PendingStructureDeletionSummary
+    }
+  }
+  'chapter-structure:undo-delete': {
+    input: { projectId: string; deletionId: string }
+    output: {
+      lastSavedAt: string
+      markdown: string
+      sectionIndex: ProposalSectionIndexEntry[]
+      restoredFocusLocator?: ChapterHeadingLocator
+    }
+  }
+  'chapter-structure:finalize-delete': {
+    input: { projectId: string; deletionId: string }
+    output: void
+  }
+  'chapter-structure:list-pending-deletions': {
+    input: { projectId: string }
+    output: PendingStructureDeletionSummary | null
   }
   'chapter-summary:extract': {
     input: ChapterSummaryExtractInput

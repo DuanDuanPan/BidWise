@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useStructureOutline } from '@modules/structure-design/hooks/useStructureOutline'
 import { useDocumentStore } from '@renderer/stores/documentStore'
+import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
+import type { PendingStructureDeletionSummary } from '@shared/chapter-types'
 
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -41,6 +43,7 @@ describe('@story-11-2 useStructureOutline', () => {
       loading: false,
       error: null,
     })
+    useChapterStructureStore.getState().reset()
   })
 
   it('@p0 returns empty tree when projectId is null', () => {
@@ -98,5 +101,46 @@ describe('@story-11-2 useStructureOutline', () => {
     const { result } = renderHook(() => useStructureOutline('proj-1'))
     expect(result.current.tree).toEqual([])
     expect(result.current.error).toBe(null)
+  })
+
+  it('@story-11-4 merges pending-delete sectionIndex entries back into the tree during the Undo window', () => {
+    // Live sectionIndex has already been scrubbed of the deleted subtree by
+    // the soft-delete IPC (Story 11.4). The renderer must still render the
+    // rows so the `pending-delete` visual state has nodes to attach to.
+    seedDocStore('proj-1', [entry({ sectionId: UUID_C, title: '总体', level: 1, order: 1 })])
+    const pendingSummary: PendingStructureDeletionSummary = {
+      deletionId: 'del-1',
+      deletedAt: '2026-04-18T00:00:00.000Z',
+      expiresAt: '2026-04-18T00:00:05.000Z',
+      rootSectionId: UUID_A,
+      sectionIds: [UUID_A, UUID_B],
+      firstTitle: '综述',
+      totalWordCount: 10,
+      subtreeSize: 2,
+      sectionIndexEntries: [
+        entry({ sectionId: UUID_A, title: '综述', level: 1, order: 0 }),
+        entry({
+          sectionId: UUID_B,
+          title: '需求',
+          level: 2,
+          parentSectionId: UUID_A,
+          order: 0,
+        }),
+      ],
+    }
+    useChapterStructureStore.getState().hydratePendingDeletion(pendingSummary)
+
+    const { result } = renderHook(() => useStructureOutline('proj-1'))
+
+    // Deleted root + child appear alongside the live sibling during the window.
+    const topIds = result.current.tree.map((n) => n.sectionId).sort()
+    expect(topIds).toEqual([UUID_A, UUID_C].sort())
+    const root = result.current.tree.find((n) => n.sectionId === UUID_A)
+    expect(root?.children[0]?.sectionId).toBe(UUID_B)
+
+    // After the Undo window finalizes, pending rows drop out of the merged view.
+    useChapterStructureStore.getState().hydratePendingDeletion(null)
+    const { result: resultAfter } = renderHook(() => useStructureOutline('proj-1'))
+    expect(resultAfter.current.tree.map((n) => n.sectionId)).toEqual([UUID_C])
   })
 })

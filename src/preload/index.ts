@@ -237,6 +237,20 @@ const requestApi = {
   chapterStructureMoveSubtree: (input: IpcChannelMap['chapter-structure:move-subtree']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_MOVE_SUBTREE, input),
 
+  chapterStructureSoftDelete: (input: IpcChannelMap['chapter-structure:soft-delete']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_SOFT_DELETE, input),
+
+  chapterStructureUndoDelete: (input: IpcChannelMap['chapter-structure:undo-delete']['input']) =>
+    typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_UNDO_DELETE, input),
+
+  chapterStructureFinalizeDelete: (
+    input: IpcChannelMap['chapter-structure:finalize-delete']['input']
+  ) => typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_FINALIZE_DELETE, input),
+
+  chapterStructureListPendingDeletions: (
+    input: IpcChannelMap['chapter-structure:list-pending-deletions']['input']
+  ) => typedInvoke(IPC_CHANNELS.CHAPTER_STRUCTURE_LIST_PENDING_DELETIONS, input),
+
   chapterSummaryExtract: (input: IpcChannelMap['chapter-summary:extract']['input']) =>
     typedInvoke(IPC_CHANNELS.CHAPTER_SUMMARY_EXTRACT, input),
 

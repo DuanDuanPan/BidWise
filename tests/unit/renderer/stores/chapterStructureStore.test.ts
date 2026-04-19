@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import {
   useChapterStructureStore,
   deriveChapterNodeState,
-  pendingSoftDeletes,
 } from '@renderer/stores/chapterStructureStore'
 import { useDocumentStore } from '@renderer/stores/documentStore'
 
@@ -212,15 +211,6 @@ describe('chapterStructureStore', () => {
       })
       expect(useDocumentStore.getState().loadDocument).not.toHaveBeenCalled()
       expect(useChapterStructureStore.getState().editingSectionId).toBe(null)
-    })
-
-    it('requestSoftDelete queue preserves projectId for Story 11.4 drain', async () => {
-      const store = useChapterStructureStore.getState()
-      await store.requestSoftDelete('proj-X', [sidA, sidB])
-      expect(pendingSoftDeletes.length).toBeGreaterThan(0)
-      const last = pendingSoftDeletes[pendingSoftDeletes.length - 1]
-      expect(last.projectId).toBe('proj-X')
-      expect(last.sectionIds).toEqual([sidA, sidB])
     })
 
     it('requestSoftDelete rejects when any target is locked', async () => {

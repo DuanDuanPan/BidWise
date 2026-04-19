@@ -114,6 +114,62 @@ export class AnnotationRepository {
     }
   }
 
+  /**
+   * Story 11.4: fetch all annotations for the given projectId + sectionId set.
+   * Returned rows feed the Undo snapshot; callers are responsible for scoping
+   * to the active soft-delete batch.
+   */
+  async findByProjectAndSectionIds(
+    projectId: string,
+    sectionIds: string[]
+  ): Promise<AnnotationRecord[]> {
+    if (sectionIds.length === 0) return []
+    try {
+      const rows = await getDb()
+        .selectFrom('annotations')
+        .selectAll()
+        .where('projectId', '=', projectId)
+        .where('sectionId', 'in', sectionIds)
+        .execute()
+      return rows as AnnotationRecord[]
+    } catch (err) {
+      throw new DatabaseError(`批注批量查询失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /** Story 11.4: batch delete annotations by projectId + sectionId set. */
+  async deleteByProjectAndSectionIds(projectId: string, sectionIds: string[]): Promise<number> {
+    if (sectionIds.length === 0) return 0
+    try {
+      const result = await getDb()
+        .deleteFrom('annotations')
+        .where('projectId', '=', projectId)
+        .where('sectionId', 'in', sectionIds)
+        .executeTakeFirst()
+      return Number(result.numDeletedRows ?? 0n)
+    } catch (err) {
+      throw new DatabaseError(`批注批量删除失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /**
+   * Story 11.4: re-insert previously deleted annotations verbatim during Undo.
+   * Ignores duplicate-id conflicts so the call is idempotent against partial
+   * successes from a crashed staging commit.
+   */
+  async insertBatch(records: AnnotationRecord[]): Promise<void> {
+    if (records.length === 0) return
+    try {
+      await getDb()
+        .insertInto('annotations')
+        .values(records)
+        .onConflict((oc) => oc.column('id').doNothing())
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`批注批量恢复失败: ${(err as Error).message}`, err)
+    }
+  }
+
   async listReplies(parentId: string): Promise<AnnotationRecord[]> {
     try {
       const rows = await getDb()

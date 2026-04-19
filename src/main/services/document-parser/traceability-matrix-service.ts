@@ -944,6 +944,18 @@ export class TraceabilityMatrixService {
     return []
   }
 
+  /**
+   * Story 11.4: public hook that lets external services (e.g. chapter-structure
+   * soft delete / Undo, which swap SQLite link rows in place) rebuild the
+   * `traceability-matrix.json` sidecar so `links`, `stats`, and `updatedAt`
+   * stay aligned with the live SQLite set. Mirrors the private path used by
+   * create/update/delete link handlers. Errors are swallowed internally — the
+   * sidecar is a derived artifact and best-effort by design.
+   */
+  async rebuildSnapshot(projectId: string): Promise<void> {
+    await this.syncSnapshot(projectId)
+  }
+
   private async syncSnapshot(projectId: string): Promise<void> {
     try {
       const project = await this.projectRepo.findById(projectId)

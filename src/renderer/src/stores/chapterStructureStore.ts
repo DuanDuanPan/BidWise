@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { StructureMutationSnapshotDto } from '@shared/ipc-types'
+import type { PendingStructureDeletionSummary } from '@shared/chapter-types'
 import { useDocumentStore } from './documentStore'
 import {
   notifyDepthExceeded,
@@ -34,6 +35,12 @@ export interface ChapterStructureState {
   editingSectionId: string | null
   lockedSectionIds: Record<string, true>
   pendingDeleteBySectionId: Record<string, PendingDeleteEntry>
+  /**
+   * Story 11.4: single active Undo window. Null when no deletion is pending.
+   * Driven by `chapter-structure:soft-delete` / `undo-delete` /
+   * `finalize-delete` IPC round-trips; never fabricated renderer-side.
+   */
+  activePendingDeletion: PendingStructureDeletionSummary | null
   /** Project currently bound to this store. Switching auto-resets state. */
   boundProjectId: string | null
   /** Story 11.3: true while a mutation IPC is in flight. Pairs with
@@ -59,6 +66,10 @@ export interface MutationOptions {
 }
 
 const DEFAULT_FLUSH_TIMEOUT_MS = 5000
+const pendingDeleteFinalizeTimers = new Map<
+  string,
+  { deletionId: string; timer: ReturnType<typeof setTimeout> }
+>()
 
 export interface ChapterStructureActions {
   focusSection: (sectionId: string | null) => void
@@ -107,8 +118,39 @@ export interface ChapterStructureActions {
     title: string,
     options?: MutationOptions
   ) => Promise<CommitTitleOutcome>
-  /** Story 11.3: hand off cascade-delete payload to Story 11.4. */
-  requestSoftDelete: (projectId: string, sectionIds: string[]) => Promise<{ ok: boolean }>
+  /** Story 11.4: real soft-delete — replaces the 11.3 optimistic placeholder. */
+  requestSoftDelete: (
+    projectId: string,
+    sectionIds: string[],
+    options?: MutationOptions
+  ) => Promise<
+    | { ok: true; summary: PendingStructureDeletionSummary }
+    | { ok: false; reason: 'locked' | 'pending-delete' | 'error' | 'mutating' }
+  >
+  /** Story 11.4: undo the active Undo window. */
+  undoPendingDelete: (
+    projectId: string,
+    deletionId: string
+  ) => Promise<{ ok: true } | { ok: false; reason: 'not-active' | 'error' }>
+  /** Story 11.4: finalize the active Undo window (or any staged entry). */
+  finalizePendingDelete: (
+    projectId: string,
+    deletionId: string
+  ) => Promise<{ ok: true } | { ok: false; reason: 'error' }>
+  /**
+   * Story 11.4: hydrate from a snapshot summary. Used inside the same
+   * main-process session when a renderer reload rebinds the project mid-
+   * Undo; startup cleanup handles process restarts so this is never used
+   * for crash recovery.
+   */
+  hydratePendingDeletion: (summary: PendingStructureDeletionSummary | null) => void
+  /**
+   * Story 11.4: async IPC variant that fetches the active Undo window from
+   * `proposal.meta.json.pendingStructureDeletions[]` and pipes it into
+   * `hydratePendingDeletion`. Called on project bind so a renderer reload
+   * inside the 5s window recovers both the toast and the finalize timer.
+   */
+  hydrateActivePendingDeletion: (projectId: string) => Promise<void>
   /**
    * Bind the store to a project. If `projectId` differs from the currently
    * bound one, resets all per-project state so sectionIds from the previous
@@ -125,6 +167,7 @@ const PROJECT_SCOPED_INITIAL_STATE: Omit<ChapterStructureState, 'mutating'> = {
   editingSectionId: null,
   lockedSectionIds: {},
   pendingDeleteBySectionId: {},
+  activePendingDeletion: null,
   boundProjectId: null,
 }
 
@@ -351,24 +394,192 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
       })
     },
 
-    async requestSoftDelete(projectId, sectionIds) {
+    async requestSoftDelete(projectId, sectionIds, options) {
       const state = useChapterStructureStore.getState()
       for (const id of sectionIds) {
         if (state.lockedSectionIds[id]) {
           notifyLockedRejection()
-          return { ok: false }
-        }
-        if (state.pendingDeleteBySectionId[id]) {
-          return { ok: false }
+          return { ok: false, reason: 'locked' }
         }
       }
-      const expiresAt = new Date(Date.now() + 5000).toISOString()
-      state.markPendingDelete(sectionIds, expiresAt)
-      setTimeout(() => {
-        useChapterStructureStore.getState().clearPendingDelete(sectionIds)
-      }, 5000)
-      pendingSoftDeletes.push({ projectId, sectionIds, expiresAt })
+      // Single-window invariant (AC6): if an active window exists, finalize
+      // it before issuing the new delete. We don't block on the finalize
+      // round-trip completing — main-side is idempotent and will finalize
+      // on its own during the next soft-delete anyway, but doing it here
+      // keeps the renderer's `activePendingDeletion` coherent.
+      const previous = state.activePendingDeletion
+      if (previous) {
+        void state.finalizePendingDelete(projectId, previous.deletionId)
+      }
+      return runSoftDelete(projectId, options, async () => {
+        try {
+          const res = await window.api.chapterStructureSoftDelete({ projectId, sectionIds })
+          if (!res.success) {
+            notifyStructureError(new Error(res.error.message))
+            return { ok: false, reason: 'error' }
+          }
+          const data = res.data
+          useDocumentStore.getState().applyStructureSnapshot(projectId, {
+            content: data.markdown,
+            sectionIndex: data.sectionIndex,
+            lastSavedAt: data.lastSavedAt,
+          })
+          useChapterStructureStore.setState((current) => {
+            const next = { ...current.pendingDeleteBySectionId }
+            for (const id of data.summary.sectionIds) {
+              next[id] = { expiresAt: data.summary.expiresAt }
+            }
+            const editingSectionId =
+              current.editingSectionId && data.summary.sectionIds.includes(current.editingSectionId)
+                ? null
+                : current.editingSectionId
+            const focusedSectionId =
+              current.focusedSectionId && data.summary.sectionIds.includes(current.focusedSectionId)
+                ? null
+                : current.focusedSectionId
+            return {
+              activePendingDeletion: data.summary,
+              pendingDeleteBySectionId: next,
+              editingSectionId,
+              focusedSectionId,
+            }
+          })
+          schedulePendingDeleteFinalize(projectId, data.summary)
+          return { ok: true, summary: data.summary }
+        } catch (err) {
+          notifyStructureError(err)
+          return { ok: false, reason: 'error' }
+        }
+      })
+    },
+
+    async undoPendingDelete(projectId, deletionId) {
+      const state = useChapterStructureStore.getState()
+      const active = state.activePendingDeletion
+      if (!active || active.deletionId !== deletionId) {
+        return { ok: false, reason: 'not-active' }
+      }
+      clearPendingDeleteFinalize(projectId, deletionId)
+      try {
+        const res = await window.api.chapterStructureUndoDelete({ projectId, deletionId })
+        if (!res.success) {
+          const current = useChapterStructureStore.getState().activePendingDeletion
+          if (current?.deletionId === deletionId) {
+            schedulePendingDeleteFinalize(projectId, current)
+          }
+          notifyStructureError(new Error(res.error.message))
+          return { ok: false, reason: 'error' }
+        }
+        const data = res.data
+        useDocumentStore.getState().applyStructureSnapshot(projectId, {
+          content: data.markdown,
+          sectionIndex: data.sectionIndex,
+          lastSavedAt: data.lastSavedAt,
+        })
+        useChapterStructureStore.getState().clearPendingDelete(active.sectionIds)
+        useChapterStructureStore.setState({ activePendingDeletion: null })
+        return { ok: true }
+      } catch (err) {
+        const current = useChapterStructureStore.getState().activePendingDeletion
+        if (current?.deletionId === deletionId) {
+          schedulePendingDeleteFinalize(projectId, current)
+        }
+        notifyStructureError(err)
+        return { ok: false, reason: 'error' }
+      }
+    },
+
+    async finalizePendingDelete(projectId, deletionId) {
+      const active = useChapterStructureStore.getState().activePendingDeletion
+      if (active?.deletionId === deletionId) {
+        clearPendingDeleteFinalize(projectId, deletionId)
+      }
+      try {
+        const res = await window.api.chapterStructureFinalizeDelete({ projectId, deletionId })
+        if (!res.success) {
+          const current = useChapterStructureStore.getState().activePendingDeletion
+          if (current?.deletionId === deletionId) {
+            schedulePendingDeleteFinalize(projectId, current)
+          }
+          notifyStructureError(new Error(res.error.message))
+          return { ok: false, reason: 'error' }
+        }
+      } catch (err) {
+        const current = useChapterStructureStore.getState().activePendingDeletion
+        if (current?.deletionId === deletionId) {
+          schedulePendingDeleteFinalize(projectId, current)
+        }
+        notifyStructureError(err)
+        return { ok: false, reason: 'error' }
+      }
+      useChapterStructureStore.setState((current) => {
+        if (current.activePendingDeletion?.deletionId !== deletionId) return {}
+        const next = { ...current.pendingDeleteBySectionId }
+        for (const id of current.activePendingDeletion.sectionIds) {
+          delete next[id]
+        }
+        return { activePendingDeletion: null, pendingDeleteBySectionId: next }
+      })
       return { ok: true }
+    },
+
+    async hydrateActivePendingDeletion(projectId) {
+      try {
+        const res = await window.api.chapterStructureListPendingDeletions({ projectId })
+        if (!res.success) return
+        // Race guard: the IPC ran under `projectId`, but the user may have
+        // switched projects while the response was in flight. If the store is
+        // no longer bound to the project we asked about, drop the payload —
+        // writing it would mean surfacing project A's pending-delete subtree
+        // inside project B's outline and driving the toast's undo/finalize
+        // callbacks with A's deletionId against B's projectId IPC surface.
+        if (useChapterStructureStore.getState().boundProjectId !== projectId) return
+        // Only overwrite when the summary actually differs from what the
+        // renderer already holds — avoids pointless rerenders when a newly
+        // opened project has no active window.
+        const current = useChapterStructureStore.getState().activePendingDeletion
+        const incoming = res.data
+        if (!incoming) {
+          clearPendingDeleteFinalize(projectId)
+          if (!current) return
+          useChapterStructureStore.getState().hydratePendingDeletion(null)
+          return
+        }
+        if (current && current.deletionId === incoming.deletionId) {
+          schedulePendingDeleteFinalize(projectId, incoming)
+          return
+        }
+        useChapterStructureStore.getState().hydratePendingDeletion(incoming)
+        schedulePendingDeleteFinalize(projectId, incoming)
+      } catch {
+        // Hydration is best-effort. A failure here just leaves the store in
+        // its current state; the next structural mutation or manual reload
+        // will get another chance.
+      }
+    },
+
+    hydratePendingDeletion(summary) {
+      useChapterStructureStore.setState((current) => {
+        if (!summary) {
+          // Clear any stale rows left over from a previous hydration.
+          return {
+            activePendingDeletion: null,
+            pendingDeleteBySectionId: {},
+          }
+        }
+        const next: Record<string, PendingDeleteEntry> = {}
+        for (const id of summary.sectionIds) {
+          next[id] = { expiresAt: summary.expiresAt }
+        }
+        // Merge over existing pending entries; other sectionIds (from a
+        // different active window, which shouldn't exist per AC6) get cleared
+        // so the store can only reflect the single window we just hydrated.
+        void current
+        return {
+          activePendingDeletion: summary,
+          pendingDeleteBySectionId: next,
+        }
+      })
     },
 
     bindProject(projectId) {
@@ -379,7 +590,6 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
         // the prior project cannot reach chapter-structure:* IPC under the
         // new projectId. The mutation lock is global to the renderer and
         // stays owned by the in-flight IPC until releaseMutationLock().
-        pendingSoftDeletes.length = 0
         preserveGlobalMutationLock = state.mutating
         return {
           ...PROJECT_SCOPED_INITIAL_STATE,
@@ -393,20 +603,11 @@ export const useChapterStructureStore = create<ChapterStructureStore>()(
     },
 
     reset() {
+      clearAllPendingDeleteFinalizers()
       set({ ...INITIAL_STATE })
-      pendingSoftDeletes.length = 0
     },
   }))
 )
-
-interface StructureSoftDeleteTarget {
-  projectId: string
-  sectionIds: string[]
-  expiresAt: string
-}
-
-/** Exposed for Story 11.4 to drain queued cascade-delete targets. */
-export const pendingSoftDeletes: StructureSoftDeleteTarget[] = []
 
 /**
  * Strictly flush pending autosave so that the disk copy of `proposal.md`
@@ -493,6 +694,39 @@ function waitForSaveSettled(remainingMs: number): Promise<void> {
   })
 }
 
+function schedulePendingDeleteFinalize(
+  projectId: string,
+  summary: PendingStructureDeletionSummary
+): void {
+  clearPendingDeleteFinalize(projectId)
+  const remainingMs = Math.max(0, Date.parse(summary.expiresAt) - Date.now())
+  const timer = setTimeout(() => {
+    const current = pendingDeleteFinalizeTimers.get(projectId)
+    if (!current || current.deletionId !== summary.deletionId) return
+    pendingDeleteFinalizeTimers.delete(projectId)
+    void useChapterStructureStore.getState().finalizePendingDelete(projectId, summary.deletionId)
+  }, remainingMs)
+  pendingDeleteFinalizeTimers.set(projectId, {
+    deletionId: summary.deletionId,
+    timer,
+  })
+}
+
+function clearPendingDeleteFinalize(projectId: string, deletionId?: string): void {
+  const current = pendingDeleteFinalizeTimers.get(projectId)
+  if (!current) return
+  if (deletionId && current.deletionId !== deletionId) return
+  clearTimeout(current.timer)
+  pendingDeleteFinalizeTimers.delete(projectId)
+}
+
+function clearAllPendingDeleteFinalizers(): void {
+  for (const { timer } of pendingDeleteFinalizeTimers.values()) {
+    clearTimeout(timer)
+  }
+  pendingDeleteFinalizeTimers.clear()
+}
+
 /**
  * Atomic test-and-set for the mutation lock. Relies on JS single-threaded
  * execution: the `getState` read and `setState` write below run in one
@@ -540,6 +774,35 @@ async function runCommitTitle(
   options: MutationOptions | undefined,
   body: () => Promise<CommitTitleOutcome>
 ): Promise<CommitTitleOutcome> {
+  if (!acquireMutationLock()) return { ok: false, reason: 'mutating' }
+  try {
+    const flushed = await flushPendingContent(
+      projectId,
+      options?.flushTimeoutMs ?? DEFAULT_FLUSH_TIMEOUT_MS
+    )
+    if (!flushed) return { ok: false, reason: 'error' }
+    return await body()
+  } finally {
+    releaseMutationLock()
+  }
+}
+
+type SoftDeleteOutcome =
+  | { ok: true; summary: PendingStructureDeletionSummary }
+  | { ok: false; reason: 'locked' | 'pending-delete' | 'error' | 'mutating' }
+
+/**
+ * Story 11.4 soft-delete path wrapper. Mirrors `runMutation` / `runCommitTitle`
+ * so the soft-delete IPC holds the same global mutation lock and pending-
+ * autosave flush guarantees as the other structural mutations — otherwise a
+ * keystroke mid-round-trip could be overwritten when the returned snapshot
+ * applies to the document store.
+ */
+async function runSoftDelete(
+  projectId: string,
+  options: MutationOptions | undefined,
+  body: () => Promise<SoftDeleteOutcome>
+): Promise<SoftDeleteOutcome> {
   if (!acquireMutationLock()) return { ok: false, reason: 'mutating' }
   try {
     const flushed = await flushPendingContent(

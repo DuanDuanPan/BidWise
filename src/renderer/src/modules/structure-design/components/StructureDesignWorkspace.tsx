@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
-import { App } from 'antd'
+import { useCallback, useMemo } from 'react'
 import { useStructureOutline } from '../hooks/useStructureOutline'
 import { StructureTreeView } from './StructureTreeView'
 import { sectionIndexToTreeNodes } from '../adapters/persistedAdapter'
@@ -39,10 +38,8 @@ export function StructureDesignWorkspace({
   onReselectTemplate,
   phaseByNodeKey,
 }: StructureDesignWorkspaceProps): React.JSX.Element {
-  const { message } = App.useApp()
   const { flat, loading, error, reload } = useStructureOutline(projectId)
 
-  const bindProject = useChapterStructureStore((s) => s.bindProject)
   const commitTitle = useChapterStructureStore((s) => s.commitTitle)
   const insertSibling = useChapterStructureStore((s) => s.insertSibling)
   const insertChildAction = useChapterStructureStore((s) => s.insertChild)
@@ -50,6 +47,8 @@ export function StructureDesignWorkspace({
   const outdentSection = useChapterStructureStore((s) => s.outdentSection)
   const moveSubtreeAction = useChapterStructureStore((s) => s.moveSubtree)
   const requestSoftDelete = useChapterStructureStore((s) => s.requestSoftDelete)
+  const undoPendingDelete = useChapterStructureStore((s) => s.undoPendingDelete)
+  const activePendingDeletion = useChapterStructureStore((s) => s.activePendingDeletion)
 
   // Phase source — prefer host-injected map, otherwise derive from global
   // ChapterGenerationContext. Same projectId guard as pre-11.9 so commonly
@@ -67,12 +66,11 @@ export function StructureDesignWorkspace({
     return map
   }, [phaseByNodeKey, chapterGen, flat, projectId])
 
-  useEffect(() => {
-    bindProject(projectId)
-    return () => {
-      bindProject(null)
-    }
-  }, [projectId, bindProject])
+  // Story 11.4: bindProject lifecycle is owned by `ProjectWorkspace` — the
+  // single host that spans every SOP stage (solution-design → proposal-writing
+  // → compliance-review). Clearing the binding here on stage-switch unmount
+  // was dropping the active Undo window + finalize timer mid-flight, leaving
+  // the persisted journal entry orphaned in memory until process restart.
 
   const persistedNodes = useMemo(() => sectionIndexToTreeNodes(flat), [flat])
 
@@ -132,11 +130,15 @@ export function StructureDesignWorkspace({
   )
 
   const handleUndo = useCallback(
-    (_keys: string[]): void => {
-      // Story 11.4 replaces this with `clearPendingDelete` + cascade restore.
-      message.info('撤销删除由 Story 11.4 soft-delete 接管')
+    async (_keys: string[]): Promise<void> => {
+      // Story 11.4: row-level Undo routes through the real store action.
+      // The toast presents the primary Undo button; the per-row callback is
+      // kept so keyboard focus / right-click affordances still work.
+      const deletionId = activePendingDeletion?.deletionId
+      if (!deletionId) return
+      await undoPendingDelete(projectId, deletionId)
     },
-    [message]
+    [projectId, activePendingDeletion, undoPendingDelete]
   )
 
   return (

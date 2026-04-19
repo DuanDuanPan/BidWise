@@ -9,6 +9,11 @@
  */
 import { randomUUID } from 'crypto'
 import { documentService } from '@main/services/document-service'
+import {
+  chapterStructureDeleteService,
+  type RequestSoftDeleteResult,
+  type UndoDeleteResult,
+} from '@main/services/chapter-structure-delete-service'
 import { BidWiseError, NotFoundError, ValidationError } from '@main/utils/errors'
 import { ErrorCode } from '@shared/constants'
 import { createLogger } from '@main/utils/logger'
@@ -400,6 +405,40 @@ export const chapterStructureService = {
       affectedSectionId: dragSectionId,
       focusLocator: affected.headingLocator,
     }
+  },
+
+  /**
+   * Story 11.4: request a soft-delete. Delegates to the delete-lifecycle
+   * module, which owns the staged→active journal, cascade snapshots and the
+   * single-window invariant (AC6).
+   */
+  async requestSoftDelete(
+    projectId: string,
+    sectionIds: string[]
+  ): Promise<RequestSoftDeleteResult> {
+    return chapterStructureDeleteService.requestSoftDelete(projectId, sectionIds)
+  },
+
+  /** Story 11.4: undo an active soft-delete window. */
+  async undoDelete(projectId: string, deletionId: string): Promise<UndoDeleteResult> {
+    return chapterStructureDeleteService.undoDelete(projectId, deletionId)
+  },
+
+  /** Story 11.4: finalize hard-delete for a pending snapshot. */
+  async finalizeDelete(projectId: string, deletionId: string): Promise<void> {
+    return chapterStructureDeleteService.finalizeDelete(projectId, deletionId)
+  },
+
+  /** Story 11.4 AC5.1: read the active Undo window for re-hydration on reload. */
+  async getActivePendingDeletion(
+    projectId: string
+  ): Promise<import('@shared/chapter-types').PendingStructureDeletionSummary | null> {
+    return chapterStructureDeleteService.getActivePendingDeletion(projectId)
+  },
+
+  /** Story 11.4 AC5: process-start cleanup of orphan Undo snapshots. */
+  async cleanupPendingDeletionsOnStartup(): Promise<number> {
+    return chapterStructureDeleteService.cleanupPendingDeletionsOnStartup()
   },
 
   /** Outdent target subtree to its grandparent (Story 11.3 AC1 Shift+Tab). */

@@ -36,7 +36,7 @@
 # - [Enabler] stories are technical foundation; prioritize within their epic before user-value stories
 
 generated: 2026-03-18
-last_updated: 2026-04-19
+last_updated: 2026-04-18
 # 2026-04-19 11-9 delivered to review (unified <StructureTreeView>)
 # 2026-04-19 added 11-9-unified-structure-tree-view (enabler refactor) after 11.3 delivery
 project: 5-方案助手
@@ -170,7 +170,7 @@ development_status:
   11-1-enabler-stable-id-refactor: review
   11-2-focus-state-machine: review
   11-3-xmind-keymap-cascade-delete: review
-  11-4-soft-delete-toast-undo: backlog
+  11-4-soft-delete-toast-undo: review
   11-5-depth-limit-warn-llm-lock: backlog
   11-6-three-path-entry-diff-merge: backlog
   11-7-word-outline-import: backlog

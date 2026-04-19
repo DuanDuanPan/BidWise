@@ -46,6 +46,88 @@ export interface ChapterTreeNode extends ChapterIdentityEntry {
   children: ChapterTreeNode[]
 }
 
+// ─── Story 11.4: Soft-delete + Undo snapshot ─────────────────────────────────
+
+/**
+ * Structural anchor used to re-insert a deleted subtree on Undo. Carries both
+ * the outline-level parent/sibling pointers (`sectionId`-based) and the
+ * markdown-level locator of the sibling heading that preceded the deleted
+ * subtree in `proposal.md`. At restore time the service prefers the outline
+ * anchor; the markdown locator is a narrow fallback used only when the
+ * sibling sectionId can no longer be resolved in the live sectionIndex.
+ */
+export interface RestoreAnchor {
+  parentSectionId: StableSectionId | null
+  previousSiblingSectionId: StableSectionId | null
+  previousHeadingLocator: ChapterHeadingLocator | null
+}
+
+/**
+ * Sidecar / SQLite rows that must be fully restored by Undo. Each field is a
+ * snapshot of the state as it was at `deletedAt`, scoped to the deleted
+ * sectionIds. Types intentionally loose (unknown[]) to keep `chapter-types.ts`
+ * free of cross-module imports — the service layer narrows on deserialize.
+ */
+export interface PendingStructureDeletionCascade {
+  sectionWeights: unknown[]
+  confirmedSkeletonsBySectionId: Record<string, unknown>
+  annotations: unknown[]
+  sourceAttributions: unknown[]
+  baselineValidations: unknown[]
+  chapterSummaries: unknown[]
+  traceabilityLinks: unknown[]
+  sqliteAnnotations: unknown[]
+  sqliteTraceabilityLinks: unknown[]
+  sqliteNotifications: unknown[]
+}
+
+/** Staged = journal written but live delete not yet committed; active = Undo window visible. */
+export type PendingStructureDeletionStage = 'staged' | 'active'
+
+/**
+ * Persisted Undo snapshot. Lives in
+ * `proposal.meta.json.pendingStructureDeletions[]`. Only the single active
+ * entry is surfaced to the renderer as `activePendingDeletion`; staged
+ * entries are invisible to renderer + startup cleanup.
+ */
+export interface PendingStructureDeletionSnapshot {
+  deletionId: string
+  stage: PendingStructureDeletionStage
+  deletedAt: string
+  expiresAt: string
+  rootSectionId: StableSectionId
+  sectionIds: StableSectionId[]
+  firstTitle: string
+  subtreeMarkdown: string
+  sectionIndexEntries: ChapterIdentityEntry[]
+  /** Opaque pointer so storage types stay in sync with ProposalMetadata.sectionIndex. */
+  restoreAnchor: RestoreAnchor
+  totalWordCount: number
+  cascade: PendingStructureDeletionCascade
+}
+
+/**
+ * Renderer-facing summary. Mirrors the fields the Undo toast and
+ * `chapterStructureStore.activePendingDeletion` actually need, without
+ * leaking full cascade payloads to the UI.
+ *
+ * `sectionIndexEntries` carries the structural rows of the deleted subtree so
+ * the renderer tree build can merge them back during the 5-second Undo window.
+ * Main-side scrubs them from the live `sectionIndex`, so without this payload
+ * the pending-delete visual state would have no tree rows to attach to.
+ */
+export interface PendingStructureDeletionSummary {
+  deletionId: string
+  deletedAt: string
+  expiresAt: string
+  rootSectionId: StableSectionId
+  sectionIds: StableSectionId[]
+  firstTitle: string
+  totalWordCount: number
+  subtreeSize: number
+  sectionIndexEntries: ChapterIdentityEntry[]
+}
+
 /** Phase state machine for chapter generation */
 export type ChapterGenerationPhase =
   | 'queued'

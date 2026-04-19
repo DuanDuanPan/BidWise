@@ -153,6 +153,9 @@ function normalizeMetadata(
     ...(meta?.confirmedSkeletons !== undefined
       ? { confirmedSkeletons: meta.confirmedSkeletons }
       : {}),
+    ...(meta?.pendingStructureDeletions !== undefined
+      ? { pendingStructureDeletions: meta.pendingStructureDeletions }
+      : {}),
     ...(meta?.chapterIdentitySchemaVersion !== undefined
       ? { chapterIdentitySchemaVersion: meta.chapterIdentitySchemaVersion }
       : {}),
@@ -232,6 +235,12 @@ function parseMetadata(
       Array.isArray(metadata.confirmedSkeletons))
   ) {
     throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 confirmedSkeletons 必须是对象`)
+  }
+  if (
+    metadata.pendingStructureDeletions !== undefined &&
+    !Array.isArray(metadata.pendingStructureDeletions)
+  ) {
+    throw new BidWiseError(ErrorCode.PARSE, `${metaPath} 字段 pendingStructureDeletions 必须是数组`)
   }
   if (
     metadata.chapterIdentitySchemaVersion !== undefined &&

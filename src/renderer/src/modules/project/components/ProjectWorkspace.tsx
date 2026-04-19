@@ -25,6 +25,7 @@ import { EditorView } from '@modules/editor/components/EditorView'
 import { SolutionDesignView } from '@modules/editor/components/SolutionDesignView'
 import { AutoSaveIndicator } from '@modules/editor/components/AutoSaveIndicator'
 import { DocumentOutlineTree } from '@modules/editor/components/DocumentOutlineTree'
+import { UndoDeleteToast } from '@modules/structure-design/components/UndoDeleteToast'
 import { useDocumentOutline } from '@modules/editor/hooks/useDocumentOutline'
 import { useWordCount } from '@modules/editor/hooks/useWordCount'
 import { useChapterGeneration } from '@modules/editor/hooks/useChapterGeneration'
@@ -148,10 +149,18 @@ export function ProjectWorkspace(): React.JSX.Element {
 
   // Bind chapter-structure store to the current project so sectionIds from
   // a previously viewed project cannot leak into mutation dispatches here.
+  // Also re-hydrate any active soft-delete Undo window so a renderer reload
+  // inside the 5-second window recovers both the toast and the finalize timer
+  // (Story 11.4). Without this, the persisted journal entry would remain
+  // `active` on disk until process restart.
   const bindChapterProject = useChapterStructureStore((s) => s.bindProject)
+  const hydrateActivePendingDeletion = useChapterStructureStore(
+    (s) => s.hydrateActivePendingDeletion
+  )
   useEffect(() => {
     bindChapterProject(projectId ?? null)
-  }, [projectId, bindChapterProject])
+    if (projectId) void hydrateActivePendingDeletion(projectId)
+  }, [projectId, bindChapterProject, hydrateActivePendingDeletion])
 
   // Export preview integration (Story 8.2)
   const exportPreview = useExportPreview()
@@ -707,6 +716,10 @@ export function ProjectWorkspace(): React.JSX.Element {
             onClose={exportPreview.closeComplianceGate}
             onForceExport={exportPreview.forceExport}
           />
+          {/* Story 11.4 — single Undo toast host for every SOP stage. The toast
+              stays route-local; the finalize countdown itself lives in the
+              store so project switches cannot pause it. */}
+          {projectId ? <UndoDeleteToast /> : null}
           <RecommendationDetailDrawer
             assetId={detailDrawerAssetId}
             matchScore={

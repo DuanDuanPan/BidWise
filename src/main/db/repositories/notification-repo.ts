@@ -86,6 +86,67 @@ export class NotificationRepository {
     }
   }
 
+  /** Story 11.4: fetch notifications for a projectId + sectionId set (Undo snapshot). */
+  async findByProjectAndSectionIds(
+    projectId: string,
+    sectionIds: string[]
+  ): Promise<NotificationRecord[]> {
+    if (sectionIds.length === 0) return []
+    try {
+      const rows = await getDb()
+        .selectFrom('notifications')
+        .selectAll()
+        .where('projectId', '=', projectId)
+        .where('sectionId', 'in', sectionIds)
+        .execute()
+      return rows.map((r) => toRecord(r as unknown as Record<string, unknown>))
+    } catch (err) {
+      throw new DatabaseError(`通知批量查询失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /** Story 11.4: batch delete notifications by projectId + sectionId set. */
+  async deleteByProjectAndSectionIds(projectId: string, sectionIds: string[]): Promise<number> {
+    if (sectionIds.length === 0) return 0
+    try {
+      const result = await getDb()
+        .deleteFrom('notifications')
+        .where('projectId', '=', projectId)
+        .where('sectionId', 'in', sectionIds)
+        .executeTakeFirst()
+      return Number(result.numDeletedRows ?? 0n)
+    } catch (err) {
+      throw new DatabaseError(`通知批量删除失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /** Story 11.4: re-insert previously deleted notifications verbatim during Undo. */
+  async insertBatch(records: NotificationRecord[]): Promise<void> {
+    if (records.length === 0) return
+    const rows = records.map((record) => ({
+      id: record.id,
+      projectId: record.projectId,
+      projectName: record.projectName,
+      sectionId: record.sectionId,
+      annotationId: record.annotationId,
+      targetUser: record.targetUser,
+      type: record.type,
+      title: record.title,
+      summary: record.summary,
+      read: record.read ? 1 : 0,
+      createdAt: record.createdAt,
+    }))
+    try {
+      await getDb()
+        .insertInto('notifications')
+        .values(rows)
+        .onConflict((oc) => oc.column('id').doNothing())
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`通知批量恢复失败: ${(err as Error).message}`, err)
+    }
+  }
+
   async countUnread(targetUser: string): Promise<number> {
     try {
       const result = await getDb()

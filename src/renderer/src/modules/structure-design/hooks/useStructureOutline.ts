@@ -3,6 +3,7 @@ import { buildChapterTree } from '@shared/chapter-identity'
 import type { ChapterGenerationPhase, ChapterTreeNode } from '@shared/chapter-types'
 import type { ProposalSectionIndexEntry } from '@shared/template-types'
 import { useDocumentStore } from '@renderer/stores/documentStore'
+import { useChapterStructureStore } from '@renderer/stores/chapterStructureStore'
 
 /**
  * Read-side view of a chapter node used by the Structure Design workspace.
@@ -61,14 +62,34 @@ export function useStructureOutline(projectId: string | null): UseStructureOutli
   const storeLoading = useDocumentStore((s) => s.loading)
   const error = useDocumentStore((s) => s.error)
   const loadDocument = useDocumentStore((s) => s.loadDocument)
+  const activePendingDeletion = useChapterStructureStore((s) => s.activePendingDeletion)
 
   const matchesProject = projectId !== null && loadedProjectId === projectId
-  const flat = matchesProject ? sectionIndex : []
+
+  // Story 11.4: during an active 5-second Undo window, the live `sectionIndex`
+  // has already been pruned by the soft-delete IPC. Merge the snapshot rows
+  // from `activePendingDeletion.sectionIndexEntries` back in so the tree keeps
+  // rendering the deleted subtree — `chapterStructureStore.pendingDeleteBySectionId`
+  // drives the per-node pending-delete visual state. Drop the pending rows
+  // once the window finalizes or the Undo completes; both transitions clear
+  // `activePendingDeletion` and return the flat to a pure live view.
+  const flat = useMemo<ProposalSectionIndexEntry[]>(() => {
+    if (!matchesProject) return []
+    if (!activePendingDeletion || activePendingDeletion.sectionIndexEntries.length === 0) {
+      return sectionIndex
+    }
+    const seen = new Set(sectionIndex.map((e) => e.sectionId))
+    const pendingRows = activePendingDeletion.sectionIndexEntries
+      .filter((e) => !seen.has(e.sectionId))
+      .map((e) => e as unknown as ProposalSectionIndexEntry)
+    if (pendingRows.length === 0) return sectionIndex
+    return [...sectionIndex, ...pendingRows]
+  }, [matchesProject, sectionIndex, activePendingDeletion])
 
   const tree = useMemo<StructureNode[]>(() => {
     if (!matchesProject) return []
-    return buildChapterTree(sectionIndex).map((node) => toStructureNode(node, null))
-  }, [matchesProject, sectionIndex])
+    return buildChapterTree(flat).map((node) => toStructureNode(node, null))
+  }, [matchesProject, flat])
 
   const reload = useCallback(() => {
     if (projectId) void loadDocument(projectId)

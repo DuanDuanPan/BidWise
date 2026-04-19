@@ -42,7 +42,7 @@ export interface DocumentActions {
    */
   applyStructureSnapshot: (
     projectId: string,
-    snapshot: { content: string; sectionIndex: ProposalSectionIndexEntry[] }
+    snapshot: { content: string; sectionIndex: ProposalSectionIndexEntry[]; lastSavedAt?: string }
   ) => void
   /** Story 11.3: gate for `updateContent` writes during structure mutations. */
   setEditingLocked: (locked: boolean) => void
@@ -371,7 +371,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => {
         sectionIndex: snapshot.sectionIndex,
         autoSave: {
           ...defaultAutoSave,
-          lastSavedAt: new Date().toISOString(),
+          // Story 11.4: prefer the main-process committed `lastSavedAt` so
+          // a later debounce save compares against the real on-disk clock
+          // rather than a renderer-side `new Date()` that can drift ahead.
+          lastSavedAt: snapshot.lastSavedAt ?? new Date().toISOString(),
         },
       })
     },

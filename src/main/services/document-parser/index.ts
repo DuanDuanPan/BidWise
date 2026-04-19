@@ -17,7 +17,7 @@ import { ScoringExtractor } from './scoring-extractor'
 import { MandatoryItemDetector } from './mandatory-item-detector'
 import { StrategySeedGenerator } from './strategy-seed-generator'
 import { FogMapClassifier } from './fog-map-classifier'
-import { TraceabilityMatrixService } from './traceability-matrix-service'
+import { traceabilityMatrixService } from './traceability-matrix-service-instance'
 
 export const rfpParser = new RfpParser()
 export const tenderImportService = new TenderImportService()
@@ -25,4 +25,4 @@ export const scoringExtractor = new ScoringExtractor()
 export const mandatoryItemDetector = new MandatoryItemDetector()
 export const strategySeedGenerator = new StrategySeedGenerator()
 export const fogMapClassifier = new FogMapClassifier()
-export const traceabilityMatrixService = new TraceabilityMatrixService()
+export { traceabilityMatrixService }

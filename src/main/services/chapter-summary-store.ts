@@ -128,6 +128,98 @@ class ChapterSummaryStore {
     return { removed: removedCount }
   }
 
+  /**
+   * Story 11.4: snapshot sidecar entries for a sectionId set WITHOUT mutating
+   * the sidecar. The soft-delete flow captures rows here, persists them in the
+   * Undo journal, then calls `removeBySectionIds` only after the journal is
+   * durable so a crash between capture and journal write cannot drop rows.
+   */
+  async listBySectionIds(
+    projectId: string,
+    sectionIds: ReadonlyArray<string>
+  ): Promise<ChapterSummaryEntry[]> {
+    if (sectionIds.length === 0) return []
+    const targetSet = new Set(sectionIds)
+    const sidecar = await this.read(projectId)
+    return sidecar.entries.filter(
+      (entry) => entry.sectionId !== undefined && targetSet.has(entry.sectionId)
+    )
+  }
+
+  /**
+   * Story 11.4: drop sidecar entries for a sectionId set. Called AFTER the
+   * Undo journal is persisted so rollback via `insertBatch` always has the
+   * snapshot to restore from.
+   */
+  async removeBySectionIds(projectId: string, sectionIds: ReadonlyArray<string>): Promise<void> {
+    if (sectionIds.length === 0) return
+    const targetSet = new Set(sectionIds)
+    await this.runSerialized(projectId, async () => {
+      const sidecar = await this.read(projectId)
+      const keep = sidecar.entries.filter(
+        (entry) => !(entry.sectionId !== undefined && targetSet.has(entry.sectionId))
+      )
+      if (keep.length !== sidecar.entries.length) {
+        await this.writeAtomic(projectId, {
+          version: CHAPTER_SUMMARY_SIDECAR_VERSION,
+          entries: keep,
+        })
+      }
+    })
+  }
+
+  /**
+   * Story 11.4 (retained for test-compatibility + callers that explicitly want
+   * the snapshot-and-drop behaviour). Prefer `listBySectionIds` +
+   * `removeBySectionIds` in the soft-delete path so the snapshot is durable in
+   * the journal before the sidecar loses rows.
+   */
+  async extractBySectionIds(
+    projectId: string,
+    sectionIds: ReadonlyArray<string>
+  ): Promise<ChapterSummaryEntry[]> {
+    if (sectionIds.length === 0) return []
+    const matching: ChapterSummaryEntry[] = []
+    const targetSet = new Set(sectionIds)
+    await this.runSerialized(projectId, async () => {
+      const sidecar = await this.read(projectId)
+      const keep: ChapterSummaryEntry[] = []
+      for (const entry of sidecar.entries) {
+        if (entry.sectionId && targetSet.has(entry.sectionId)) {
+          matching.push(entry)
+        } else {
+          keep.push(entry)
+        }
+      }
+      if (matching.length > 0) {
+        await this.writeAtomic(projectId, {
+          version: CHAPTER_SUMMARY_SIDECAR_VERSION,
+          entries: keep,
+        })
+      }
+    })
+    return matching
+  }
+
+  /**
+   * Story 11.4: re-insert sidecar entries verbatim during Undo. Deduplicates
+   * by `(headingKey, occurrenceIndex)` so partial restores stay idempotent.
+   */
+  async insertBatch(projectId: string, entries: ReadonlyArray<ChapterSummaryEntry>): Promise<void> {
+    if (entries.length === 0) return
+    await this.runSerialized(projectId, async () => {
+      const sidecar = await this.read(projectId)
+      const next = sidecar.entries.filter(
+        (existing) =>
+          !entries.some((incoming) =>
+            entryMatchesKey(existing, incoming.headingKey, incoming.occurrenceIndex)
+          )
+      )
+      next.push(...entries)
+      await this.writeAtomic(projectId, { version: CHAPTER_SUMMARY_SIDECAR_VERSION, entries: next })
+    })
+  }
+
   /** For tests: drop the in-memory write chain. */
   resetForTests(): void {
     this.writeChain.clear()

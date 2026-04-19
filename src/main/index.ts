@@ -14,6 +14,7 @@ import { createLogger } from '@main/utils/logger'
 import { docxBridgeService } from '@main/services/docx-bridge'
 import { initSkillEngine } from '@main/services/skill-engine'
 import { mermaidRuntimeClient } from '@main/services/diagram-runtime/mermaid-runtime-client'
+import { chapterStructureDeleteService } from '@main/services/chapter-structure-delete-service'
 
 const logger = createLogger('main')
 
@@ -81,6 +82,19 @@ app.whenReady().then(async () => {
   await initSkillEngine()
   await taskQueue.recoverPendingTasks()
   logger.info('数据库初始化完成')
+
+  // Story 11.4 AC5: finalize every Undo snapshot left over from the previous
+  // process. Runs AFTER migrations and task-queue recovery so projects have
+  // a fully-ready DB when we rewrite their metadata, and BEFORE IPC
+  // registration so no renderer read can land on a pending journal.
+  try {
+    const finalized = await chapterStructureDeleteService.cleanupPendingDeletionsOnStartup()
+    if (finalized > 0) {
+      logger.info(`清理遗留 pending structure deletions: ${finalized} 条`)
+    }
+  } catch (err) {
+    logger.warn(`pending structure deletions 启动清理失败: ${(err as Error).message}`)
+  }
 
   registerIpcHandlers()
 

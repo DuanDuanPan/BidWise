@@ -280,6 +280,70 @@ describe('@story-3-1 documentStore', () => {
     })
   })
 
+  describe('@story-11-4 applyStructureSnapshot', () => {
+    it('writes main-provided lastSavedAt into autoSave and resets dirty/saving', () => {
+      useDocumentStore.setState({
+        loadedProjectId: 'proj-1',
+        content: '# Stale',
+        sectionIndex: [] as never,
+        autoSave: {
+          dirty: true,
+          saving: true,
+          lastSavedAt: '2026-03-21T10:00:00.000Z',
+          error: 'prev',
+        },
+      })
+
+      useDocumentStore.getState().applyStructureSnapshot('proj-1', {
+        content: '# Committed',
+        sectionIndex: [] as never,
+        lastSavedAt: '2026-04-18T00:00:01.000Z',
+      })
+
+      const s = useDocumentStore.getState()
+      expect(s.content).toBe('# Committed')
+      expect(s.autoSave.dirty).toBe(false)
+      expect(s.autoSave.saving).toBe(false)
+      expect(s.autoSave.error).toBeNull()
+      expect(s.autoSave.lastSavedAt).toBe('2026-04-18T00:00:01.000Z')
+    })
+
+    it('falls back to renderer clock when main omits lastSavedAt', () => {
+      useDocumentStore.setState({
+        loadedProjectId: 'proj-1',
+        content: '',
+        sectionIndex: [] as never,
+        autoSave: { dirty: true, saving: false, lastSavedAt: null, error: null },
+      })
+
+      useDocumentStore.getState().applyStructureSnapshot('proj-1', {
+        content: '# X',
+        sectionIndex: [] as never,
+      })
+
+      const s = useDocumentStore.getState()
+      expect(typeof s.autoSave.lastSavedAt).toBe('string')
+      expect(s.autoSave.lastSavedAt).not.toBeNull()
+    })
+
+    it('skips the write when projectId does not match the loaded project', () => {
+      useDocumentStore.setState({
+        loadedProjectId: 'proj-other',
+        content: '# Other',
+        sectionIndex: [] as never,
+        autoSave: { dirty: false, saving: false, lastSavedAt: null, error: null },
+      })
+
+      useDocumentStore.getState().applyStructureSnapshot('proj-1', {
+        content: '# Leaked',
+        sectionIndex: [] as never,
+        lastSavedAt: '2026-04-18T00:00:01.000Z',
+      })
+
+      expect(useDocumentStore.getState().content).toBe('# Other')
+    })
+  })
+
   describe('saveDocumentSync', () => {
     it('should synchronously save flushed content and clear dirty state', () => {
       const documentSaveSync = vi.fn().mockReturnValue({

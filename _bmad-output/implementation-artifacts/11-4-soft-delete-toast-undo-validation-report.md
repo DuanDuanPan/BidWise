@@ -16,6 +16,7 @@ Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
 - `_bmad-output/implementation-artifacts/11-1-enabler-stable-id-refactor.md`
 - `_bmad-output/implementation-artifacts/11-2-focus-state-machine.md`
 - `_bmad-output/implementation-artifacts/11-3-xmind-keymap-cascade-delete.md`
+- `_bmad-output/implementation-artifacts/11-9-unified-structure-tree-view.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/planning-artifacts/epics.md`
 - `_bmad-output/planning-artifacts/prd.md`
@@ -37,11 +38,13 @@ Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
   - `src/shared/chapter-types.ts`
   - `src/shared/chapter-markdown.ts`
   - `src/shared/ipc-types.ts`
+  - `src/renderer/src/stores/chapterStructureStore.ts`
   - `src/renderer/src/stores/documentStore.ts`
+  - `src/renderer/src/modules/structure-design/hooks/useStructureOutline.ts`
+  - `src/renderer/src/modules/structure-design/components/StructureTreeView.tsx`
+  - `src/renderer/src/modules/structure-design/components/StructureDesignWorkspace.tsx`
+  - `src/renderer/src/modules/editor/components/DocumentOutlineTree.tsx`
   - `src/renderer/src/modules/editor/hooks/useWordCount.ts`
-  - `src/renderer/src/modules/editor/hooks/useDocumentOutline.ts`
-  - `src/renderer/src/modules/project/components/ProjectWorkspace.tsx`
-  - `src/renderer/src/modules/annotation/hooks/useCurrentSection.ts`
 - 近期 git 记录：
   - `0d9d123 fix: preserve taskId locator mapping for trailing batch-complete event`
   - `c584721 fix: inject chapter + project context into skill-diagram prompt`
@@ -82,16 +85,39 @@ Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
 - 在 Task 3.4 中把 `proposal.meta.json.annotations` 纳入裁剪清单
 - 在 Change Log 中记录与 11.1 migration scope 的对齐
 
-### 4. Renderer 回写路径缺少 autosave 防回写约束
+### 4. Renderer 回写路径缺少现有 `applyStructureSnapshot()` 与真实 `lastSavedAt` 合同
 
 `chapter-structure:*` mutation 会在 main-process 直接改动 `proposal.md` 与 metadata。原 Story 只写“把返回的 markdown / sectionIndex 同步回 `useDocumentStore`”，没有说明如何处理 `documentStore` 里已经排队的 debounce autosave。这样会出现 stale markdown 在几百毫秒后把已删除 subtree 又写回磁盘。
 
 已修复：
 
 - 为 `requestSoftDelete()` / `undoDelete()` 的返回值补入 `lastSavedAt`
-- 在 Task 5.2 / 5.3 中新增 committed snapshot 写回路径要求
+- 将落点明确收敛到现有 `useDocumentStore.applyStructureSnapshot()`
+- 在 Task 5.2 / 5.3 中补入“扩展现有 action，而不是平行新增第二套 snapshot action”的要求
 - 在测试矩阵中补入 `documentStore` committed snapshot / autosave 清队列测试
 - 在 Dev Notes 中明确“不能走普通 autosave 队列”
+
+### 5. Renderer 宿主仍停留在 pre-11.9 结构树假设
+
+原 Story 的 Task 5 / 7 仍引用 `useProposalStructureOutline()`、`DocumentOutlineTreeNode.tsx` 与 `ProjectWorkspace.tsx`。当前仓库的 persisted 结构树宿主已经落到 `useStructureOutline()` + `StructureTreeView.tsx` + `StructureDesignWorkspace.tsx`，并且 `StructureDesignWorkspace.tsx` 里已经存在 `onUndoPendingDelete` 的占位 seam。
+
+已修复：
+
+- 将 renderer 主宿主收敛到 `StructureDesignWorkspace > StructureTreeView`
+- 将 `useStructureOutline()` 的 documentStore-first read-side 写回 Task / Dev Notes / References
+- 保留 proposal-writing `DocumentOutlineTree.tsx` 的 `sectionIdByNodeKey` 投影责任，避免 11.4 再造第二份 pending-delete 视图状态
+- 在 References 与已有代码资产中补入 11.9 story 和三个真实 renderer 文件
+
+### 6. Store contract 仍带 `nodeKey` 与临时 queue 的旧假设
+
+原 Story 要求 `requestSoftDelete(projectId, sectionIds, nodeKeys)` 与 `pendingDeleteByNodeKey`。当前 live store 已经是 `sectionId` canonical contract：`requestSoftDelete(projectId, sectionIds)`、`pendingDeleteBySectionId`，并额外暴露 11.3 临时 `pendingSoftDeletes` queue 给 11.4 接管。
+
+已修复：
+
+- 将 Task 5.1 收敛到现有 `requestSoftDelete(projectId, sectionIds)` surface
+- 把待删视觉映射收敛为 `activePendingDeletion` + `pendingDeleteBySectionId`
+- 明确 proposal-writing outline 继续通过 `sectionIdByNodeKey` 在 view 层投影，不把 `nodeKey` 写入 store
+- 将 11.3 的 `pendingSoftDeletes` + `setTimeout` 标记为待替换 seam
 
 ## 已修改工件
 
@@ -100,13 +126,13 @@ Workflow：`validate-create-story`（`bmad-create-story` Validate Mode）
 
 ## 剩余风险
 
-- 当前工作树里 `_bmad-output/implementation-artifacts/sprint-status.yaml` 已有未提交修改。本次按 story-spec 校验流程只修订了 Story 11.4 文档本身，没有改写 sprint tracking 文件，以避免覆盖并发中的状态更新。
-- Story 11.2 / 11.3 仍是 ready-for-dev 草稿，真正实现 11.4 前需要按它们定义的 `chapterStructureStore` / synthetic pending node / keymap contract 一起落地。
+- 当前代码仍只有 11.3 的 optimistic `pendingSoftDeletes` queue 和 11.9 的 `message.info` Undo seam；真实 soft-delete / undo / finalize 生命周期还没有落代码。
+- `sprint-status.yaml` 中 `11-4-soft-delete-toast-undo` 仍是 `backlog`。本次只修订了 story-spec 与 validation report，没有改写 sprint tracking。
 - 本次只做了 story artifact 校准，没有运行代码测试。
 
 ## 最终结论
 
-经本轮 `validate-create-story` 复核与原位修订后，Story 11.4 已与当前仓库真实的 `proposal.md + proposal.meta.json.sectionIndex` 数据边界、11.1 的稳定 `sectionId` contract、11.2/11.3 的 renderer 前置依赖、`documentStore` 的 autosave 行为、以及现有 sidecar / SQLite 工件范围完成必要对齐。
+经本轮 `validate-create-story` 复核与原位修订后，Story 11.4 已与当前仓库真实的 `proposal.md + proposal.meta.json.sectionIndex` 数据边界、11.1 的稳定 `sectionId` contract、11.3 的 `requestSoftDelete` placeholder、11.9 的 `StructureTreeView` / `StructureDesignWorkspace` renderer 宿主、`documentStore.applyStructureSnapshot()` 的 autosave 约束，以及现有 sidecar / SQLite 工件范围完成必要对齐。
 
 当前 Story 已具备进入 `dev-story` 的实现清晰度，结论为 **PASS**。
 

@@ -196,6 +196,67 @@ export class TraceabilityLinkRepository {
     }
   }
 
+  /** Story 11.4: fetch rows for a projectId + sectionId set (Undo snapshot). */
+  async findByProjectAndSectionIds(
+    projectId: string,
+    sectionIds: string[]
+  ): Promise<TraceabilityLink[]> {
+    if (sectionIds.length === 0) return []
+    try {
+      const rows = await getDb()
+        .selectFrom('traceabilityLinks')
+        .selectAll()
+        .where('projectId', '=', projectId)
+        .where('sectionId', 'in', sectionIds)
+        .execute()
+      return rows.map(this.toModel)
+    } catch (err) {
+      throw new DatabaseError(`追溯链接批量查询失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /** Story 11.4: batch delete rows by projectId + sectionId set. */
+  async deleteByProjectAndSectionIds(projectId: string, sectionIds: string[]): Promise<number> {
+    if (sectionIds.length === 0) return 0
+    try {
+      const result = await getDb()
+        .deleteFrom('traceabilityLinks')
+        .where('projectId', '=', projectId)
+        .where('sectionId', 'in', sectionIds)
+        .executeTakeFirst()
+      return Number(result.numDeletedRows ?? 0n)
+    } catch (err) {
+      throw new DatabaseError(`追溯链接批量删除失败: ${(err as Error).message}`, err)
+    }
+  }
+
+  /** Story 11.4: re-insert previously deleted rows verbatim during Undo. */
+  async insertBatch(records: TraceabilityLink[]): Promise<void> {
+    if (records.length === 0) return
+    const rows = records.map((link) => ({
+      id: link.id,
+      projectId: link.projectId,
+      requirementId: link.requirementId,
+      sectionId: link.sectionId,
+      sectionTitle: link.sectionTitle,
+      coverageStatus: link.coverageStatus,
+      confidence: link.confidence,
+      matchReason: link.matchReason ?? null,
+      source: link.source,
+      createdAt: link.createdAt,
+      updatedAt: link.updatedAt,
+    }))
+    try {
+      await getDb()
+        .insertInto('traceabilityLinks')
+        .values(rows)
+        .onConflict((oc) => oc.column('id').doNothing())
+        .execute()
+    } catch (err) {
+      throw new DatabaseError(`追溯链接批量恢复失败: ${(err as Error).message}`, err)
+    }
+  }
+
   private toModel(row: {
     id: string
     projectId: string

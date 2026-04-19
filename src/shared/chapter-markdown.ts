@@ -1,5 +1,5 @@
 import { stripMarkdown } from '@platejs/markdown'
-import type { ChapterHeadingLocator } from './chapter-types'
+import type { ChapterHeadingLocator, RestoreAnchor } from './chapter-types'
 import type { RenderableParagraph } from './source-attribution-types'
 
 const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/
@@ -18,6 +18,65 @@ export interface MarkdownSection {
   heading: MarkdownHeadingInfo
   contentLines: string[]
   endLineIndex: number
+}
+
+/**
+ * Count markdown characters using the same rule as the renderer status bar
+ * (Story 11.4). Chinese characters are counted individually; markdown syntax
+ * markers, code fences, list/table decorations and whitespace are stripped.
+ * Kept here (shared) so main-side Undo toast summaries stay in lockstep with
+ * `useWordCount()` — never let the two sides drift.
+ */
+export function countChapterCharacters(markdown: string): number {
+  if (!markdown) return 0
+
+  let text = stripFencedCodeBlocks(markdown)
+  text = text.replace(/^#{1,6}\s+/gm, '')
+  text = text.replace(/\*{1,3}/g, '')
+  text = text.replace(/(?<![\p{L}\p{N}_])_{1,3}|_{1,3}(?![\p{L}\p{N}_])/gu, '')
+  text = text.replace(/~~/g, '')
+  text = text.replace(/`/g, '')
+  text = text.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+  text = text.replace(/^\|?[-:|][-:||\s]*$/gm, '')
+  text = text.replace(/\|/g, '')
+  text = text.replace(/^>\s*/gm, '')
+  text = text.replace(/^[\s]*[-*+]\s+/gm, '')
+  text = text.replace(/^[\s]*\d+\.\s+/gm, '')
+  text = text.replace(/^[-*_]{3,}$/gm, '')
+  text = text.replace(/\s/g, '')
+  return text.length
+}
+
+function stripFencedCodeBlocks(markdown: string): string {
+  const lines = markdown.split('\n')
+  const keptLines: string[] = []
+  let inFence = false
+  let fenceChar: string | null = null
+  let fenceLen = 0
+
+  for (const line of lines) {
+    const fenceMatch = FENCE_RE.exec(line)
+    if (fenceMatch) {
+      const marker = fenceMatch[2]
+      const char = marker[0]
+      const len = marker.length
+      if (inFence) {
+        if (char === fenceChar && len >= fenceLen) {
+          inFence = false
+          fenceChar = null
+          fenceLen = 0
+        }
+      } else {
+        inFence = true
+        fenceChar = char
+        fenceLen = len
+      }
+      continue
+    }
+    if (!inFence) keptLines.push(line)
+  }
+
+  return keptLines.join('\n')
 }
 
 export function normalizeHeadingTitle(title: string): string {
@@ -928,4 +987,137 @@ export function moveSubtreeInMarkdown(
       affectedLevel: targetLevel,
     },
   }
+}
+
+// ─── Story 11.4: subtree extract / remove / restore ──────────────────────────
+
+export interface SectionSubtreeExtract {
+  subtreeMarkdown: string
+  remainderMarkdown: string
+  restoreAnchor: Pick<RestoreAnchor, 'previousHeadingLocator'>
+  totalWordCount: number
+  headings: MarkdownHeadingInfo[]
+}
+
+function headingLocator(heading: MarkdownHeadingInfo): ChapterHeadingLocator {
+  return {
+    title: heading.title,
+    level: heading.level,
+    occurrenceIndex: heading.occurrenceIndex,
+  }
+}
+
+/**
+ * Extract a heading's full subtree (heading line + descendants) from
+ * `markdown` and return the document with that subtree removed plus a
+ * structural anchor for Undo. Preserves duplicate-heading semantics by
+ * routing through `findMarkdownHeading` + `occurrenceIndex`.
+ */
+export function extractSectionSubtree(
+  markdown: string,
+  locator: ChapterHeadingLocator
+): SectionSubtreeExtract | null {
+  const block = getSectionSubtreeBlock(markdown, locator)
+  if (!block) return null
+
+  const headings = extractMarkdownHeadings(markdown)
+  const subtreeHeadings = headings.filter(
+    (h) => h.lineIndex >= block.heading.lineIndex && h.lineIndex < block.endLineIndex
+  )
+
+  let previousHeading: MarkdownHeadingInfo | null = null
+  for (const h of headings) {
+    if (h.lineIndex >= block.heading.lineIndex) break
+    previousHeading = h
+  }
+
+  const lines = markdown.split('\n')
+  const remainderLines = [
+    ...lines.slice(0, block.heading.lineIndex),
+    ...lines.slice(block.endLineIndex),
+  ]
+  const subtreeMarkdown = block.lines.join('\n')
+
+  return {
+    subtreeMarkdown,
+    remainderMarkdown: remainderLines.join('\n'),
+    restoreAnchor: {
+      previousHeadingLocator: previousHeading ? headingLocator(previousHeading) : null,
+    },
+    totalWordCount: countChapterCharacters(subtreeMarkdown),
+    headings: subtreeHeadings,
+  }
+}
+
+/**
+ * Batch variant: extract several subtrees in document order, returning the
+ * remainder + one extract per locator. Non-resolvable locators yield a `null`
+ * slot so callers can correlate input ↔ output by index.
+ *
+ * Duplicate-heading safety: each extraction is re-resolved against the current
+ * (progressively reduced) markdown, so later locators see the document after
+ * earlier subtrees have already been sliced out.
+ */
+export function removeSectionSubtrees(
+  markdown: string,
+  locators: ChapterHeadingLocator[]
+): { remainderMarkdown: string; extracts: Array<SectionSubtreeExtract | null> } {
+  let current = markdown
+  const extracts: Array<SectionSubtreeExtract | null> = []
+  for (const locator of locators) {
+    const extract = extractSectionSubtree(current, locator)
+    if (!extract) {
+      extracts.push(null)
+      continue
+    }
+    extracts.push(extract)
+    current = extract.remainderMarkdown
+  }
+  return { remainderMarkdown: current, extracts }
+}
+
+/**
+ * Splice a previously extracted subtree back into `markdown` using the
+ * `restoreAnchor` captured at extraction time. Resolution order:
+ *
+ *  1. `previousHeadingLocator` resolves → insert immediately after that
+ *     sibling's current subtree (matches the original sibling ordering).
+ *  2. `parentHeadingLocator` resolves → append as last child of parent.
+ *  3. Neither resolves → prepend at top of document.
+ *
+ * The caller is responsible for passing the parent locator when it still
+ * exists; the service derives it from the current `sectionIndex`.
+ */
+export function restoreSectionSubtree(
+  markdown: string,
+  subtreeMarkdown: string,
+  anchor: {
+    previousHeadingLocator?: ChapterHeadingLocator | null
+    parentHeadingLocator?: ChapterHeadingLocator | null
+  }
+): string {
+  const subtreeLines = subtreeMarkdown.split('\n')
+  const lines = markdown.split('\n')
+  const insertAt = resolveRestoreInsertionPoint(markdown, anchor)
+  const head = lines.slice(0, insertAt)
+  const tail = lines.slice(insertAt)
+  return [...head, ...subtreeLines, ...tail].join('\n')
+}
+
+function resolveRestoreInsertionPoint(
+  markdown: string,
+  anchor: {
+    previousHeadingLocator?: ChapterHeadingLocator | null
+    parentHeadingLocator?: ChapterHeadingLocator | null
+  }
+): number {
+  if (anchor.previousHeadingLocator) {
+    const prevBlock = getSectionSubtreeBlock(markdown, anchor.previousHeadingLocator)
+    if (prevBlock) return prevBlock.endLineIndex
+  }
+  if (anchor.parentHeadingLocator) {
+    const parentBlock = getSectionSubtreeBlock(markdown, anchor.parentHeadingLocator)
+    if (parentBlock) return parentBlock.endLineIndex
+  }
+  return 0
 }

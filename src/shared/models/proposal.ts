@@ -2,7 +2,7 @@ import type { SectionWeightEntry, ProposalSectionIndexEntry } from '../template-
 import type { AnnotationRecord } from '../annotation-types'
 import type { SourceAttribution, BaselineValidation } from '../source-attribution-types'
 import type { WritingStyleId } from '../writing-style-types'
-import type { SkeletonExpandPlan } from '../chapter-types'
+import type { SkeletonExpandPlan, PendingStructureDeletionSnapshot } from '../chapter-types'
 
 /** 方案文档数据模型 */
 export interface ProposalDocument {
@@ -38,6 +38,12 @@ export interface ProposalMetadata {
   writingStyleId?: WritingStyleId
   /** Story 11.1: keyed by project-level UUID `sectionId` (v2+). */
   confirmedSkeletons?: Record<string, SkeletonExpandPlan>
+  /**
+   * Story 11.4: persisted soft-delete Undo journal. Holds at most one `active`
+   * entry plus zero-or-one `staged` entry that is mid-commit. The journal is
+   * drained by `cleanupPendingDeletionsOnStartup()` on every process start.
+   */
+  pendingStructureDeletions?: PendingStructureDeletionSnapshot[]
   /** Story 11.1: chapter identity schema version; absent == v1 (legacy). */
   chapterIdentitySchemaVersion?: ChapterIdentitySchemaVersion
   /**

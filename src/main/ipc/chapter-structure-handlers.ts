@@ -51,6 +51,22 @@ const handlerMap: { [C in ChapterStructureChannel]: () => void } = {
         input.placement
       )
     ),
+  'chapter-structure:soft-delete': () =>
+    createIpcHandler('chapter-structure:soft-delete', (input) =>
+      chapterStructureService.requestSoftDelete(input.projectId, input.sectionIds)
+    ),
+  'chapter-structure:undo-delete': () =>
+    createIpcHandler('chapter-structure:undo-delete', (input) =>
+      chapterStructureService.undoDelete(input.projectId, input.deletionId)
+    ),
+  'chapter-structure:finalize-delete': () =>
+    createIpcHandler('chapter-structure:finalize-delete', (input) =>
+      chapterStructureService.finalizeDelete(input.projectId, input.deletionId)
+    ),
+  'chapter-structure:list-pending-deletions': () =>
+    createIpcHandler('chapter-structure:list-pending-deletions', (input) =>
+      chapterStructureService.getActivePendingDeletion(input.projectId)
+    ),
 }
 
 export type RegisteredChapterStructureChannels = ChapterStructureChannel

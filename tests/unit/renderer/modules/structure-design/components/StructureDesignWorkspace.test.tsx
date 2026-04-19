@@ -158,6 +158,41 @@ describe('@story-11-2 StructureDesignWorkspace', () => {
     expect(onConfirm).toHaveBeenCalled()
   })
 
+  it('@story-11-4 unmounting does not reset the chapter-structure store (stage switch preserves Undo window)', async () => {
+    // Simulates a same-project stage switch while a 5-second Undo window is
+    // active. `ProjectWorkspace` is the single bindProject owner across every
+    // SOP stage; `StructureDesignWorkspace` must therefore leave the store
+    // state alone on unmount so the toast + finalize timer survive the
+    // solution-design → proposal-writing transition.
+    mockMetadataApi([])
+    useChapterStructureStore.getState().bindProject('proj-1')
+    useChapterStructureStore.getState().hydratePendingDeletion({
+      deletionId: 'del-alive',
+      deletedAt: '2026-04-19T00:00:00.000Z',
+      expiresAt: '2026-04-19T00:00:05.000Z',
+      rootSectionId: UUID_A,
+      sectionIds: [UUID_A],
+      firstTitle: '根',
+      totalWordCount: 1,
+      subtreeSize: 1,
+      sectionIndexEntries: [entry({ sectionId: UUID_A, title: '根', level: 1, order: 0 })],
+    })
+
+    const { unmount } = render(
+      <App>
+        <StructureDesignWorkspace projectId="proj-1" />
+      </App>
+    )
+    await waitFor(() => expect(screen.getByTestId('structure-design-workspace')).toBeTruthy())
+
+    unmount()
+
+    const state = useChapterStructureStore.getState()
+    expect(state.activePendingDeletion?.deletionId).toBe('del-alive')
+    expect(state.pendingDeleteBySectionId[UUID_A]?.expiresAt).toBe('2026-04-19T00:00:05.000Z')
+    expect(state.boundProjectId).toBe('proj-1')
+  })
+
   it('@p0 default confirm label is 继续撰写', async () => {
     mockMetadataApi([])
     render(
